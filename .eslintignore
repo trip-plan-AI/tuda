@@ -1,0 +1,27 @@
+# Generated files
+build
+dist
+.next
+.turbo
+
+# Dependencies
+node_modules
+
+# Configuration files that are not meant to be linted directly
+*.config.js
+*.config.mjs
+*.config.ts
+
+# Common ignore patterns for frontends
+apps/web/public
+apps/web/.next
+apps/web/.turbo
+apps/web/out
+
+# Common ignore patterns for backends
+apps/api/dist
+apps/api/.turbo
+
+# Editor/IDE specific files
+.vscode
+.idea
