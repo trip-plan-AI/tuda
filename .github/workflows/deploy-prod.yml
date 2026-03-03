@@ -1,0 +1,39 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        shell: bash
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy on server
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=yes "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" << 'EOF'
+          set -euo pipefail
+          export GIT_SSH_COMMAND='ssh -i ~/.ssh/github_deploy_ed25519 -o IdentitiesOnly=yes'
+          cd /opt/apps/travel-planner
+          git pull --ff-only origin main
+          docker compose -f docker-compose.prod.yml up -d --build
+          docker compose -f docker-compose.prod.yml ps
+          EOF
