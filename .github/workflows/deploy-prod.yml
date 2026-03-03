@@ -46,7 +46,7 @@ jobs:
           set -euo pipefail
           ssh -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" << 'EOF'
           set -euo pipefail
-          export GIT_SSH_COMMAND='ssh -i ~/.ssh/github_deploy_ed25519 -o IdentitiesOnly=yes'
+          export GIT_SSH_COMMAND='ssh -i ~/.ssh/github_pull_ci_ed25519 -o IdentitiesOnly=yes'
           cd /opt/apps/travel-planner
           git pull --ff-only origin main
           docker compose -f docker-compose.prod.yml up -d --build
