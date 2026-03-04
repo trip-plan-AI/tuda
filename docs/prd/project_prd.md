@@ -340,20 +340,20 @@ apps/api/src/
 ```typescript
 // apps/api/src/db/schema.ts
 
-import { pgTable, uuid, varchar, text, integer, boolean,
-         timestamp, jsonb, pgEnum } from 'drizzle-orm/pg-core';
+import {
+  pgTable, pgEnum, uuid, text, boolean, integer,
+  jsonb, doublePrecision, timestamp, primaryKey,
+} from 'drizzle-orm/pg-core'
 
 // ENUM: роли коллаборации
-export const collaboratorRoleEnum = pgEnum('collaborator_role',
-  ['owner', 'editor', 'viewer']);
+export const collaboratorRoleEnum = pgEnum('collaborator_role', ['owner', 'editor', 'viewer'])
 
 // ENUM: категории POI
 export const poiCategoryEnum = pgEnum('poi_category',
-  ['museum', 'park', 'restaurant', 'cafe', 'attraction', 'shopping', 'entertainment']);
+  ['museum', 'park', 'restaurant', 'cafe', 'attraction', 'shopping', 'entertainment'])
 
 // ENUM: режим транспорта для TSP оптимизации
-export const transportModeEnum = pgEnum('transport_mode',
-  ['walk', 'transit', 'auto']);
+export const transportModeEnum = pgEnum('transport_mode', ['walk', 'transit', 'auto'])
 // walk    — пешком: только дистанция, стоимость = 0
 // transit — общественный транспорт: дистанция * тариф
 // auto    — автомобиль: W = (Distance * Consumption / 100 * FuelPrice) + TollFees
@@ -361,80 +361,80 @@ export const transportModeEnum = pgEnum('transport_mode',
 // ── USERS ──────────────────────────────────────────────────────────────────
 export const users = pgTable('users', {
   id:           uuid('id').primaryKey().defaultRandom(),
-  email:        varchar('email', { length: 255 }).notNull().unique(),
-  passwordHash: varchar('password_hash', { length: 255 }).notNull(),
-  name:         varchar('name', { length: 100 }).notNull(),
+  email:        text('email').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  name:         text('name').notNull(),
   photo:        text('photo'),                         // URL или base64
-  createdAt:    timestamp('created_at').defaultNow().notNull(),
-});
+  createdAt:    timestamp('created_at').notNull().defaultNow(),
+})
 
 // ── TRIPS ──────────────────────────────────────────────────────────────────
 export const trips = pgTable('trips', {
   id:           uuid('id').primaryKey().defaultRandom(),
-  title:        varchar('title', { length: 255 }).notNull(),
+  title:        text('title').notNull(),
   description:  text('description'),
   budget:       integer('budget'),                     // рублей
-  ownerId:      uuid('owner_id').references(() => users.id).notNull(),
-  isActive:     boolean('is_active').default(false),
-  isPredefined: boolean('is_predefined').default(false), // системные маршруты
-  startDate:    timestamp('start_date'),
-  endDate:      timestamp('end_date'),
-  createdAt:    timestamp('created_at').defaultNow().notNull(),
-  updatedAt:    timestamp('updated_at').defaultNow().notNull(),
-});
+  ownerId:      uuid('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  isActive:     boolean('is_active').notNull().default(true),
+  isPredefined: boolean('is_predefined').notNull().default(false), // системные маршруты
+  startDate:    text('start_date'),                    // text: свободный формат дат
+  endDate:      text('end_date'),
+  createdAt:    timestamp('created_at').notNull().defaultNow(),
+  updatedAt:    timestamp('updated_at').notNull().defaultNow(),
+})
 
 // ── TRIP COLLABORATORS ─────────────────────────────────────────────────────
 export const tripCollaborators = pgTable('trip_collaborators', {
-  tripId:   uuid('trip_id').references(() => trips.id).notNull(),
-  userId:   uuid('user_id').references(() => users.id).notNull(),
-  role:     collaboratorRoleEnum('role').default('viewer').notNull(),
-  joinedAt: timestamp('joined_at').defaultNow().notNull(),
-});
+  tripId:   uuid('trip_id').notNull().references(() => trips.id, { onDelete: 'cascade' }),
+  userId:   uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role:     collaboratorRoleEnum('role').notNull().default('viewer'),
+  joinedAt: timestamp('joined_at').notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.tripId, t.userId] })])  // составной PK
 
 // ── ROUTE POINTS ───────────────────────────────────────────────────────────
 export const routePoints = pgTable('route_points', {
   id:        uuid('id').primaryKey().defaultRandom(),
-  tripId:    uuid('trip_id').references(() => trips.id).notNull(),
-  title:     varchar('title', { length: 255 }).notNull(),
-  lat:       text('lat').notNull(),                    // хранить как text для точности
-  lon:       text('lon').notNull(),
+  tripId:    uuid('trip_id').notNull().references(() => trips.id, { onDelete: 'cascade' }),
+  title:     text('title').notNull(),
+  lat:       doublePrecision('lat').notNull(),          // float8: точность ~15 знаков, нужна для TSP-арифметики
+  lon:       doublePrecision('lon').notNull(),
   budget:    integer('budget'),
-  visitDate: timestamp('visit_date'),
+  visitDate: text('visit_date'),                        // text: свободный формат дат
   imageUrl:  text('image_url'),
-  order:     integer('order').notNull().default(0),    // порядок в маршруте
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+  order:     integer('order').notNull().default(0),     // порядок в маршруте; перезаписывается при TSP
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+})
 
 // ── OPTIMIZATION RESULTS ───────────────────────────────────────────────────
 export const optimizationResults = pgTable('optimization_results', {
   id:             uuid('id').primaryKey().defaultRandom(),
-  tripId:         uuid('trip_id').references(() => trips.id).notNull(),
-  originalOrder:  jsonb('original_order').notNull(),   // string[] (point UUIDs)
-  optimizedOrder: jsonb('optimized_order').notNull(),  // string[] (point UUIDs)
-  savedKm:        integer('saved_km'),
-  savedRub:       integer('saved_rub'),
-  savedHours:     integer('saved_hours'),              // минуты
+  tripId:         uuid('trip_id').notNull().references(() => trips.id, { onDelete: 'cascade' }),
+  originalOrder:  jsonb('original_order').notNull(),    // string[] (point UUIDs)
+  optimizedOrder: jsonb('optimized_order').notNull(),   // string[] (point UUIDs)
+  savedKm:        doublePrecision('saved_km').notNull().default(0),   // float: дробные км
+  savedRub:       doublePrecision('saved_rub').notNull().default(0),
+  savedHours:     doublePrecision('saved_hours').notNull().default(0), // float: дробные часы
   transportMode:  transportModeEnum('transport_mode').notNull().default('auto'),
   // Формула веса ребра (только для transportMode='auto'):
-  //   W = (Distance * Consumption / 100 * FuelPrice) + TollFees
-  // Для 'walk': W = Distance (стоимость = 0)
-  // Для 'transit': W = Distance * transitFarePerKm
+  //   W = (Distance_km * consumption / 100 * fuelPrice) + tollFees
+  // Для 'walk': W = Distance_km (стоимость = 0)
+  // Для 'transit': W = Distance_km * transitFarePerKm
   params:         jsonb('params'),
   // params schema:
   // { consumption?: number, fuelPrice?: number, tollFees?: number,
   //   transitFarePerKm?: number }
   // Поля consumption/fuelPrice/tollFees игнорируются при transportMode != 'auto'
-  createdAt:      timestamp('created_at').defaultNow().notNull(),
-});
+  createdAt:      timestamp('created_at').notNull().defaultNow(),
+})
 
 // ── AI SESSIONS ────────────────────────────────────────────────────────────
 export const aiSessions = pgTable('ai_sessions', {
   id:        uuid('id').primaryKey().defaultRandom(),
-  tripId:    uuid('trip_id').references(() => trips.id),
-  userId:    uuid('user_id').references(() => users.id).notNull(),
-  messages:  jsonb('messages').notNull().default('[]'), // Message[]
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+  tripId:    uuid('trip_id').references(() => trips.id, { onDelete: 'set null' }), // nullable: сессия переживает удаление trip
+  userId:    uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  messages:  jsonb('messages').notNull().default('[]'), // Message[], max 10
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+})
 ```
 
 ---

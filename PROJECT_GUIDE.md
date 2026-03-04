@@ -13,7 +13,7 @@
 ### 🏛️ Архитектура и Инфраструктура
 
 - **Repo**: Turborepo (Monorepo) + pnpm
-- **Хостинг**: Vercel (Frontend) + VPS/Cloud (Backend)
+- **Хостинг**: VPS/Cloud (Backend)
 
 ### 💻 Frontend
 
