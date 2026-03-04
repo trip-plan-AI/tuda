@@ -20,7 +20,7 @@
                 },
                 {
                   "title": "Создание схем базы данных",
-                  "description": "Таблицы: users, trips, route_points, optimization_results, ai_sessions.",
+                  "description": "Таблицы: users, trips, route_points, optimization_results, ai_sessions, trip_collaborators",
                   "branch": "feature/TRI-02-backend-db-schemas",
                   "subtasks": []
                 },
