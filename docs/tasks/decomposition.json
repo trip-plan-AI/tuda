@@ -293,6 +293,12 @@
                   "description": "После TRI-44 (бэкенд готов): создать хук features/popular-routes/api/usePopularRoutes.ts — fetch GET /trips/popular?filter=. Заменить PREDEFINED_ROUTES в PlannerPage на хук. Добавить skeleton loading (3 карточки-заглушки). Зависит от: TRI-44.",
                   "branch": "feature/TRI-45-front-popular-routes-api",
                   "subtasks": []
+                },
+                {
+                  "title": "Фикс desktop layout PlannerPage",
+                  "description": "Проблема: контент PlannerPage обрезается слева под sidebar — 'Маршруты' превращается в 'шруты', табы обрезаются. Причина: sidebar fixed w-20, layout ml-20, но на некоторых viewport-ах max-w-5xl mx-auto центрируется неправильно относительно всего вьюпорта, а не content-area. Что исправить: 1) Убедиться что (main)/layout.tsx корректно задаёт content area после sidebar на всех breakpoints; 2) PlannerPage: проверить px-4 md:px-6 достаточно ли отступов; 3) Привести desktop вид в соответствие с travel-planner-design/components/PlannerPage.js — заголовок целый, поиск на всю ширину, карта aspect-[21/9], секция бюджета с правильными отступами; 4) Сайдбар: на md+ показывать, на mobile скрывать (используется BottomNav). Эталон: правый скриншот из travel-planner-design.",
+                  "branch": "feature/TRI-46-front-planner-layout-fix",
+                  "subtasks": []
                 }
               ]
             },
