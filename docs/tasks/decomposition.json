@@ -1,0 +1,352 @@
+{
+  "title": "Trip Planner MVP",
+  "columns": [
+    {
+      "title": "Сделать",
+      "tasks": [
+        {
+          "title": "Backend",
+          "description": "Все backend задачи для MVP (NestJS + Drizzle + PostgreSQL)",
+          "subtasks": [
+            {
+              "title": "⚡ P0 – Фундамент: Настройка проекта и БД",
+              "description": "Базовая инфраструктура, Drizzle ORM, схемы и глобальные настройки.",
+              "subtasks": [
+                {
+                  "title": "Подключение Drizzle ORM",
+                  "description": "Установка и настройка Drizzle ORM к PostgreSQL.",
+                  "branch": "feature/TRI-01-backend-drizzle-setup",
+                  "subtasks": []
+                },
+                {
+                  "title": "Создание схем базы данных",
+                  "description": "Таблицы: users, trips, route_points, optimization_results, ai_sessions, trip_collaborators",
+                  "branch": "feature/TRI-02-backend-db-schemas",
+                  "subtasks": []
+                },
+                {
+                  "title": "transport_mode и глобальные настройки",
+                  "description": "Добавление поля transport_mode в оптимизацию, настройка ValidationPipe и CORS.",
+                  "branch": "feature/TRI-03-backend-global-config",
+                  "subtasks": []
+                }
+              ]
+            },
+            {
+              "title": "🟧 P1 – Core API: Auth & Users",
+              "description": "Аутентификация, JWT, эндпоинты регистрации и логина.",
+              "subtasks": [
+                {
+                  "title": "Настройка JWT и Passport.js",
+                  "description": "Настройка JWT и локальной авторизации.",
+                  "branch": "feature/TRI-04-backend-auth-jwt",
+                  "subtasks": []
+                },
+                {
+                  "title": "Эндпоинты авторизации",
+                  "description": "Создание /auth/register и /auth/login.",
+                  "branch": "feature/TRI-05-backend-auth-endpoints",
+                  "subtasks": []
+                },
+                {
+                  "title": "Хэширование пароля",
+                  "description": "Внедрение bcrypt для безопасного хранения паролей.",
+                  "branch": "feature/TRI-06-backend-auth-bcrypt",
+                  "subtasks": []
+                }
+              ]
+            },
+            {
+              "title": "🟧 P1 – Core API: Trips & Points",
+              "description": "Управление маршрутами и точками.",
+              "subtasks": [
+                {
+                  "title": "CRUD /trips",
+                  "description": "Создание маршрута, получение списка маршрутов пользователя.",
+                  "branch": "feature/TRI-07-backend-trips-crud",
+                  "subtasks": []
+                },
+                {
+                  "title": "CRUD /trips/:id/points",
+                  "description": "Добавление, удаление и изменение порядка (reorder) точек.",
+                  "branch": "feature/TRI-08-backend-points-crud",
+                  "subtasks": []
+                }
+              ]
+            },
+            {
+              "title": "🟨 P2 – TSP Алгоритм: Сервис оптимизации",
+              "description": "Логика расчета оптимального маршрута.",
+              "subtasks": [
+                {
+                  "title": "Алгоритм Nearest-Neighbor",
+                  "description": "Реализация жадного алгоритма поиска маршрута.",
+                  "branch": "feature/TRI-09-backend-tsp-algo",
+                  "subtasks": []
+                },
+                {
+                  "title": "Расчет веса W",
+                  "description": "Логика веса в зависимости от transport_mode (walk, transit, auto).",
+                  "branch": "feature/TRI-10-backend-tsp-weights",
+                  "subtasks": []
+                },
+                {
+                  "title": "Расчет сэкономленных ресурсов",
+                  "description": "Калькуляция сэкономленных километров и рублей.",
+                  "branch": "feature/TRI-11-backend-tsp-savings",
+                  "subtasks": []
+                }
+              ]
+            },
+            {
+              "title": "🟪 P3 – WebSockets: Gateway",
+              "description": "Базовая real-time синхронизация.",
+              "subtasks": [
+                {
+                  "title": "Настройка Socket.io Gateway",
+                  "description": "Инициализация сокетов в NestJS.",
+                  "branch": "feature/TRI-12-backend-ws-setup",
+                  "subtasks": []
+                },
+                {
+                  "title": "Логика комнат trip_{id}",
+                  "description": "Подключение и отключение от комнаты конкретного маршрута.",
+                  "branch": "feature/TRI-13-backend-ws-rooms",
+                  "subtasks": []
+                },
+                {
+                  "title": "Рассылка событий маршрута",
+                  "description": "Broadcast событий: point:added, point:moved, point:deleted.",
+                  "branch": "feature/TRI-14-backend-ws-events",
+                  "subtasks": []
+                }
+              ]
+            },
+            {
+              "title": "🟦 P4 – AI Engine: Конвейер планирования",
+              "description": "Интеграция с LLM и Яндекс Картами.",
+              "subtasks": [
+                {
+                  "title": "Шаг 1: Orchestrator",
+                  "description": "GPT-4o-mini парсит запрос и отдает JSON интент.",
+                  "branch": "feature/TRI-15-backend-ai-orchestrator",
+                  "subtasks": []
+                },
+                {
+                  "title": "Шаг 2: YandexFetch",
+                  "description": "HTTP-запросы к API Карт, валидация и нормализация координат.",
+                  "branch": "feature/TRI-16-backend-ai-yandex",
+                  "subtasks": []
+                },
+                {
+                  "title": "Шаг 3: SemanticFilter",
+                  "description": "YandexGPT фильтрует 15 точек до 5–10 и пишет описание.",
+                  "branch": "feature/TRI-17-backend-ai-filter",
+                  "subtasks": []
+                },
+                {
+                  "title": "Шаг 4: Scheduler",
+                  "description": "GPT-4o-mini распределяет точки по дням и считает тайминги.",
+                  "branch": "feature/TRI-18-backend-ai-scheduler",
+                  "subtasks": []
+                }
+              ]
+            },
+            {
+              "title": "⬜ P5 – Опционально: Продвинутые фичи",
+              "description": "Задачи, если останется время.",
+              "subtasks": [
+                {
+                  "title": "Кэширование в Redis",
+                  "description": "Кэширование ответов POI для экономии запросов.",
+                  "branch": "feature/TRI-19-backend-redis-cache",
+                  "subtasks": []
+                },
+                {
+                  "title": "Live presence и курсоры",
+                  "description": "Управление состоянием онлайн-пользователей и трансляция координат курсора.",
+                  "branch": "feature/TRI-20-backend-ws-presence",
+                  "subtasks": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Frontend",
+          "description": "Все frontend задачи для MVP (Next.js + FSD + Tailwind + Zustand)",
+          "subtasks": [
+            {
+              "title": "⚡ P0 – Архитектура и каркас",
+              "description": "Настройка FSD, UI библиотек и базовых утилит.",
+              "subtasks": [
+                {
+                  "title": "Структура FSD и Aliases",
+                  "description": "Создание папок app/ и views/, настройка tsconfig.json.",
+                  "branch": "feature/TRI-21-front-fsd-setup",
+                  "subtasks": []
+                },
+                {
+                  "title": "Tailwind CSS и shadcn/ui",
+                  "description": "Настройка дизайн-токенов и базовых компонентов.",
+                  "branch": "feature/TRI-22-front-ui-system",
+                  "subtasks": []
+                },
+                {
+                  "title": "Shared утилиты",
+                  "description": "HTTP-клиент с JWT интерсептором и утилита loadYandexMaps.",
+                  "branch": "feature/TRI-23-front-shared-utils",
+                  "subtasks": []
+                }
+              ]
+            },
+            {
+              "title": "🟧 P1 – Layout и навигация",
+              "description": "Основные элементы интерфейса и стейт-менеджмент.",
+              "subtasks": [
+                {
+                  "title": "UI Навигации",
+                  "description": "Сверстать Sidebar, Header, BottomNav.",
+                  "branch": "feature/TRI-24-front-layout",
+                  "subtasks": []
+                },
+                {
+                  "title": "Zustand stores",
+                  "description": "Создать user.store и trip.store.",
+                  "branch": "feature/TRI-25-front-zustand",
+                  "subtasks": []
+                }
+              ]
+            },
+            {
+              "title": "🟧 P1 – Landing + Login/Register",
+              "description": "Публичные страницы и модалки входа.",
+              "subtasks": [
+                {
+                  "title": "LandingPage",
+                  "description": "Hero секция и форма поиска.",
+                  "branch": "feature/TRI-26-front-landing",
+                  "subtasks": []
+                },
+                {
+                  "title": "Auth Модалки",
+                  "description": "LoginModal и RegisterModal + логика сохранения JWT.",
+                  "branch": "feature/TRI-27-front-auth-modals",
+                  "subtasks": []
+                }
+              ]
+            },
+            {
+              "title": "🟨 P2 – Planner MVP: RouteBuilder",
+              "description": "Главный интерфейс планировщика.",
+              "subtasks": [
+                {
+                  "title": "UI Списка точек",
+                  "description": "Список точек и общая сумма бюджета.",
+                  "branch": "feature/TRI-28-front-route-list",
+                  "subtasks": []
+                },
+                {
+                  "title": "Интеграция Яндекс Карт",
+                  "description": "Рендер карты и маркеров по координатам.",
+                  "branch": "feature/TRI-29-front-route-map",
+                  "subtasks": []
+                },
+                {
+                  "title": "CRUD точек в UI",
+                  "description": "Связка UI списка точек с API.",
+                  "branch": "feature/TRI-30-front-route-crud",
+                  "subtasks": []
+                },
+                {
+                  "title": "Drag & Drop",
+                  "description": "Сортировка списка с помощью @dnd-kit.",
+                  "branch": "feature/TRI-31-front-route-dnd",
+                  "subtasks": []
+                }
+              ]
+            },
+            {
+              "title": "🟪 P3 – AI Assistant",
+              "description": "Чат с ИИ агентом.",
+              "subtasks": [
+                {
+                  "title": "Chat интерфейс",
+                  "description": "Верстка MessageBubble и AiChat.",
+                  "branch": "feature/TRI-32-front-ai-chat-ui",
+                  "subtasks": []
+                },
+                {
+                  "title": "Интеграция API",
+                  "description": "Связка с /api/ai/plan и добавление Skeleton loader.",
+                  "branch": "feature/TRI-33-front-ai-integration",
+                  "subtasks": []
+                }
+              ]
+            },
+            {
+              "title": "🟪 P3 – Optimize Widget",
+              "description": "Виджет Compare & Save.",
+              "subtasks": [
+                {
+                  "title": "UI Виджета оптимизации",
+                  "description": "Выбор типа транспорта (walk/transit/auto) и кнопка.",
+                  "branch": "feature/TRI-34-front-opt-widget",
+                  "subtasks": []
+                },
+                {
+                  "title": "Интеграция Оптимизации",
+                  "description": "Запрос к API и обновление таблицы точек.",
+                  "branch": "feature/TRI-35-front-opt-integration",
+                  "subtasks": []
+                }
+              ]
+            },
+            {
+              "title": "🟦 P4 – Real-time интеграция",
+              "description": "Подключение фронтенда к WebSockets.",
+              "subtasks": [
+                {
+                  "title": "Подключение Socket.io",
+                  "description": "Инициализация socket.io-client и подключение к комнате.",
+                  "branch": "feature/TRI-36-front-ws-client",
+                  "subtasks": []
+                },
+                {
+                  "title": "Синхронизация Zustand",
+                  "description": "Обновление стора маршрута по событиям из сокета.",
+                  "branch": "feature/TRI-37-front-ws-sync",
+                  "subtasks": []
+                }
+              ]
+            },
+            {
+              "title": "⬜ P5 – Опционально: Визуальный лоск",
+              "description": "Задачи на случай оставшегося времени.",
+              "subtasks": [
+                {
+                  "title": "Live presence",
+                  "description": "Отображение других пользователей в комнате.",
+                  "branch": "feature/TRI-38-front-presence-ui",
+                  "subtasks": []
+                },
+                {
+                  "title": "Анимации",
+                  "description": "Анимация перестроения Polyline на карте.",
+                  "branch": "feature/TRI-39-front-map-animations",
+                  "subtasks": []
+                },
+                {
+                  "title": "Мобильный интерфейс",
+                  "description": "Draggable bottom sheet для удобства на телефонах.",
+                  "branch": "feature/TRI-40-front-mobile-sheet",
+                  "subtasks": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
