@@ -6,7 +6,9 @@
       "Bash(git checkout -b feature/TRI-23-front-shared-utils)",
       "Bash(git checkout -b feature/TRI-24-front-layout)",
       "Bash(git checkout -b feature/TRI-25-front-zustand)",
-      "Bash(pnpm add zustand)"
+      "Bash(pnpm add zustand)",
+      "Bash(git checkout -b feature/TRI-27-front-auth-modals)",
+      "Bash(pnpm add react-hook-form zod @hookform/resolvers)"
     ]
   }
 }

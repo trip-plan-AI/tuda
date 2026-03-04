@@ -11,6 +11,7 @@
     "check-types": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
     "@repo/types": "workspace:^",
     "@repo/ui": "workspace:*",
     "class-variance-authority": "^0.7.1",
@@ -20,7 +21,9 @@
     "radix-ui": "^1.4.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-hook-form": "^7.71.2",
     "tailwind-merge": "^3.5.0",
+    "zod": "^4.3.6",
     "zustand": "^5.0.11"
   },
   "devDependencies": {
