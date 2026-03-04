@@ -39,6 +39,7 @@ yarn-error.log*
 
 # Dev notes (personal, not for repo)
 docs/dev-notes/
+feedbackFrontend/
 #agentRules
 GlobalAgentRules.txt
 .kilocode
