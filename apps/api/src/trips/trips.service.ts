@@ -2,7 +2,8 @@ import { Injectable, Inject } from '@nestjs/common';
 import { DRIZZLE } from '../db/db.module';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema';
-import { NewTrip } from '@repo/types';
+
+export type NewTrip = typeof schema.trips.$inferInsert;
 
 @Injectable()
 export class TripsService {
