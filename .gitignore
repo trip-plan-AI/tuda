@@ -36,6 +36,9 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+# Dev notes (personal, not for repo)
+docs/dev-notes/
 #agentRules
 GlobalAgentRules.txt
 .kilocode
