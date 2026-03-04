@@ -2,3 +2,5 @@
 // Slice: auth
 // Authentication: Login/Register modals, JWT management
 // Imports allowed: entities, shared
+
+export { useAuthStore } from './model/auth.store'
