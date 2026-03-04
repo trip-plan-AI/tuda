@@ -1,48 +1,45 @@
-import { Injectable } from '@nestjs/common'
-import { Server } from 'socket.io'
+import { Injectable } from '@nestjs/common';
+import { Server } from 'socket.io';
 
 interface PresenceInfo {
-  userId: string
-  tripId: string
-  name: string
-  color: string
+  userId: string;
+  tripId: string;
+  name: string;
+  color: string;
 }
+
+const COLORS = [
+  '#3b82f6',
+  '#ef4444',
+  '#10b981',
+  '#f59e0b',
+  '#8b5cf6',
+  '#ec4899',
+];
 
 @Injectable()
 export class CollaborationService {
-  private presenceMap = new Map<string, PresenceInfo>()
-  private userColors = new Map<string, string>()
-
-  private readonly palette = [
-    '#ef4444',
-    '#f97316',
-    '#eab308',
-    '#22c55e',
-    '#06b6d4',
-    '#3b82f6',
-    '#8b5cf6',
-    '#ec4899',
-  ]
+  private presence = new Map<string, PresenceInfo>();
 
   getUserColor(userId: string): string {
-    if (!this.userColors.has(userId)) {
-      const index = this.userColors.size % this.palette.length
-      this.userColors.set(userId, this.palette[index])
+    let hash = 0;
+    for (let i = 0; i < userId.length; i++)
+      hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+    return COLORS[Math.abs(hash) % COLORS.length];
+  }
+
+  addPresence(socketId: string, data: PresenceInfo): PresenceInfo {
+    this.presence.set(socketId, data);
+    return data;
+  }
+
+  removePresence(socketId: string, server: Server): void {
+    const data = this.presence.get(socketId);
+    if (data) {
+      server
+        .to(`trip_${data.tripId}`)
+        .emit('presence:leave', { user_id: data.userId });
+      this.presence.delete(socketId);
     }
-    return this.userColors.get(userId)!
-  }
-
-  addPresence(clientId: string, info: PresenceInfo): PresenceInfo {
-    this.presenceMap.set(clientId, info)
-    return info
-  }
-
-  removePresence(clientId: string, server: Server): void {
-    const info = this.presenceMap.get(clientId)
-    if (!info) return
-
-    this.presenceMap.delete(clientId)
-    const room = `trip_${info.tripId}`
-    server.to(room).emit('presence:leave', { user_id: info.userId })
   }
 }
