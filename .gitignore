@@ -36,6 +36,13 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+<<<<<<< Updated upstream
+=======
+
+# Dev notes (personal, not for repo)
+docs/dev-notes/
+feedbackFrontend/
+>>>>>>> Stashed changes
 #agentRules
 GlobalAgentRules.txt
 .kilocode

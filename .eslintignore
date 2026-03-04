@@ -26,3 +26,4 @@ apps/api/.turbo
 .vscode
 .idea
 .claude
+feedbackFrontend/
