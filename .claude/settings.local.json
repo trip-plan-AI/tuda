@@ -16,7 +16,8 @@
       "Bash(git checkout -b feature/TRI-05-backend-auth-endpoints)",
       "Bash(git checkout -b feature/TRI-06-backend-auth-bcrypt)",
       "Bash(pnpm add bcrypt)",
-      "Bash(pnpm add -D @types/bcrypt)"
+      "Bash(pnpm add -D @types/bcrypt)",
+      "Bash(pnpm add @nestjs/websockets @nestjs/platform-socket.io socket.io)"
     ]
   }
 }
