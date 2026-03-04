@@ -72,6 +72,67 @@ interface GeoSuggestion {
   coords: [number, number]
 }
 
+interface PredefinedRoute {
+  id: number
+  title: string
+  desc: string
+  total: string
+  img: string
+  tags: string[]
+  temp: string
+}
+
+const PREDEFINED_ROUTES: PredefinedRoute[] = [
+  {
+    id: 1,
+    title: 'Ледяная сказка Байкала',
+    desc: 'Погрузитесь в мир чистого льда и зимних приключений на озере Байкал.',
+    total: '65 000 ₽',
+    img: 'https://images.pexels.com/photos/9344421/pexels-photo-9344421.jpeg?auto=compress&cs=tinysrgb&w=800',
+    tags: ['❄️ Зима', 'РФ'],
+    temp: '-15°',
+  },
+  {
+    id: 2,
+    title: 'Летний Байкал: Природа и Отдых',
+    desc: 'Идеальный маршрут для знакомства с летней красотой Байкала, его природой и культурой.',
+    total: '70 000 ₽',
+    img: 'https://images.pexels.com/photos/10103738/pexels-photo-10103738.jpeg?auto=compress&cs=tinysrgb&w=800',
+    tags: ['☀️ Лето', 'РФ'],
+    temp: '+20°',
+  },
+  {
+    id: 3,
+    title: 'Алтай: Золотые Горы',
+    desc: 'Дикая природа, бирюзовая Катунь и бескрайние степи.',
+    total: '55 000 ₽',
+    img: 'https://images.pexels.com/photos/10103738/pexels-photo-10103738.jpeg?auto=compress&cs=tinysrgb&w=800',
+    tags: ['⚡ Активный', 'РФ'],
+    temp: '+8°',
+  },
+  {
+    id: 4,
+    title: 'Камчатка: Вулканы и Океан',
+    desc: 'Путешествие на край света к огнедышащим горам и Тихому океану.',
+    total: '115 000 ₽',
+    img: 'https://images.pexels.com/photos/20120288/pexels-photo-20120288.jpeg?auto=compress&cs=tinysrgb&w=800',
+    tags: ['⛰️ Экстрим', 'РФ'],
+    temp: '+5°',
+  },
+  {
+    id: 5,
+    title: 'Сочи: Горы и Море',
+    desc: 'Идеальный баланс: 2 дня в горах, 3 дня на побережье.',
+    total: '45 000 ₽',
+    img: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&q=80&w=800',
+    tags: ['⚡ Активный', 'РФ'],
+    temp: '+12°',
+  },
+]
+
+const FILTERS = ['Все', 'Активный', 'Зима', 'Экстрим'] as const
+type Filter = (typeof FILTERS)[number]
+
 export function PlannerPage() {
   const [activeTab, setActiveTab] = useState<'my' | 'popular'>('my')
   const [searchInput, setSearchInput] = useState('')
@@ -85,6 +146,8 @@ export function PlannerPage() {
   const [isActiveRoute, setIsActiveRoute] = useState(false)
   const [editingPointId, setEditingPointId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
+  const [selectedFilter, setSelectedFilter] = useState<Filter>('Все')
+  const [popularSearch, setPopularSearch] = useState('')
 
   const { points: storePoints, currentTrip } = useTripStore()
   const crud = usePointCrud(currentTrip?.id)
@@ -460,9 +523,84 @@ export function PlannerPage() {
             </div>
           </div>
         ) : (
-          /* TODO: TRI-43 — таб "Популярные" */
-          <div className="animate-in fade-in duration-300 flex items-center justify-center min-h-[400px]">
-            <p className="text-slate-400 font-medium">Популярные маршруты — скоро (TRI-43)</p>
+          /* Таб "Популярные" */
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Поиск по направлению */}
+            <div className="relative group mb-8">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-sky transition-colors">
+                <MapPin size={20} />
+              </div>
+              <input
+                type="text"
+                value={popularSearch}
+                onChange={(e) => setPopularSearch(e.target.value)}
+                placeholder="Куда"
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-xl md:rounded-2xl border-none focus:ring-2 focus:ring-brand-sky/20 outline-none text-slate-800 font-bold text-base md:text-lg transition-all placeholder:text-slate-400"
+              />
+            </div>
+
+            {/* Фильтр-чипсы */}
+            <div className="relative -mx-4 px-4 md:mx-0 md:px-0 mb-10">
+              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+                {FILTERS.map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setSelectedFilter(f)}
+                    className={`px-6 py-3 rounded-full text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 shrink-0 active:scale-95 select-none outline-none border-2 ${
+                      selectedFilter === f
+                        ? 'bg-brand-sky text-white border-brand-sky shadow-lg shadow-brand-sky/15'
+                        : 'bg-white text-slate-500 border-slate-100 hover:border-brand-sky/30 hover:text-brand-indigo hover:bg-slate-50'
+                    }`}
+                  >
+                    {f === 'Активный' && <span className="text-sm">⚡</span>}
+                    {f === 'Зима' && <span className="text-sm">❄️</span>}
+                    {f === 'Экстрим' && <span className="text-sm">⛰️</span>}
+                    {f}
+                  </button>
+                ))}
+                <div className="w-12 shrink-0 md:hidden" />
+              </div>
+              <div className="absolute top-0 right-0 bottom-0 w-16 bg-linear-to-l from-white via-white/80 to-transparent pointer-events-none md:hidden z-10" />
+            </div>
+
+            {/* Грид карточек */}
+            <div className="grid grid-cols-2 gap-8 md:gap-12 pb-10">
+              {PREDEFINED_ROUTES.filter((route) =>
+                selectedFilter === 'Все' || route.tags.some((t) => t.includes(selectedFilter))
+              )
+              .filter((route) =>
+                !popularSearch.trim() || route.title.toLowerCase().includes(popularSearch.toLowerCase())
+              )
+              .map((route) => (
+                <div key={route.id} className="group cursor-pointer">
+                  <div className="relative aspect-4/5 md:aspect-16/10 rounded-[3rem] overflow-hidden mb-6 shadow-2xl">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={route.img}
+                      className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 will-change-transform"
+                      alt={route.title}
+                    />
+                    <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/20 to-transparent" />
+                    <div className="absolute top-6 left-6">
+                      <div className="bg-slate-900/40 backdrop-blur-md border border-white/10 rounded-xl px-3 py-1.5 text-white font-bold text-xs shadow-lg">
+                        {route.temp}
+                      </div>
+                    </div>
+                    <div className="absolute bottom-6 left-6 right-6 text-left">
+                      <h3 className="text-2xl md:text-4xl font-black text-white mb-4 tracking-tight leading-none drop-shadow-2xl">
+                        {route.title}
+                      </h3>
+                      <div className="bg-brand-amber text-white px-6 py-2.5 rounded-full text-sm font-black uppercase tracking-widest inline-block shadow-xl">
+                        {route.total}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-slate-500 text-lg font-medium leading-relaxed px-4 text-left">
+                    {route.desc}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
