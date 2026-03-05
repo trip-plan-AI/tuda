@@ -22,10 +22,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-        NEXT_PUBLIC_YANDEX_MAPS_KEY: ${NEXT_PUBLIC_YANDEX_MAPS_KEY}
-        YANDEX_SUGGEST_KEY: ${YANDEX_SUGGEST_KEY}
     container_name: travel-planner-web
     restart: unless-stopped
     environment:
