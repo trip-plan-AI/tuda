@@ -4,6 +4,7 @@ import { OrchestratorService } from './pipeline/orchestrator.service';
 import { YandexFetchService } from './pipeline/yandex-fetch.service';
 import { PopularGeneratorService } from './pipeline/popular-generator.service';
 import { SemanticFilterService } from './pipeline/semantic-filter.service';
+import { SchedulerService } from './pipeline/scheduler.service';
 
 @Module({
   controllers: [AiController],
@@ -12,12 +13,14 @@ import { SemanticFilterService } from './pipeline/semantic-filter.service';
     YandexFetchService,
     PopularGeneratorService,
     SemanticFilterService,
+    SchedulerService,
   ],
   exports: [
     OrchestratorService,
     YandexFetchService,
     PopularGeneratorService,
     SemanticFilterService,
+    SchedulerService,
   ],
 })
 export class AiModule {}
