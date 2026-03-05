@@ -45,3 +45,5 @@ export {
 } from './dropdown-menu';
 export { Avatar, AvatarImage, AvatarFallback } from './avatar';
 export { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from './accordion';
+export { Popover, PopoverTrigger, PopoverContent } from './popover';
+export { Calendar } from './calendar';

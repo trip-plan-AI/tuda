@@ -60,13 +60,13 @@ export function LoginModal({ open, onClose, onSwitchToRegister }: LoginModalProp
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-xl font-black text-brand-indigo">Вход в аккаунт</DialogTitle>
-          <DialogDescription>Введите email и пароль для входа</DialogDescription>
+          <DialogTitle className="text-2xl font-black text-brand-indigo">Вход в аккаунт</DialogTitle>
+          <DialogDescription className="text-slate-600">Введите email и пароль для входа</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 mt-2">
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-700" htmlFor="login-email">
+            <label className="text-sm font-semibold text-brand-indigo" htmlFor="login-email">
               Email
             </label>
             <Input
@@ -75,6 +75,7 @@ export function LoginModal({ open, onClose, onSwitchToRegister }: LoginModalProp
               placeholder="example@mail.ru"
               aria-invalid={!!errors.email}
               {...register('email')}
+              className="h-auto! px-5 py-3.5 bg-slate-50 rounded-2xl shadow-sm border-none font-bold text-slate-700 placeholder:text-slate-400 focus-visible:ring-2! focus-visible:ring-brand-blue/30! focus-visible:ring-offset-0!"
             />
             {errors.email && (
               <p className="text-xs text-destructive">{errors.email.message}</p>
@@ -82,7 +83,7 @@ export function LoginModal({ open, onClose, onSwitchToRegister }: LoginModalProp
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-700" htmlFor="login-password">
+            <label className="text-sm font-semibold text-brand-indigo" htmlFor="login-password">
               Пароль
             </label>
             <Input
@@ -91,6 +92,7 @@ export function LoginModal({ open, onClose, onSwitchToRegister }: LoginModalProp
               placeholder="••••••"
               aria-invalid={!!errors.password}
               {...register('password')}
+              className="h-auto! px-5 py-3.5 bg-slate-50 rounded-2xl shadow-sm border-none font-bold text-slate-700 placeholder:text-slate-400 focus-visible:ring-2! focus-visible:ring-brand-blue/30! focus-visible:ring-offset-0!"
             />
             {errors.password && (
               <p className="text-xs text-destructive">{errors.password.message}</p>
@@ -98,7 +100,7 @@ export function LoginModal({ open, onClose, onSwitchToRegister }: LoginModalProp
           </div>
 
           {errors.root && (
-            <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
+            <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-3 py-2">
               {errors.root.message}
             </p>
           )}
@@ -106,18 +108,20 @@ export function LoginModal({ open, onClose, onSwitchToRegister }: LoginModalProp
           <Button
             type="submit"
             variant="brand"
-            className="w-full mt-1"
+            shape="2xl"
+            size="lg"
+            className="w-full mt-3 font-semibold"
             disabled={isSubmitting}
           >
             {isSubmitting ? 'Входим...' : 'Войти'}
           </Button>
 
           {onSwitchToRegister && (
-            <p className="text-center text-sm text-slate-500">
+            <p className="text-center text-sm text-slate-600">
               Нет аккаунта?{' '}
               <button
                 type="button"
-                className="text-brand-sky font-medium hover:underline"
+                className="text-brand-blue font-semibold hover:text-brand-blue/80 transition-colors"
                 onClick={onSwitchToRegister}
               >
                 Зарегистрироваться

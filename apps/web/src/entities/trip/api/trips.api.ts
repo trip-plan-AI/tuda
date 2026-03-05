@@ -4,6 +4,7 @@ import type { Trip } from '../model/trip.types'
 export interface CreateTripPayload {
   title: string
   description?: string
+  isActive?: boolean
 }
 
 export interface UpdateTripPayload {

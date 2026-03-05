@@ -22,4 +22,7 @@ export class CreateTripDto {
   @IsOptional()
   @IsString()
   endDate?: string
+
+  @IsOptional()
+  isActive?: boolean
 }

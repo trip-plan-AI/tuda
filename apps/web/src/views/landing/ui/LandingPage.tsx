@@ -1,11 +1,23 @@
 'use client';
 
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Cloud, CloudSun, Mic, Search, Sun, Wind } from 'lucide-react';
+import { ArrowRight, Calendar as CalendarIcon, Cloud, CloudSun, Mic, Search, Sun, Wind } from 'lucide-react';
+import { format } from 'date-fns';
+import { ru } from 'date-fns/locale';
 import { api } from '@/shared/api';
+import { useTripStore, tripsApi } from '@/entities/trip';
 import type { Trip } from '@/entities/trip';
-import { LoginModal } from '@/features/auth';
-import { RegisterModal } from '@/features/auth';
+import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
+import { useAiQueryStore } from '@/features/ai-query';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Calendar,
+  Button,
+} from '@/shared/ui';
 
 type Modal = 'login' | 'register' | null;
 type SearchMode = 'ai' | 'manual';
@@ -40,22 +52,19 @@ const FAQ_CARDS = [
     id: 1,
     title: 'Как работает сервис?',
     desc: 'Наш алгоритм анализирует ваши предпочтения и подбирает оптимальные локации в РФ. Мы убрали всё лишнее, чтобы вы не тратили часы на изучение форумов и отзывов.',
-    image:
-      'https://images.unsplash.com/photo-1524850011238-e3d235c7d4c9?q=80&w=2064&auto=format&fit=crop',
+    image: '/assets/images/photo-1524850011238-e3d235c7d4c9.avif',
   },
   {
     id: 2,
     title: 'Используются реальные данные?',
     desc: 'Используются реальные агрегированные данные и AI-моделирование бюджета.',
-    image:
-      'https://images.unsplash.com/photo-1460925895917-afdab827c52f?q=80&w=2026&auto=format&fit=crop',
+    image: '/assets/images/photo-1460925895917-afdab827c52f.avif',
   },
   {
     id: 3,
     title: 'Можно ли редактировать маршрут?',
     desc: 'Можно добавлять и удалять точки, изменять бюджет и настраивать маршрут под себя.',
-    image:
-      'https://images.unsplash.com/photo-1503220317375-aaad61436b1b?q=80&w=2070&auto=format&fit=crop',
+    image: '/assets/images/photo-1503220317375-aaad61436b1b.avif',
   },
 ];
 
@@ -64,36 +73,36 @@ const DEMO_TOURS: PopularTourCard[] = [
     id: 'demo-1',
     title: 'Сочи Weekend',
     desc: 'Море, горы и гастрономия: короткий насыщенный маршрут для перезагрузки.',
-    total: 'от 44 900 ₽',
-    img: 'https://images.pexels.com/photos/9344421/pexels-photo-9344421.jpeg?auto=compress&cs=tinysrgb&w=1200',
-    temp: '+12°',
+    total: 'от 49 900 ₽',
+    img: '/assets/images/sochi.webp',
+    temp: '+15°C',
     tags: ['Все', 'Активный'],
   },
   {
     id: 'demo-2',
     title: 'Алтай Explorer',
     desc: 'Трекинг, панорамы и дикая природа — для тех, кто любит активный отдых.',
-    total: 'от 58 000 ₽',
-    img: 'https://images.pexels.com/photos/10103738/pexels-photo-10103738.jpeg?auto=compress&cs=tinysrgb&w=1200',
-    temp: '+6°',
+    total: 'от 62 000 ₽',
+    img: '/assets/images/altay.webp',
+    temp: '+10°C',
     tags: ['Все', 'Экстрим'],
   },
   {
     id: 'demo-3',
     title: 'Карелия Winter',
     desc: 'Северные озёра, зимние активности и уютные локации для камерного отдыха.',
-    total: 'от 39 500 ₽',
-    img: 'https://images.pexels.com/photos/2087391/pexels-photo-2087391.jpeg?auto=compress&cs=tinysrgb&w=1200',
-    temp: '-5°',
+    total: 'от 42 500 ₽',
+    img: '/assets/images/karelia.webp',
+    temp: '-3°C',
     tags: ['Все', 'Зима'],
   },
   {
     id: 'demo-4',
     title: 'Кавказ Peaks',
     desc: 'Высокогорные маршруты и захватывающие виды для любителей эмоций.',
-    total: 'от 62 300 ₽',
-    img: 'https://images.pexels.com/photos/417074/pexels-photo-417074.jpeg?auto=compress&cs=tinysrgb&w=1200',
-    temp: '+3°',
+    total: 'от 68 800 ₽',
+    img: '/assets/images/kavkaz.webp',
+    temp: '+5°C',
     tags: ['Все', 'Экстрим', 'Активный'],
   },
 ];
@@ -101,11 +110,12 @@ const DEMO_TOURS: PopularTourCard[] = [
 const weatherIcons = [Cloud, Sun, CloudSun, Wind];
 
 export function LandingPage() {
+  const router = useRouter();
   const [modal, setModal] = useState<Modal>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState<SearchMode>('ai');
   const [selectedFilter, setSelectedFilter] = useState('Все');
-  const [inputRows, setInputRows] = useState(3);
+  const [inputRows, setInputRows] = useState(1);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [isDesktop, setIsDesktop] = useState(false);
   const [manualForm, setManualForm] = useState<ManualForm>({
@@ -115,7 +125,12 @@ export function LandingPage() {
     dateTo: '',
     budget: '',
   });
+  const [dateFromOpen, setDateFromOpen] = useState(false);
+  const [dateToOpen, setDateToOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const sendAiQuery = useAiQueryStore((state) => state.sendQuery);
+  const { setCurrentTrip } = useTripStore();
+  const { isAuthenticated } = useAuthStore();
 
   // Адаптивный размер textarea, как в исходном прототипе
   useEffect(() => {
@@ -176,9 +191,13 @@ export function LandingPage() {
         desc: trip.description ?? 'Маршрут с живописными локациями и насыщенной программой.',
         total: trip.budget ? `${trip.budget.toLocaleString('ru-RU')} ₽` : 'По запросу',
         img:
-          idx % 2 === 0
-            ? 'https://images.pexels.com/photos/9344421/pexels-photo-9344421.jpeg?auto=compress&cs=tinysrgb&w=1200'
-            : 'https://images.pexels.com/photos/10103738/pexels-photo-10103738.jpeg?auto=compress&cs=tinysrgb&w=1200',
+          idx % 4 === 0
+            ? '/assets/images/sochi.webp'
+            : idx % 4 === 1
+              ? '/assets/images/altay.webp'
+              : idx % 4 === 2
+                ? '/assets/images/karelia.webp'
+                : '/assets/images/kavkaz.webp',
         temp: '+12°',
       }));
     }
@@ -187,20 +206,73 @@ export function LandingPage() {
     return DEMO_TOURS.filter((tour) => tour.tags.includes(selectedFilter));
   }, [filteredTrips, selectedFilter]);
 
-  const handleSearch = () => {
-    setModal('register');
+  const handleSearch = async () => {
+    if (searchMode === 'ai') {
+      if (searchQuery.trim()) {
+        void sendAiQuery(searchQuery);
+      }
+      router.push('/ai-assistant');
+      return;
+    }
+
+    // Manual mode
+    const title = manualForm.to || 'Мой маршрут';
+    const budget = parseInt(manualForm.budget.replace(/\D/g, ''), 10) || 0;
+
+    if (!isAuthenticated) {
+      // Create a guest trip without saving to backend
+      const guestTrip: Trip = {
+        id: `guest-${Date.now()}`,
+        ownerId: 'guest',
+        title,
+        description: manualForm.from ? `Из ${manualForm.from}` : null,
+        budget: budget > 0 ? budget : null,
+        startDate: manualForm.dateFrom || null,
+        endDate: manualForm.dateTo || null,
+        isActive: false,
+        isPredefined: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      setCurrentTrip(guestTrip);
+      router.push('/planner');
+      return;
+    }
+
+    try {
+      const trip = await tripsApi.create({
+        title,
+        description: manualForm.from ? `Из ${manualForm.from}` : undefined,
+      });
+
+      if (budget > 0 || manualForm.dateFrom || manualForm.dateTo) {
+        await tripsApi.update(trip.id, {
+          budget: budget > 0 ? budget : undefined,
+          startDate: manualForm.dateFrom || undefined,
+          endDate: manualForm.dateTo || undefined,
+        });
+      }
+
+      setCurrentTrip(trip);
+      router.push('/planner');
+    } catch (e) {
+      console.error('Failed to create trip:', e);
+      router.push('/planner');
+    }
   };
 
   return (
     <>
       <div className="relative flex flex-col min-h-full bg-white">
-        <section className="relative w-full h-auto md:h-screen flex flex-col items-center justify-start md:justify-center overflow-hidden py-8 md:py-0 pt-32 md:pt-32">
+        {/* 1. CINEMATIC HERO SECTION (Layla Style) */}
+        <div className="relative h-auto md:h-screen flex flex-col items-center justify-start md:justify-center overflow-hidden py-8 md:py-0">
+          {/* Background Layer */}
           <div className="absolute inset-0 z-0">
-            <img
-              src="/assets/video/hero-poster.jpg"
-              alt="Hero background"
-              className="absolute inset-0 w-full h-full object-cover"
-            />
+            <div
+              className="absolute inset-0 bg-cover bg-center z-[-1]"
+              style={{ backgroundImage: 'url(/assets/video/hero-poster.jpg)' }}
+            ></div>
             <video
               ref={videoRef}
               key={isDesktop ? 'hd' : 'sd'}
@@ -209,8 +281,8 @@ export function LandingPage() {
               muted
               playsInline
               preload="auto"
+              className="w-full h-full object-cover"
               poster="/assets/video/hero-poster.jpg"
-              className="absolute inset-0 w-full h-full object-cover"
             >
               {isDesktop ? (
                 <>
@@ -224,23 +296,28 @@ export function LandingPage() {
                 </>
               )}
             </video>
-            <div className="absolute inset-0 bg-black/10" />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-transparent" />
+            <div className="absolute inset-0 bg-black/10"></div>
+            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-transparent"></div>
           </div>
 
-          <div className="relative z-10 w-full max-w-5xl mx-auto px-4 md:px-6 text-center flex flex-col items-center scale-[0.66] origin-top">
-            <h1 className="text-5xl md:text-7xl font-black text-white mb-6 tracking-tight leading-[0.9] drop-shadow-[0_20px_50px_rgba(0,0,0,0.5)] mx-auto">
-              Личный <br /> <span className="text-brand-sky">тревел-гид</span>
-            </h1>
-            <p className="text-white text-lg md:text-2xl font-medium mb-9 max-w-3xl mx-auto drop-shadow-2xl leading-relaxed">
-              Планирование ещё никогда не было таким простым.
-            </p>
+          {/* Content Layer */}
+          <div className="relative z-10 w-full max-w-5xl mx-auto px-4 md:px-6 text-center">
+            <div className="animate-in fade-in slide-in-from-bottom-10 duration-1000">
+              <h1 className="text-[clamp(2.5rem,8vw,6.5rem)] font-black text-white mb-6 tracking-tight leading-[0.9] drop-shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+                Личный <br /> <span className="text-brand-blue">тревел-гид</span>
+              </h1>
+              <p className="text-white text-[clamp(1.125rem,2.5vw,1.5rem)] font-medium mb-12 max-w-3xl mx-auto drop-shadow-2xl leading-relaxed">
+                Планирование ещё никогда не было таким простым.
+              </p>
+            </div>
 
-            <div className="w-full max-w-5xl mx-auto text-center">
-              <div className="flex justify-center items-center gap-2 mb-6 md:mb-7">
+            {/* MINIMALIST AI SEARCH BAR */}
+            <div className="w-full max-w-3xl mx-auto">
+              {/* Mode Switcher */}
+              <div className="flex justify-center gap-2 mb-6">
                 <button
                   onClick={() => setSearchMode('ai')}
-                  className={`px-5 py-2 rounded-full text-sm font-black transition-all backdrop-blur-md ${
+                  className={`px-6 py-2 rounded-full text-sm font-bold transition-none backdrop-blur-md ${
                     searchMode === 'ai'
                       ? 'bg-white text-brand-indigo border border-white shadow-lg'
                       : 'bg-white/10 border border-white/10 text-white hover:bg-white/20'
@@ -250,130 +327,190 @@ export function LandingPage() {
                 </button>
                 <button
                   onClick={() => setSearchMode('manual')}
-                  className={`px-5 py-2 rounded-full text-sm font-black transition-all backdrop-blur-md ${
+                  className={`px-6 py-2 rounded-full text-sm font-bold transition-none backdrop-blur-md ${
                     searchMode === 'manual'
                       ? 'bg-white text-brand-indigo border border-white shadow-lg'
                       : 'bg-white/10 border border-white/10 text-white hover:bg-white/20'
                   }`}
                 >
-                  Ручной
+                  Вручную
                 </button>
               </div>
 
-              <div
-                className={`bg-white/10 backdrop-blur-3xl p-2.5 rounded-[4rem] border border-white/20 shadow-2xl shadow-black/20 transition-none mx-auto ${
-                  searchMode === 'manual'
-                    ? 'w-full md:w-[762px] md:h-[443px] max-w-full flex items-center justify-center'
-                    : ''
-                }`}
-              >
+              <div className="bg-white/10 backdrop-blur-3xl p-1.5 md:p-2.5 rounded-[2.5rem] md:rounded-[4rem] border border-white/20 shadow-2xl shadow-black/20 transition-none">
                 {searchMode === 'ai' ? (
-                  <div className="bg-white rounded-[2.2rem] md:rounded-[3.5rem] flex items-center p-1 md:p-1.5 pr-2 md:pr-3 min-h-[64px] md:min-h-[74px] focus-within:ring-4 focus-within:ring-brand-sky/10 transition-none">
+                  <div className="bg-white rounded-[2.2rem] md:rounded-[3.5rem] flex items-center p-1 md:p-2 pr-2 md:pr-4 focus-within:ring-4 focus-within:ring-brand-blue/10 transition-none">
                     <div className="flex-1 relative group">
                       <textarea
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSearch();
+                          }
+                        }}
                         placeholder="Например: Сочи за 45 000 руб на 5 дней"
                         rows={inputRows}
-                        className="w-full py-2.5 md:py-4 !pl-10 md:!pl-14 pr-12 md:pr-14 bg-transparent outline-none text-slate-800 font-black text-sm md:text-lg placeholder:text-slate-400 placeholder:font-normal resize-none overflow-hidden leading-snug md:leading-normal"
+                        className="w-full py-3 md:py-4 lg:py-6 !pl-10 md:!pl-12 lg:!pl-14 pr-12 md:pr-14 bg-transparent outline-none text-slate-800 font-bold text-[clamp(1rem,1.5vw,1.25rem)] placeholder:text-slate-400 placeholder:font-normal resize-none overflow-hidden leading-snug md:leading-normal transition-none"
                       />
-                      <button className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-brand-sky transition-colors">
-                        <Mic size={22} />
+                      <button 
+                        type="button"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-brand-blue transition-none"
+                      >
+                        <Mic size={24} />
                       </button>
                     </div>
-                    <button
-                      onClick={handleSearch}
-                      className="w-11 h-11 md:w-14 md:h-14 bg-brand-amber text-white rounded-full flex items-center justify-center shadow-xl hover:scale-105 active:scale-95 shrink-0"
+                    <Link
+                      href="/ai-assistant"
+                      onClick={() => {
+                        if (searchQuery.trim()) {
+                          void sendAiQuery(searchQuery);
+                        }
+                      }}
+                      className="w-14 h-14 md:w-16 md:h-16 lg:w-20 lg:h-20 bg-brand-yellow text-white rounded-full flex items-center justify-center shadow-xl hover:scale-105 active:scale-95 shrink-0 transition-none"
                     >
-                      <ArrowRight size={22} />
-                    </button>
+                      <ArrowRight size={28} className="rotate-0 transition-none text-white" />
+                    </Link>
                   </div>
                 ) : (
-                  <div className="bg-white rounded-[3.5rem] p-3 md:p-5 transition-none md:w-[761px] md:h-[414px] mx-auto">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div className="space-y-2">
-                        <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
-                          Откуда
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Москва"
-                          value={manualForm.from}
-                          onChange={(e) => setManualForm((p) => ({ ...p, from: e.target.value }))}
-                          className="w-full px-4 py-2.5 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-brand-sky/20 outline-none font-black text-slate-700 transition-all placeholder:text-slate-400"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
-                          Куда
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Алтай"
-                          value={manualForm.to}
-                          onChange={(e) => setManualForm((p) => ({ ...p, to: e.target.value }))}
-                          className="w-full px-4 py-2.5 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-brand-sky/20 outline-none font-black text-slate-700 transition-all placeholder:text-slate-400"
-                        />
-                      </div>
-                      <div className="space-y-2 col-span-1 md:col-span-2">
-                        <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
-                          Даты
-                        </label>
-                        <div className="flex flex-col md:flex-row md:items-center gap-2">
-                          <input
-                            type="date"
-                            value={manualForm.dateFrom}
-                            onChange={(e) =>
-                              setManualForm((p) => ({ ...p, dateFrom: e.target.value }))
-                            }
-                            placeholder="dd/mm/yyyy"
-                            className="w-full px-4 py-2.5 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-brand-sky/20 outline-none font-black text-slate-700 transition-all text-sm"
-                          />
-                          <span className="text-slate-400 font-black shrink-0 text-lg hidden md:block">
-                            —
-                          </span>
-                          <input
-                            type="date"
-                            min={manualForm.dateFrom}
-                            value={manualForm.dateTo}
-                            onChange={(e) =>
-                              setManualForm((p) => ({ ...p, dateTo: e.target.value }))
-                            }
-                            placeholder="dd/mm/yyyy"
-                            className="w-full px-4 py-2.5 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-brand-sky/20 outline-none font-black text-slate-700 transition-all text-sm"
-                          />
+                  <div className="bg-white rounded-[2.2rem] md:rounded-[3.5rem] p-4 md:p-8 transition-none text-left">
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
+                                Откуда
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Москва"
+                                value={manualForm.from}
+                                onChange={(e) => setManualForm((p) => ({ ...p, from: e.target.value }))}
+                                className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
+                                Куда
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Алтай"
+                                value={manualForm.to}
+                                onChange={(e) => setManualForm((p) => ({ ...p, to: e.target.value }))}
+                                className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
+                              Даты
+                            </label>
+                            <div className="flex flex-col md:flex-row md:items-center gap-2">
+                              <Popover open={dateFromOpen} onOpenChange={setDateFromOpen}>
+                                <PopoverTrigger asChild>
+                                  <button className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none text-left flex items-center gap-2 focus:ring-2 focus:ring-brand-blue/20">
+                                    <CalendarIcon size={18} className="text-slate-400" />
+                                    {manualForm.dateFrom ? (
+                                      format(new Date(manualForm.dateFrom), 'd MMM yyyy', { locale: ru })
+                                    ) : (
+                                      <span className="text-slate-400 font-normal">От</span>
+                                    )}
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent
+                                  className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl"
+                                  align="start"
+                                >
+                                  <Calendar
+                                    mode="single"
+                                    selected={manualForm.dateFrom ? new Date(manualForm.dateFrom) : undefined}
+                                    onSelect={(date) => {
+                                      setManualForm((p) => ({ ...p, dateFrom: date?.toISOString() || '' }));
+                                      setDateFromOpen(false);
+                                    }}
+                                    locale={ru}
+                                    captionLayout="dropdown"
+                                    startMonth={new Date(2020, 0)}
+                                    endMonth={new Date(2035, 11)}
+                                    classNames={{ caption_label: 'hidden' }}
+                                  />
+                                </PopoverContent>
+                              </Popover>
+
+                              <span className="text-slate-400 font-bold shrink-0 text-lg hidden md:block">
+                                —
+                              </span>
+
+                              <Popover open={dateToOpen} onOpenChange={setDateToOpen}>
+                                <PopoverTrigger asChild>
+                                  <button className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none text-left flex items-center gap-2 focus:ring-2 focus:ring-brand-blue/20">
+                                    <CalendarIcon size={18} className="text-slate-400" />
+                                    {manualForm.dateTo ? (
+                                      format(new Date(manualForm.dateTo), 'd MMM yyyy', { locale: ru })
+                                    ) : (
+                                      <span className="text-slate-400 font-normal">До</span>
+                                    )}
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent
+                                  className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl"
+                                  align="start"
+                                >
+                                  <Calendar
+                                    mode="single"
+                                    selected={manualForm.dateTo ? new Date(manualForm.dateTo) : undefined}
+                                    disabled={(date) =>
+                                      !!manualForm.dateFrom && date < new Date(manualForm.dateFrom)
+                                    }
+                                    onSelect={(date) => {
+                                      setManualForm((p) => ({ ...p, dateTo: date?.toISOString() || '' }));
+                                      setDateToOpen(false);
+                                    }}
+                                    locale={ru}
+                                    captionLayout="dropdown"
+                                    startMonth={new Date(2020, 0)}
+                                    endMonth={new Date(2035, 11)}
+                                    classNames={{ caption_label: 'hidden' }}
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2 flex flex-col items-center">
+                            <label className="text-sm md:text-base font-black text-slate-700 uppercase">
+                              Бюджет
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="100 000 ₽"
+                              value={manualForm.budget}
+                              onChange={(e) => setManualForm((p) => ({ ...p, budget: e.target.value }))}
+                              className="w-full max-w-md px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20 text-center"
+                            />
+                          </div>
                         </div>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
-                          Бюджет
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="100 000 ₽"
-                          value={manualForm.budget}
-                          onChange={(e) => setManualForm((p) => ({ ...p, budget: e.target.value }))}
-                          className="w-full px-4 py-2.5 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-brand-sky/20 outline-none font-black text-slate-700 transition-all placeholder:text-slate-400"
-                        />
-                      </div>
-                    </div>
-                    <button
+                    <Button
                       onClick={handleSearch}
-                      className="w-auto px-10 mt-4 py-3 bg-brand-amber text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-brand-amber/20 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 mx-auto"
+                      variant="brand-yellow"
+                      size="xl"
+                      shape="responsive"
+                      className="w-full md:w-auto mt-8 mx-auto flex font-black uppercase tracking-widest whitespace-nowrap disabled:opacity-70"
                     >
                       Добавить
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>
 
-              <div
-                className={`flex flex-wrap gap-3 justify-center items-center ${searchMode === 'manual' ? 'mt-8 md:mt-9' : 'mt-6 md:mt-7'}`}
-              >
-                {QUICK_FILTERS.map((filter) => (
+              {/* Context suggestions */}
+              <div className="mt-6 flex flex-wrap gap-2 justify-center">
+                {QUICK_FILTERS.map((filter, idx) => (
                   <button
-                    key={filter.label}
-                    className="px-5 py-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full text-white text-sm font-black hover:bg-white/20 transition-all"
+                    key={idx}
+                    className="px-5 py-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full text-white text-xs md:text-sm font-bold hover:bg-white/20 transition-none"
                   >
                     {filter.icon} {filter.label}
                   </button>
@@ -381,115 +518,99 @@ export function LandingPage() {
               </div>
             </div>
           </div>
-        </section>
+        </div>
 
-        <section className="relative z-20 bg-white w-screen left-1/2 -translate-x-1/2 font-sans">
-          <div className="w-full max-w-4xl mx-auto px-4 md:px-6 py-16 text-center flex flex-col items-center scale-[0.8] origin-top">
-            <div className="flex flex-col md:flex-row justify-center items-center gap-6 md:gap-10 text-center mb-12 md:mb-14">
+        {/* 2. MAIN CONTENT (Smooth transition from hero) */}
+        <div className="relative z-20 bg-white">
+          <div className="max-w-5xl mx-auto px-4 md:px-6 py-24 w-full">
+            <div className="flex flex-col md:flex-row justify-center items-center gap-8 md:gap-16 text-center mb-32">
               <div className="flex flex-col items-center">
-                <h3 className="text-2xl md:text-3xl font-black tracking-tighter text-brand-indigo">
+                <h3 className="text-4xl md:text-5xl font-black text-brand-indigo tracking-tighter">
                   AI
                 </h3>
-                <p className="text-xs text-slate-400 uppercase font-black tracking-widest mt-2">
+                <p className="text-xs text-slate-400 uppercase font-bold tracking-widest mt-2">
                   Генерация за секунды
                 </p>
               </div>
-              <div className="w-px h-12 bg-slate-200 hidden md:block" />
+              <div className="w-px h-12 bg-slate-200 hidden md:block"></div>
               <div className="flex flex-col items-center">
-                <h3 className="text-2xl md:text-3xl font-black tracking-tighter text-emerald-500">
+                <h3 className="text-4xl md:text-5xl font-black text-emerald-500 tracking-tighter">
                   100%
                 </h3>
-                <p className="text-xs text-slate-400 uppercase font-black tracking-widest mt-2">
+                <p className="text-xs text-slate-400 uppercase font-bold tracking-widest mt-2">
                   Редактируемый маршрут
                 </p>
               </div>
-              <div className="w-px h-12 bg-slate-200 hidden md:block" />
+              <div className="w-px h-12 bg-slate-200 hidden md:block"></div>
               <div className="flex flex-col items-center">
-                <h3 className="text-2xl md:text-3xl font-black tracking-tighter text-brand-amber">
+                <h3 className="text-4xl md:text-5xl font-black text-brand-yellow tracking-tighter">
                   24/7
                 </h3>
-                <p className="text-xs text-slate-400 uppercase font-black tracking-widest mt-2">
+                <p className="text-xs text-slate-400 uppercase font-bold tracking-widest mt-2">
                   В любое время
                 </p>
               </div>
             </div>
 
-            <div className="mb-14 md:mb-16 w-full max-w-[960px] mx-auto">
-              <div className="flex flex-col md:flex-row md:items-end md:justify-center items-start text-left gap-6 md:gap-8 mb-8 md:mb-10 w-full max-w-[1080px] mx-auto">
-                <h2 className="text-3xl md:text-5xl font-black text-brand-indigo tracking-tight leading-[0.95] text-left w-full md:w-auto">
-                  Популярное <br /> <span className="text-brand-sky">сейчас</span>
-                </h2>
-                <div className="relative -mx-4 px-4 md:mx-0 md:px-0 w-full md:w-auto max-w-full">
-                  <div className="flex gap-2 overflow-x-auto no-scrollbar md:overflow-visible md:flex-nowrap pb-2 justify-center md:justify-center pt-1">
-                    {['Все', 'Активный', 'Зима', 'Экстрим'].map((f) => (
-                      <button
-                        key={f}
-                        onClick={() => setSelectedFilter(f)}
-                        className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border-2 inline-flex items-center justify-center gap-2 leading-none ${
-                          selectedFilter === f
-                            ? 'bg-brand-sky text-white border-brand-sky shadow-lg'
-                            : 'bg-white text-slate-500 border-slate-100 hover:border-brand-sky/30'
-                        }`}
-                      >
-                        {f === 'Активный' && <span className="text-sm leading-none">⚡</span>}
-                        {f === 'Зима' && <span className="text-sm leading-none">❄️</span>}
-                        {f === 'Экстрим' && <span className="text-sm leading-none">⛰️</span>}
-                        <span className="leading-none">{f}</span>
-                      </button>
-                    ))}
-                    <div className="w-12 shrink-0 md:hidden" />
-                  </div>
-                  <div className="absolute top-0 right-0 bottom-0 w-16 bg-gradient-to-l from-white via-white/80 to-transparent pointer-events-none md:hidden z-10" />
+            <div className="mb-32">
+              <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-16">
+                <div>
+                  <h2 className="text-[clamp(2.25rem,6vw,4.5rem)] font-black text-brand-indigo tracking-tight leading-[0.9]">
+                    Популярное <br /> <span className="text-brand-blue">сейчас</span>
+                  </h2>
                 </div>
               </div>
 
-              <div className="flex flex-wrap justify-center gap-8 md:gap-10 w-full max-w-[960px] mx-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-20 md:gap-16">
                 {popularCards.map((trip, idx) => {
                   const Icon = weatherIcons[idx % weatherIcons.length] ?? Cloud;
                   return (
-                    <article
-                      key={trip.id}
-                      className="group cursor-pointer w-full md:w-[calc(50%-1.25rem)] max-w-[420px]"
-                    >
-                      <div className="relative aspect-[4/5] md:aspect-[16/10] rounded-[2rem] overflow-hidden mb-5 md:mb-6 shadow-2xl">
+                    <div key={trip.id} onClick={handleSearch} className="group cursor-pointer">
+                      <div className="relative aspect-[4/5] md:aspect-[16/10] rounded-[3rem] overflow-hidden mb-8 shadow-2xl isolation-auto">
                         <img
                           src={trip.img}
-                          className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
+                          className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 rounded-[3rem] will-change-transform"
                           alt={trip.title}
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-                        <div className="absolute top-6 left-6 bg-slate-900/40 backdrop-blur-md border border-white/10 rounded-xl px-3 py-1.5 text-white font-black text-xs flex items-center gap-1.5">
-                          <Icon size={14} /> {trip.temp}
+                        {/* Layla-style enhanced gradient underlay */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent rounded-[3rem]"></div>
+
+                        <div className="absolute top-6 left-6">
+                          <div className="bg-slate-900/40 backdrop-blur-md border border-white/10 rounded-xl px-3 py-1.5 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg">
+                            <Icon size={14} /> {trip.temp}
+                          </div>
                         </div>
+
                         <div className="absolute bottom-6 left-6 right-6 text-left">
-                          <h3 className="text-xl md:text-2xl font-black text-white mb-2 tracking-tight leading-tight text-center">
+                          <h3 className="text-2xl md:text-4xl font-black text-white mb-1 tracking-tight leading-tight drop-shadow-2xl">
                             {trip.title}
                           </h3>
-                          <div className="bg-brand-amber text-white px-4 py-1.5 rounded-full text-[10px] md:text-xs font-black uppercase tracking-widest inline-flex items-center gap-1.5">
-                            <Search size={14} /> {trip.total}
+                          <div className="flex items-center gap-2 text-white/90 font-bold text-xs uppercase tracking-widest mb-4 drop-shadow-lg"></div>
+                          <div className="bg-brand-yellow text-white px-6 py-2.5 rounded-full text-sm font-black uppercase tracking-widest inline-block shadow-xl">
+                            <span>{trip.total}</span>
                           </div>
                         </div>
                       </div>
-                      <p className="text-slate-500 text-base md:text-lg font-medium leading-relaxed px-2 text-center">
+                      <p className="text-slate-500 text-xl font-medium leading-relaxed px-4">
                         {trip.desc}
                       </p>
-                    </article>
+                    </div>
                   );
                 })}
               </div>
             </div>
 
-            <div className="pt-1 md:pt-2 w-full max-w-[960px] mx-auto text-left">
-              <h2 className="text-3xl md:text-5xl font-black text-brand-indigo mb-8 md:mb-12 tracking-tight leading-[0.95] text-left">
-                Ответы <br /> <span className="text-brand-sky">на вопросы</span>
+            <div className="pt-0">
+              <h2 className="text-[clamp(2.25rem,6vw,4.5rem)] font-black text-brand-indigo mb-[clamp(2.5rem,5vw,5rem)] tracking-tight leading-[0.9]">
+                Ответы <br /> <span className="text-brand-blue">на вопросы</span>
               </h2>
-              <div className="space-y-10 md:space-y-14">
+              <div className="space-y-32">
                 {FAQ_CARDS.map((card, idx) => (
                   <div
                     key={card.id}
-                    className={`flex flex-col md:flex-row items-center gap-8 md:gap-12 ${idx % 2 !== 0 ? 'md:flex-row-reverse' : ''}`}
+                    className={`flex flex-col md:flex-row items-center gap-12 md:gap-24 ${idx % 2 !== 0 ? 'md:flex-row-reverse' : ''}`}
                   >
-                    <div className="w-full md:w-1/2 aspect-square md:aspect-[4/3] rounded-[2rem] overflow-hidden shadow-2xl">
+                    <div className="w-full md:w-1/2 aspect-square md:aspect-[4/3] rounded-[3rem] overflow-hidden shadow-2xl">
                       <img
                         src={card.image}
                         className="w-full h-full object-cover"
@@ -497,11 +618,10 @@ export function LandingPage() {
                       />
                     </div>
                     <div className="w-full md:w-1/2 text-left">
-                      <h4 className="text-2xl md:text-3xl font-black text-brand-indigo mb-4 leading-tight tracking-tight">
+                      <h4 className="text-[clamp(1.5rem,4vw,2.5rem)] font-black text-brand-indigo mb-8 leading-tight tracking-tight">
                         {card.title}
                       </h4>
-                      <p className="text-base md:text-lg text-slate-500 font-medium leading-snug md:leading-tight">
-                        {card.desc}
+                      <p className="text-slate-500 text-[clamp(1.125rem,2vw,1.25rem)] font-medium leading-relaxed">                        {card.desc}
                       </p>
                     </div>
                   </div>
@@ -509,7 +629,7 @@ export function LandingPage() {
               </div>
             </div>
           </div>
-        </section>
+        </div>
       </div>
 
       <LoginModal

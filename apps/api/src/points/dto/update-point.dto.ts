@@ -33,4 +33,5 @@ export class UpdatePointDto {
   @IsOptional()
   @IsString()
   address?: string
+
 }

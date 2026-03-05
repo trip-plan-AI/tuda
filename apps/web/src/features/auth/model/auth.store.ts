@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { useUserStore } from '@/entities/user'
 
 interface AuthStore {
   isAuthenticated: boolean
@@ -21,6 +22,7 @@ export const useAuthStore = create<AuthStore>()(
       logout: () => {
         localStorage.removeItem('accessToken')
         document.cookie = 'token=; path=/; max-age=0'
+        useUserStore.getState().clearUser()
         set({ isAuthenticated: false, accessToken: null })
         window.location.href = '/'
       },

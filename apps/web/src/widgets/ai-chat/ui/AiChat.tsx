@@ -140,7 +140,7 @@ export function AiChat({
           />
           <Button
             type="button"
-            variant="brand"
+            variant="brand-purple"
             size="icon"
             onClick={handleSubmit}
             disabled={isLoading}

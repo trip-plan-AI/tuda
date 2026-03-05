@@ -29,7 +29,7 @@ export function AIAssistantPage() {
   };
 
   return (
-    <div className="bg-brand-bg min-h-full w-full">
+    <div className="min-h-full w-full">
       <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6 md:py-10">
         <AiChat
           messages={messagesWithGreeting}
