@@ -31,9 +31,10 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
-import { useTripStore, tripsApi, type CreateTripPayload } from '@/entities/trip';
+import { useTripStore, tripsApi, type CreateTripPayload, type Trip } from '@/entities/trip';
 import { usePointCrud } from '@/features/route-create';
 import { pointsApi } from '@/entities/route-point';
+import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
 import { loadYandexMaps } from '@/shared/lib/yandex-maps';
 import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point';
@@ -518,8 +519,10 @@ export function PlannerPage() {
   const [selectedFilter, setSelectedFilter] = useState<Filter>('Все');
   const [popularSearch, setPopularSearch] = useState('');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [modal, setModal] = useState<'login' | 'register' | null>(null);
 
   const { points, setPoints, currentTrip, setCurrentTrip, addPoint, updateCurrentTrip } = useTripStore();
+  const { isAuthenticated } = useAuthStore();
   const crud = usePointCrud(currentTrip?.id);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -536,6 +539,31 @@ export function PlannerPage() {
     if (currentTrip) return;
     const savedId = localStorage.getItem('planner_currentTripId');
 
+    if (!isAuthenticated) {
+      // If we have a guest trip ID in localStorage, don't auto-create new one
+      if (savedId && savedId.startsWith('guest-')) {
+        // Here we could try to load points from local storage for guest,
+        // but currently we don't persist guest points in localStorage.
+        // For simplicity, just create a new guest trip if none exists.
+      }
+      
+      const guestTrip: Trip = {
+        id: `guest-${Date.now()}`,
+        ownerId: 'guest',
+        title: 'Мой маршрут',
+        description: null,
+        budget: 0,
+        startDate: null,
+        endDate: null,
+        isActive: false,
+        isPredefined: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setCurrentTrip(guestTrip);
+      return;
+    }
+
     tripsApi
       .getAll()
       .then((all) => {
@@ -547,10 +575,13 @@ export function PlannerPage() {
             setPlannedBudget(target.budget ?? 0);
             setIsActiveRoute(target.isActive);
           }
+        } else {
+            // Create a first trip for the user if they have none
+            void ensureTripId();
         }
       })
       .catch(console.error);
-  }, [currentTrip, setCurrentTrip]);
+  }, [currentTrip, setCurrentTrip, isAuthenticated]);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -574,6 +605,25 @@ export function PlannerPage() {
   // Если трипа нет — создаём «Мой маршрут» и сразу возвращаем его id
   const ensureTripId = useCallback(async (): Promise<string> => {
     if (currentTrip) return currentTrip.id;
+    
+    if (!isAuthenticated) {
+        const guestTrip: Trip = {
+            id: `guest-${Date.now()}`,
+            ownerId: 'guest',
+            title: 'Мой маршрут',
+            description: null,
+            budget: plannedBudget,
+            startDate: null,
+            endDate: null,
+            isActive: isActiveRoute,
+            isPredefined: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        };
+        setCurrentTrip(guestTrip);
+        return guestTrip.id;
+    }
+
     const trip = await tripsApi.create({
       title: 'Мой маршрут',
       isActive: isActiveRoute,
@@ -581,7 +631,7 @@ export function PlannerPage() {
     } as CreateTripPayload);
     setCurrentTrip(trip);
     return trip.id;
-  }, [currentTrip, setCurrentTrip, isActiveRoute, plannedBudget]);
+  }, [currentTrip, setCurrentTrip, isActiveRoute, plannedBudget, isAuthenticated]);
 
   const totalBudget = useMemo(
     () => points.reduce((sum: number, p: RoutePoint) => sum + (p.budget ?? 0), 0),
@@ -658,11 +708,10 @@ export function PlannerPage() {
 
   const addPoint_ = useCallback(
     async (payload: { title: string; lat: number; lon: number; address?: string }) => {
-      const tripId = await ensureTripId();
-      const point = await pointsApi.create(tripId, payload);
-      addPoint(point);
+      await ensureTripId();
+      await crud.add(payload);
     },
-    [ensureTripId, addPoint],
+    [ensureTripId, crud],
   );
 
   const handleAddByQuery = async () => {
@@ -688,6 +737,10 @@ export function PlannerPage() {
   const handleConfirmClear = async (save: boolean) => {
     setShowClearConfirm(false);
     if (save && points.length > 0) {
+      if (!isAuthenticated) {
+        setModal('login');
+        return;
+      }
       try {
         const tripId = await ensureTripId();
         await tripsApi.update(tripId, { budget: plannedBudget || null, isActive: isActiveRoute });
@@ -884,8 +937,10 @@ export function PlannerPage() {
                       onClick={() => setPlannedBudget(Math.max(0, plannedBudget - 1000))}
                       onBlur={async () => {
                         if (currentTrip) {
-                          await tripsApi.update(currentTrip.id, { budget: plannedBudget });
                           updateCurrentTrip({ budget: plannedBudget });
+                          if (!currentTrip.id.startsWith('guest-')) {
+                            await tripsApi.update(currentTrip.id, { budget: plannedBudget });
+                          }
                         }
                       }}
                       className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center"
@@ -903,8 +958,10 @@ export function PlannerPage() {
                           const val = Number(e.target.value) || 0;
                           setPlannedBudget(val);
                           if (currentTrip) {
-                            await tripsApi.update(currentTrip.id, { budget: val });
                             updateCurrentTrip({ budget: val });
+                            if (!currentTrip.id.startsWith('guest-')) {
+                              await tripsApi.update(currentTrip.id, { budget: val });
+                            }
                           }
                         }}
                         className="w-16 md:w-20 bg-transparent text-center font-bold text-brand-indigo outline-none text-sm md:text-base [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -916,8 +973,10 @@ export function PlannerPage() {
                       onClick={() => setPlannedBudget(plannedBudget + 1000)}
                       onBlur={async () => {
                         if (currentTrip) {
-                          await tripsApi.update(currentTrip.id, { budget: plannedBudget });
                           updateCurrentTrip({ budget: plannedBudget });
+                          if (!currentTrip.id.startsWith('guest-')) {
+                            await tripsApi.update(currentTrip.id, { budget: plannedBudget });
+                          }
                         }
                       }}
                       className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center"
@@ -959,7 +1018,7 @@ export function PlannerPage() {
 
                 {points.length === 0 && (
                   <p className="text-center text-slate-400 text-sm py-4">
-                    Добавьте первую точку через поиск выше
+                    Пока нет добавленных мест
                   </p>
                 )}
 
@@ -1012,6 +1071,10 @@ export function PlannerPage() {
                       </Button>
                       <Button
                         onClick={async () => {
+                          if (!isAuthenticated) {
+                            setModal('login');
+                            return;
+                          }
                           const tripId = await ensureTripId();
                           const updated = await tripsApi.update(tripId, {
                             budget: plannedBudget,
@@ -1155,6 +1218,17 @@ export function PlannerPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <LoginModal
+        open={modal === 'login'}
+        onClose={() => setModal(null)}
+        onSwitchToRegister={() => setModal('register')}
+      />
+      <RegisterModal
+        open={modal === 'register'}
+        onClose={() => setModal(null)}
+        onSwitchToLogin={() => setModal('login')}
+      />
     </div>
   );
 }
