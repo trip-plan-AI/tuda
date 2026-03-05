@@ -10,6 +10,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AiPlanRequestDto } from './dto/ai-plan-request.dto';
 import { InputSanitizerPipe } from './pipes/input-sanitizer.pipe';
 import { OrchestratorService } from './pipeline/orchestrator.service';
+import { SemanticFilterService } from './pipeline/semantic-filter.service';
 import { YandexFetchService } from './pipeline/yandex-fetch.service';
 import type { SessionMessage } from './types/pipeline.types';
 
@@ -19,6 +20,7 @@ export class AiController {
   constructor(
     private readonly orchestratorService: OrchestratorService,
     private readonly yandexFetchService: YandexFetchService,
+    private readonly semanticFilterService: SemanticFilterService,
   ) {}
 
   @Post('plan')
@@ -38,6 +40,15 @@ export class AiController {
     const rawPoi = await this.yandexFetchService.fetchAndFilter(intent);
     const yandexDuration = Date.now() - yandexStart;
 
+    const fallbacks: string[] = [];
+    const semanticStart = Date.now();
+    const filteredPoi = await this.semanticFilterService.select(
+      rawPoi,
+      intent,
+      fallbacks,
+    );
+    const semanticDuration = Date.now() - semanticStart;
+
     if (!intent.city) {
       throw new UnprocessableEntityException(
         'Could not parse city from request',
@@ -52,13 +63,14 @@ export class AiController {
         steps_duration_ms: {
           orchestrator: orchestratorDuration,
           yandex_fetch: yandexDuration,
-          total: orchestratorDuration + yandexDuration,
+          semantic_filter: semanticDuration,
+          total: orchestratorDuration + yandexDuration + semanticDuration,
         },
         poi_counts: {
           yandex_raw: rawPoi.length,
-          after_semantic: rawPoi.length,
+          after_semantic: filteredPoi.length,
         },
-        fallbacks_triggered: [],
+        fallbacks_triggered: fallbacks,
       },
     };
   }

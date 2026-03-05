@@ -18,3 +18,14 @@ export interface PoiItem {
   website?: string;
   image_url?: string;
 }
+
+export interface FilteredPoiResponse {
+  selected: Array<{
+    id: string;
+    description: string;
+  }>;
+}
+
+export interface FilteredPoi extends PoiItem {
+  description: string;
+}
