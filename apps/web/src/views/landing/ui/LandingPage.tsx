@@ -8,7 +8,9 @@ import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { api } from '@/shared/api';
 import { useTripStore, tripsApi } from '@/entities/trip';
+import { pointsApi } from '@/entities/route-point';
 import type { Trip } from '@/entities/trip';
+import type { RoutePoint } from '@/entities/route-point';
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
 import { useAiQueryStore } from '@/features/ai-query';
 import {
@@ -129,7 +131,7 @@ export function LandingPage() {
   const [dateToOpen, setDateToOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const sendAiQuery = useAiQueryStore((state) => state.sendQuery);
-  const { setCurrentTrip } = useTripStore();
+  const { setCurrentTrip, addPoint } = useTripStore();
   const { isAuthenticated } = useAuthStore();
 
   // Адаптивный размер textarea, как в исходном прототипе
@@ -206,6 +208,31 @@ export function LandingPage() {
     return DEMO_TOURS.filter((tour) => tour.tags.includes(selectedFilter));
   }, [filteredTrips, selectedFilter]);
 
+  // Геокодирование через Yandex Maps API
+  const geocodePlace = async (place: string): Promise<{ lat: number; lon: number } | null> => {
+    if (!place.trim()) return null;
+    try {
+      const res = await fetch(`/api/suggest?q=${encodeURIComponent(place)}`);
+      const data = await res.json();
+      const results = data.results ?? [];
+      if (results.length > 0) {
+        const first = results[0];
+        const match = first.uri?.match(/[?&]ll=([^&]+)/);
+        if (match) {
+          const [lonStr, latStr] = decodeURIComponent(match[1]).split(',');
+          const lon = Number(lonStr);
+          const lat = Number(latStr);
+          if (Number.isFinite(lon) && Number.isFinite(lat)) {
+            return { lat, lon };
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Geocoding failed:', e);
+    }
+    return null;
+  };
+
   const handleSearch = async () => {
     if (searchMode === 'ai') {
       if (searchQuery.trim()) {
@@ -236,6 +263,49 @@ export function LandingPage() {
       };
 
       setCurrentTrip(guestTrip);
+
+      // Add two points: from and to (with geocoding in parallel)
+      if (manualForm.from && manualForm.to) {
+        const [fromCoords, toCoords] = await Promise.all([
+          geocodePlace(manualForm.from),
+          geocodePlace(manualForm.to),
+        ]);
+
+        if (fromCoords) {
+          const fromPoint: RoutePoint = {
+            id: `point-${Date.now()}-0`,
+            tripId: guestTrip.id,
+            title: manualForm.from,
+            address: manualForm.from,
+            lat: fromCoords.lat,
+            lon: fromCoords.lon,
+            budget: budget > 0 ? Math.floor(budget / 2) : 0,
+            visitDate: manualForm.dateFrom || null,
+            imageUrl: null,
+            order: 0,
+            createdAt: new Date().toISOString(),
+          };
+          addPoint(fromPoint);
+        }
+
+        if (toCoords) {
+          const toPoint: RoutePoint = {
+            id: `point-${Date.now()}-1`,
+            tripId: guestTrip.id,
+            title: manualForm.to,
+            address: manualForm.to,
+            lat: toCoords.lat,
+            lon: toCoords.lon,
+            budget: budget > 0 ? Math.floor(budget / 2) : 0,
+            visitDate: manualForm.dateTo || null,
+            imageUrl: null,
+            order: 1,
+            createdAt: new Date().toISOString(),
+          };
+          addPoint(toPoint);
+        }
+      }
+
       router.push('/planner');
       return;
     }
@@ -255,6 +325,47 @@ export function LandingPage() {
       }
 
       setCurrentTrip(trip);
+
+      // Add two points: from and to (with geocoding in parallel)
+      if (manualForm.from && manualForm.to) {
+        const [fromCoords, toCoords] = await Promise.all([
+          geocodePlace(manualForm.from),
+          geocodePlace(manualForm.to),
+        ]);
+
+        if (fromCoords) {
+          try {
+            await pointsApi.create(trip.id, {
+              title: manualForm.from,
+              address: manualForm.from,
+              lat: fromCoords.lat,
+              lon: fromCoords.lon,
+              budget: budget > 0 ? Math.floor(budget / 2) : undefined,
+              visitDate: manualForm.dateFrom || undefined,
+              order: 0,
+            });
+          } catch (e) {
+            console.error('Failed to add from point:', e);
+          }
+        }
+
+        if (toCoords) {
+          try {
+            await pointsApi.create(trip.id, {
+              title: manualForm.to,
+              address: manualForm.to,
+              lat: toCoords.lat,
+              lon: toCoords.lon,
+              budget: budget > 0 ? Math.floor(budget / 2) : undefined,
+              visitDate: manualForm.dateTo || undefined,
+              order: 1,
+            });
+          } catch (e) {
+            console.error('Failed to add to point:', e);
+          }
+        }
+      }
+
       router.push('/planner');
     } catch (e) {
       console.error('Failed to create trip:', e);
