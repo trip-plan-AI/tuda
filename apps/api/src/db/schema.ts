@@ -1,4 +1,4 @@
-import {
+ import {
   pgTable,
   pgEnum,
   uuid,
@@ -33,7 +33,7 @@ export const trips = pgTable('trips', {
   description: text('description'),
   budget: integer('budget'),
   ownerId: uuid('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  isActive: boolean('is_active').notNull().default(true),
+  isActive: boolean('is_active').notNull().default(false),
   isPredefined: boolean('is_predefined').notNull().default(false),
   startDate: text('start_date'),
   endDate: text('end_date'),
@@ -61,6 +61,7 @@ export const routePoints = pgTable('route_points', {
   imageUrl: text('image_url'),
   order: integer('order').notNull().default(0),
   address: text('address'),
+  isTitleLocked: boolean('is_title_locked').notNull().default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 })
 

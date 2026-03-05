@@ -19,7 +19,7 @@ export interface UpdatePointPayload {
   budget?: number
   visitDate?: string
   imageUrl?: string
-  address?: string
+  address?: string | null
 }
 
 const base = (tripId: string) => `/trips/${tripId}/points`

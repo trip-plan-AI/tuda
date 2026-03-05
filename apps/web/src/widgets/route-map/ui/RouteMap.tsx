@@ -9,15 +9,42 @@ import '@yandex/ymaps3-default-ui-theme/dist/esm/index.css'
 interface RouteMapProps {
   points: RoutePoint[]
   focusCoords?: { lon: number; lat: number } | null
+  onPointDragEnd: (pointId: string, newCoords: { lon: number; lat: number }, newAddress: string, newTitle: string) => void
+  isDropdownOpen?: boolean
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const ymaps3: any
 
-export function RouteMap({ points, focusCoords }: RouteMapProps) {
+export function RouteMap({ points, focusCoords, onPointDragEnd, isDropdownOpen }: RouteMapProps) {
+  const resolveCoords = async (coords: { lon: number; lat: number }) => {
+    await loadYandexMaps(env.yandexMapsKey);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ymap = (window as any).ymaps3;
+    if (!ymap) return null;
+    try {
+      const results = await ymap.search({
+        coordinates: [coords.lon, coords.lat],
+        results: 1,
+        type: 'geo',
+      });
+      if (!results || results.length === 0) return null;
+      const firstResult = results[0];
+      const address = firstResult.properties?.name || firstResult.properties?.description || null;
+      const title = firstResult.properties?.name || firstResult.properties?.description || null;
+      return { address, title };
+    } catch (error) {
+      console.error("Geocoding error:", error);
+      return null;
+    }
+  };
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
   const objectsRef = useRef<any[]>([])
+  const polylineRef = useRef<any>(null)
+  const pointsRef = useRef<RoutePoint[]>([])
+  const skipNextFit = useRef(false)
+  const controlsRef = useRef<any>(null)
   const [mapReady, setMapReady] = useState(false)
   const prevCoordsKey = useRef<string>('')
 
@@ -43,6 +70,7 @@ export function RouteMap({ points, focusCoords }: RouteMapProps) {
       const controls = new ymaps3.YMapControls({ position: 'left' })
       controls.addChild(new YMapZoomControl())
       mapRef.current.addChild(controls)
+      controlsRef.current = controls; // Сохраняем
 
       setMapReady(true) // триггерит points-эффект если точки уже есть
     }).catch((err) => {
@@ -58,6 +86,13 @@ export function RouteMap({ points, focusCoords }: RouteMapProps) {
     }
   }, [])
 
+  // Эффект для скрытия/показа контролов
+  useEffect(() => {
+    if (controlsRef.current && controlsRef.current.element) {
+      controlsRef.current.element.style.display = isDropdownOpen ? 'none' : '';
+    }
+  }, [isDropdownOpen]);
+
   // Перелёт к выбранной точке
   useEffect(() => {
     if (!mapRef.current || !focusCoords) return
@@ -72,8 +107,11 @@ export function RouteMap({ points, focusCoords }: RouteMapProps) {
 
     objectsRef.current.forEach((obj) => mapRef.current.removeChild(obj))
     objectsRef.current = []
+    polylineRef.current = null
 
     if (points.length === 0) return
+
+    pointsRef.current = points
 
     // Маркеры с номерами (DOM-элементы)
     points.forEach((point, index) => {
@@ -92,13 +130,48 @@ export function RouteMap({ points, focusCoords }: RouteMapProps) {
         border: '2px solid white',
         boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
         cursor: 'pointer',
+        transform: 'translate(-50%, -50%)',
       })
       el.textContent = String(index + 1)
 
       // API 3.0: coordinates — [lon, lat]
-      const marker = new ymaps3.YMapMarker({ coordinates: [point.lon, point.lat] }, el)
+      const marker = new ymaps3.YMapMarker(
+        {
+          coordinates: [point.lon, point.lat],
+          draggable: true,
+          mapFollowsOnDrag: true,
+          onDragMove: (newCoords: number[]) => {
+            if (polylineRef.current && pointsRef.current.length > 1) {
+              const updatedCoords = pointsRef.current.map((p, i) =>
+                i === index ? newCoords : [p.lon, p.lat]
+              )
+              polylineRef.current.update({
+                geometry: { type: 'LineString', coordinates: updatedCoords },
+              })
+            }
+          },
+          onDragEnd: (newCoords: number[]) => {
+            const lon = newCoords[0]
+            const lat = newCoords[1]
+            if (lon === undefined || lat === undefined) return
+            skipNextFit.current = true
+            const coords = { lon, lat }
+            resolveCoords(coords).then(geoData => {
+              onPointDragEnd(
+                point.id,
+                coords,
+                geoData?.address || `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`,
+                point.title,
+              );
+            });
+          },
+        },
+        el,
+      )
+
       mapRef.current.addChild(marker)
       objectsRef.current.push(marker)
+
     })
 
     // Полилиния маршрута
@@ -112,14 +185,20 @@ export function RouteMap({ points, focusCoords }: RouteMapProps) {
           stroke: [{ color: '#0ea5e9', width: 3, opacity: 0.8 }],
         },
       })
+      polylineRef.current = polyline
       mapRef.current.addChild(polyline)
       objectsRef.current.push(polyline)
+    } else {
+      polylineRef.current = null
     }
 
-    // Подгоняем вид только если изменился набор координат (не метаданные)
+    // Подгоняем вид только если изменился набор координат (не метаданные, не драг)
     const coordsKey = points.map((p) => `${p.lon},${p.lat}`).join('|')
-    const shouldFit = coordsKey !== prevCoordsKey.current
+    const coordsChanged = coordsKey !== prevCoordsKey.current
     prevCoordsKey.current = coordsKey
+
+    const shouldFit = coordsChanged && !skipNextFit.current
+    skipNextFit.current = false
 
     if (shouldFit) {
       const lons = points.map((p) => p.lon)
