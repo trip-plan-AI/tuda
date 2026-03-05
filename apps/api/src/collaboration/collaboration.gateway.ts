@@ -10,6 +10,8 @@ import {
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { CollaborationService } from './collaboration.service';
+import { PointsService } from '../points/points.service';
+import { CreatePointDto } from '../points/dto/create-point.dto';
 
 interface SocketData {
   userId: string;
@@ -33,6 +35,7 @@ export class CollaborationGateway
   constructor(
     private collabService: CollaborationService,
     private jwtService: JwtService,
+    private pointsService: PointsService,
   ) {}
 
   handleConnection(client: TypedSocket) {
@@ -79,5 +82,56 @@ export class CollaborationGateway
     const room = `trip_${data.trip_id}`;
     client.leave(room);
     client.to(room).emit('presence:leave', { user_id: client.data.userId });
+  }
+
+  @SubscribeMessage('point:add')
+  async handlePointAdd(
+    @ConnectedSocket() _client: TypedSocket,
+    @MessageBody() data: CreatePointDto & { trip_id: string },
+  ) {
+    const { trip_id, ...dto } = data;
+    const point = await this.pointsService.create(trip_id, dto);
+    this.server.to(`trip_${trip_id}`).emit('point:added', { point });
+  }
+
+  @SubscribeMessage('point:move')
+  async handlePointMove(
+    @ConnectedSocket() _client: TypedSocket,
+    @MessageBody()
+    data: { trip_id: string; point_id: string; lat: number; lon: number },
+  ) {
+    await this.pointsService.update(data.point_id, data.trip_id, {
+      lat: data.lat,
+      lon: data.lon,
+    });
+    this.server.to(`trip_${data.trip_id}`).emit('point:moved', {
+      point_id: data.point_id,
+      coords: { lat: data.lat, lon: data.lon },
+    });
+  }
+
+  @SubscribeMessage('point:delete')
+  async handlePointDelete(
+    @ConnectedSocket() _client: TypedSocket,
+    @MessageBody() data: { trip_id: string; point_id: string },
+  ) {
+    await this.pointsService.remove(data.point_id, data.trip_id);
+    this.server
+      .to(`trip_${data.trip_id}`)
+      .emit('point:deleted', { point_id: data.point_id });
+  }
+
+  @SubscribeMessage('cursor:move')
+  handleCursor(
+    @ConnectedSocket() client: TypedSocket,
+    @MessageBody() data: { trip_id: string; x: number; y: number },
+  ) {
+    client.to(`trip_${data.trip_id}`).emit('cursor:moved', {
+      user_id: client.data.userId,
+      name: client.data.email,
+      color: this.collabService.getUserColor(client.data.userId),
+      x: data.x,
+      y: data.y,
+    });
   }
 }

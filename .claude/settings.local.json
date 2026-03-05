@@ -13,23 +13,18 @@
       "Bash(pnpm add @nestjs/passport @nestjs/jwt passport passport-jwt passport-local)",
       "Bash(pnpm add -D @types/passport-jwt @types/passport-local)",
       "Bash(npx tsc --noEmit)",
-
       "Bash(git checkout -b feature/TRI-05-backend-auth-endpoints)",
-
       "Bash(git checkout -b feature/TRI-05-backend-auth-endpoints)",
       "Bash(git checkout -b feature/TRI-06-backend-auth-bcrypt)",
       "Bash(pnpm add bcrypt)",
       "Bash(pnpm add -D @types/bcrypt)",
-
       "Bash(test -d /Users/gleb_luzan/Documents/elbrus/final/travel-planner/feedbackFrontend)",
       "Bash(test -f /Users/gleb_luzan/Documents/elbrus/final/travel-planner/.gitignore)",
       "Bash(test -f /Users/gleb_luzan/Documents/elbrus/final/travel-planner/.eslintignore)",
       "Bash(test -f /Users/gleb_luzan/Documents/elbrus/final/travel-planner/.prettierignore)",
-
-
       "Bash(pnpm add @nestjs/websockets @nestjs/platform-socket.io socket.io)",
-      "Bash(git checkout -b feature/TRI-13-backend-ws-rooms)"
-
+      "Bash(git checkout -b feature/TRI-13-backend-ws-rooms)",
+      "Bash(git checkout -b feature/TRI-14-backend-ws-events)"
     ]
   }
 }
