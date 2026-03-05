@@ -325,47 +325,56 @@ export function LandingPage() {
       }
 
       setCurrentTrip(trip);
+      console.log('✓ Trip created:', trip);
 
       // Add two points: from and to (with geocoding in parallel)
       if (manualForm.from && manualForm.to) {
-        const [fromCoords, toCoords] = await Promise.all([
-          geocodePlace(manualForm.from),
-          geocodePlace(manualForm.to),
-        ]);
+        try {
+          const [fromCoords, toCoords] = await Promise.all([
+            geocodePlace(manualForm.from),
+            geocodePlace(manualForm.to),
+          ]);
+          console.log('✓ Geocoding done:', { fromCoords, toCoords });
 
-        if (fromCoords) {
-          try {
-            await pointsApi.create(trip.id, {
-              title: manualForm.from,
-              address: manualForm.from,
-              lat: fromCoords.lat,
-              lon: fromCoords.lon,
-              budget: budget > 0 ? Math.floor(budget / 2) : undefined,
-              visitDate: manualForm.dateFrom || undefined,
-              order: 0,
-            });
-          } catch (e) {
-            console.error('Failed to add from point:', e);
+          if (fromCoords) {
+            try {
+              const fromPoint = await pointsApi.create(trip.id, {
+                title: manualForm.from,
+                address: manualForm.from,
+                lat: fromCoords.lat,
+                lon: fromCoords.lon,
+                budget: budget > 0 ? Math.floor(budget / 2) : undefined,
+                visitDate: manualForm.dateFrom || undefined,
+                order: 0,
+              });
+              console.log('✓ Created from point:', fromPoint);
+            } catch (e) {
+              console.error('✗ Failed to create from point:', e);
+            }
           }
-        }
 
-        if (toCoords) {
-          try {
-            await pointsApi.create(trip.id, {
-              title: manualForm.to,
-              address: manualForm.to,
-              lat: toCoords.lat,
-              lon: toCoords.lon,
-              budget: budget > 0 ? Math.floor(budget / 2) : undefined,
-              visitDate: manualForm.dateTo || undefined,
-              order: 1,
-            });
-          } catch (e) {
-            console.error('Failed to add to point:', e);
+          if (toCoords) {
+            try {
+              const toPoint = await pointsApi.create(trip.id, {
+                title: manualForm.to,
+                address: manualForm.to,
+                lat: toCoords.lat,
+                lon: toCoords.lon,
+                budget: budget > 0 ? Math.floor(budget / 2) : undefined,
+                visitDate: manualForm.dateTo || undefined,
+                order: 1,
+              });
+              console.log('✓ Created to point:', toPoint);
+            } catch (e) {
+              console.error('✗ Failed to create to point:', e);
+            }
           }
+        } catch (e) {
+          console.error('✗ Geocoding failed:', e);
         }
       }
 
+      console.log('→ Navigating to /planner');
       router.push('/planner');
     } catch (e) {
       console.error('Failed to create trip:', e);

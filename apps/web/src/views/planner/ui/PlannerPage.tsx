@@ -525,6 +525,19 @@ export function PlannerPage() {
     }
   }, [currentTrip?.id]);
 
+  // Загружаем точки маршрута при смене триппа (для аутентифицированных пользователей)
+  useEffect(() => {
+    if (!currentTrip?.id || currentTrip.id.startsWith('guest-')) return;
+
+    pointsApi
+      .getAll(currentTrip.id)
+      .then(setPoints)
+      .catch((e) => {
+        console.error('Failed to load points:', e);
+        setPoints([]);
+      });
+  }, [currentTrip?.id, setPoints]);
+
   // Загружаем существующий маршрут при входе
   useEffect(() => {
     if (currentTrip) return;
