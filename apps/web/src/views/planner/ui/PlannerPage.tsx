@@ -197,19 +197,16 @@ function SortablePointRow({
       setSuggestions([]);
       setShowDropdownState(false);
       return;
-    }    setIsSearching(true);
+    }
+    setIsSearching(true);
     try {
       const res = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
       const data = await res.json();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const found: GeoSuggestion[] = (data.results ?? []).map((item: any) => {
-        const title = item.title?.text ?? '';
-        const subtitle = item.subtitle?.text ?? '';
-        return {
-          displayName: subtitle ? `${title}, ${subtitle}` : title,
-          uri: item.uri as string | undefined,
-        };
-      });
+      // Nominatim API returns: { displayName, uri }
+      const found: GeoSuggestion[] = (data.results ?? []).map((item: any) => ({
+        displayName: item.displayName ?? '',
+        uri: item.uri as string | undefined,
+      }));
       setSuggestions(found);
       setShowDropdownState(true);
     } catch {
@@ -239,6 +236,7 @@ function SortablePointRow({
 
   const handleSelectSuggestion = async (s: GeoSuggestion) => {
     setShowDropdownState(false);
+    // Show full name in input for context
     setAddressVal(s.displayName);
     setIsSearching(true);
     try {
@@ -255,11 +253,12 @@ function SortablePointRow({
       }
       if (!coords) coords = await resolveCoords(s.displayName);
       if (coords) {
+        const cityName = s.displayName.split(/[,.]/).shift()?.trim() || s.displayName;
         onUpdate(point.id, {
           address: s.displayName,
           lat: coords.lat,
           lon: coords.lon,
-          title: s.displayName.split(/[.,;]/)[0]?.trim() || s.displayName,
+          title: cityName,
         });
         onFocusPoint(coords);
       }
@@ -665,14 +664,10 @@ export function PlannerPage() {
       const res = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const found: GeoSuggestion[] = (data.results ?? []).map((item: any) => {
-        const title = item.title?.text ?? '';
-        const subtitle = item.subtitle?.text ?? '';
-        return {
-          displayName: subtitle ? `${title}, ${subtitle}` : title,
-          uri: item.uri as string | undefined,
-        };
-      });
+      const found: GeoSuggestion[] = (data.results ?? []).map((item: any) => ({
+        displayName: item.displayName ?? '',
+        uri: item.uri as string | undefined,
+      }));
       setSuggestions(found);
       setShowDropdown(true);
     } catch {

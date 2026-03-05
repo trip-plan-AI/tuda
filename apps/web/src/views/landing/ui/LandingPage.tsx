@@ -42,6 +42,11 @@ interface PopularTourCard {
   tags: string[];
 }
 
+interface GeoSuggestion {
+  displayName: string;
+  uri?: string;
+}
+
 const QUICK_FILTERS = [
   { icon: '👍', label: 'Очень хвалят' },
   { icon: '🌊', label: 'Хочу на море' },
@@ -129,7 +134,13 @@ export function LandingPage() {
   });
   const [dateFromOpen, setDateFromOpen] = useState(false);
   const [dateToOpen, setDateToOpen] = useState(false);
+  const [fromSuggestions, setFromSuggestions] = useState<GeoSuggestion[]>([]);
+  const [toSuggestions, setToSuggestions] = useState<GeoSuggestion[]>([]);
+  const [fromDropdownOpen, setFromDropdownOpen] = useState(false);
+  const [toDropdownOpen, setToDropdownOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const debounceFromRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceToRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendAiQuery = useAiQueryStore((state) => state.sendQuery);
   const { setCurrentTrip, addPoint } = useTripStore();
   const { isAuthenticated } = useAuthStore();
@@ -208,7 +219,24 @@ export function LandingPage() {
     return DEMO_TOURS.filter((tour) => tour.tags.includes(selectedFilter));
   }, [filteredTrips, selectedFilter]);
 
-  // Геокодирование через Yandex Maps API
+  // Получение подсказок при вводе
+  const getSuggestions = async (query: string, setter: (suggestions: GeoSuggestion[]) => void) => {
+    if (!query.trim() || query.length < 2) {
+      setter([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      const results = data.results ?? [];
+      setter(results);
+    } catch (e) {
+      console.error('Failed to fetch suggestions:', e);
+      setter([]);
+    }
+  };
+
+  // Геокодирование через Nominatim (OpenStreetMap)
   const geocodePlace = async (place: string): Promise<{ lat: number; lon: number } | null> => {
     if (!place.trim()) return null;
     try {
@@ -272,10 +300,11 @@ export function LandingPage() {
         ]);
 
         if (fromCoords) {
+          const fromCityName = manualForm.from.split(/[,.]/).shift()?.trim() || manualForm.from;
           const fromPoint: RoutePoint = {
             id: `point-${Date.now()}-0`,
             tripId: guestTrip.id,
-            title: manualForm.from,
+            title: fromCityName,
             address: manualForm.from,
             lat: fromCoords.lat,
             lon: fromCoords.lon,
@@ -289,10 +318,11 @@ export function LandingPage() {
         }
 
         if (toCoords) {
+          const toCityName = manualForm.to.split(/[,.]/).shift()?.trim() || manualForm.to;
           const toPoint: RoutePoint = {
             id: `point-${Date.now()}-1`,
             tripId: guestTrip.id,
-            title: manualForm.to,
+            title: toCityName,
             address: manualForm.to,
             lat: toCoords.lat,
             lon: toCoords.lon,
@@ -338,8 +368,9 @@ export function LandingPage() {
 
           if (fromCoords) {
             try {
+              const fromCityName = manualForm.from.split(/[,.]/).shift()?.trim() || manualForm.from;
               const fromPoint = await pointsApi.create(trip.id, {
-                title: manualForm.from,
+                title: fromCityName,
                 address: manualForm.from,
                 lat: fromCoords.lat,
                 lon: fromCoords.lon,
@@ -355,8 +386,9 @@ export function LandingPage() {
 
           if (toCoords) {
             try {
+              const toCityName = manualForm.to.split(/[,.]/).shift()?.trim() || manualForm.to;
               const toPoint = await pointsApi.create(trip.id, {
-                title: manualForm.to,
+                title: toCityName,
                 address: manualForm.to,
                 lat: toCoords.lat,
                 lon: toCoords.lon,
@@ -497,7 +529,8 @@ export function LandingPage() {
                   <div className="bg-white rounded-[2.2rem] md:rounded-[3.5rem] p-4 md:p-8 transition-none text-left">
                         <div className="space-y-4">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
+                            {/* Откуда */}
+                            <div className="space-y-2 relative">
                               <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
                                 Откуда
                               </label>
@@ -505,11 +538,38 @@ export function LandingPage() {
                                 type="text"
                                 placeholder="Москва"
                                 value={manualForm.from}
-                                onChange={(e) => setManualForm((p) => ({ ...p, from: e.target.value }))}
+                                onChange={(e) => {
+                                  setManualForm((p) => ({ ...p, from: e.target.value }));
+                                  setFromDropdownOpen(true);
+                                  if (debounceFromRef.current) clearTimeout(debounceFromRef.current);
+                                  debounceFromRef.current = setTimeout(() => {
+                                    void getSuggestions(e.target.value, setFromSuggestions);
+                                  }, 400);
+                                }}
+                                onFocus={() => manualForm.from && setFromDropdownOpen(true)}
+                                onBlur={() => setTimeout(() => setFromDropdownOpen(false), 200)}
                                 className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
                               />
+                              {fromDropdownOpen && fromSuggestions.length > 0 && (
+                                <div className="absolute top-full mt-1 w-full bg-white rounded-2xl shadow-lg border border-slate-200 z-10 max-h-48 overflow-y-auto">
+                                  {fromSuggestions.map((suggestion, idx) => (
+                                    <button
+                                      key={idx}
+                                      onMouseDown={() => {
+                                        setManualForm((p) => ({ ...p, from: suggestion.displayName }));
+                                        setFromDropdownOpen(false);
+                                        setFromSuggestions([]);
+                                      }}
+                                      className="w-full text-left px-4 py-3 hover:bg-slate-100 border-b border-slate-100 last:border-0 text-sm font-medium text-slate-700 transition-none"
+                                    >
+                                      {suggestion.displayName}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                            <div className="space-y-2">
+                            {/* Куда */}
+                            <div className="space-y-2 relative">
                               <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
                                 Куда
                               </label>
@@ -517,9 +577,35 @@ export function LandingPage() {
                                 type="text"
                                 placeholder="Алтай"
                                 value={manualForm.to}
-                                onChange={(e) => setManualForm((p) => ({ ...p, to: e.target.value }))}
+                                onChange={(e) => {
+                                  setManualForm((p) => ({ ...p, to: e.target.value }));
+                                  setToDropdownOpen(true);
+                                  if (debounceToRef.current) clearTimeout(debounceToRef.current);
+                                  debounceToRef.current = setTimeout(() => {
+                                    void getSuggestions(e.target.value, setToSuggestions);
+                                  }, 400);
+                                }}
+                                onFocus={() => manualForm.to && setToDropdownOpen(true)}
+                                onBlur={() => setTimeout(() => setToDropdownOpen(false), 200)}
                                 className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
                               />
+                              {toDropdownOpen && toSuggestions.length > 0 && (
+                                <div className="absolute top-full mt-1 w-full bg-white rounded-2xl shadow-lg border border-slate-200 z-10 max-h-48 overflow-y-auto">
+                                  {toSuggestions.map((suggestion, idx) => (
+                                    <button
+                                      key={idx}
+                                      onMouseDown={() => {
+                                        setManualForm((p) => ({ ...p, to: suggestion.displayName }));
+                                        setToDropdownOpen(false);
+                                        setToSuggestions([]);
+                                      }}
+                                      className="w-full text-left px-4 py-3 hover:bg-slate-100 border-b border-slate-100 last:border-0 text-sm font-medium text-slate-700 transition-none"
+                                    >
+                                      {suggestion.displayName}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
 
