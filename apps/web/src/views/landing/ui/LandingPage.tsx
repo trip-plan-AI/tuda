@@ -346,15 +346,17 @@ export function LandingPage() {
         description: manualForm.from ? `Из ${manualForm.from}` : undefined,
       });
 
+      let tripToStore = trip;
       if (budget > 0 || manualForm.dateFrom || manualForm.dateTo) {
-        await tripsApi.update(trip.id, {
+        const updated = await tripsApi.update(trip.id, {
           budget: budget > 0 ? budget : undefined,
           startDate: manualForm.dateFrom || undefined,
           endDate: manualForm.dateTo || undefined,
         });
+        tripToStore = updated;
       }
 
-      setCurrentTrip(trip);
+      setCurrentTrip(tripToStore);
       console.log('✓ Trip created:', trip);
 
       // Add two points: from and to (with geocoding in parallel)
