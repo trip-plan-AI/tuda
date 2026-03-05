@@ -77,13 +77,13 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-xl font-black text-brand-indigo">Регистрация</DialogTitle>
-          <DialogDescription>Создайте аккаунт для планирования маршрутов</DialogDescription>
+          <DialogTitle className="text-2xl font-black text-brand-indigo">Регистрация</DialogTitle>
+          <DialogDescription className="text-slate-600">Создайте аккаунт для планирования маршрутов</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 mt-2">
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-700" htmlFor="reg-name">
+            <label className="text-sm font-semibold text-brand-indigo" htmlFor="reg-name">
               Имя
             </label>
             <Input
@@ -92,6 +92,7 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
               placeholder="Иван Иванов"
               aria-invalid={!!errors.name}
               {...register('name')}
+              className="h-auto! px-5 py-3.5 bg-slate-50 rounded-2xl shadow-sm border-none font-bold text-slate-700 placeholder:text-slate-400 focus-visible:ring-2! focus-visible:ring-brand-blue/30! focus-visible:ring-offset-0!"
             />
             {errors.name && (
               <p className="text-xs text-destructive">{errors.name.message}</p>
@@ -99,7 +100,7 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-700" htmlFor="reg-email">
+            <label className="text-sm font-semibold text-brand-indigo" htmlFor="reg-email">
               Email
             </label>
             <Input
@@ -108,6 +109,7 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
               placeholder="example@mail.ru"
               aria-invalid={!!errors.email}
               {...register('email')}
+              className="h-auto! px-5 py-3.5 bg-slate-50 rounded-2xl shadow-sm border-none font-bold text-slate-700 placeholder:text-slate-400 focus-visible:ring-2! focus-visible:ring-brand-blue/30! focus-visible:ring-offset-0!"
             />
             {errors.email && (
               <p className="text-xs text-destructive">{errors.email.message}</p>
@@ -115,7 +117,7 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-700" htmlFor="reg-password">
+            <label className="text-sm font-semibold text-brand-indigo" htmlFor="reg-password">
               Пароль
             </label>
             <Input
@@ -124,6 +126,7 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
               placeholder="••••••"
               aria-invalid={!!errors.password}
               {...register('password')}
+              className="h-auto! px-5 py-3.5 bg-slate-50 rounded-2xl shadow-sm border-none font-bold text-slate-700 placeholder:text-slate-400 focus-visible:ring-2! focus-visible:ring-brand-blue/30! focus-visible:ring-offset-0!"
             />
             {errors.password && (
               <p className="text-xs text-destructive">{errors.password.message}</p>
@@ -131,7 +134,7 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-700" htmlFor="reg-confirm">
+            <label className="text-sm font-semibold text-brand-indigo" htmlFor="reg-confirm">
               Повторите пароль
             </label>
             <Input
@@ -140,6 +143,7 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
               placeholder="••••••"
               aria-invalid={!!errors.confirmPassword}
               {...register('confirmPassword')}
+              className="h-auto! px-5 py-3.5 bg-slate-50 rounded-2xl shadow-sm border-none font-bold text-slate-700 placeholder:text-slate-400 focus-visible:ring-2! focus-visible:ring-brand-blue/30! focus-visible:ring-offset-0!"
             />
             {errors.confirmPassword && (
               <p className="text-xs text-destructive">{errors.confirmPassword.message}</p>
@@ -147,7 +151,7 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
           </div>
 
           {errors.root && (
-            <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
+            <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-3 py-2">
               {errors.root.message}
             </p>
           )}
@@ -155,18 +159,20 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
           <Button
             type="submit"
             variant="brand"
-            className="w-full mt-1"
+            shape="2xl"
+            size="lg"
+            className="w-full mt-3 font-semibold"
             disabled={isSubmitting}
           >
             {isSubmitting ? 'Создаём аккаунт...' : 'Зарегистрироваться'}
           </Button>
 
           {onSwitchToLogin && (
-            <p className="text-center text-sm text-slate-500">
+            <p className="text-center text-sm text-slate-600">
               Уже есть аккаунт?{' '}
               <button
                 type="button"
-                className="text-brand-sky font-medium hover:underline"
+                className="text-brand-blue font-semibold hover:text-brand-blue/80 transition-colors"
                 onClick={onSwitchToLogin}
               >
                 Войти

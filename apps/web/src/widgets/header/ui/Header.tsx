@@ -26,15 +26,6 @@ type Modal = 'login' | 'register' | null;
 
 const NAV_ITEMS = [
   {
-    href: '/',
-    icon: Home,
-    label: 'Главная',
-    activeClass: 'bg-brand-sky/10 text-brand-sky!',
-    iconActive: 'bg-brand-sky text-white',
-    iconIdle: 'bg-slate-100 text-slate-400',
-  },
-
-  {
     href: '/planner',
     icon: MapPin,
     label: 'Маршруты',
@@ -100,7 +91,7 @@ export function Header() {
                   >
                     <Avatar size="lg" className="h-10 w-10">
                       <AvatarImage src={user?.photo ?? ''} />
-                      <AvatarFallback className="bg-slate-50 text-slate-400">
+                      <AvatarFallback className="bg-slate-50 text-slate-500">
                         <User size={28} strokeWidth={3} />
                       </AvatarFallback>
                     </Avatar>
