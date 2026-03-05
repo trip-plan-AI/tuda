@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AiController } from './ai.controller';
 import { OrchestratorService } from './pipeline/orchestrator.service';
+import { YandexFetchService } from './pipeline/yandex-fetch.service';
+import { PopularGeneratorService } from './pipeline/popular-generator.service';
 
 @Module({
   controllers: [AiController],
-  providers: [OrchestratorService],
-  exports: [OrchestratorService],
+  providers: [OrchestratorService, YandexFetchService, PopularGeneratorService],
+  exports: [OrchestratorService, YandexFetchService, PopularGeneratorService],
 })
 export class AiModule {}
