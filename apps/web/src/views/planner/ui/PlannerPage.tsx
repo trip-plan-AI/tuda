@@ -26,7 +26,7 @@ function MapSkeleton() {
   )
 }
 
-// TODO: убрать после подключения авторизации
+// TODO: убрать после подключения авторизацииме
 const DEV_MOCK = process.env.NODE_ENV === 'development'
 
 function useMockPoints() {
