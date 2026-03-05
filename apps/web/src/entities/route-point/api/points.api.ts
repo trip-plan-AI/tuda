@@ -9,6 +9,7 @@ export interface CreatePointPayload {
   visitDate?: string
   imageUrl?: string
   order?: number
+  address?: string
 }
 
 export interface UpdatePointPayload {
@@ -18,6 +19,7 @@ export interface UpdatePointPayload {
   budget?: number
   visitDate?: string
   imageUrl?: string
+  address?: string
 }
 
 const base = (tripId: string) => `/trips/${tripId}/points`
@@ -36,5 +38,5 @@ export const pointsApi = {
     api.del<void>(`${base(tripId)}/${id}`),
 
   reorder: (tripId: string, orderedIds: string[]) =>
-    api.patch<void>(`${base(tripId)}/reorder`, { orderedIds }),
+    api.patch<void>(`${base(tripId)}/reorder`, { ids: orderedIds }),
 }

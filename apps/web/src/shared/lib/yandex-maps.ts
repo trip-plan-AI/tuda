@@ -6,9 +6,20 @@ export function loadYandexMaps(apiKey: string): Promise<void> {
 
   loadPromise = new Promise<void>((resolve, reject) => {
     const script = document.createElement('script')
-    script.src = `https://api-maps.yandex.ru/2.1/?apikey=${apiKey}&lang=ru_RU`
-    script.onload = () => (window as any).ymaps.ready(resolve)
-    script.onerror = () => { loadPromise = null; reject(new Error('Failed to load Yandex Maps')) }
+    script.src = `https://api-maps.yandex.ru/3.0/?apikey=${apiKey}&lang=ru_RU`
+    script.onload = async () => {
+      try {
+        await (window as any).ymaps3.ready
+        resolve()
+      } catch (e) {
+        loadPromise = null
+        reject(e)
+      }
+    }
+    script.onerror = () => {
+      loadPromise = null
+      reject(new Error('Failed to load Yandex Maps 3.0'))
+    }
     document.head.appendChild(script)
   })
 

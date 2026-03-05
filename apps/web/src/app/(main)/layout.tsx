@@ -10,10 +10,10 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const isLanding = pathname === '/';
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen w-full">
       {!isLanding && <Sidebar />}
-      <div className={`flex-1 flex flex-col ${!isLanding ? 'ml-20' : ''}`}>
-        <Header />
+      <div className={`flex-1 flex flex-col min-w-0 ${!isLanding ? 'md:ml-20' : ''}`}>
+        {!isLanding && <Header />}
         <main
           className={
             isLanding

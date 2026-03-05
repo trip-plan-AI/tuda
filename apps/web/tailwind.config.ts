@@ -6,9 +6,24 @@ const config: Config = {
     extend: {
       colors: {
         brand: {
-          sky: '#0ea5e9',
-          indigo: '#1e1b4b',
-          amber: '#f59e0b',
+          blue: {
+            DEFAULT: '#0ea5e9',
+            hover: '#0284c7',
+          },
+          indigo: {
+            DEFAULT: '#1e1b4b',
+            hover: '#312e81',
+          },
+          yellow: {
+            DEFAULT: '#f59e0b',
+            hover: '#d97706',
+          },
+          purple: {
+            DEFAULT: '#9333ea',
+            hover: '#7e22ce',
+          },
+          sky: '#0ea5e9', // kept for backwards compatibility if used elsewhere
+          amber: '#f59e0b', // kept for backwards compatibility
           light: '#f0f9ff',
           bg: '#f0f6ff',
         },

@@ -60,6 +60,7 @@ export const routePoints = pgTable('route_points', {
   visitDate: text('visit_date'),
   imageUrl: text('image_url'),
   order: integer('order').notNull().default(0),
+  address: text('address'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 })
 

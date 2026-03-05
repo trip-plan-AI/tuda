@@ -7,6 +7,7 @@ export interface RoutePoint {
   budget: number | null
   visitDate: string | null
   imageUrl: string | null
+  address: string | null
   order: number
   createdAt: string
 }

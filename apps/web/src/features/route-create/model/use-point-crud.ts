@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useTripStore } from '@/entities/trip/model/trip.store'
 import { pointsApi } from '@/entities/route-point'
-import type { CreatePointPayload } from '@/entities/route-point'
+import type { CreatePointPayload, UpdatePointPayload } from '@/entities/route-point'
 
 export function usePointCrud(tripId: string | undefined) {
-  const { setPoints, addPoint, removePoint, reorderPoints } = useTripStore()
+  const { setPoints, addPoint, updatePoint, removePoint, reorderPoints } = useTripStore()
   const loadedTripId = useRef<string | null>(null)
 
   // Загружаем точки при смене tripId
@@ -36,6 +36,15 @@ export function usePointCrud(tripId: string | undefined) {
     [tripId, removePoint],
   )
 
+  const update = useCallback(
+    async (id: string, payload: UpdatePointPayload) => {
+      if (!tripId) return
+      updatePoint(id, payload) // optimistic update
+      await pointsApi.update(tripId, id, payload)
+    },
+    [tripId, updatePoint],
+  )
+
   const reorder = useCallback(
     async (orderedIds: string[]) => {
       if (!tripId) return
@@ -45,5 +54,5 @@ export function usePointCrud(tripId: string | undefined) {
     [tripId, reorderPoints],
   )
 
-  return { add, remove, reorder }
+  return { add, update, remove, reorder }
 }

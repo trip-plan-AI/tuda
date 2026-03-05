@@ -32,4 +32,8 @@ export class CreatePointDto {
   @Min(0)
   @Type(() => Number)
   order?: number
+
+  @IsOptional()
+  @IsString()
+  address?: string
 }

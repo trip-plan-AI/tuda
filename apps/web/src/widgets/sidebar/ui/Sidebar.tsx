@@ -17,7 +17,7 @@ export function Sidebar() {
   const pathname = usePathname()
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-20 bg-white/95 backdrop-blur-md border-r border-slate-100 flex flex-col items-center pt-20 pb-6 gap-2 z-40">
+    <aside className="hidden md:flex fixed left-0 top-0 h-full w-20 bg-white/95 backdrop-blur-md border-r border-slate-100 flex-col items-center pt-20 pb-6 gap-2 z-40">
       {NAV.map(({ href, icon: Icon, label }) => {
         const isActive = pathname === href
         return (

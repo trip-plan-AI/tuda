@@ -5,8 +5,19 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-sans: var(--font-inter);
-  --font-mono: var(--font-geist-mono);
+  --color-brand-sky: #0ea5e9;
+  --color-brand-blue: #0ea5e9;
+  --color-brand-blue-hover: #0284c7;
+  --color-brand-indigo: #1e1b4b;
+  --color-brand-indigo-hover: #312e81;
+  --color-brand-amber: #f59e0b;
+  --color-brand-yellow: #f59e0b;
+  --color-brand-yellow-hover: #d97706;
+  --color-brand-purple: #9333ea;
+  --color-brand-purple-hover: #7e22ce;
+  --color-brand-light: #f0f9ff;
+  --color-brand-bg: #f0f6ff;
+  --font-weight-black: 800;
 }
 
 html,
@@ -54,11 +65,6 @@ a {
   --radius-2xl: 1rem;
   --radius-3xl: 1.5rem;
   --radius-4xl: 2rem;
-  --color-brand-sky: #0ea5e9;
-  --color-brand-indigo: #1e1b4b;
-  --color-brand-amber: #f59e0b;
-  --color-brand-light: #f0f9ff;
-  --color-brand-bg: #f0f6ff;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -168,4 +174,8 @@ a {
   body {
     @apply bg-background text-foreground;
   }
+}
+
+button {
+  cursor: pointer !important;
 }

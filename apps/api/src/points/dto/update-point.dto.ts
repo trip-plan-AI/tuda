@@ -29,4 +29,8 @@ export class UpdatePointDto {
   @IsOptional()
   @IsString()
   imageUrl?: string
+
+  @IsOptional()
+  @IsString()
+  address?: string
 }
