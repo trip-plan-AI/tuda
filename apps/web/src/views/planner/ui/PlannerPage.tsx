@@ -388,6 +388,8 @@ function SortablePointRow({
                 />
               </PopoverContent>
             </Popover>
+            {/* Бюджет точки — свободный ввод, не влияет на plannedBudget трипа.
+                Изменение идёт только в crud.update этой конкретной точки. */}
             <div className="flex items-center justify-between border border-slate-200 rounded-xl px-3 py-2 bg-white hover:border-slate-300 transition-colors w-full lg:w-40">
               <button
                 onClick={() => onUpdate(point.id, { budget: Math.max(0, (point.budget ?? 0) - 1000) })}
@@ -522,6 +524,17 @@ export function PlannerPage() {
     if (currentTrip?.id) {
       localStorage.setItem('planner_currentTripId', currentTrip.id);
     }
+  }, [currentTrip?.id]);
+
+  // Синхронизируем plannedBudget из бюджета трипа при смене трипа.
+  // Срабатывает когда лендинг передаёт трип с заполненным бюджетом (через setCurrentTrip)
+  // и сразу переходит на /planner — в этом случае основной useEffect пропускает tripsApi.getAll()
+  // потому что currentTrip уже есть в сторе, и plannedBudget остаётся 0.
+  useEffect(() => {
+    if (currentTrip?.budget != null) {
+      setPlannedBudget(currentTrip.budget);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrip?.id]);
 
   // Загружаем точки маршрута при смене триппа (для аутентифицированных пользователей)
@@ -708,7 +721,9 @@ export function PlannerPage() {
   const addPoint_ = useCallback(
     async (payload: { title: string; lat: number; lon: number; address?: string }) => {
       await ensureTripId();
-      await crud.add(payload);
+      // Новая точка всегда создаётся с бюджетом 0 — пользователь задаёт его вручную.
+      // plannedBudget (кошелёк трипа) не изменяется и не распределяется по точкам.
+      await crud.add({ ...payload, budget: 0 });
     },
     [ensureTripId, crud],
   );
@@ -1075,11 +1090,17 @@ export function PlannerPage() {
                             return;
                           }
                           const tripId = await ensureTripId();
+                          // Сохраняем plannedBudget (кошелёк трипа) и статус активности
                           const updated = await tripsApi.update(tripId, {
                             budget: plannedBudget,
                             isActive: isActiveRoute,
                           });
                           updateCurrentTrip(updated);
+                          // Явно сохраняем budget каждой точки — на случай если
+                          // debounce inline-редактирования не успел отработать
+                          await Promise.all(
+                            points.map((p) => crud.update(p.id, { budget: p.budget ?? 0 })),
+                          );
                           toast.success('Маршрут сохранён', { id: 'save-route' });
                         }}
                         disabled={points.length === 0}
