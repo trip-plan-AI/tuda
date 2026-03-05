@@ -1,28 +1,28 @@
-import { IsString, IsOptional, IsInt, Min } from 'class-validator'
-import { Type } from 'class-transformer'
+import { IsString, IsOptional, IsInt, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateTripDto {
   @IsString()
-  title: string
+  title: string;
 
   @IsOptional()
   @IsString()
-  description?: string
+  description?: string;
 
   @IsOptional()
   @IsInt()
   @Min(0)
   @Type(() => Number)
-  budget?: number
+  budget?: number;
 
   @IsOptional()
   @IsString()
-  startDate?: string
+  startDate?: string;
 
   @IsOptional()
   @IsString()
-  endDate?: string
+  endDate?: string;
 
   @IsOptional()
-  isActive?: boolean
+  isActive?: boolean;
 }

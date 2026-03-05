@@ -1,39 +1,39 @@
-import { IsString, IsNumber, IsOptional, IsInt, Min } from 'class-validator'
-import { Type } from 'class-transformer'
+import { IsString, IsNumber, IsOptional, IsInt, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreatePointDto {
   @IsString()
-  title: string
+  title: string;
 
   @IsNumber()
   @Type(() => Number)
-  lat: number
+  lat: number;
 
   @IsNumber()
   @Type(() => Number)
-  lon: number
+  lon: number;
 
   @IsOptional()
   @IsInt()
   @Min(0)
   @Type(() => Number)
-  budget?: number
+  budget?: number;
 
   @IsOptional()
   @IsString()
-  visitDate?: string
+  visitDate?: string;
 
   @IsOptional()
   @IsString()
-  imageUrl?: string
+  imageUrl?: string;
 
   @IsOptional()
   @IsInt()
   @Min(0)
   @Type(() => Number)
-  order?: number
+  order?: number;
 
   @IsOptional()
   @IsString()
-  address?: string
+  address?: string;
 }
