@@ -78,7 +78,7 @@ jobs:
           fi
 
           echo "[deploy] run db:push"
-          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T api pnpm --filter api db:push --force; then
+          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T api pnpm --filter api db:push --force < /dev/null; then
             echo "[deploy] db:push finished"
           else
             echo "[deploy][warn] db:push returned non-zero, continue deploy"
