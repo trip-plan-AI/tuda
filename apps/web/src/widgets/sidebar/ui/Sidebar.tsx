@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { MapPin, MessageSquare, User } from 'lucide-react';
+import { MapPin, MessageSquare, User, Home } from 'lucide-react';
 
 import { cn } from '@/shared/lib/utils';
 
 const NAV = [
+  { href: '/', icon: Home, label: 'Главная' },
   { href: '/planner', icon: MapPin, label: 'Маршруты' },
   { href: '/ai-assistant', icon: MessageSquare, label: 'AI Ассистент' },
   { href: '/profile', icon: User, label: 'Профиль' },
