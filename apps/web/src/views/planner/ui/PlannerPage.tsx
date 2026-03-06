@@ -152,7 +152,7 @@ function SortablePointRow({
     }
     setIsSearching(true);
     try {
-      const res = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
+      const res = await fetch(`${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       // Nominatim API returns: { displayName, uri }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -479,7 +479,7 @@ export function PlannerPage() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const { clearPlanner } = useTripStore();
-  
+
   // Синхронизируем plannedBudget из бюджета трипа при смене трипа.
   // Срабатывает когда лендинг передаёт трип с заполненным бюджетом (через setCurrentTrip)
   // и сразу переходит на /planner — в этом случае основной useEffect пропускает tripsApi.getAll()
@@ -630,7 +630,7 @@ export function PlannerPage() {
     }
     setIsSearching(true);
     try {
-      const res = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
+      const res = await fetch(`${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const found: GeoSuggestion[] = (data.results ?? []).map((item: any) => ({
