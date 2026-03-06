@@ -1,5 +1,10 @@
-import { PlannerPage } from '@/views/planner'
+import { Suspense } from 'react';
+import { PlannerPage } from '@/views/planner';
 
 export default function Page() {
-  return <PlannerPage />
+  return (
+    <Suspense fallback={null}>
+      <PlannerPage />
+    </Suspense>
+  );
 }

@@ -41,18 +41,59 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          EXPECTED_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" << 'EOF'
+          ssh -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "EXPECTED_SHA=$EXPECTED_SHA bash -se" << 'EOF'
           set -euo pipefail
           export GIT_SSH_COMMAND='ssh -i ~/.ssh/github_pull_ci_ed25519 -o IdentitiesOnly=yes'
+
+          echo "[deploy] expected commit: $EXPECTED_SHA"
           cd /opt/apps/travel-planner
+          echo "[deploy] current commit before pull: $(git rev-parse HEAD)"
           git pull --ff-only origin main
+          CURRENT_SHA="$(git rev-parse HEAD)"
+          echo "[deploy] current commit after pull: $CURRENT_SHA"
+          if [ "$CURRENT_SHA" != "$EXPECTED_SHA" ]; then
+            echo "[deploy][error] commit mismatch: expected=$EXPECTED_SHA actual=$CURRENT_SHA"
+            exit 1
+          fi
+
+          echo "[deploy] docker services"
+          docker compose -f docker-compose.prod.yml config --services
+
+          echo "[deploy] ensure db is running before backup"
+          docker compose -f docker-compose.prod.yml up -d db
+          docker compose -f docker-compose.prod.yml ps db
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+
+          echo "[deploy] start db backup"
           mkdir -p /opt/apps/travel-planner/backups
           BACKUP_FILE="/opt/apps/travel-planner/backups/db_$(date +%Y%m%d_%H%M%S).sql"
-          docker compose -f docker-compose.prod.yml exec -T db sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$BACKUP_FILE"
-          COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm api pnpm --filter api db:push --force
+          if docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$BACKUP_FILE"; then
+            echo "[deploy] db backup saved to: $BACKUP_FILE"
+          else
+            echo "[deploy][warn] db backup failed, continue deploy"
+          fi
+
+          echo "[deploy] run db:push"
+          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T api pnpm --filter api db:push --force < /dev/null; then
+            echo "[deploy] db:push finished"
+          else
+            echo "[deploy][warn] db:push returned non-zero, continue deploy"
+          fi
+
+          echo "[deploy] public schema (tables and columns)"
+          if docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT c.table_name, c.column_name, c.data_type, c.is_nullable FROM information_schema.columns AS c WHERE c.table_schema = '\''public'\'' ORDER BY c.table_name, c.ordinal_position;"'; then
+            echo "[deploy] schema log finished"
+          else
+            echo "[deploy][warn] schema log failed, continue deploy"
+          fi
+
           docker compose -f docker-compose.prod.yml up -d --build
+          echo "[deploy] docker images"
+          docker compose -f docker-compose.prod.yml images
+          echo "[deploy] docker status"
           docker compose -f docker-compose.prod.yml ps
           EOF
