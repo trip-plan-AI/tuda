@@ -64,6 +64,14 @@ export class TripsService {
       throw new UnauthorizedException('Unauthorized');
     }
 
+    const user = await this.db.query.users.findFirst({
+      where: eq(schema.users.id, userId),
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found for current token');
+    }
+
     const [trip] = await this.db
       .insert(schema.trips)
       .values({ ...dto, ownerId: userId })
