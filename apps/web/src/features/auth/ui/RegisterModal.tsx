@@ -1,21 +1,21 @@
-'use client'
+'use client';
 
-import { z } from 'zod'
-import { useForm } from 'react-hook-form'
-import { standardSchemaResolver } from '@hookform/resolvers/standard-schema'
+import { z } from 'zod';
+import { useForm } from 'react-hook-form';
+import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from '@/shared/ui/dialog'
-import { Input } from '@/shared/ui/input'
-import { Button } from '@/shared/ui/button'
-import { api } from '@/shared/api'
-import { useAuthStore } from '@/features/auth/model/auth.store'
-import { useUserStore } from '@/entities/user'
-import type { User } from '@/entities/user'
+} from '@/shared/ui/dialog';
+import { Input } from '@/shared/ui/input';
+import { Button } from '@/shared/ui/button';
+import { api } from '@/shared/api';
+import { useAuthStore } from '@/features/auth/model/auth.store';
+import { useUserStore } from '@/entities/user';
+import type { User } from '@/entities/user';
 
 const schema = z
   .object({
@@ -31,16 +31,16 @@ const schema = z
         message: 'Пароли не совпадают',
         path: ['confirmPassword'],
         input: ctx.value.confirmPassword,
-      })
+      });
     }
-  })
+  });
 
-type FormData = z.infer<typeof schema>
+type FormData = z.infer<typeof schema>;
 
 interface RegisterModalProps {
-  open: boolean
-  onClose: () => void
-  onSwitchToLogin?: () => void
+  open: boolean;
+  onClose: () => void;
+  onSwitchToLogin?: () => void;
 }
 
 export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalProps) {
@@ -50,10 +50,13 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
     formState: { errors, isSubmitting },
     setError,
     reset,
-  } = useForm<FormData>({ resolver: standardSchemaResolver(schema) })
+  } = useForm<FormData>({
+    resolver: standardSchemaResolver(schema),
+    mode: 'onChange',
+  });
 
-  const { setAuth } = useAuthStore()
-  const { setUser } = useUserStore()
+  const { setAuth } = useAuthStore();
+  const { setUser } = useUserStore();
 
   const onSubmit = async (data: FormData) => {
     try {
@@ -61,24 +64,26 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
         name: data.name,
         email: data.email,
         password: data.password,
-      })
-      setAuth(accessToken)
-      const user = await api.get<User>('/users/me')
-      setUser(user)
-      reset()
-      onClose()
+      });
+      setAuth(accessToken);
+      const user = await api.get<User>('/users/me');
+      setUser(user);
+      reset();
+      onClose();
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Ошибка регистрации'
-      setError('root', { message })
+      const message = e instanceof Error ? e.message : 'Ошибка регистрации';
+      setError('root', { message });
     }
-  }
+  };
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-2xl font-black text-brand-indigo">Регистрация</DialogTitle>
-          <DialogDescription className="text-slate-600">Создайте аккаунт для планирования маршрутов</DialogDescription>
+          <DialogDescription className="text-slate-600">
+            Создайте аккаунт для планирования маршрутов
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4 mt-2">
@@ -94,9 +99,7 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
               {...register('name')}
               className="h-auto! px-5 py-3.5 bg-slate-50 rounded-2xl shadow-sm border-none font-bold text-slate-700 placeholder:text-slate-400 focus-visible:ring-2! focus-visible:ring-brand-blue/30! focus-visible:ring-offset-0!"
             />
-            {errors.name && (
-              <p className="text-xs text-destructive">{errors.name.message}</p>
-            )}
+            {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -111,9 +114,7 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
               {...register('email')}
               className="h-auto! px-5 py-3.5 bg-slate-50 rounded-2xl shadow-sm border-none font-bold text-slate-700 placeholder:text-slate-400 focus-visible:ring-2! focus-visible:ring-brand-blue/30! focus-visible:ring-offset-0!"
             />
-            {errors.email && (
-              <p className="text-xs text-destructive">{errors.email.message}</p>
-            )}
+            {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -182,5 +183,5 @@ export function RegisterModal({ open, onClose, onSwitchToLogin }: RegisterModalP
         </form>
       </DialogContent>
     </Dialog>
-  )
+  );
 }
