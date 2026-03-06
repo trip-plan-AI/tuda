@@ -76,7 +76,6 @@ interface GeoSuggestion {
   uri?: string; // ymapsbm1://geo?ll=LON,LAT&z=...
 }
 
-
 const FILTERS = ['Все', 'Активный', 'Зима', 'Экстрим'] as const;
 type Filter = (typeof FILTERS)[number];
 
@@ -100,7 +99,6 @@ interface PointRowProps {
   ) => void;
   onRemove: (id: string) => void;
   onFocusPoint: (coords: { lon: number; lat: number }) => void;
-  onDropdownToggle: (isOpen: boolean) => void;
 }
 
 function SortablePointRow({
@@ -113,7 +111,6 @@ function SortablePointRow({
   onUpdate,
   onRemove,
   onFocusPoint,
-  onDropdownToggle,
 }: PointRowProps) {
   const [addressVal, setAddressVal] = useState(point.address ?? '');
   const [suggestions, setSuggestions] = useState<GeoSuggestion[]>([]);
@@ -157,6 +154,7 @@ function SortablePointRow({
       const res = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       // Nominatim API returns: { displayName, uri }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const found: GeoSuggestion[] = (data.results ?? []).map((item: any) => ({
         displayName: item.displayName ?? '',
         uri: item.uri as string | undefined,
@@ -326,7 +324,10 @@ function SortablePointRow({
                     : 'Дата'}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl" align="end">
+              <PopoverContent
+                className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl"
+                align="end"
+              >
                 <Calendar
                   mode="single"
                   selected={point.visitDate ? new Date(point.visitDate) : undefined}
@@ -338,7 +339,7 @@ function SortablePointRow({
                   captionLayout="dropdown"
                   startMonth={new Date(2020, 0)}
                   endMonth={new Date(2035, 11)}
-                  classNames={{ caption_label: "hidden" }}
+                  classNames={{ caption_label: 'hidden' }}
                 />
               </PopoverContent>
             </Popover>
@@ -346,7 +347,9 @@ function SortablePointRow({
                 Изменение идёт только в crud.update этой конкретной точки. */}
             <div className="flex items-center justify-between border border-slate-200 rounded-xl px-3 py-2 bg-white hover:border-slate-300 transition-colors w-full lg:w-40">
               <button
-                onClick={() => onUpdate(point.id, { budget: Math.max(0, (point.budget ?? 0) - 1000) })}
+                onClick={() =>
+                  onUpdate(point.id, { budget: Math.max(0, (point.budget ?? 0) - 1000) })
+                }
                 className="text-slate-400 hover:text-brand-indigo transition-colors p-0.5 flex items-center justify-center"
                 type="button"
               >
@@ -440,9 +443,7 @@ function SortablePointRow({
             </div>
           )}
         </div>
-
       </div>
-
     </div>
   );
 }
@@ -468,7 +469,7 @@ export function PlannerPage() {
   const [modal, setModal] = useState<'login' | 'register' | null>(null);
 
   const router = useRouter();
-  const { points, setPoints, currentTrip, setCurrentTrip, addPoint, updateCurrentTrip } = useTripStore();
+  const { points, setPoints, currentTrip, setCurrentTrip, updateCurrentTrip } = useTripStore();
   const { isAuthenticated } = useAuthStore();
   const crud = usePointCrud(currentTrip?.id);
 
@@ -489,7 +490,7 @@ export function PlannerPage() {
     if (currentTrip?.budget != null) {
       setPlannedBudget(currentTrip.budget);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrip?.id]);
 
   // Загружаем точки маршрута при смене триппа (для аутентифицированных пользователей)
@@ -517,7 +518,7 @@ export function PlannerPage() {
         // but currently we don't persist guest points in localStorage.
         // For simplicity, just create a new guest trip if none exists.
       }
-      
+
       const guestTrip: Trip = {
         id: `guest-${Date.now()}`,
         ownerId: 'guest',
@@ -547,11 +548,12 @@ export function PlannerPage() {
             setIsActiveRoute(target.isActive);
           }
         } else {
-            // Create a first trip for the user if they have none
-            void ensureTripId();
+          // Create a first trip for the user if they have none
+          void ensureTripId();
         }
       })
       .catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrip, setCurrentTrip, isAuthenticated]);
 
   const handleDragEnd = useCallback(
@@ -567,8 +569,18 @@ export function PlannerPage() {
   );
 
   const handlePointDragEnd = useCallback(
-    (pointId: string, newCoords: { lon: number; lat: number }, newAddress: string, newTitle: string) => {
-      crud.update(pointId, { lat: newCoords.lat, lon: newCoords.lon, address: newAddress, title: newTitle });
+    (
+      pointId: string,
+      newCoords: { lon: number; lat: number },
+      newAddress: string,
+      newTitle: string,
+    ) => {
+      crud.update(pointId, {
+        lat: newCoords.lat,
+        lon: newCoords.lon,
+        address: newAddress,
+        title: newTitle,
+      });
     },
     [crud],
   );
@@ -576,23 +588,23 @@ export function PlannerPage() {
   // Если трипа нет — создаём «Мой маршрут» и сразу возвращаем его id
   const ensureTripId = useCallback(async (): Promise<string> => {
     if (currentTrip) return currentTrip.id;
-    
+
     if (!isAuthenticated) {
-        const guestTrip: Trip = {
-            id: `guest-${Date.now()}`,
-            ownerId: 'guest',
-            title: 'Мой маршрут',
-            description: null,
-            budget: plannedBudget,
-            startDate: null,
-            endDate: null,
-            isActive: isActiveRoute,
-            isPredefined: false,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-        };
-        setCurrentTrip(guestTrip);
-        return guestTrip.id;
+      const guestTrip: Trip = {
+        id: `guest-${Date.now()}`,
+        ownerId: 'guest',
+        title: 'Мой маршрут',
+        description: null,
+        budget: plannedBudget,
+        startDate: null,
+        endDate: null,
+        isActive: isActiveRoute,
+        isPredefined: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setCurrentTrip(guestTrip);
+      return guestTrip.id;
     }
 
     const trip = await tripsApi.create({
@@ -715,10 +727,11 @@ export function PlannerPage() {
         await tripsApi.update(tripId, { budget: plannedBudget || null, isActive: isActiveRoute });
         updateCurrentTrip({ budget: plannedBudget || null, isActive: isActiveRoute });
         toast.success('Предыдущий маршрут сохранен', { id: 'planner-status' });
-      } catch (e) {
+      } catch {
         toast.error('Не удалось сохранить маршрут', { id: 'planner-status' });
       }
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setCurrentTrip(null as any);
     setPoints([]);
     setPlannedBudget(0);
@@ -979,7 +992,6 @@ export function PlannerPage() {
                         onUpdate={crud.update}
                         onRemove={crud.remove}
                         onFocusPoint={setFocusCoords}
-                        onDropdownToggle={setShowDropdown}
                       />
                     ))}
                   </SortableContext>
@@ -1119,7 +1131,11 @@ export function PlannerPage() {
                     route.title.toLowerCase().includes(popularSearch.toLowerCase()),
                 )
                 .map((route) => (
-                  <div key={route.id} className="group cursor-pointer" onClick={() => router.push(`/tours/${route.id}`)}>
+                  <div
+                    key={route.id}
+                    className="group cursor-pointer"
+                    onClick={() => router.push(`/tours/${route.id}`)}
+                  >
                     <div className="relative aspect-4/5 md:aspect-16/10 rounded-[3rem] overflow-hidden mb-6 shadow-2xl">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
