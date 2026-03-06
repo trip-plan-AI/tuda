@@ -10,6 +10,7 @@
   timestamp,
   primaryKey,
 } from 'drizzle-orm/pg-core'
+import { relations } from 'drizzle-orm'
 
 // Enum'ы
 export const collaboratorRoleEnum = pgEnum('collaborator_role', ['owner', 'editor', 'viewer'])
@@ -41,6 +42,10 @@ export const trips = pgTable('trips', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
 
+export const tripsRelations = relations(trips, ({ many }) => ({
+  points: many(routePoints),
+}))
+
 // trip_collaborators
 export const tripCollaborators = pgTable('trip_collaborators', {
   tripId: uuid('trip_id').notNull().references(() => trips.id, { onDelete: 'cascade' }),
@@ -64,6 +69,13 @@ export const routePoints = pgTable('route_points', {
   isTitleLocked: boolean('is_title_locked').notNull().default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 })
+
+export const routePointsRelations = relations(routePoints, ({ one }) => ({
+  trip: one(trips, {
+    fields: [routePoints.tripId],
+    references: [trips.id],
+  }),
+}))
 
 // optimization_results
 export const optimizationResults = pgTable('optimization_results', {
