@@ -85,16 +85,7 @@ jobs:
           fi
 
           echo "[deploy] public schema (tables and columns)"
-          if docker compose -f docker-compose.prod.yml exec --interactive=false -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "
-            SELECT
-              c.table_name,
-              c.column_name,
-              c.data_type,
-              c.is_nullable
-            FROM information_schema.columns AS c
-            WHERE c.table_schema = 'public'
-            ORDER BY c.table_name, c.ordinal_position;
-          "; then
+          if docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT c.table_name, c.column_name, c.data_type, c.is_nullable FROM information_schema.columns AS c WHERE c.table_schema = '\''public'\'' ORDER BY c.table_name, c.ordinal_position;"'; then
             echo "[deploy] schema log finished"
           else
             echo "[deploy][warn] schema log failed, continue deploy"
