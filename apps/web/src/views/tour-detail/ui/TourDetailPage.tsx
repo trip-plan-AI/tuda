@@ -7,8 +7,11 @@ import { ArrowLeft } from 'lucide-react';
 import { PREDEFINED_ROUTES } from '@/shared/data/predefined-routes';
 import { TOUR_ATTRACTIONS } from '@/shared/data/tour-attractions';
 import { useTripStore } from '@/entities/trip';
+import type { Trip } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point';
 import { Button } from '@/shared/ui';
+import { loadYandexMaps } from '@/shared/lib/yandex-maps';
+import { env } from '@/shared/config/env';
 
 const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
   ssr: false,
@@ -25,29 +28,40 @@ interface TourDetailPageProps {
 
 export function TourDetailPage({ tourId }: TourDetailPageProps) {
   const router = useRouter();
-  const { setCurrentTrip, addPoint } = useTripStore();
+  const { setCurrentTrip, setPoints } = useTripStore();
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
   const [isOpening, setIsOpening] = useState(false);
 
   const route = PREDEFINED_ROUTES.find((r) => r.id === tourId);
   const attractions = TOUR_ATTRACTIONS[tourId] ?? [];
 
+  const geocodeCity = useCallback(
+    async (cityName: string): Promise<{ lon: number; lat: number } | null> => {
+      try {
+        await loadYandexMaps(env.yandexMapsKey);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ymap = (window as any).ymaps3;
+        if (!ymap?.search) return null;
+        const results = await ymap.search({ text: cityName, results: 1 });
+        if (!results?.length) return null;
+        const coords = results[0]?.geometry?.coordinates as [number, number] | undefined;
+        if (!coords) return null;
+        return { lon: coords[0], lat: coords[1] };
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
   // Геокодируем город для центрирования карты
   useEffect(() => {
     if (!route) return;
     const city = route.title.split(':')[0]?.trim() ?? route.title;
-    fetch(`/api/suggest?q=${encodeURIComponent(city)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        const first = data.results?.[0];
-        if (!first?.uri) return;
-        const match = first.uri.match(/[?&]ll=([^&]+)/);
-        if (!match) return;
-        const [lon, lat] = decodeURIComponent(match[1]).split(',').map(Number) as [number, number];
-        if (Number.isFinite(lon) && Number.isFinite(lat)) setFocusCoords({ lon, lat });
-      })
-      .catch(() => undefined);
-  }, [route]);
+    geocodeCity(city).then((coords) => {
+      if (coords) setFocusCoords(coords);
+    });
+  }, [route, geocodeCity]);
 
   const handleOpenRoute = useCallback(async () => {
     if (!route || isOpening) return;
@@ -56,23 +70,13 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
       const budgetNum = parseInt(route.total.replace(/\D/g, ''), 10) || 0;
       const city = route.title.split(':')[0]?.trim() ?? route.title;
 
-      // Геокодируем для точки маршрута
       let coords: { lon: number; lat: number } | null = focusCoords;
       if (!coords) {
-        const res = await fetch(`/api/suggest?q=${encodeURIComponent(city)}`);
-        const data = await res.json();
-        const first = data.results?.[0];
-        if (first?.uri) {
-          const match = first.uri.match(/[?&]ll=([^&]+)/);
-          if (match) {
-            const [lon, lat] = decodeURIComponent(match[1]).split(',').map(Number) as [number, number];
-            if (Number.isFinite(lon) && Number.isFinite(lat)) coords = { lon, lat };
-          }
-        }
+        coords = await geocodeCity(city);
       }
 
-      const tripId = `tour-${tourId}-${Date.now()}`;
-      setCurrentTrip({
+      const tripId = `guest-${Date.now()}`;
+      const tourTrip: Trip = {
         id: tripId,
         ownerId: 'guest',
         title: route.title,
@@ -84,30 +88,33 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
         isPredefined: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      });
+      };
+      setCurrentTrip(tourTrip);
 
+      const points: RoutePoint[] = [];
       if (coords) {
-        const point: RoutePoint = {
-          id: `point-${Date.now()}`,
+        const cityPoint: RoutePoint = {
+          id: `tour-city-${Date.now()}`,
           tripId,
           title: city,
+          address: city,
           lat: coords.lat,
           lon: coords.lon,
-          budget: budgetNum,
+          budget: budgetNum ? Math.floor(budgetNum / 3) : 0,
           visitDate: null,
           imageUrl: null,
-          address: city,
           order: 0,
           createdAt: new Date().toISOString(),
         };
-        addPoint(point);
+        points.push(cityPoint);
       }
+      setPoints(points);
 
       router.push('/planner');
     } finally {
       setIsOpening(false);
     }
-  }, [route, focusCoords, tourId, setCurrentTrip, addPoint, router, isOpening]);
+  }, [route, focusCoords, geocodeCity, setCurrentTrip, setPoints, router, isOpening]);
 
   if (!route) {
     return (

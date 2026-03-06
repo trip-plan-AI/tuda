@@ -1045,14 +1045,11 @@ export function PlannerPage() {
                             return;
                           }
                           const tripId = await ensureTripId();
-                          // Сохраняем plannedBudget (кошелёк трипа) и статус активности
                           const updated = await tripsApi.update(tripId, {
                             budget: plannedBudget,
                             isActive: isActiveRoute,
                           });
                           updateCurrentTrip(updated);
-                          // Явно сохраняем budget каждой точки — на случай если
-                          // debounce inline-редактирования не успел отработать
                           await Promise.all(
                             points.map((p) => crud.update(p.id, { budget: p.budget ?? 0 })),
                           );
