@@ -23,6 +23,18 @@ interface UserCoords {
 
 async function getUserCoords(req: NextRequest): Promise<UserCoords | null> {
   try {
+    // Dev mode: allow override via ?testLat=X&testLon=Y for localhost testing
+    const testLat = req.nextUrl.searchParams.get('testLat')
+    const testLon = req.nextUrl.searchParams.get('testLon')
+    if (testLat && testLon) {
+      const lat = parseFloat(testLat)
+      const lon = parseFloat(testLon)
+      if (!isNaN(lat) && !isNaN(lon)) {
+        console.log(`📍 Test coords: lat=${lat}, lon=${lon}`)
+        return { lat, lon }
+      }
+    }
+
     const forwarded = req.headers.get('x-forwarded-for')
     const ip = forwarded ? forwarded.split(',')[0].trim() : null
 
