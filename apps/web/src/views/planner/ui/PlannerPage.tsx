@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import {
   Search,
   MapPin,
@@ -40,6 +41,7 @@ import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point';
 import { toast } from 'sonner';
 import { cn } from '@/shared/lib/utils';
+import { PREDEFINED_ROUTES } from '@/shared/data/predefined-routes';
 import { Button } from '@/shared/ui/button';
 import { Chip } from '@/shared/ui/chip';
 import { SegmentedControl } from '@/shared/ui/segmented-control';
@@ -74,55 +76,6 @@ interface GeoSuggestion {
   uri?: string; // ymapsbm1://geo?ll=LON,LAT&z=...
 }
 
-interface PredefinedRoute {
-  id: number;
-  title: string;
-  desc: string;
-  total: string;
-  img: string;
-  tags: string[];
-  temp: string;
-}
-
-const PREDEFINED_ROUTES: PredefinedRoute[] = [
-  {
-    id: 1,
-    title: 'Сочи: Горы и Море',
-    desc: 'Идеальный баланс: 2 дня в горах, 3 дня на побережье с живописными видами.',
-    total: '45 000 ₽',
-    img: '/assets/images/sochi.webp',
-    tags: ['⚡ Активный', 'РФ'],
-    temp: '+15°',
-  },
-  {
-    id: 2,
-    title: 'Алтай: Золотые Горы',
-    desc: 'Дикая природа, бирюзовая Катунь и бескрайние степи Алтая.',
-    total: '55 000 ₽',
-    img: '/assets/images/altay.webp',
-    tags: ['⚡ Активный', 'РФ'],
-    temp: '+8°',
-  },
-  {
-    id: 3,
-    title: 'Карелия Winter',
-    desc: 'Северные озёра, зимние активности и уютные локации для камерного отдыха.',
-    total: '42 500 ₽',
-    img: '/assets/images/karelia.webp',
-    tags: ['❄️ Зима', 'РФ'],
-    temp: '-3°',
-  },
-  {
-    id: 4,
-    title: 'Кавказ Peaks',
-    desc: 'Высокогорные маршруты и захватывающие виды для любителей эмоций.',
-    total: '68 800 ₽',
-    img: '/assets/images/kavkaz.webp',
-    tags: ['⛰️ Экстрим', 'РФ'],
-    temp: '+5°',
-  },
-];
-
 const FILTERS = ['Все', 'Активный', 'Зима', 'Экстрим'] as const;
 type Filter = (typeof FILTERS)[number];
 
@@ -146,7 +99,6 @@ interface PointRowProps {
   ) => void;
   onRemove: (id: string) => void;
   onFocusPoint: (coords: { lon: number; lat: number }) => void;
-  onDropdownToggle: (isOpen: boolean) => void;
 }
 
 function SortablePointRow({
@@ -159,7 +111,6 @@ function SortablePointRow({
   onUpdate,
   onRemove,
   onFocusPoint,
-  onDropdownToggle,
 }: PointRowProps) {
   const [addressVal, setAddressVal] = useState(point.address ?? '');
   const [suggestions, setSuggestions] = useState<GeoSuggestion[]>([]);
@@ -203,6 +154,7 @@ function SortablePointRow({
       const res = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       // Nominatim API returns: { displayName, uri }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const found: GeoSuggestion[] = (data.results ?? []).map((item: any) => ({
         displayName: item.displayName ?? '',
         uri: item.uri as string | undefined,
@@ -372,7 +324,10 @@ function SortablePointRow({
                     : 'Дата'}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl" align="end">
+              <PopoverContent
+                className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl"
+                align="end"
+              >
                 <Calendar
                   mode="single"
                   selected={point.visitDate ? new Date(point.visitDate) : undefined}
@@ -384,13 +339,17 @@ function SortablePointRow({
                   captionLayout="dropdown"
                   startMonth={new Date(2020, 0)}
                   endMonth={new Date(2035, 11)}
-                  classNames={{ caption_label: "hidden" }}
+                  classNames={{ caption_label: 'hidden' }}
                 />
               </PopoverContent>
             </Popover>
+            {/* Бюджет точки — свободный ввод, не влияет на plannedBudget трипа.
+                Изменение идёт только в crud.update этой конкретной точки. */}
             <div className="flex items-center justify-between border border-slate-200 rounded-xl px-3 py-2 bg-white hover:border-slate-300 transition-colors w-full lg:w-40">
               <button
-                onClick={() => onUpdate(point.id, { budget: Math.max(0, (point.budget ?? 0) - 1000) })}
+                onClick={() =>
+                  onUpdate(point.id, { budget: Math.max(0, (point.budget ?? 0) - 1000) })
+                }
                 className="text-slate-400 hover:text-brand-indigo transition-colors p-0.5 flex items-center justify-center"
                 type="button"
               >
@@ -484,9 +443,7 @@ function SortablePointRow({
             </div>
           )}
         </div>
-
       </div>
-
     </div>
   );
 }
@@ -511,7 +468,8 @@ export function PlannerPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [modal, setModal] = useState<'login' | 'register' | null>(null);
 
-  const { points, setPoints, currentTrip, setCurrentTrip, addPoint, updateCurrentTrip } = useTripStore();
+  const router = useRouter();
+  const { points, setPoints, currentTrip, setCurrentTrip, updateCurrentTrip } = useTripStore();
   const { isAuthenticated } = useAuthStore();
   const crud = usePointCrud(currentTrip?.id);
 
@@ -522,6 +480,17 @@ export function PlannerPage() {
     if (currentTrip?.id) {
       localStorage.setItem('planner_currentTripId', currentTrip.id);
     }
+  }, [currentTrip?.id]);
+
+  // Синхронизируем plannedBudget из бюджета трипа при смене трипа.
+  // Срабатывает когда лендинг передаёт трип с заполненным бюджетом (через setCurrentTrip)
+  // и сразу переходит на /planner — в этом случае основной useEffect пропускает tripsApi.getAll()
+  // потому что currentTrip уже есть в сторе, и plannedBudget остаётся 0.
+  useEffect(() => {
+    if (currentTrip?.budget != null) {
+      setPlannedBudget(currentTrip.budget);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrip?.id]);
 
   // Загружаем точки маршрута при смене триппа (для аутентифицированных пользователей)
@@ -549,7 +518,7 @@ export function PlannerPage() {
         // but currently we don't persist guest points in localStorage.
         // For simplicity, just create a new guest trip if none exists.
       }
-      
+
       const guestTrip: Trip = {
         id: `guest-${Date.now()}`,
         ownerId: 'guest',
@@ -579,11 +548,12 @@ export function PlannerPage() {
             setIsActiveRoute(target.isActive);
           }
         } else {
-            // Create a first trip for the user if they have none
-            void ensureTripId();
+          // Create a first trip for the user if they have none
+          void ensureTripId();
         }
       })
       .catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrip, setCurrentTrip, isAuthenticated]);
 
   const handleDragEnd = useCallback(
@@ -599,8 +569,18 @@ export function PlannerPage() {
   );
 
   const handlePointDragEnd = useCallback(
-    (pointId: string, newCoords: { lon: number; lat: number }, newAddress: string, newTitle: string) => {
-      crud.update(pointId, { lat: newCoords.lat, lon: newCoords.lon, address: newAddress, title: newTitle });
+    (
+      pointId: string,
+      newCoords: { lon: number; lat: number },
+      newAddress: string,
+      newTitle: string,
+    ) => {
+      crud.update(pointId, {
+        lat: newCoords.lat,
+        lon: newCoords.lon,
+        address: newAddress,
+        title: newTitle,
+      });
     },
     [crud],
   );
@@ -608,23 +588,23 @@ export function PlannerPage() {
   // Если трипа нет — создаём «Мой маршрут» и сразу возвращаем его id
   const ensureTripId = useCallback(async (): Promise<string> => {
     if (currentTrip) return currentTrip.id;
-    
+
     if (!isAuthenticated) {
-        const guestTrip: Trip = {
-            id: `guest-${Date.now()}`,
-            ownerId: 'guest',
-            title: 'Мой маршрут',
-            description: null,
-            budget: plannedBudget,
-            startDate: null,
-            endDate: null,
-            isActive: isActiveRoute,
-            isPredefined: false,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-        };
-        setCurrentTrip(guestTrip);
-        return guestTrip.id;
+      const guestTrip: Trip = {
+        id: `guest-${Date.now()}`,
+        ownerId: 'guest',
+        title: 'Мой маршрут',
+        description: null,
+        budget: plannedBudget,
+        startDate: null,
+        endDate: null,
+        isActive: isActiveRoute,
+        isPredefined: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setCurrentTrip(guestTrip);
+      return guestTrip.id;
     }
 
     const trip = await tripsApi.create({
@@ -708,7 +688,9 @@ export function PlannerPage() {
   const addPoint_ = useCallback(
     async (payload: { title: string; lat: number; lon: number; address?: string }) => {
       await ensureTripId();
-      await crud.add(payload);
+      // Новая точка всегда создаётся с бюджетом 0 — пользователь задаёт его вручную.
+      // plannedBudget (кошелёк трипа) не изменяется и не распределяется по точкам.
+      await crud.add({ ...payload, budget: 0 });
     },
     [ensureTripId, crud],
   );
@@ -745,10 +727,11 @@ export function PlannerPage() {
         await tripsApi.update(tripId, { budget: plannedBudget || null, isActive: isActiveRoute });
         updateCurrentTrip({ budget: plannedBudget || null, isActive: isActiveRoute });
         toast.success('Предыдущий маршрут сохранен', { id: 'planner-status' });
-      } catch (e) {
+      } catch {
         toast.error('Не удалось сохранить маршрут', { id: 'planner-status' });
       }
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setCurrentTrip(null as any);
     setPoints([]);
     setPlannedBudget(0);
@@ -1009,7 +992,6 @@ export function PlannerPage() {
                         onUpdate={crud.update}
                         onRemove={crud.remove}
                         onFocusPoint={setFocusCoords}
-                        onDropdownToggle={setShowDropdown}
                       />
                     ))}
                   </SortableContext>
@@ -1080,6 +1062,9 @@ export function PlannerPage() {
                             isActive: isActiveRoute,
                           });
                           updateCurrentTrip(updated);
+                          await Promise.all(
+                            points.map((p) => crud.update(p.id, { budget: p.budget ?? 0 })),
+                          );
                           toast.success('Маршрут сохранён', { id: 'save-route' });
                         }}
                         disabled={points.length === 0}
@@ -1146,7 +1131,11 @@ export function PlannerPage() {
                     route.title.toLowerCase().includes(popularSearch.toLowerCase()),
                 )
                 .map((route) => (
-                  <div key={route.id} className="group cursor-pointer">
+                  <div
+                    key={route.id}
+                    className="group cursor-pointer"
+                    onClick={() => router.push(`/tours/${route.id}`)}
+                  >
                     <div className="relative aspect-4/5 md:aspect-16/10 rounded-[3rem] overflow-hidden mb-6 shadow-2xl">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img

@@ -346,15 +346,17 @@ export function LandingPage() {
         description: manualForm.from ? `Из ${manualForm.from}` : undefined,
       });
 
+      let tripToStore = trip;
       if (budget > 0 || manualForm.dateFrom || manualForm.dateTo) {
-        await tripsApi.update(trip.id, {
+        const updated = await tripsApi.update(trip.id, {
           budget: budget > 0 ? budget : undefined,
           startDate: manualForm.dateFrom || undefined,
           endDate: manualForm.dateTo || undefined,
         });
+        tripToStore = updated;
       }
 
-      setCurrentTrip(trip);
+      setCurrentTrip(tripToStore);
       console.log('✓ Trip created:', trip);
 
       // Add two points: from and to (with geocoding in parallel)
@@ -771,7 +773,18 @@ export function LandingPage() {
                 {popularCards.map((trip, idx) => {
                   const Icon = weatherIcons[idx % weatherIcons.length] ?? Cloud;
                   return (
-                    <div key={trip.id} onClick={handleSearch} className="group cursor-pointer">
+                    <div
+                      key={trip.id}
+                      onClick={() => {
+                        const demoMatch = trip.id.match(/^demo-(\d+)$/);
+                        if (demoMatch) {
+                          router.push(`/tours/${demoMatch[1]}`);
+                        } else {
+                          handleSearch();
+                        }
+                      }}
+                      className="group cursor-pointer"
+                    >
                       <div className="relative aspect-[4/5] md:aspect-[16/10] rounded-[3rem] overflow-hidden mb-8 shadow-2xl isolation-auto">
                         <img
                           src={trip.img}
