@@ -9,7 +9,7 @@ import { TOUR_ATTRACTIONS } from '@/shared/data/tour-attractions';
 import { useTripStore } from '@/entities/trip';
 import type { Trip } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point';
-import { Button } from '@/shared/ui';
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/shared/ui';
 import { loadYandexMaps } from '@/shared/lib/yandex-maps';
 import { env } from '@/shared/config/env';
 
@@ -28,9 +28,10 @@ interface TourDetailPageProps {
 
 export function TourDetailPage({ tourId }: TourDetailPageProps) {
   const router = useRouter();
-  const { setCurrentTrip, setPoints } = useTripStore();
+  const { currentTrip, points, setCurrentTrip, setPoints, clearPlanner } = useTripStore();
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
   const [isOpening, setIsOpening] = useState(false);
+  const [showConfirmOverwrite, setShowConfirmOverwrite] = useState(false);
 
   const route = PREDEFINED_ROUTES.find((r) => r.id === tourId);
   const attractions = TOUR_ATTRACTIONS[tourId] ?? [];
@@ -63,8 +64,8 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     });
   }, [route, geocodeCity]);
 
-  const handleOpenRoute = useCallback(async () => {
-    if (!route || isOpening) return;
+  const doOpenRoute = async () => {
+    if (!route) return;
     setIsOpening(true);
     try {
       const budgetNum = parseInt(route.total.replace(/\D/g, ''), 10) || 0;
@@ -74,6 +75,8 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
       if (!coords) {
         coords = await geocodeCity(city);
       }
+
+      clearPlanner();
 
       const tripId = `guest-${Date.now()}`;
       const tourTrip: Trip = {
@@ -91,30 +94,61 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
       };
       setCurrentTrip(tourTrip);
 
-      const points: RoutePoint[] = [];
-      if (coords) {
-        const cityPoint: RoutePoint = {
-          id: `tour-city-${Date.now()}`,
-          tripId,
-          title: city,
-          address: city,
-          lat: coords.lat,
-          lon: coords.lon,
-          budget: budgetNum ? Math.floor(budgetNum / 3) : 0,
-          visitDate: null,
-          imageUrl: null,
-          order: 0,
-          createdAt: new Date().toISOString(),
-        };
-        points.push(cityPoint);
+      const newPoints: RoutePoint[] = [];
+      const safeCoords = coords;
+      if (safeCoords) {
+        if (attractions.length > 0) {
+          attractions.forEach((attr, idx) => {
+            newPoints.push({
+              id: `tour-attr-${Date.now()}-${idx}`,
+              tripId,
+              title: attr.title,
+              address: `${city}, ${attr.title}`,
+              lat: safeCoords.lat + (Math.random() - 0.5) * 0.05,
+              lon: safeCoords.lon + (Math.random() - 0.5) * 0.05,
+              budget: 0,
+              visitDate: null,
+              imageUrl: attr.imageUrl,
+              order: idx,
+              createdAt: new Date().toISOString(),
+            });
+          });
+        } else {
+          newPoints.push({
+            id: `tour-city-${Date.now()}`,
+            tripId,
+            title: city,
+            address: city,
+            lat: safeCoords.lat,
+            lon: safeCoords.lon,
+            budget: 0,
+            visitDate: null,
+            imageUrl: null,
+            order: 0,
+            createdAt: new Date().toISOString(),
+          });
+        }
       }
-      setPoints(points);
+      setPoints(newPoints);
 
       router.push('/planner');
     } finally {
       setIsOpening(false);
     }
-  }, [route, focusCoords, geocodeCity, setCurrentTrip, setPoints, router, isOpening]);
+  };
+
+  const handleOpenRoute = useCallback(() => {
+    if (points && points.length > 0) {
+      setShowConfirmOverwrite(true);
+    } else {
+      doOpenRoute();
+    }
+  }, [points]);
+
+  const confirmOverwrite = () => {
+    setShowConfirmOverwrite(false);
+    doOpenRoute();
+  };
 
   if (!route) {
     return (
@@ -129,7 +163,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
       <div className="max-w-5xl mx-auto px-4 md:px-6 py-8 md:py-12">
         {/* Назад */}
         <button
-          onClick={() => router.back()}
+          onClick={() => router.push('/planner?tab=popular')}
           className="flex items-center gap-2 text-slate-400 hover:text-brand-indigo font-bold text-sm transition-colors mb-10 group"
         >
           <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
@@ -138,16 +172,16 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
 
         {/* Hero */}
         <div className="mb-10">
-          <div className="flex flex-wrap items-center gap-3 mb-4">
+          <div className="flex flex-wrap items-center gap-2 mb-4">
             {route.tags.map((tag) => (
               <span
                 key={tag}
-                className="px-3 py-1 rounded-full bg-brand-indigo/5 text-brand-indigo text-xs font-bold uppercase tracking-widest"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-slate-500 border-2 border-slate-100 text-xs font-black uppercase tracking-widest shadow-sm"
               >
                 {tag}
               </span>
             ))}
-            <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-500 text-xs font-bold">
+            <span className="inline-flex items-center px-4 py-2 rounded-full bg-white text-slate-500 border-2 border-slate-100 text-xs font-black shadow-sm">
               {route.temp}
             </span>
           </div>
@@ -180,9 +214,10 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           <Button
             onClick={handleOpenRoute}
             disabled={isOpening}
-            className="bg-brand-sky hover:bg-brand-sky/90 text-white rounded-full px-10 py-5 font-black text-lg uppercase tracking-widest shadow-xl shadow-brand-sky/20 active:scale-95 transition-all disabled:opacity-70"
+            variant="brand-yellow"
+            className="h-auto rounded-[2.5rem] px-12 py-6 font-black text-lg md:text-xl uppercase tracking-widest shadow-xl shadow-brand-yellow/20 active:scale-95 transition-all disabled:opacity-70 min-w-[300px]"
           >
-            {isOpening ? 'Открываем...' : 'Открыть маршрут'}
+            {isOpening ? 'Открываем...' : 'В конструктор'}
           </Button>
         </div>
 
@@ -215,6 +250,11 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
                       <h3 className="text-2xl md:text-3xl font-black text-brand-indigo mb-4 tracking-tight">
                         {place.title}
                       </h3>
+                      <div className="mb-4">
+                        <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-emerald-50 text-emerald-600 text-sm font-black tracking-widest uppercase">
+                          {place.price.toLocaleString('ru-RU')} ₽
+                        </span>
+                      </div>
                       <p className="text-slate-500 text-base md:text-lg leading-relaxed font-medium">
                         {place.description}
                       </p>
@@ -225,18 +265,36 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
             </div>
           </div>
         )}
-
-        {/* Повторная CTA */}
-        <div className="flex justify-center mt-24 mb-8">
-          <Button
-            onClick={handleOpenRoute}
-            disabled={isOpening}
-            className="bg-brand-sky hover:bg-brand-sky/90 text-white rounded-full px-10 py-5 font-black text-lg uppercase tracking-widest shadow-xl shadow-brand-sky/20 active:scale-95 transition-all disabled:opacity-70"
-          >
-            {isOpening ? 'Открываем...' : 'Открыть маршрут'}
-          </Button>
-        </div>
       </div>
+
+      <Dialog open={showConfirmOverwrite} onOpenChange={setShowConfirmOverwrite}>
+        <DialogContent className="sm:max-w-md border-none shadow-2xl rounded-[2.5rem] p-10 overflow-hidden">
+          <DialogHeader className="gap-4">
+            <DialogTitle className="text-xl font-black text-brand-indigo uppercase tracking-widest leading-tight">
+              Внимание
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 font-bold text-lg leading-snug">
+              В конструкторе уже есть непустой маршрут. При открытии нового маршрута старый будет очищен. Продолжить?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row gap-3 mt-8">
+            <Button
+              variant="ghost"
+              className="flex-1 font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50 h-12 rounded-xl"
+              onClick={() => setShowConfirmOverwrite(false)}
+            >
+              ОТМЕНА
+            </Button>
+            <Button
+              variant="brand-indigo"
+              className="flex-1 font-black uppercase tracking-widest h-12 rounded-xl shadow-lg shadow-brand-indigo/20"
+              onClick={confirmOverwrite}
+            >
+              ПРОДОЛЖИТЬ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

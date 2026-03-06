@@ -19,7 +19,15 @@ import {
   PopoverTrigger,
   Calendar,
   Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from '@/shared/ui';
+import { loadYandexMaps } from '@/shared/lib/yandex-maps';
+import { env } from '@/shared/config/env';
 
 type Modal = 'login' | 'register' | null;
 type SearchMode = 'ai' | 'manual';
@@ -142,8 +150,9 @@ export function LandingPage() {
   const debounceFromRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceToRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendAiQuery = useAiQueryStore((state) => state.sendQuery);
-  const { setCurrentTrip, addPoint } = useTripStore();
+  const { points, setCurrentTrip, addPoint, clearPlanner } = useTripStore();
   const { isAuthenticated } = useAuthStore();
+  const [showConfirmOverwrite, setShowConfirmOverwrite] = useState(false);
 
   // Адаптивный размер textarea, как в исходном прототипе
   useEffect(() => {
@@ -261,18 +270,12 @@ export function LandingPage() {
     return null;
   };
 
-  const handleSearch = async () => {
-    if (searchMode === 'ai') {
-      if (searchQuery.trim()) {
-        void sendAiQuery(searchQuery);
-      }
-      router.push('/ai-assistant');
-      return;
-    }
-
+  const doManualSearch = async () => {
     // Manual mode
     const title = manualForm.to || 'Мой маршрут';
     const budget = parseInt(manualForm.budget.replace(/\D/g, ''), 10) || 0;
+
+    clearPlanner();
 
     if (!isAuthenticated) {
       // Create a guest trip without saving to backend
@@ -308,7 +311,7 @@ export function LandingPage() {
             address: manualForm.from,
             lat: fromCoords.lat,
             lon: fromCoords.lon,
-            budget: budget > 0 ? Math.floor(budget / 2) : 0,
+            budget: 0,
             visitDate: manualForm.dateFrom || null,
             imageUrl: null,
             order: 0,
@@ -326,7 +329,7 @@ export function LandingPage() {
             address: manualForm.to,
             lat: toCoords.lat,
             lon: toCoords.lon,
-            budget: budget > 0 ? Math.floor(budget / 2) : 0,
+            budget: 0,
             visitDate: manualForm.dateTo || null,
             imageUrl: null,
             order: 1,
@@ -376,7 +379,7 @@ export function LandingPage() {
                 address: manualForm.from,
                 lat: fromCoords.lat,
                 lon: fromCoords.lon,
-                budget: budget > 0 ? Math.floor(budget / 2) : undefined,
+                budget: 0,
                 visitDate: manualForm.dateFrom || undefined,
                 order: 0,
               });
@@ -394,7 +397,7 @@ export function LandingPage() {
                 address: manualForm.to,
                 lat: toCoords.lat,
                 lon: toCoords.lon,
-                budget: budget > 0 ? Math.floor(budget / 2) : undefined,
+                budget: 0,
                 visitDate: manualForm.dateTo || undefined,
                 order: 1,
               });
@@ -414,6 +417,27 @@ export function LandingPage() {
       console.error('Failed to create trip:', e);
       router.push('/planner');
     }
+  };
+
+  const handleSearch = () => {
+    if (searchMode === 'ai') {
+      if (searchQuery.trim()) {
+        void sendAiQuery(searchQuery);
+      }
+      router.push('/ai-assistant');
+      return;
+    }
+
+    if (points && points.length > 0) {
+      setShowConfirmOverwrite(true);
+    } else {
+      void doManualSearch();
+    }
+  };
+
+  const confirmOverwrite = () => {
+    setShowConfirmOverwrite(false);
+    void doManualSearch();
   };
 
   return (
@@ -850,6 +874,35 @@ export function LandingPage() {
           </div>
         </div>
       </div>
+
+      <Dialog open={showConfirmOverwrite} onOpenChange={setShowConfirmOverwrite}>
+        <DialogContent className="sm:max-w-md border-none shadow-2xl rounded-[2.5rem] p-10 overflow-hidden z-[100]">
+          <DialogHeader className="gap-4">
+            <DialogTitle className="text-xl font-black text-brand-indigo uppercase tracking-widest leading-tight">
+              Внимание
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 font-bold text-lg leading-snug">
+              В конструкторе уже есть непустой маршрут. При открытии нового маршрута старый будет очищен. Продолжить?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row gap-3 mt-8">
+            <Button
+              variant="ghost"
+              className="flex-1 font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50 h-12 rounded-xl"
+              onClick={() => setShowConfirmOverwrite(false)}
+            >
+              ОТМЕНА
+            </Button>
+            <Button
+              variant="brand-indigo"
+              className="flex-1 font-black uppercase tracking-widest h-12 rounded-xl shadow-lg shadow-brand-indigo/20"
+              onClick={confirmOverwrite}
+            >
+              ПРОДОЛЖИТЬ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <LoginModal
         open={modal === 'login'}

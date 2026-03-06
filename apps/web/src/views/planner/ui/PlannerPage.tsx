@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search,
   MapPin,
@@ -449,7 +449,9 @@ function SortablePointRow({
 }
 
 export function PlannerPage() {
-  const [activeTab, setActiveTab] = useState<'my' | 'popular'>('my');
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get('tab') === 'popular' ? 'popular' : 'my';
+  const [activeTab, setActiveTab] = useState<'my' | 'popular'>(initialTab);
   const [searchInput, setSearchInput] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -475,13 +477,8 @@ export function PlannerPage() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  // Сохраняем ID текущего трипа для восстановления при F5
-  useEffect(() => {
-    if (currentTrip?.id) {
-      localStorage.setItem('planner_currentTripId', currentTrip.id);
-    }
-  }, [currentTrip?.id]);
-
+  const { clearPlanner } = useTripStore();
+  
   // Синхронизируем plannedBudget из бюджета трипа при смене трипа.
   // Срабатывает когда лендинг передаёт трип с заполненным бюджетом (через setCurrentTrip)
   // и сразу переходит на /planner — в этом случае основной useEffect пропускает tripsApi.getAll()
@@ -506,19 +503,11 @@ export function PlannerPage() {
       });
   }, [currentTrip?.id, setPoints]);
 
-  // Загружаем существующий маршрут при входе
+  // Загружаем существующий маршрут при входе (если нет в сторе)
   useEffect(() => {
     if (currentTrip) return;
-    const savedId = localStorage.getItem('planner_currentTripId');
 
     if (!isAuthenticated) {
-      // If we have a guest trip ID in localStorage, don't auto-create new one
-      if (savedId && savedId.startsWith('guest-')) {
-        // Here we could try to load points from local storage for guest,
-        // but currently we don't persist guest points in localStorage.
-        // For simplicity, just create a new guest trip if none exists.
-      }
-
       const guestTrip: Trip = {
         id: `guest-${Date.now()}`,
         ownerId: 'guest',
@@ -536,19 +525,18 @@ export function PlannerPage() {
       return;
     }
 
+    // Если авторизован, но стор пуст - создадим или загрузим
     tripsApi
       .getAll()
       .then((all) => {
         if (all.length > 0) {
-          // Пытаемся найти тот же самый трип, который был открыт, иначе берем последний
-          const target = (savedId ? all.find((t) => t.id === savedId) : null) ?? all[0];
+          const target = all[0];
           if (target) {
             setCurrentTrip(target);
             setPlannedBudget(target.budget ?? 0);
             setIsActiveRoute(target.isActive);
           }
         } else {
-          // Create a first trip for the user if they have none
           void ensureTripId();
         }
       })
@@ -731,12 +719,9 @@ export function PlannerPage() {
         toast.error('Не удалось сохранить маршрут', { id: 'planner-status' });
       }
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setCurrentTrip(null as any);
-    setPoints([]);
+    clearPlanner();
     setPlannedBudget(0);
     setIsActiveRoute(false);
-    localStorage.removeItem('planner_currentTripId');
     toast.info('Конструктор очищен', { id: 'planner-status' });
   };
 

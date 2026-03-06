@@ -26,6 +26,14 @@ type Modal = 'login' | 'register' | null;
 
 const NAV_ITEMS = [
   {
+    href: '/',
+    icon: Home,
+    label: 'Главная',
+    activeClass: 'bg-brand-sky/10 text-brand-sky!',
+    iconActive: 'bg-brand-sky text-white',
+    iconIdle: 'bg-slate-100 text-slate-400',
+  },
+  {
     href: '/planner',
     icon: MapPin,
     label: 'Маршруты',
