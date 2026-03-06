@@ -773,7 +773,18 @@ export function LandingPage() {
                 {popularCards.map((trip, idx) => {
                   const Icon = weatherIcons[idx % weatherIcons.length] ?? Cloud;
                   return (
-                    <div key={trip.id} onClick={handleSearch} className="group cursor-pointer">
+                    <div
+                      key={trip.id}
+                      onClick={() => {
+                        const demoMatch = trip.id.match(/^demo-(\d+)$/);
+                        if (demoMatch) {
+                          router.push(`/tours/${demoMatch[1]}`);
+                        } else {
+                          handleSearch();
+                        }
+                      }}
+                      className="group cursor-pointer"
+                    >
                       <div className="relative aspect-[4/5] md:aspect-[16/10] rounded-[3rem] overflow-hidden mb-8 shadow-2xl isolation-auto">
                         <img
                           src={trip.img}
