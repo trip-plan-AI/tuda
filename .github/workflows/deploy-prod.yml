@@ -78,10 +78,14 @@ jobs:
           fi
 
           echo "[deploy] run db:push"
-          COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T api pnpm --filter api db:push --force
+          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T api pnpm --filter api db:push --force; then
+            echo "[deploy] db:push finished"
+          else
+            echo "[deploy][warn] db:push returned non-zero, continue deploy"
+          fi
 
           echo "[deploy] public schema (tables and columns)"
-          docker compose -f docker-compose.prod.yml exec --interactive=false -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "
+          if docker compose -f docker-compose.prod.yml exec --interactive=false -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "
             SELECT
               c.table_name,
               c.column_name,
@@ -90,7 +94,11 @@ jobs:
             FROM information_schema.columns AS c
             WHERE c.table_schema = 'public'
             ORDER BY c.table_name, c.ordinal_position;
-          "
+          "; then
+            echo "[deploy] schema log finished"
+          else
+            echo "[deploy][warn] schema log failed, continue deploy"
+          fi
 
           docker compose -f docker-compose.prod.yml up -d --build
           echo "[deploy] docker images"
