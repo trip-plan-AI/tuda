@@ -793,20 +793,22 @@ export function LandingPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-20 md:gap-16">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-20 md:gap-16">
                 {popularCards.map((trip, idx) => {
                   const Icon = weatherIcons[idx % weatherIcons.length] ?? Cloud;
+                  const isDemo = String(trip.id).startsWith('demo-');
+                  const tourId = isDemo ? String(trip.id).replace('demo-', '') : null;
                   return (
                     <Link
                       key={trip.id}
-                      href={trip.id.startsWith('demo-') ? `/tours/${trip.id.replace('demo-', '')}` : '#'}
+                      href={tourId ? `/tours/${tourId}` : '#'}
                       onClick={(e) => {
-                        if (!trip.id.startsWith('demo-')) {
+                        if (!isDemo) {
                           e.preventDefault();
                           handleSearch();
                         }
                       }}
-                      className="group"
+                      className="group block w-full cursor-pointer"
                     >
                       <div className="relative aspect-[4/5] md:aspect-[16/10] rounded-[3rem] overflow-hidden mb-8 shadow-2xl isolation-auto">
                         <img
@@ -824,7 +826,7 @@ export function LandingPage() {
                         </div>
 
                         <div className="absolute bottom-6 left-6 right-6 text-left">
-                          <h3 className="text-2xl md:text-4xl font-black text-white mb-1 tracking-tight leading-tight drop-shadow-2xl">
+                          <h3 className="text-2xl lg:text-4xl font-black text-white mb-1 tracking-tight leading-tight drop-shadow-2xl">
                             {trip.title}
                           </h3>
                           <div className="flex items-center gap-2 text-white/90 font-bold text-xs uppercase tracking-widest mb-4 drop-shadow-lg"></div>

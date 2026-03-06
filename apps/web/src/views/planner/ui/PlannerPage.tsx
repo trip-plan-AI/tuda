@@ -1106,7 +1106,7 @@ export function PlannerPage() {
             </div>
 
             {/* Грид карточек */}
-            <div className="grid grid-cols-2 gap-8 md:gap-12 pb-10">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12 pb-10">
               {PREDEFINED_ROUTES.filter(
                 (route) =>
                   selectedFilter === 'Все' || route.tags.some((t) => t.includes(selectedFilter)),
@@ -1119,7 +1119,7 @@ export function PlannerPage() {
                 .map((route) => (
                   <Link
                     key={route.id}
-                    className="group"
+                    className="group block w-full cursor-pointer"
                     href={`/tours/${route.id}`}
                   >
                     <div className="relative aspect-4/5 md:aspect-16/10 rounded-[3rem] overflow-hidden mb-6 shadow-2xl">
@@ -1136,7 +1136,7 @@ export function PlannerPage() {
                         </div>
                       </div>
                       <div className="absolute bottom-6 left-6 right-6 text-left">
-                        <h3 className="text-2xl md:text-4xl font-black text-white mb-4 tracking-tight leading-none drop-shadow-[0_25px_25px_rgba(0,0,0,0.15)]">
+                        <h3 className="text-2xl lg:text-4xl font-black text-white mb-4 tracking-tight leading-none drop-shadow-[0_25px_25px_rgba(0,0,0,0.15)]">
                           {route.title}
                         </h3>
                         <div className="bg-brand-yellow text-white px-6 py-2.5 rounded-full text-sm font-black uppercase tracking-widest inline-block shadow-xl">
