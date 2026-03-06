@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 
-const YANDEX_API_KEY = process.env.NEXT_PUBLIC_YANDEX_GEOSUGGEST_KEY
+const YANDEX_API_KEY = process.env.YANDEX_SUGGEST_KEY
 
 interface YandexSuggestion {
   title?: { text: string }

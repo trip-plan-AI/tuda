@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search,
   MapPin,
@@ -449,7 +450,9 @@ function SortablePointRow({
 }
 
 export function PlannerPage() {
-  const [activeTab, setActiveTab] = useState<'my' | 'popular'>('my');
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get('tab') === 'popular' ? 'popular' : 'my';
+  const [activeTab, setActiveTab] = useState<'my' | 'popular'>(initialTab);
   const [searchInput, setSearchInput] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -475,13 +478,8 @@ export function PlannerPage() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  // Сохраняем ID текущего трипа для восстановления при F5
-  useEffect(() => {
-    if (currentTrip?.id) {
-      localStorage.setItem('planner_currentTripId', currentTrip.id);
-    }
-  }, [currentTrip?.id]);
-
+  const { clearPlanner } = useTripStore();
+  
   // Синхронизируем plannedBudget из бюджета трипа при смене трипа.
   // Срабатывает когда лендинг передаёт трип с заполненным бюджетом (через setCurrentTrip)
   // и сразу переходит на /planner — в этом случае основной useEffect пропускает tripsApi.getAll()
@@ -506,19 +504,11 @@ export function PlannerPage() {
       });
   }, [currentTrip?.id, setPoints]);
 
-  // Загружаем существующий маршрут при входе
+  // Загружаем существующий маршрут при входе (если нет в сторе)
   useEffect(() => {
     if (currentTrip) return;
-    const savedId = localStorage.getItem('planner_currentTripId');
 
     if (!isAuthenticated) {
-      // If we have a guest trip ID in localStorage, don't auto-create new one
-      if (savedId && savedId.startsWith('guest-')) {
-        // Here we could try to load points from local storage for guest,
-        // but currently we don't persist guest points in localStorage.
-        // For simplicity, just create a new guest trip if none exists.
-      }
-
       const guestTrip: Trip = {
         id: `guest-${Date.now()}`,
         ownerId: 'guest',
@@ -536,19 +526,18 @@ export function PlannerPage() {
       return;
     }
 
+    // Если авторизован, но стор пуст - создадим или загрузим
     tripsApi
       .getAll()
       .then((all) => {
         if (all.length > 0) {
-          // Пытаемся найти тот же самый трип, который был открыт, иначе берем последний
-          const target = (savedId ? all.find((t) => t.id === savedId) : null) ?? all[0];
+          const target = all[0];
           if (target) {
             setCurrentTrip(target);
             setPlannedBudget(target.budget ?? 0);
             setIsActiveRoute(target.isActive);
           }
         } else {
-          // Create a first trip for the user if they have none
           void ensureTripId();
         }
       })
@@ -731,12 +720,9 @@ export function PlannerPage() {
         toast.error('Не удалось сохранить маршрут', { id: 'planner-status' });
       }
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setCurrentTrip(null as any);
-    setPoints([]);
+    clearPlanner();
     setPlannedBudget(0);
     setIsActiveRoute(false);
-    localStorage.removeItem('planner_currentTripId');
     toast.info('Конструктор очищен', { id: 'planner-status' });
   };
 
@@ -1120,7 +1106,7 @@ export function PlannerPage() {
             </div>
 
             {/* Грид карточек */}
-            <div className="grid grid-cols-2 gap-8 md:gap-12 pb-10">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12 pb-10">
               {PREDEFINED_ROUTES.filter(
                 (route) =>
                   selectedFilter === 'Все' || route.tags.some((t) => t.includes(selectedFilter)),
@@ -1131,10 +1117,10 @@ export function PlannerPage() {
                     route.title.toLowerCase().includes(popularSearch.toLowerCase()),
                 )
                 .map((route) => (
-                  <div
+                  <Link
                     key={route.id}
-                    className="group cursor-pointer"
-                    onClick={() => router.push(`/tours/${route.id}`)}
+                    className="group block w-full cursor-pointer"
+                    href={`/tours/${route.id}`}
                   >
                     <div className="relative aspect-4/5 md:aspect-16/10 rounded-[3rem] overflow-hidden mb-6 shadow-2xl">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1150,7 +1136,7 @@ export function PlannerPage() {
                         </div>
                       </div>
                       <div className="absolute bottom-6 left-6 right-6 text-left">
-                        <h3 className="text-2xl md:text-4xl font-black text-white mb-4 tracking-tight leading-none drop-shadow-[0_25px_25px_rgba(0,0,0,0.15)]">
+                        <h3 className="text-2xl lg:text-4xl font-black text-white mb-4 tracking-tight leading-none drop-shadow-[0_25px_25px_rgba(0,0,0,0.15)]">
                           {route.title}
                         </h3>
                         <div className="bg-brand-yellow text-white px-6 py-2.5 rounded-full text-sm font-black uppercase tracking-widest inline-block shadow-xl">
@@ -1161,7 +1147,7 @@ export function PlannerPage() {
                     <p className="text-slate-500 text-lg font-medium leading-relaxed px-4 text-left">
                       {route.desc}
                     </p>
-                  </div>
+                  </Link>
                 ))}
             </div>
           </div>
