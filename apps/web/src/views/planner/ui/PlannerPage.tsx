@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -1116,10 +1117,10 @@ export function PlannerPage() {
                     route.title.toLowerCase().includes(popularSearch.toLowerCase()),
                 )
                 .map((route) => (
-                  <div
+                  <Link
                     key={route.id}
-                    className="group cursor-pointer"
-                    onClick={() => router.push(`/tours/${route.id}`)}
+                    className="group"
+                    href={`/tours/${route.id}`}
                   >
                     <div className="relative aspect-4/5 md:aspect-16/10 rounded-[3rem] overflow-hidden mb-6 shadow-2xl">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1146,7 +1147,7 @@ export function PlannerPage() {
                     <p className="text-slate-500 text-lg font-medium leading-relaxed px-4 text-left">
                       {route.desc}
                     </p>
-                  </div>
+                  </Link>
                 ))}
             </div>
           </div>

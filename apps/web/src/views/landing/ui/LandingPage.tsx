@@ -797,17 +797,16 @@ export function LandingPage() {
                 {popularCards.map((trip, idx) => {
                   const Icon = weatherIcons[idx % weatherIcons.length] ?? Cloud;
                   return (
-                    <div
+                    <Link
                       key={trip.id}
-                      onClick={() => {
-                        const demoMatch = trip.id.match(/^demo-(\d+)$/);
-                        if (demoMatch) {
-                          router.push(`/tours/${demoMatch[1]}`);
-                        } else {
+                      href={trip.id.startsWith('demo-') ? `/tours/${trip.id.replace('demo-', '')}` : '#'}
+                      onClick={(e) => {
+                        if (!trip.id.startsWith('demo-')) {
+                          e.preventDefault();
                           handleSearch();
                         }
                       }}
-                      className="group cursor-pointer"
+                      className="group"
                     >
                       <div className="relative aspect-[4/5] md:aspect-[16/10] rounded-[3rem] overflow-hidden mb-8 shadow-2xl isolation-auto">
                         <img
@@ -837,7 +836,7 @@ export function LandingPage() {
                       <p className="text-slate-500 text-xl font-medium leading-relaxed px-4">
                         {trip.desc}
                       </p>
-                    </div>
+                    </Link>
                   );
                 })}
               </div>
