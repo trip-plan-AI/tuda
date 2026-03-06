@@ -68,12 +68,17 @@ jobs:
           docker compose -f docker-compose.prod.yml ps db
           docker compose -f docker-compose.prod.yml exec -T db sh -lc 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 
+          echo "[deploy] start db backup"
           mkdir -p /opt/apps/travel-planner/backups
           BACKUP_FILE="/opt/apps/travel-planner/backups/db_$(date +%Y%m%d_%H%M%S).sql"
-          docker compose -f docker-compose.prod.yml exec -T db sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$BACKUP_FILE"
-          echo "[deploy] db backup saved to: $BACKUP_FILE"
+          if docker compose -f docker-compose.prod.yml exec -T db sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$BACKUP_FILE"; then
+            echo "[deploy] db backup saved to: $BACKUP_FILE"
+          else
+            echo "[deploy][warn] db backup failed, continue deploy"
+          fi
 
-          COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm api pnpm --filter api db:push --force
+          echo "[deploy] run db:push"
+          COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T api pnpm --filter api db:push --force
 
           echo "[deploy] public schema (tables and columns)"
           docker compose -f docker-compose.prod.yml exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "
