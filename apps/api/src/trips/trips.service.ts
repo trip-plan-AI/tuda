@@ -22,6 +22,11 @@ export class TripsService {
     return this.db.query.trips.findMany({
       where: eq(schema.trips.ownerId, userId),
       orderBy: [desc(schema.trips.createdAt)],
+      with: {
+        points: {
+          orderBy: [schema.routePoints.order],
+        },
+      },
     })
   }
 
