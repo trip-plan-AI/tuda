@@ -134,7 +134,6 @@ export function ProfilePage() {
   const progressTrackColor = '#e2e8f0';
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const mainContentScrollRef = useRef<HTMLDivElement>(null);
   const savedListScrollRef = useRef<HTMLDivElement>(null);
   const routesListScrollRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
@@ -143,13 +142,7 @@ export function ProfilePage() {
   const startHeight = useRef(0);
 
   const evaluateScrollState = useCallback(() => {
-    const isDesktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
-    const container =
-      activeTab === 'saved'
-        ? savedListScrollRef.current
-        : isDesktop
-          ? routesListScrollRef.current
-          : mainContentScrollRef.current;
+    const container = activeTab === 'saved' ? savedListScrollRef.current : routesListScrollRef.current;
     if (!container) return;
 
     const { scrollTop, clientHeight, scrollHeight } = container;
@@ -186,13 +179,7 @@ export function ProfilePage() {
   }, [evaluateScrollState]);
 
   const handleScrollToTop = useCallback(() => {
-    const isDesktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
-    const container =
-      activeTab === 'saved'
-        ? savedListScrollRef.current
-        : isDesktop
-          ? routesListScrollRef.current
-          : mainContentScrollRef.current;
+    const container = activeTab === 'saved' ? savedListScrollRef.current : routesListScrollRef.current;
     if (!container) return;
 
     const currentTop = container.scrollTop;
@@ -200,11 +187,7 @@ export function ProfilePage() {
       container.scrollTo({ top: 1200, behavior: 'auto' });
       window.requestAnimationFrame(() => {
         const currentContainer =
-          activeTab === 'saved'
-            ? savedListScrollRef.current
-            : isDesktop
-              ? routesListScrollRef.current
-              : mainContentScrollRef.current;
+          activeTab === 'saved' ? savedListScrollRef.current : routesListScrollRef.current;
         currentContainer?.scrollTo({ top: 0, behavior: 'smooth' });
       });
       return;
@@ -384,11 +367,7 @@ export function ProfilePage() {
             </div>
           </div>
 
-          <div
-            ref={mainContentScrollRef}
-            onScroll={activeTab === 'routes' ? handleContentScroll : undefined}
-            className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col pb-[calc(env(safe-area-inset-bottom,0px)+9.5rem)] md:pb-10 no-scrollbar"
-          >
+          <div className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col pb-[calc(env(safe-area-inset-bottom,0px)+9.5rem)] md:pb-10 no-scrollbar">
             <div className="flex flex-col items-center md:items-start mb-10">
               <div
                 onClick={handleAvatarClick}
@@ -475,9 +454,7 @@ export function ProfilePage() {
             <div
               className={cn(
                 'bg-slate-50/50 rounded-[2.5rem] border border-slate-100 relative p-4 md:p-8',
-                activeTab === 'saved'
-                  ? 'flex-1 min-h-[clamp(430px,58vh,720px)] overflow-hidden'
-                  : 'h-auto overflow-visible',
+                'flex-1 min-h-[clamp(430px,58vh,720px)] overflow-hidden',
               )}
             >
               {activeTab === 'routes' ? (
@@ -486,7 +463,7 @@ export function ProfilePage() {
                   <div
                     ref={routesListScrollRef}
                     onScroll={handleContentScroll}
-                    className="space-y-6 w-full animate-in fade-in duration-500 pb-2 md:h-full md:overflow-y-auto md:pr-1 md:no-scrollbar"
+                    className="space-y-6 w-full h-full overflow-y-auto pr-1 no-scrollbar animate-in fade-in duration-500 pb-2"
                   >
                     <div className="flex justify-between items-center">
                       <h3 className="text-lg font-black text-brand-indigo uppercase tracking-widest">
@@ -547,16 +524,22 @@ export function ProfilePage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-10">
-                    <MapIcon size={48} className="mb-4 opacity-20" />
-                    <p className="text-sm font-bold italic">Нет активного маршрута</p>
-                    <Button
-                      onClick={() => router.push('/planner')}
-                      variant="brand"
-                      className="mt-6 rounded-xl uppercase font-black tracking-widest text-xs"
-                    >
-                      Создать
-                    </Button>
+                  <div
+                    ref={routesListScrollRef}
+                    onScroll={handleContentScroll}
+                    className="h-full overflow-y-auto pr-1 no-scrollbar"
+                  >
+                    <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-10">
+                      <MapIcon size={48} className="mb-4 opacity-20" />
+                      <p className="text-sm font-bold italic">Нет активного маршрута</p>
+                      <Button
+                        onClick={() => router.push('/planner')}
+                        variant="brand"
+                        className="mt-6 rounded-xl uppercase font-black tracking-widest text-xs"
+                      >
+                        Создать
+                      </Button>
+                    </div>
                   </div>
                 )
               ) : // "Сохранено" tab
