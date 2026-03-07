@@ -34,6 +34,11 @@ function getBudgetMetrics(plannedBudget: number | null | undefined, totalBudget:
   return { plan, total, isOverBudget, progressPercent };
 }
 
+function formatRub(value: number) {
+  // Заменяем неразрывные пробелы на обычные, чтобы длинные суммы могли переноситься в контейнере.
+  return value.toLocaleString('ru-RU').replace(/\u00A0/g, ' ');
+}
+
 function BudgetSummary({
   plannedBudget,
   totalBudget,
@@ -52,8 +57,8 @@ function BudgetSummary({
           <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
             Планируемый
           </span>
-          <span className="text-lg sm:text-xl md:text-2xl font-black text-brand-indigo leading-tight break-words">
-            {plan.toLocaleString('ru-RU')} ₽
+          <span className="text-base sm:text-lg md:text-xl lg:text-2xl font-black text-brand-indigo leading-tight break-all">
+            {formatRub(plan)} ₽
           </span>
         </div>
 
@@ -63,11 +68,11 @@ function BudgetSummary({
           </span>
           <span
             className={cn(
-              'text-lg sm:text-xl md:text-2xl font-black leading-tight break-words',
+              'text-base sm:text-lg md:text-xl lg:text-2xl font-black leading-tight break-all',
               isOverBudget ? 'text-red-500' : 'text-brand-indigo',
             )}
           >
-            {total.toLocaleString('ru-RU')} ₽
+            {formatRub(total)} ₽
           </span>
         </div>
       </div>
@@ -83,14 +88,16 @@ function BudgetSummary({
           />
         </div>
 
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between text-[10px] font-bold text-slate-400">
-          <span>{plan > 0 ? `Использовано ${progressPercent}%` : 'Лимит не задан'}</span>
-          <span>{plan > 0 ? `${(plan - total).toLocaleString('ru-RU')} ₽` : '—'}</span>
+        <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-400">
+          <span className="min-w-0 break-words">
+            {plan > 0 ? `Использовано ${progressPercent}%` : 'Лимит не задан'}
+          </span>
+          <span className="min-w-0 text-right break-all">{plan > 0 ? `${formatRub(plan - total)} ₽` : '—'}</span>
         </div>
 
         <div
           className={cn(
-            'flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-[11px] font-black leading-tight break-words',
+            'flex items-start gap-2 rounded-xl border px-2.5 py-1.5 text-[10px] sm:text-[11px] font-black leading-tight break-words',
             isOverBudget
               ? 'border-red-100 bg-red-50/70 text-red-600'
               : 'border-emerald-100 bg-emerald-50/70 text-emerald-600',
@@ -99,9 +106,9 @@ function BudgetSummary({
           {isOverBudget ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
           {plan > 0 ? (
             isOverBudget ? (
-              <span>Перерасход: +{(total - plan).toLocaleString('ru-RU')} ₽</span>
+              <span>Перерасход: +{formatRub(total - plan)} ₽</span>
             ) : (
-              <span>Остаток: {(plan - total).toLocaleString('ru-RU')} ₽</span>
+              <span>Остаток: {formatRub(plan - total)} ₽</span>
             )
           ) : (
             <span>Задайте планируемый бюджет для контроля расхода</span>
@@ -455,7 +462,7 @@ export function ProfilePage() {
               className={cn(
                 'bg-slate-50/50 rounded-[2.5rem] border border-slate-100 relative p-4 md:p-8',
                 activeTab === 'routes'
-                  ? 'flex-1 min-h-[clamp(540px,74vh,860px)] overflow-hidden'
+                  ? 'flex-1 min-h-[clamp(620px,82vh,980px)] overflow-hidden'
                   : 'flex-1 min-h-[clamp(430px,58vh,720px)] overflow-hidden',
               )}
             >
@@ -478,7 +485,7 @@ export function ProfilePage() {
                       </Button>
                     </div>
 
-                    <div className="w-full aspect-[16/10] md:aspect-video rounded-[2rem] overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100">
+                    <div className="w-full aspect-[16/11] md:aspect-video rounded-[2rem] overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100">
                       <RouteMap points={activeRoute.points || []} onPointDragEnd={() => {}} />
                     </div>
 
@@ -495,7 +502,7 @@ export function ProfilePage() {
                         </div>
                       </div>
 
-                      <div className="relative flex-1 min-h-[170px] md:min-h-[240px]">
+                      <div className="relative flex-1 min-h-[72px] md:min-h-[140px]">
                         <div
                           ref={routePointsScrollRef}
                           onScroll={handleContentScroll}
