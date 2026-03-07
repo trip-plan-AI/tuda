@@ -15,6 +15,7 @@ import {
   Wind,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { startOfMonth } from 'date-fns';
 import { startOfToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { api } from '@/shared/api';
@@ -727,7 +728,7 @@ export function LandingPage() {
                                 }}
                                 locale={ru}
                                 captionLayout="dropdown"
-                                startMonth={new Date(2020, 0)}
+                                startMonth={startOfMonth(startOfToday())}
                                 endMonth={new Date(2035, 11)}
                                 classNames={{ caption_label: 'hidden' }}
                               />
@@ -771,7 +772,7 @@ export function LandingPage() {
                                 }}
                                 locale={ru}
                                 captionLayout="dropdown"
-                                startMonth={new Date(2020, 0)}
+                                startMonth={startOfMonth(startOfToday())}
                                 endMonth={new Date(2035, 11)}
                                 classNames={{ caption_label: 'hidden' }}
                               />

@@ -32,6 +32,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { format } from 'date-fns';
+import { startOfMonth } from 'date-fns';
 import { startOfToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { useTripStore, tripsApi, type CreateTripPayload, type Trip } from '@/entities/trip';
@@ -353,7 +354,7 @@ function SortablePointRow({
                   disabled={(date) => date < startOfToday()}
                   locale={ru}
                   captionLayout="dropdown"
-                  startMonth={new Date(2020, 0)}
+                  startMonth={startOfMonth(startOfToday())}
                   endMonth={new Date(2035, 11)}
                   classNames={{ caption_label: 'hidden' }}
                 />
