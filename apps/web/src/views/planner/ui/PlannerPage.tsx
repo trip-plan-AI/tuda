@@ -32,6 +32,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { format } from 'date-fns';
+import { startOfToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { useTripStore, tripsApi, type CreateTripPayload, type Trip } from '@/entities/trip';
 import { usePointCrud } from '@/features/route-create';
@@ -349,6 +350,7 @@ function SortablePointRow({
                     onUpdate(point.id, { visitDate: date?.toISOString() });
                     setDateOpen(false);
                   }}
+                  disabled={(date) => date < startOfToday()}
                   locale={ru}
                   captionLayout="dropdown"
                   startMonth={new Date(2020, 0)}
