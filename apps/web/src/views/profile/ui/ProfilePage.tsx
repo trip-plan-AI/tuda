@@ -40,8 +40,7 @@ export function ProfilePage() {
   const [isScrollableSavedList, setIsScrollableSavedList] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
 
-  const progressColor =
-    scrollProgress < 0.4 ? '#0ea5e9' : scrollProgress < 0.8 ? '#4f46e5' : '#9333ea';
+  const progressColor = '#334155';
   const progressTrackColor = '#e2e8f0';
 
   const fileInputRef = useRef<HTMLInputElement>(null);
