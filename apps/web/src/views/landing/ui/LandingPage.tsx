@@ -472,7 +472,7 @@ export function LandingPage() {
     <>
       <div className="relative flex flex-col min-h-full bg-white">
         {/* 1. CINEMATIC HERO SECTION (Layla Style) */}
-        <div className="relative h-auto md:h-screen flex flex-col items-center justify-start md:justify-center overflow-hidden py-8 md:py-0">
+        <div className="relative h-auto md:h-screen flex flex-col items-center justify-start md:justify-center overflow-hidden pt-24 pb-8 md:pt-0 md:pb-0">
           {/* Background Layer */}
           <div className="absolute inset-0 z-0">
             <div

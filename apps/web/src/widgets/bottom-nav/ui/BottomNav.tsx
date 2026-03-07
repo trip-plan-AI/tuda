@@ -34,9 +34,10 @@ export function BottomNav() {
     <>
       <nav
         className={cn(
-          'fixed bottom-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-xl flex items-center justify-around px-2 z-50 md:hidden',
+          'fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl flex items-center justify-around px-2 z-50 md:hidden',
           !isProfilePage && 'border-t border-slate-100',
         )}
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)', minHeight: '4rem' }}
       >
         {NAV.map(({ href, icon: Icon, label }) => (
           <Link
