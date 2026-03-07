@@ -533,7 +533,7 @@ export function ProfilePage() {
               )}
 
               {activeTab === 'saved' && isScrollableSavedList && showScrollTop && (
-                <div className="hidden md:block absolute right-4 bottom-4 z-30">
+                <div className="hidden md:block absolute right-4 bottom-16 z-30">
                   <button
                     type="button"
                     aria-label="Вернуться наверх"
