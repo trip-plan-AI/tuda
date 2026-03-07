@@ -88,8 +88,11 @@ export class ProviderSearchService {
       .slice(0, 15);
 
     this.logger.log(
-      `[ProviderSearch] Final pre-filter complete. Returning top ${result.length} points for Semantic Filter.`,
+      `[ProviderSearch] Final pre-filter complete. Returning top ${result.length} points for Semantic Filter:`,
     );
+    result.forEach((poi, i) => {
+      this.logger.log(`  ${i + 1}. [${poi.category}] ${poi.name} (rating: ${poi.rating})`);
+    });
     return result;
   }
 

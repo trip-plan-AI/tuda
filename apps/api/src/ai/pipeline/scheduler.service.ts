@@ -98,6 +98,13 @@ export class SchedulerService {
     this.logger.log(
       `Route plan successfully generated. Total budget estimated: ${totalBudgetEstimated} rub.`,
     );
+    plan.days.forEach(day => {
+      this.logger.log(`  Day ${day.day_number}: ${day.points.length} points`);
+      day.points.forEach(point => {
+        this.logger.log(`    - [${point.arrival_time}-${point.departure_time}] ${point.poi.name}`);
+      });
+    });
+
     return plan;
   }
 

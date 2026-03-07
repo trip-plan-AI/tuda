@@ -86,8 +86,11 @@ export class SemanticFilterService {
         .filter((item): item is FilteredPoi => item !== null);
 
       this.logger.log(
-        `Semantic Yandex selected ${selectedRaw.length} points, successfully mapped ${selected.length} out of original ${pois.length}.`,
+        `Semantic Yandex selected ${selectedRaw.length} points, successfully mapped ${selected.length} out of original ${pois.length}:`,
       );
+      selected.forEach((poi, i) => {
+        this.logger.log(`  ${i + 1}. ${poi.name} - ${poi.description}`);
+      });
 
       const minRequired = Math.min(1, pois.length);
       if (selected.length < minRequired) {
