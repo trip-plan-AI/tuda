@@ -8,6 +8,7 @@ import {
   Pencil,
   Map as MapIcon,
   ChevronLeft,
+  ArrowUp,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import { useUserStore, usersApi, type User } from '@/entities/user'
@@ -35,10 +36,16 @@ export function ProfilePage() {
   const [tempName, setTempName] = useState(user?.name || '')
   const [savedTrips, setSavedTrips] = useState<Trip[]>([])
   const [isLoadingTrips, setIsLoadingTrips] = useState(true)
+  const [showScrollTop, setShowScrollTop] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const contentScrollRef = useRef<HTMLDivElement>(null)
   const startY = useRef(0)
   const startHeight = useRef(0)
+
+  const handleScrollToTop = () => {
+    contentScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -196,7 +203,11 @@ export function ProfilePage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col pb-28 md:pb-10 no-scrollbar">
+          <div
+            ref={contentScrollRef}
+            onScroll={(e) => setShowScrollTop(e.currentTarget.scrollTop > 320)}
+            className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col pb-28 md:pb-10 no-scrollbar"
+          >
             <div className="flex flex-col items-center md:items-start mb-10">
               <div
                 onClick={handleAvatarClick}
@@ -406,6 +417,19 @@ export function ProfilePage() {
                       <p className="text-sm font-bold italic">Список пуст</p>
                   </div>
                 )
+              )}
+
+              {activeTab === 'saved' && showScrollTop && savedTrips.length > 0 && (
+                <Button
+                  type="button"
+                  onClick={handleScrollToTop}
+                  variant="brand-indigo"
+                  shape="xl"
+                  className="absolute right-4 bottom-4 md:right-6 md:bottom-6 px-4 py-2 h-auto shadow-lg"
+                >
+                  <ArrowUp size={16} className="mr-2" />
+                  Наверх
+                </Button>
               )}
             </div>
           </div>
