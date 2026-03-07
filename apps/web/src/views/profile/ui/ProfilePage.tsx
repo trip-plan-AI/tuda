@@ -532,7 +532,7 @@ export function ProfilePage() {
                         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 md:h-6 bg-gradient-to-t from-white to-transparent" />
                       </div>
 
-                      <div className="mt-3 md:mt-8 pt-3 md:pt-6 border-t border-slate-50 shrink-0">
+                      <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-50 shrink-0">
                         <BudgetSummary
                           plannedBudget={activeRoute.budget}
                           totalBudget={activeRouteTotalBudget}
