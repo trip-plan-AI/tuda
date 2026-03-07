@@ -462,7 +462,7 @@ export function ProfilePage() {
               className={cn(
                 'bg-slate-50/50 rounded-[2.5rem] border border-slate-100 relative p-4 md:p-8',
                 activeTab === 'routes'
-                  ? 'flex-1 min-h-[clamp(620px,82vh,980px)] overflow-hidden'
+                  ? 'flex-1 min-h-[clamp(620px,82vh,980px)] md:min-h-[clamp(700px,86vh,1060px)] overflow-hidden'
                   : 'flex-1 min-h-[clamp(430px,58vh,720px)] overflow-hidden',
               )}
             >
