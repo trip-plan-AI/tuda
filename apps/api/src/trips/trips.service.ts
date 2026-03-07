@@ -3,6 +3,7 @@ import {
   Inject,
   NotFoundException,
   ForbiddenException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { eq, and, desc } from 'drizzle-orm';
@@ -22,6 +23,11 @@ export class TripsService {
     return this.db.query.trips.findMany({
       where: eq(schema.trips.ownerId, userId),
       orderBy: [desc(schema.trips.createdAt)],
+      with: {
+        points: {
+          orderBy: [schema.routePoints.order],
+        },
+      },
     });
   }
 
@@ -54,6 +60,18 @@ export class TripsService {
   }
 
   async create(userId: string, dto: CreateTripDto) {
+    if (!userId) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+
+    const user = await this.db.query.users.findFirst({
+      where: eq(schema.users.id, userId),
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found for current token');
+    }
+
     const [trip] = await this.db
       .insert(schema.trips)
       .values({ ...dto, ownerId: userId })

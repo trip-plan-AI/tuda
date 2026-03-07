@@ -1,3 +1,5 @@
+import type { RoutePoint } from '@/entities/route-point/model/route-point.types'
+
 export interface Trip {
   id: string
   title: string
@@ -10,4 +12,5 @@ export interface Trip {
   endDate: string | null
   createdAt: string
   updatedAt: string
+  points?: RoutePoint[]
 }

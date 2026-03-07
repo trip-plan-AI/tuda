@@ -15,9 +15,15 @@ const NAV = [
 
 export function BottomNav() {
   const pathname = usePathname()
+  const isProfilePage = pathname.startsWith('/profile')
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-xl border-t border-slate-100 flex items-center justify-around px-2 z-50 md:hidden">
+    <nav
+      className={cn(
+        'fixed bottom-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-xl flex items-center justify-around px-2 z-50 md:hidden',
+        !isProfilePage && 'border-t border-slate-100',
+      )}
+    >
       {NAV.map(({ href, icon: Icon, label }) => (
         <Link
           key={href}

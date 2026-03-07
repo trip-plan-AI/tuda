@@ -30,6 +30,13 @@
 | AI | GPT-4o-mini (Orchestrator + Scheduler) + YandexGPT (Semantic Filter) |
 | Cache | Redis (POI cache TTL 24h + AI сессии) |
 
+### 1.3 Архитектурное правило API (Вариант C)
+
+- Все интеграции с внешними API (геокодинг, suggest, AI provider APIs и т.д.) выполняются **только на backend**.
+- Frontend (`apps/web`) обращается только к внутреннему backend API (`/api/*`) и не делает прямые `fetch('https://external...')`.
+- Публичный API-контур единый: Nest bootstrap в [`main.ts`](../../apps/api/src/main.ts).
+- Next Route Handlers не используются как публичный бизнес-API для geocode/suggest.
+
 ---
 
 ## 2. Прототип — Инвентаризация функционала
@@ -42,7 +49,7 @@
 | Компонент | Функционал | Приоритет | Целевой путь (Next.js) |
 |-----------|-----------|-----------|----------------------|
 | `LandingPage.js` | Hero video, AI поиск, ручная форма поиска, карусель маршрутов, FAQ | **P0** | `/app/(main)/page.tsx` |
-| `PlannerPage.js` | Конструктор маршрута, Yandex геокодирование, интерактивная карта, таблица точек, бюджет | **P0** | `/app/(main)/planner/page.tsx` |
+| `PlannerPage.js` | Конструктор маршрута, геокодинг через backend API, интерактивная карта, таблица точек, бюджет | **P0** | `/app/(main)/planner/page.tsx` |
 | `AIAssistantPage.js` | Чат-интерфейс, контекст маршрута, quick actions, tour cards в ответах | **P0** | `/app/(main)/ai-assistant/page.tsx` |
 | `ProfilePage.js` | Аватар, имя, активный маршрут, сохранённые маршруты, редактирование | **P1** | `/app/(main)/profile/page.tsx` |
 | `TourPage.js` | Детали предзаданного маршрута, карта, точки с изображениями, sidebar | **P1** | `/app/(main)/tours/[id]/page.tsx` |
@@ -175,7 +182,7 @@ apps/web/src/
 │   ├── ai-query/                     # Запрос к Dual-AI Engine
 │   │   ├── model/ai-query.store.ts
 │   │   └── index.ts
-│   ├── poi-search/                   # Геокодирование через Yandex
+│   ├── poi-search/                   # Геокодирование через backend geosearch API
 │   │   ├── model/poi-search.store.ts
 │   │   ├── ui/SearchDropdown.tsx
 │   │   └── index.ts
@@ -266,6 +273,11 @@ apps/api/src/
 │   ├── route-points.controller.ts    # CRUD /trips/:id/points
 │   └── route-points.service.ts
 │
+├── geosearch/                        # Геопоиск/геокодинг через внешние провайдеры (backend-only)
+│   ├── geosearch.module.ts
+│   ├── geosearch.controller.ts       # GET /geosearch/suggest
+│   └── geosearch.service.ts          # Yandex + fallback (например Nominatim)
+│
 ├── optimization/                     # TSP nearest-neighbor алгоритм
 │   ├── optimization.module.ts
 │   ├── optimization.controller.ts    # POST /trips/:id/optimize
@@ -314,6 +326,7 @@ apps/api/src/
 | PATCH | `/trips/:id/points/:pid` | JWT | Обновление точки |
 | DELETE | `/trips/:id/points/:pid` | JWT | Удаление точки |
 | POST | `/trips/:id/optimize` | JWT | TSP оптимизация (body: `{ transport_mode, params }`) |
+| GET | `/geosearch/suggest?q=...` | —/JWT* | Геоподсказки и геокодинг (backend прокси внешних API) |
 | POST | `/ai/plan` | JWT | Dual-AI планирование |
 
 ### 4.2 WebSocket Events
@@ -505,6 +518,8 @@ export const aiSessions = pgTable('ai_sessions', {
 **Замена:** Прототип использует Yandex Maps API 2.1 (CDN). Production версия
 интегрирует тот же API через динамический script loader (Next.js нет пакета).
 
+**Важно:** это правило относится только к JS SDK карты (рендер карты в браузере). Любые серверные запросы к внешним REST API геокодинга/suggest выполняются только в backend-модуле geosearch.
+
 **Реализация:**
 ```typescript
 // widgets/route-map/lib/yandex-maps.ts
@@ -593,7 +608,8 @@ export async function loadYandexMaps(apiKey: string): Promise<void> {
 - [ ] Yandex Maps loader (динамический script)
 - [ ] Draggable placemarks с numbered badges
 - [ ] Polyline с анимацией при изменении маршрута
-- [ ] Geocoding service (shared/api/)
+- [ ] Backend geosearch service (`/api/geosearch/suggest`) для geocode/suggest
+- [ ] Frontend подключение только к backend geosearch endpoint (без прямых внешних fetch)
 - [ ] Автоподбор bounds при изменении точек
 
 ---
@@ -640,6 +656,10 @@ theme: {
 4. **Redis** — опционален для Phase 5 (AI кэш). Без него — повторные API вызовы
 5. **Socket.io** — требует sticky sessions при горизонтальном масштабировании (Redis adapter)
 6. **PostgreSQL** — минимальная версия 14 (для jsonb, uuid, enum)
+
+Дополнение по безопасности интеграций:
+- Секреты внешних API не хранятся во frontend-клиенте.
+- Внешние API вызываются только из backend-кода с централизованным логированием, rate limiting и fallback-логикой.
 
 ---
 
