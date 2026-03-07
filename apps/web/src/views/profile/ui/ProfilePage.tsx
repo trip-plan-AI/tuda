@@ -24,6 +24,9 @@ const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.Route
 })
 
 export function ProfilePage() {
+  const progressColor = '#4f46e5'
+  const progressTrackColor = '#e2e8f0'
+
   const router = useRouter()
   const { user, setUser } = useUserStore()
   const { setCurrentTrip } = useTripStore()
@@ -502,7 +505,7 @@ export function ProfilePage() {
                     <span
                       className="absolute inset-0 rounded-full"
                       style={{
-                        background: `conic-gradient(#4f46e5 ${progressDegrees}deg, #e2e8f0 ${progressDegrees}deg)`,
+                        background: `conic-gradient(${progressColor} ${progressDegrees}deg, ${progressTrackColor} ${progressDegrees}deg)`,
                       }}
                     />
                     <span className="absolute inset-[3px] rounded-full bg-white" />
@@ -528,7 +531,7 @@ export function ProfilePage() {
           <span
             className="absolute inset-0 rounded-full"
             style={{
-              background: `conic-gradient(#4f46e5 ${progressDegrees}deg, #e2e8f0 ${progressDegrees}deg)`,
+              background: `conic-gradient(${progressColor} ${progressDegrees}deg, ${progressTrackColor} ${progressDegrees}deg)`,
             }}
           />
           <span className="absolute inset-[3px] rounded-full bg-white" />
