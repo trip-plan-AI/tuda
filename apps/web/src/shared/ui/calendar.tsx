@@ -24,7 +24,7 @@ function Calendar({
         month: "flex flex-col gap-4 min-h-[320px]",
         month_caption: "flex justify-center relative items-center h-9",
         caption_label: "text-sm font-medium",
-        dropdowns: "flex justify-center gap-1",
+        dropdowns: "flex justify-center gap-2",
         nav: "flex items-center",
         button_previous: cn(
           buttonVariants({ variant: "ghost" }),
@@ -54,7 +54,8 @@ function Calendar({
         range_middle:
           "aria-selected:bg-accent aria-selected:text-accent-foreground",
         hidden: "invisible",
-        dropdown: "bg-white border border-slate-200 rounded-md text-sm font-medium px-1 py-0.5 focus:outline-none cursor-pointer",
+        dropdown:
+          "h-8 min-w-[7.5rem] rounded-xl border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-blue/20 cursor-pointer",
         ...classNames,
       }}
       components={{
