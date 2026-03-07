@@ -1092,7 +1092,7 @@ export function PlannerPage() {
                     </span>
                   </div>
 
-                  <div className="flex flex-col xl:flex-row gap-4 items-stretch xl:items-center justify-between bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                  <div className="flex flex-col lg:flex-row gap-4 items-center justify-between bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
                     <Button
                       onClick={() => {
                         if (!isAuthenticated) {
@@ -1108,11 +1108,11 @@ export function PlannerPage() {
                       disabled={isAuthenticated && points.length === 0}
                       variant="ghost"
                       shape="xl"
-                        className="w-full sm:w-auto px-8 py-4 font-black uppercase tracking-widest text-xs h-auto bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                      className="w-full lg:w-auto px-8 py-4 font-black uppercase tracking-widest text-xs h-auto bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
                     >
                       НОВЫЙ МАРШРУТ
                     </Button>
-                    <div className="flex flex-col sm:flex-row xl:flex-row flex-wrap gap-4 w-full xl:w-auto">
+                    <div className="flex flex-col lg:flex-row gap-4 w-full lg:w-auto">
                       <Button
                         onClick={() => {
                           if (!isAuthenticated) {
@@ -1124,7 +1124,7 @@ export function PlannerPage() {
                         disabled={isAuthenticated && points.length === 0}
                         variant="brand-purple"
                         shape="xl"
-                        className="w-full sm:w-auto px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full lg:w-auto px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         РЕДАКТИРОВАТЬ С AI
                       </Button>
@@ -1149,7 +1149,7 @@ export function PlannerPage() {
                         disabled={isAuthenticated && points.length === 0}
                         variant="brand-indigo"
                         shape="xl"
-                        className="w-full sm:w-auto px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full lg:w-auto px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         СОХРАНИТЬ МАРШРУТ
                       </Button>
