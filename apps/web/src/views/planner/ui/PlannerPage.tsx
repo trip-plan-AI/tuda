@@ -173,7 +173,7 @@ function SortablePointRow({
   const handleAddressChange = (val: string) => {
     setAddressVal(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => getSuggestions(val), 400);
+    debounceRef.current = setTimeout(() => getSuggestions(val), 1000);
   };
 
   const resolveCoords = async (query: string) => {
@@ -660,7 +660,7 @@ export function PlannerPage() {
       setShowDropdown(false);
     }
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => geocode(value), 400);
+    searchDebounceRef.current = setTimeout(() => geocode(value), 1000);
   };
 
   // Геокодирование через ymaps3.search() — работает с Maps JS ключом без отдельного geocoder ключа
