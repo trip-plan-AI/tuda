@@ -292,7 +292,12 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/tripdb
 JWT_SECRET=supersecret
 JWT_EXPIRES_IN=7d
 FRONTEND_URL=http://localhost:3000
-OPENAI_API_KEY=sk-...
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+AI_MODEL=openai/gpt-4o-mini
+OPENROUTER_SITE_URL=http://localhost:3001
+OPENROUTER_APP_NAME=travel-planner-api
 YANDEX_GPT_API_KEY=...
 YANDEX_MAPS_API_KEY=...
 YANDEX_FOLDER_ID=...
@@ -1135,7 +1140,7 @@ Return ONLY valid JSON with this structure:
 
 @Injectable()
 export class OrchestratorService {
-  private openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  constructor(private readonly llmClientService: LlmClientService) {}
 
   async parseIntent(query: string, history: Message[]): Promise<ParsedIntent> {
     const messages = [
@@ -1160,8 +1165,8 @@ export class OrchestratorService {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const resp = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const resp = await this.llmClientService.client.chat.completions.create({
+        model: this.llmClientService.model,
         messages: isRetry
           ? [
               ...messages,
