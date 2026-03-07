@@ -523,7 +523,7 @@ export function ProfilePage() {
           type="button"
           aria-label="Вернуться наверх"
           onClick={handleScrollToTop}
-          className="md:hidden fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+16px)] z-50 h-14 w-14 rounded-full shadow-xl transition-transform duration-200 active:scale-95 focus:outline-none focus:ring-2 focus:ring-brand-blue/40"
+          className="md:hidden fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+92px)] z-[70] h-14 w-14 rounded-full shadow-xl transition-transform duration-200 active:scale-95 focus:outline-none focus:ring-2 focus:ring-brand-blue/40"
         >
           <span
             className="absolute inset-0 rounded-full"
