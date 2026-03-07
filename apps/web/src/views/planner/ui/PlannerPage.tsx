@@ -79,6 +79,8 @@ interface GeoSuggestion {
 
 const FILTERS = ['Все', 'Активный', 'Зима', 'Экстрим'] as const;
 type Filter = (typeof FILTERS)[number];
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface PointRowProps {
   point: RoutePoint;
@@ -587,7 +589,45 @@ export function PlannerPage() {
 
   // Если трипа нет — создаём «Мой маршрут» и сразу возвращаем его id
   const ensureTripId = useCallback(async (): Promise<string> => {
-    if (currentTrip) return currentTrip.id;
+    if (
+      currentTrip &&
+      !(isAuthenticated && (currentTrip.id.startsWith('guest-') || !UUID_RE.test(currentTrip.id)))
+    ) {
+      return currentTrip.id;
+    }
+
+    // Если пользователь авторизовался с невалидным/гостевым маршрутом в сторе,
+    // создаём реальный trip и переносим точки на backend.
+    if (
+      currentTrip &&
+      isAuthenticated &&
+      (currentTrip.id.startsWith('guest-') || !UUID_RE.test(currentTrip.id))
+    ) {
+      const trip = await tripsApi.create({
+        title: currentTrip.title || 'Мой маршрут',
+        isActive: isActiveRoute,
+        budget: plannedBudget,
+      } as CreateTripPayload);
+
+      const createdPoints = await Promise.all(
+        points.map((p) =>
+          pointsApi.create(trip.id, {
+            title: p.title,
+            lat: p.lat,
+            lon: p.lon,
+            budget: p.budget ?? 0,
+            visitDate: p.visitDate ?? undefined,
+            imageUrl: p.imageUrl ?? undefined,
+            order: p.order,
+            address: p.address ?? undefined,
+          }),
+        ),
+      );
+
+      setCurrentTrip(trip);
+      setPoints(createdPoints);
+      return trip.id;
+    }
 
     if (!isAuthenticated) {
       const guestTrip: Trip = {
@@ -614,7 +654,15 @@ export function PlannerPage() {
     } as CreateTripPayload);
     setCurrentTrip(trip);
     return trip.id;
-  }, [currentTrip, setCurrentTrip, isActiveRoute, plannedBudget, isAuthenticated]);
+  }, [
+    currentTrip,
+    setCurrentTrip,
+    isActiveRoute,
+    plannedBudget,
+    isAuthenticated,
+    points,
+    setPoints,
+  ]);
 
   const totalBudget = useMemo(
     () => points.reduce((sum: number, p: RoutePoint) => sum + (p.budget ?? 0), 0),
@@ -1062,16 +1110,17 @@ export function PlannerPage() {
                             setModal('register');
                             return;
                           }
-                          const tripId = await ensureTripId();
-                          const updated = await tripsApi.update(tripId, {
-                            budget: plannedBudget,
-                            isActive: isActiveRoute,
-                          });
-                          updateCurrentTrip(updated);
-                          await Promise.all(
-                            points.map((p) => crud.update(p.id, { budget: p.budget ?? 0 })),
-                          );
-                          toast.success('Маршрут сохранён', { id: 'save-route' });
+                          try {
+                            const tripId = await ensureTripId();
+                            const updated = await tripsApi.update(tripId, {
+                              budget: plannedBudget,
+                              isActive: isActiveRoute,
+                            });
+                            updateCurrentTrip(updated);
+                            toast.success('Маршрут сохранён', { id: 'save-route' });
+                          } catch {
+                            toast.error('Не удалось сохранить маршрут', { id: 'save-route' });
+                          }
                         }}
                         disabled={isAuthenticated && points.length === 0}
                         variant="brand-indigo"
