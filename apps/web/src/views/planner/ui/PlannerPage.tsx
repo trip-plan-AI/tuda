@@ -232,7 +232,10 @@ function SortablePointRow({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex flex-row items-center lg:items-start justify-start gap-3 md:gap-4 group bg-slate-50 p-4 rounded-2xl border border-transparent hover:border-slate-200 transition-all shadow-sm hover:shadow-md relative z-10"
+      className={cn(
+        'flex flex-row items-center lg:items-start justify-start gap-3 md:gap-4 group bg-slate-50 p-4 rounded-2xl border border-transparent hover:border-slate-200 transition-all shadow-sm hover:shadow-md relative z-0',
+        showDropdownState && 'z-50',
+      )}
     >
       {/* Кнопка удаления */}
       <Button
