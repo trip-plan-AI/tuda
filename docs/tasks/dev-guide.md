@@ -299,7 +299,9 @@ AI_MODEL=openai/gpt-4o-mini
 OPENROUTER_SITE_URL=http://localhost:3001
 OPENROUTER_APP_NAME=travel-planner-api
 YANDEX_GPT_API_KEY=...
-YANDEX_MAPS_API_KEY=...
+# Комментарий к изменению: платный Yandex Search API больше не используем в backend AI pipeline
+KUDAGO_API_BASE_URL=https://kudago.com/public-api/v1.4
+OVERPASS_API_URL=https://overpass-api.de/api/interpreter
 YANDEX_FOLDER_ID=...
 REDIS_URL=redis://localhost:6379
 NEXT_PUBLIC_API_URL=http://localhost:3001/api
@@ -1190,23 +1192,29 @@ export class OrchestratorService {
 
 ---
 
-### TRI-16 — Шаг 2: YandexFetch
+### TRI-16 — Шаг 2: ProviderSearch (KudaGo + Overpass)
 
-`branch: feature/TRI-16-backend-ai-yandex`
+`branch: feature/TRI-16-backend-ai-provider-search`
 
 > **NOTE о Redis:** Код ниже содержит Redis-кэш (`this.redis.get/setex`).
 > `RedisModule` создаётся в **TRI-19**, поэтому при реализации TRI-16 Redis-кэш нужно пропустить (закомментировать блоки с `this.redis`).
 > После выполнения TRI-19 — раскомментировать.
 
-**Файлы создать:**
+> Комментарий к изменению: TRI-16 обновлён из-за отказа от платного `search-maps.yandex.ru/v1/`.
+> Новый источник POI: сначала KudaGo, затем добор через Overpass. YandexGPT остаётся только для семантической фильтрации на TRI-17.
 
-- `apps/api/src/ai/pipeline/yandex-fetch.service.ts`
+**Файлы создать/изменить:**
+
+- `apps/api/src/ai/pipeline/provider-search.service.ts`
+- `apps/api/src/ai/pipeline/kudago-client.service.ts`
+- `apps/api/src/ai/pipeline/overpass-client.service.ts`
+- `apps/api/src/ai/pipeline/yandex-fetch.service.ts` (deprecated-обёртка до полного удаления)
 
 **Ключевая логика:**
 
 ```ts
 @Injectable()
-export class YandexFetchService {
+export class ProviderSearchService {
   async fetchAndFilter(intent: ParsedIntent): Promise<PoiItem[]> {
     // Redis cache check (раскомментировать после TRI-19)
     // const cacheKey = this.getCacheKey(intent)
@@ -1216,11 +1224,15 @@ export class YandexFetchService {
     const cached = await this.redis?.get(cacheKey);
     if (cached) return JSON.parse(cached);
 
-    // Параллельные запросы по категориям
-    const results = await Promise.all(
-      intent.categories.map((cat) => this.fetchCategory(cat, intent)),
-    );
-    let pois = results.flat();
+    // 1) KudaGo — приоритетный источник
+    const kudagoRaw = await this.kudagoClient.fetchByIntent(intent);
+
+    // 2) Добор Overpass, если точек мало
+    const overpassRaw =
+      kudagoRaw.length < 15 ? await this.overpassClient.fetchByIntent(intent) : [];
+
+    // 3) Merge + normalize
+    let pois = [...kudagoRaw, ...overpassRaw];
 
     // Валидация координат
     pois = pois.filter((p) => {
@@ -1235,7 +1247,8 @@ export class YandexFetchService {
       return valid;
     });
 
-    // Дедупликация (haversine < 0.05 км → оставить max rating)
+    // Дедупликация между провайдерами (haversine < 0.05 км)
+    // Приоритет: KudaGo с полными метаданными > Overpass
     pois = this.deduplicate(pois);
 
     // Pre-filter: убрать excluded, sort by rating DESC, slice 15
@@ -1244,9 +1257,12 @@ export class YandexFetchService {
       .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
       .slice(0, 15);
 
-    // Retry если < 3 POI
+    // Retry если < 3 POI: расширяем радиус только для Overpass
     if (pois.length < 3) {
-      const retry = await this.fetchWithRadius(intent, intent.radius_km * 1.3);
+      const retry = await this.overpassClient.fetchByIntent({
+        ...intent,
+        radius_km: intent.radius_km * 1.3,
+      });
       if (retry.length < 3) throw new UnprocessableEntityException('Not enough POIs found (F-04)');
       pois = retry;
     }
@@ -1256,27 +1272,7 @@ export class YandexFetchService {
     return pois;
   }
 
-  private async fetchCategory(category: string, intent: ParsedIntent): Promise<PoiItem[]> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
-    try {
-      const url = new URL('https://search-maps.yandex.ru/v1/');
-      url.searchParams.set('text', `${category} ${intent.city}`);
-      url.searchParams.set('type', 'biz');
-      url.searchParams.set('lang', 'ru_RU');
-      url.searchParams.set('results', '10');
-      url.searchParams.set('apikey', process.env.YANDEX_MAPS_API_KEY!);
-      url.searchParams.set('spn', `${intent.radius_km / 111},${intent.radius_km / 111}`);
-
-      const resp = await fetch(url.toString(), { signal: controller.signal });
-      const data = await resp.json();
-      return (data.features ?? []).map((f: any) => this.normalize(f, category));
-    } catch {
-      return [];
-    } finally {
-      clearTimeout(timer);
-    }
-  }
+  // fetchCategory удалён: источники вынесены в kudago-client и overpass-client
 
   private normalize(feature: any, category: string): PoiItem {
     const [lon, lat] = feature.geometry?.coordinates ?? [0, 0];
@@ -2647,6 +2643,8 @@ import { Sheet, SheetContent, SheetHeader } from '@/shared/ui/sheet';
 
 ## MIGRATION NOTE — Вариант C (единый API-контур)
 
+> Комментарий к изменению: в AI pipeline источник POI заменён с Yandex Search API на бесплатный provider search backend-контур KudaGo + Overpass.
+
 - Исторические Next endpoints geocode/suggest удалены.
 - Актуальный endpoint геопоиска: `/api/geosearch/suggest` в backend.
 - Любые внешние API-интеграции добавляются только в backend модули.
@@ -2662,7 +2660,7 @@ TRI-06 → TRI-07 → TRI-08 (trips и points API готовы)
 TRI-08 → TRI-09 → TRI-10 → TRI-11 (TSP готов)
 TRI-03 → TRI-12 → TRI-13 → TRI-14 (WebSockets готовы)
 TRI-06 → TRI-15 → TRI-16 → TRI-17 → TRI-18 (AI pipeline готов)
-TRI-16 → TRI-19 (Redis cache в YandexFetch)
+TRI-16 → TRI-19 (Redis cache в ProviderSearch)
 TRI-13 → TRI-20 (Presence достроена)
 
 TRI-21 [DONE] → TRI-22 → TRI-23 (shared layer готов)

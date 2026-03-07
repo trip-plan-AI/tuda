@@ -15,9 +15,9 @@ import * as schema from '../db/schema';
 import { AiPlanRequestDto } from './dto/ai-plan-request.dto';
 import { InputSanitizerPipe } from './pipes/input-sanitizer.pipe';
 import { OrchestratorService } from './pipeline/orchestrator.service';
+import { ProviderSearchService } from './pipeline/provider-search.service';
 import { SchedulerService } from './pipeline/scheduler.service';
 import { SemanticFilterService } from './pipeline/semantic-filter.service';
-import { YandexFetchService } from './pipeline/yandex-fetch.service';
 import type { SessionMessage } from './types/pipeline.types';
 
 @Controller('ai')
@@ -27,7 +27,7 @@ export class AiController {
     @Inject(DRIZZLE)
     private readonly db: NodePgDatabase<typeof schema>,
     private readonly orchestratorService: OrchestratorService,
-    private readonly yandexFetchService: YandexFetchService,
+    private readonly providerSearchService: ProviderSearchService,
     private readonly semanticFilterService: SemanticFilterService,
     private readonly schedulerService: SchedulerService,
   ) {}
@@ -46,11 +46,14 @@ export class AiController {
     );
     const orchestratorDuration = Date.now() - orchestratorStart;
 
-    const yandexStart = Date.now();
-    const rawPoi = await this.yandexFetchService.fetchAndFilter(intent);
-    const yandexDuration = Date.now() - yandexStart;
-
+    const providerStart = Date.now();
     const fallbacks: string[] = [];
+    const rawPoi = await this.providerSearchService.fetchAndFilter(
+      intent,
+      fallbacks,
+    );
+    const providerDuration = Date.now() - providerStart;
+
     const semanticStart = Date.now();
     const filteredPoi = await this.semanticFilterService.select(
       rawPoi,
@@ -84,17 +87,17 @@ export class AiController {
         parsed_intent: intent,
         steps_duration_ms: {
           orchestrator: orchestratorDuration,
-          yandex_fetch: yandexDuration,
+          yandex_fetch: providerDuration, // Для обратной совместимости клиента оставляем ключ
           semantic_filter: semanticDuration,
           scheduler: schedulerDuration,
           total:
             orchestratorDuration +
-            yandexDuration +
+            providerDuration +
             semanticDuration +
             schedulerDuration,
         },
         poi_counts: {
-          yandex_raw: rawPoi.length,
+          yandex_raw: rawPoi.length, // Оставляем старый ключ
           after_semantic: filteredPoi.length,
         },
         fallbacks_triggered: fallbacks,
