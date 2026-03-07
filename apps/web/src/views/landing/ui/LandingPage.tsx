@@ -842,6 +842,11 @@ export function LandingPage() {
                 {QUICK_FILTERS.map((filter, idx) => (
                   <button
                     key={idx}
+                    onClick={() => {
+                      const query = `${filter.icon} ${filter.label}`;
+                      void sendAiQuery(query);
+                      router.push('/ai-assistant');
+                    }}
                     className="px-5 py-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full text-white text-xs md:text-sm font-bold hover:bg-white/20 transition-none"
                   >
                     {filter.icon} {filter.label}
