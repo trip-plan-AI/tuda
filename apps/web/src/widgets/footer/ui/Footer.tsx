@@ -9,10 +9,11 @@ export function Footer() {
   const pathname = usePathname();
   const isLanding = pathname === '/';
   const isInternalPage = INTERNAL_PAGES.some((p) => pathname.startsWith(p));
+  const isProfilePage = pathname.startsWith('/profile');
 
   // Если это внутренняя страница на мобилке — скрываем подвал полностью (там BottomNav)
   // На десктопе внутренние страницы показывают подвал
-  const footerClasses = `border-t border-slate-100 bg-white py-12 z-20 ${
+  const footerClasses = `${isProfilePage ? '' : 'border-t border-slate-100'} bg-white py-12 z-20 ${
     isInternalPage ? 'hidden md:block' : ''
   }`;
 

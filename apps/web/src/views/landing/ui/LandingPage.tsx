@@ -3,8 +3,20 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Calendar as CalendarIcon, Cloud, CloudSun, Mic, Search, Sun, Wind } from 'lucide-react';
+import {
+  ArrowRight,
+  Calendar as CalendarIcon,
+  Cloud,
+  CloudSun,
+  MapPin,
+  Mic,
+  Search,
+  Sun,
+  Wind,
+} from 'lucide-react';
 import { format } from 'date-fns';
+import { startOfMonth } from 'date-fns';
+import { startOfToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { api } from '@/shared/api';
 import { useTripStore, tripsApi } from '@/entities/trip';
@@ -146,6 +158,8 @@ export function LandingPage() {
   const [toSuggestions, setToSuggestions] = useState<GeoSuggestion[]>([]);
   const [fromDropdownOpen, setFromDropdownOpen] = useState(false);
   const [toDropdownOpen, setToDropdownOpen] = useState(false);
+  const [isSearchingFrom, setIsSearchingFrom] = useState(false);
+  const [isSearchingTo, setIsSearchingTo] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const debounceFromRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceToRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -223,19 +237,33 @@ export function LandingPage() {
   }, [filteredTrips, selectedFilter]);
 
   // Получение подсказок при вводе
-  const getSuggestions = async (query: string, setter: (suggestions: GeoSuggestion[]) => void) => {
+  const getSuggestions = async (
+    query: string,
+    setter: (suggestions: GeoSuggestion[]) => void,
+    setLoading?: (loading: boolean) => void,
+  ) => {
     if (!query.trim() || query.length < 2) {
       setter([]);
+      setLoading?.(false);
       return;
     }
+    setLoading?.(true);
     try {
-      const res = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
+      const res = await fetch(url);
+
+      if (!res.ok) {
+        throw new Error(`Suggest request failed: ${res.status}`);
+      }
+
       const data = await res.json();
       const results = data.results ?? [];
       setter(results);
     } catch (e) {
       console.error('Failed to fetch suggestions:', e);
       setter([]);
+    } finally {
+      setLoading?.(false);
     }
   };
 
@@ -243,7 +271,13 @@ export function LandingPage() {
   const geocodePlace = async (place: string): Promise<{ lat: number; lon: number } | null> => {
     if (!place.trim()) return null;
     try {
-      const res = await fetch(`/api/suggest?q=${encodeURIComponent(place)}`);
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(place)}`;
+      const res = await fetch(url);
+
+      if (!res.ok) {
+        throw new Error(`Geocode request failed: ${res.status}`);
+      }
+
       const data = await res.json();
       const results = data.results ?? [];
       if (results.length > 0) {
@@ -526,7 +560,7 @@ export function LandingPage() {
                         rows={inputRows}
                         className="w-full py-3 md:py-4 lg:py-6 !pl-10 md:!pl-12 lg:!pl-14 pr-12 md:pr-14 bg-transparent outline-none text-slate-800 font-bold text-[clamp(1rem,1.5vw,1.25rem)] placeholder:text-slate-400 placeholder:font-normal resize-none overflow-hidden leading-snug md:leading-normal transition-none"
                       />
-                      <button 
+                      <button
                         type="button"
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-brand-blue transition-none"
                       >
@@ -547,177 +581,249 @@ export function LandingPage() {
                   </div>
                 ) : (
                   <div className="bg-white rounded-[2.2rem] md:rounded-[3.5rem] p-4 md:p-8 transition-none text-left">
-                        <div className="space-y-4">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Откуда */}
-                            <div className="space-y-2 relative">
-                              <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
-                                Откуда
-                              </label>
-                              <input
-                                type="text"
-                                placeholder="Москва"
-                                value={manualForm.from}
-                                onChange={(e) => {
-                                  setManualForm((p) => ({ ...p, from: e.target.value }));
-                                  setFromDropdownOpen(true);
-                                  if (debounceFromRef.current) clearTimeout(debounceFromRef.current);
-                                  debounceFromRef.current = setTimeout(() => {
-                                    void getSuggestions(e.target.value, setFromSuggestions);
-                                  }, 400);
-                                }}
-                                onFocus={() => manualForm.from && setFromDropdownOpen(true)}
-                                onBlur={() => setTimeout(() => setFromDropdownOpen(false), 200)}
-                                className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
-                              />
-                              {fromDropdownOpen && fromSuggestions.length > 0 && (
-                                <div className="absolute top-full mt-1 w-full bg-white rounded-2xl shadow-lg border border-slate-200 z-10 max-h-48 overflow-y-auto">
-                                  {fromSuggestions.map((suggestion, idx) => (
-                                    <button
-                                      key={idx}
-                                      onMouseDown={() => {
-                                        setManualForm((p) => ({ ...p, from: suggestion.displayName }));
-                                        setFromDropdownOpen(false);
-                                        setFromSuggestions([]);
-                                      }}
-                                      className="w-full text-left px-4 py-3 hover:bg-slate-100 border-b border-slate-100 last:border-0 text-sm font-medium text-slate-700 transition-none"
-                                    >
-                                      {suggestion.displayName}
-                                    </button>
-                                  ))}
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Откуда */}
+                        <div className="space-y-2 relative">
+                          <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
+                            Откуда
+                          </label>
+                          <Popover
+                            open={fromDropdownOpen && fromSuggestions.length > 0}
+                            onOpenChange={(open) => setFromDropdownOpen(open)}
+                          >
+                            <PopoverTrigger asChild>
+                              <div className="relative">
+                                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors">
+                                  {isSearchingFrom ? (
+                                    <div className="w-4 h-4 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <MapPin size={16} className="text-slate-400" />
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                            {/* Куда */}
-                            <div className="space-y-2 relative">
-                              <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
-                                Куда
-                              </label>
-                              <input
-                                type="text"
-                                placeholder="Алтай"
-                                value={manualForm.to}
-                                onChange={(e) => {
-                                  setManualForm((p) => ({ ...p, to: e.target.value }));
-                                  setToDropdownOpen(true);
-                                  if (debounceToRef.current) clearTimeout(debounceToRef.current);
-                                  debounceToRef.current = setTimeout(() => {
-                                    void getSuggestions(e.target.value, setToSuggestions);
-                                  }, 400);
-                                }}
-                                onFocus={() => manualForm.to && setToDropdownOpen(true)}
-                                onBlur={() => setTimeout(() => setToDropdownOpen(false), 200)}
-                                className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
-                              />
-                              {toDropdownOpen && toSuggestions.length > 0 && (
-                                <div className="absolute top-full mt-1 w-full bg-white rounded-2xl shadow-lg border border-slate-200 z-10 max-h-48 overflow-y-auto">
-                                  {toSuggestions.map((suggestion, idx) => (
-                                    <button
-                                      key={idx}
-                                      onMouseDown={() => {
-                                        setManualForm((p) => ({ ...p, to: suggestion.displayName }));
-                                        setToDropdownOpen(false);
-                                        setToSuggestions([]);
-                                      }}
-                                      className="w-full text-left px-4 py-3 hover:bg-slate-100 border-b border-slate-100 last:border-0 text-sm font-medium text-slate-700 transition-none"
-                                    >
-                                      {suggestion.displayName}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="space-y-2">
-                            <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
-                              Даты
-                            </label>
-                            <div className="flex flex-col md:flex-row md:items-center gap-2">
-                              <Popover open={dateFromOpen} onOpenChange={setDateFromOpen}>
-                                <PopoverTrigger asChild>
-                                  <button className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none text-left flex items-center gap-2 focus:ring-2 focus:ring-brand-blue/20">
-                                    <CalendarIcon size={18} className="text-slate-400" />
-                                    {manualForm.dateFrom ? (
-                                      format(new Date(manualForm.dateFrom), 'd MMM yyyy', { locale: ru })
-                                    ) : (
-                                      <span className="text-slate-400 font-normal">От</span>
-                                    )}
-                                  </button>
-                                </PopoverTrigger>
-                                <PopoverContent
-                                  className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl"
-                                  align="start"
-                                >
-                                  <Calendar
-                                    mode="single"
-                                    selected={manualForm.dateFrom ? new Date(manualForm.dateFrom) : undefined}
-                                    onSelect={(date) => {
-                                      setManualForm((p) => ({ ...p, dateFrom: date?.toISOString() || '' }));
-                                      setDateFromOpen(false);
-                                    }}
-                                    locale={ru}
-                                    captionLayout="dropdown"
-                                    startMonth={new Date(2020, 0)}
-                                    endMonth={new Date(2035, 11)}
-                                    classNames={{ caption_label: 'hidden' }}
-                                  />
-                                </PopoverContent>
-                              </Popover>
-
-                              <span className="text-slate-400 font-bold shrink-0 text-lg hidden md:block">
-                                —
-                              </span>
-
-                              <Popover open={dateToOpen} onOpenChange={setDateToOpen}>
-                                <PopoverTrigger asChild>
-                                  <button className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none text-left flex items-center gap-2 focus:ring-2 focus:ring-brand-blue/20">
-                                    <CalendarIcon size={18} className="text-slate-400" />
-                                    {manualForm.dateTo ? (
-                                      format(new Date(manualForm.dateTo), 'd MMM yyyy', { locale: ru })
-                                    ) : (
-                                      <span className="text-slate-400 font-normal">До</span>
-                                    )}
-                                  </button>
-                                </PopoverTrigger>
-                                <PopoverContent
-                                  className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl"
-                                  align="start"
-                                >
-                                  <Calendar
-                                    mode="single"
-                                    selected={manualForm.dateTo ? new Date(manualForm.dateTo) : undefined}
-                                    disabled={(date) =>
-                                      !!manualForm.dateFrom && date < new Date(manualForm.dateFrom)
+                                <input
+                                  type="text"
+                                  placeholder="Москва"
+                                  value={manualForm.from}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    setManualForm((p) => ({ ...p, from: value }));
+                                    if (value.length > 2) {
+                                      setIsSearchingFrom(true);
+                                      setFromDropdownOpen(true);
+                                    } else {
+                                      setIsSearchingFrom(false);
+                                      setFromSuggestions([]);
+                                      setFromDropdownOpen(false);
                                     }
-                                    onSelect={(date) => {
-                                      setManualForm((p) => ({ ...p, dateTo: date?.toISOString() || '' }));
-                                      setDateToOpen(false);
-                                    }}
-                                    locale={ru}
-                                    captionLayout="dropdown"
-                                    startMonth={new Date(2020, 0)}
-                                    endMonth={new Date(2035, 11)}
-                                    classNames={{ caption_label: 'hidden' }}
-                                  />
-                                </PopoverContent>
-                              </Popover>
-                            </div>
-                          </div>
+                                    if (debounceFromRef.current) clearTimeout(debounceFromRef.current);
+                                    debounceFromRef.current = setTimeout(() => {
+                                      void getSuggestions(value, setFromSuggestions, setIsSearchingFrom);
+                                    }, 700);
+                                  }}
+                                  onFocus={() => manualForm.from && setFromDropdownOpen(true)}
+                                  className="w-full pl-12 px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
+                                />
+                              </div>
+                            </PopoverTrigger>
 
-                          <div className="space-y-2 flex flex-col items-center">
-                            <label className="text-sm md:text-base font-black text-slate-700 uppercase">
-                              Бюджет
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="100 000 ₽"
-                              value={manualForm.budget}
-                              onChange={(e) => setManualForm((p) => ({ ...p, budget: e.target.value }))}
-                              className="w-full max-w-md px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20 text-center"
-                            />
-                          </div>
+                            <PopoverContent
+                              align="start"
+                              sideOffset={4}
+                              onOpenAutoFocus={(e) => e.preventDefault()}
+                              onCloseAutoFocus={(e) => e.preventDefault()}
+                              className="w-[var(--radix-popover-trigger-width)] p-0 bg-white rounded-2xl shadow-lg border border-slate-200 z-50 max-h-48 overflow-y-auto"
+                            >
+                              {fromSuggestions.map((suggestion, idx) => (
+                                <button
+                                  key={idx}
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    setManualForm((p) => ({ ...p, from: suggestion.displayName }));
+                                    setFromDropdownOpen(false);
+                                    setFromSuggestions([]);
+                                  }}
+                                  className="w-full text-left px-4 py-3 hover:bg-slate-100 border-b border-slate-100 last:border-0 text-sm font-medium text-slate-700 transition-none"
+                                >
+                                  {suggestion.displayName}
+                                </button>
+                              ))}
+                            </PopoverContent>
+                          </Popover>
                         </div>
+                        {/* Куда */}
+                        <div className="space-y-2 relative">
+                          <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
+                            Куда
+                          </label>
+                          <Popover
+                            open={toDropdownOpen && toSuggestions.length > 0}
+                            onOpenChange={(open) => setToDropdownOpen(open)}
+                          >
+                            <PopoverTrigger asChild>
+                              <div className="relative">
+                                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors">
+                                  {isSearchingTo ? (
+                                    <div className="w-4 h-4 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <MapPin size={16} className="text-slate-400" />
+                                  )}
+                                </div>
+                                <input
+                                  type="text"
+                                  placeholder="Алтай"
+                                  value={manualForm.to}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    setManualForm((p) => ({ ...p, to: value }));
+                                    if (value.length > 2) {
+                                      setIsSearchingTo(true);
+                                      setToDropdownOpen(true);
+                                    } else {
+                                      setIsSearchingTo(false);
+                                      setToSuggestions([]);
+                                      setToDropdownOpen(false);
+                                    }
+                                    if (debounceToRef.current) clearTimeout(debounceToRef.current);
+                                    debounceToRef.current = setTimeout(() => {
+                                      void getSuggestions(value, setToSuggestions, setIsSearchingTo);
+                                    }, 700);
+                                  }}
+                                  onFocus={() => manualForm.to && setToDropdownOpen(true)}
+                                  className="w-full pl-12 px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
+                                />
+                              </div>
+                            </PopoverTrigger>
+
+                            <PopoverContent
+                              align="start"
+                              sideOffset={4}
+                              onOpenAutoFocus={(e) => e.preventDefault()}
+                              onCloseAutoFocus={(e) => e.preventDefault()}
+                              className="w-[var(--radix-popover-trigger-width)] p-0 bg-white rounded-2xl shadow-lg border border-slate-200 z-50 max-h-48 overflow-y-auto"
+                            >
+                              {toSuggestions.map((suggestion, idx) => (
+                                <button
+                                  key={idx}
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    setManualForm((p) => ({ ...p, to: suggestion.displayName }));
+                                    setToDropdownOpen(false);
+                                    setToSuggestions([]);
+                                  }}
+                                  className="w-full text-left px-4 py-3 hover:bg-slate-100 border-b border-slate-100 last:border-0 text-sm font-medium text-slate-700 transition-none"
+                                >
+                                  {suggestion.displayName}
+                                </button>
+                              ))}
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
+                          Даты
+                        </label>
+                        <div className="flex flex-col md:flex-row md:items-center gap-2">
+                          <Popover open={dateFromOpen} onOpenChange={setDateFromOpen}>
+                            <PopoverTrigger asChild>
+                              <button className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none text-left flex items-center gap-2 focus:ring-2 focus:ring-brand-blue/20">
+                                <CalendarIcon size={18} className="text-slate-400" />
+                                {manualForm.dateFrom ? (
+                                  format(new Date(manualForm.dateFrom), 'd MMM yyyy', {
+                                    locale: ru,
+                                  })
+                                ) : (
+                                  <span className="text-slate-400 font-normal">От</span>
+                                )}
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl"
+                              align="start"
+                            >
+                              <Calendar
+                                mode="single"
+                                selected={
+                                  manualForm.dateFrom ? new Date(manualForm.dateFrom) : undefined
+                                }
+                                disabled={(date) => date < startOfToday()}
+                                onSelect={(date) => {
+                                  setManualForm((p) => ({
+                                    ...p,
+                                    dateFrom: date?.toISOString() || '',
+                                  }));
+                                  setDateFromOpen(false);
+                                }}
+                                locale={ru}
+                                captionLayout="dropdown"
+                                startMonth={startOfMonth(startOfToday())}
+                                endMonth={new Date(2035, 11)}
+                                classNames={{ caption_label: 'hidden' }}
+                              />
+                            </PopoverContent>
+                          </Popover>
+
+                          <span className="text-slate-400 font-bold shrink-0 text-lg hidden md:block">
+                            —
+                          </span>
+
+                          <Popover open={dateToOpen} onOpenChange={setDateToOpen}>
+                            <PopoverTrigger asChild>
+                              <button className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none text-left flex items-center gap-2 focus:ring-2 focus:ring-brand-blue/20">
+                                <CalendarIcon size={18} className="text-slate-400" />
+                                {manualForm.dateTo ? (
+                                  format(new Date(manualForm.dateTo), 'd MMM yyyy', { locale: ru })
+                                ) : (
+                                  <span className="text-slate-400 font-normal">До</span>
+                                )}
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl"
+                              align="start"
+                            >
+                              <Calendar
+                                mode="single"
+                                selected={
+                                  manualForm.dateTo ? new Date(manualForm.dateTo) : undefined
+                                }
+                                disabled={(date) =>
+                                  date < startOfToday() ||
+                                  (!!manualForm.dateFrom && date < new Date(manualForm.dateFrom))
+                                }
+                                onSelect={(date) => {
+                                  setManualForm((p) => ({
+                                    ...p,
+                                    dateTo: date?.toISOString() || '',
+                                  }));
+                                  setDateToOpen(false);
+                                }}
+                                locale={ru}
+                                captionLayout="dropdown"
+                                startMonth={startOfMonth(startOfToday())}
+                                endMonth={new Date(2035, 11)}
+                                classNames={{ caption_label: 'hidden' }}
+                              />
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 flex flex-col items-center">
+                        <label className="text-sm md:text-base font-black text-slate-700 uppercase">
+                          Бюджет
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="100 000 ₽"
+                          value={manualForm.budget}
+                          onChange={(e) => setManualForm((p) => ({ ...p, budget: e.target.value }))}
+                          className="w-full max-w-md px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20 text-center"
+                        />
+                      </div>
+                    </div>
                     <Button
                       onClick={handleSearch}
                       variant="brand-yellow"
@@ -858,7 +964,9 @@ export function LandingPage() {
                       <h4 className="text-[clamp(1.5rem,4vw,2.5rem)] font-black text-brand-indigo mb-8 leading-tight tracking-tight">
                         {card.title}
                       </h4>
-                      <p className="text-slate-500 text-[clamp(1.125rem,2vw,1.25rem)] font-medium leading-relaxed">                        {card.desc}
+                      <p className="text-slate-500 text-[clamp(1.125rem,2vw,1.25rem)] font-medium leading-relaxed">
+                        {' '}
+                        {card.desc}
                       </p>
                     </div>
                   </div>
@@ -876,7 +984,8 @@ export function LandingPage() {
               Внимание
             </DialogTitle>
             <DialogDescription className="text-slate-500 font-bold text-lg leading-snug">
-              В конструкторе уже есть непустой маршрут. При открытии нового маршрута старый будет очищен. Продолжить?
+              В конструкторе уже есть непустой маршрут. При открытии нового маршрута старый будет
+              очищен. Продолжить?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex-col sm:flex-row gap-3 mt-8">

@@ -90,7 +90,7 @@ export function Header() {
             {!hydrated ? (
               <div className="w-10 h-10" />
             ) : isAuthenticated ? (
-              <DropdownMenu>
+              <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
