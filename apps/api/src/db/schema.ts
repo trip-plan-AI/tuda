@@ -9,8 +9,8 @@ import {
   doublePrecision,
   timestamp,
   primaryKey,
-} from 'drizzle-orm/pg-core'
-import { relations } from 'drizzle-orm'
+} from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
 
 // Enum'ы
 export const collaboratorRoleEnum = pgEnum('collaborator_role', [
@@ -58,11 +58,11 @@ export const trips = pgTable('trips', {
   endDate: text('end_date'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
-})
+});
 
 export const tripsRelations = relations(trips, ({ many }) => ({
   points: many(routePoints),
-}))
+}));
 
 // trip_collaborators
 export const tripCollaborators = pgTable(
@@ -96,14 +96,14 @@ export const routePoints = pgTable('route_points', {
   address: text('address'),
   isTitleLocked: boolean('is_title_locked').notNull().default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
-})
+});
 
 export const routePointsRelations = relations(routePoints, ({ one }) => ({
   trip: one(trips, {
     fields: [routePoints.tripId],
     references: [trips.id],
   }),
-}))
+}));
 
 // optimization_results
 export const optimizationResults = pgTable('optimization_results', {
