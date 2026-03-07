@@ -152,7 +152,8 @@ function SortablePointRow({
     }
     setIsSearching(true);
     try {
-      const res = await fetch(`${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`);
+      const url = `/api/suggest?q=${encodeURIComponent(query)}`;
+      const res = await fetch(url);
       const data = await res.json();
       // Nominatim API returns: { displayName, uri }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -630,7 +631,8 @@ export function PlannerPage() {
     }
     setIsSearching(true);
     try {
-      const res = await fetch(`${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`);
+      const url = `/api/suggest?q=${encodeURIComponent(query)}`;
+      const res = await fetch(url);
       const data = await res.json();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const found: GeoSuggestion[] = (data.results ?? []).map((item: any) => ({
