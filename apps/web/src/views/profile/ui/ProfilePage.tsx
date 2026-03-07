@@ -364,7 +364,7 @@ export function ProfilePage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col pb-28 md:pb-10 no-scrollbar">
+          <div className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col pb-[calc(env(safe-area-inset-bottom,0px)+9.5rem)] md:pb-10 no-scrollbar">
             <div className="flex flex-col items-center md:items-start mb-10">
               <div
                 onClick={handleAvatarClick}
