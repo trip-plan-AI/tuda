@@ -23,6 +23,67 @@ const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.Route
   loading: () => <div className="w-full h-full bg-slate-50 animate-pulse rounded-3xl" />,
 });
 
+function getBudgetMetrics(plannedBudget: number | null | undefined, totalBudget: number) {
+  const plan = Math.max(0, plannedBudget ?? 0);
+  const total = Math.max(0, totalBudget);
+  const isOverBudget = plan > 0 && total > plan;
+  const progressPercent = plan > 0 ? Math.min(100, Math.round((total / plan) * 100)) : 0;
+
+  return { plan, total, isOverBudget, progressPercent };
+}
+
+function BudgetSummary({
+  plannedBudget,
+  totalBudget,
+  className,
+}: {
+  plannedBudget: number | null | undefined;
+  totalBudget: number;
+  className?: string;
+}) {
+  const { plan, total, isOverBudget, progressPercent } = getBudgetMetrics(plannedBudget, totalBudget);
+
+  return (
+    <div className={cn('space-y-3', className)}>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="flex flex-col">
+          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+            Планируемый
+          </span>
+          <span className="text-xl md:text-2xl font-black text-brand-indigo">{plan.toLocaleString('ru-RU')} ₽</span>
+        </div>
+
+        <div className="flex flex-col text-right">
+          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+            Итого по точкам
+          </span>
+          <span
+            className={cn(
+              'text-xl md:text-2xl font-black',
+              isOverBudget ? 'text-red-500' : 'text-brand-indigo',
+            )}
+          >
+            {total.toLocaleString('ru-RU')} ₽
+          </span>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+          <div
+            className={cn('h-full rounded-full transition-all duration-300', isOverBudget ? 'bg-red-500' : 'bg-emerald-500')}
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+        <div className="flex justify-between text-[10px] font-bold text-slate-400">
+          <span>{plan > 0 ? `Использовано ${progressPercent}%` : 'Лимит не задан'}</span>
+          {isOverBudget && <span className="text-red-500">Перерасход</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ProfilePage() {
   const router = useRouter();
   const { user, setUser } = useUserStore();
@@ -138,6 +199,8 @@ export function ProfilePage() {
   }, []);
 
   const activeRoute = savedTrips.find((t) => t.isActive);
+  const activeRouteTotalBudget =
+    activeRoute?.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setIsDragging(true);
@@ -422,18 +485,11 @@ export function ProfilePage() {
                         ))}
                       </div>
 
-                      <div className="mt-8 pt-6 border-t border-slate-50 flex items-center justify-between">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                            Общий бюджет
-                          </span>
-                          <span className="text-2xl font-black text-brand-indigo">
-                            {(
-                              activeRoute.points?.reduce((sum, p) => sum + (p.budget || 0), 0) || 0
-                            ).toLocaleString('ru-RU')}{' '}
-                            ₽
-                          </span>
-                        </div>
+                      <div className="mt-8 pt-6 border-t border-slate-50">
+                        <BudgetSummary
+                          plannedBudget={activeRoute.budget}
+                          totalBudget={activeRouteTotalBudget}
+                        />
                       </div>
                     </div>
                   </div>
@@ -464,65 +520,63 @@ export function ProfilePage() {
                   className="h-full overflow-y-auto pr-1 no-scrollbar"
                 >
                   <div className="space-y-4 w-full animate-in fade-in duration-500 pb-2">
-                    {savedTrips.map((route) => (
-                      <div
-                        key={route.id}
-                        className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all"
-                      >
-                        <div className="flex items-center justify-between mb-6">
-                          <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center">
-                              <MapIcon size={20} />
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                                Маршрут
-                              </p>
-                              <p className="text-lg font-black text-brand-indigo truncate max-w-[150px] md:max-w-xs">
-                                {route.title}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleEditRoute(route)}
-                              className="p-2.5 bg-slate-50 text-slate-400 hover:text-brand-blue hover:bg-slate-100 rounded-xl transition-all active:scale-90"
-                              title="Редактировать"
-                            >
-                              <Pencil size={18} />
-                            </button>
-                          </div>
-                        </div>
+                    {savedTrips.map((route) => {
+                      const routeTotalBudget =
+                        route.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
 
-                        <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                          <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                              Бюджет
-                            </span>
-                            <span className="text-xl font-black text-brand-indigo">
-                              {(
-                                route.points?.reduce((sum, p) => sum + (p.budget || 0), 0) || 0
-                              ).toLocaleString('ru-RU')}{' '}
-                              ₽
-                            </span>
-                          </div>
-                          <label className="flex items-center gap-3 cursor-pointer group">
-                            <span className="text-xs font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors">
-                              {route.isActive ? 'Активен' : 'Активировать'}
-                            </span>
-                            <div className="relative">
-                              <input
-                                type="checkbox"
-                                className="sr-only peer"
-                                checked={route.isActive}
-                                onChange={() => handleToggleActive(route.id)}
-                              />
-                              <div className="w-12 h-7 bg-slate-100 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:start-[4px] after:bg-white after:border-slate-200 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-blue"></div>
+                      return (
+                        <div
+                          key={route.id}
+                          className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all"
+                        >
+                          <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center">
+                                <MapIcon size={20} />
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                                  Маршрут
+                                </p>
+                                <p className="text-lg font-black text-brand-indigo truncate max-w-[150px] md:max-w-xs">
+                                  {route.title}
+                                </p>
+                              </div>
                             </div>
-                          </label>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleEditRoute(route)}
+                                className="p-2.5 bg-slate-50 text-slate-400 hover:text-brand-blue hover:bg-slate-100 rounded-xl transition-all active:scale-90"
+                                title="Редактировать"
+                              >
+                                <Pencil size={18} />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="pt-4 border-t border-slate-50 space-y-4">
+                            <BudgetSummary plannedBudget={route.budget} totalBudget={routeTotalBudget} />
+
+                            <div className="flex justify-end">
+                              <label className="flex items-center gap-3 cursor-pointer group">
+                                <span className="text-xs font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors">
+                                  {route.isActive ? 'Активен' : 'Активировать'}
+                                </span>
+                                <div className="relative">
+                                  <input
+                                    type="checkbox"
+                                    className="sr-only peer"
+                                    checked={route.isActive}
+                                    onChange={() => handleToggleActive(route.id)}
+                                  />
+                                  <div className="w-12 h-7 bg-slate-100 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:start-[4px] after:bg-white after:border-slate-200 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-blue"></div>
+                                </div>
+                              </label>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
