@@ -75,7 +75,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     });
   }, [tour, geocodeCity]);
 
-  const doOpenRoute = async () => {
+  const doOpenRoute = useCallback(async () => {
     if (!tour) return;
     setIsOpening(true);
     try {
@@ -147,7 +147,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     } finally {
       setIsOpening(false);
     }
-  };
+  }, [tour, focusCoords, attractions, geocodeCity, clearPlanner, setCurrentTrip, setPoints, router]);
 
   const handleOpenRoute = useCallback(() => {
     if (points && points.length > 0) {
@@ -155,7 +155,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     } else {
       doOpenRoute();
     }
-  }, [points]);
+  }, [points, doOpenRoute]);
 
   const confirmOverwrite = () => {
     setShowConfirmOverwrite(false);

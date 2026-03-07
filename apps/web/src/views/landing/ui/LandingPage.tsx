@@ -568,7 +568,7 @@ export function LandingPage() {
                       </button>
                     </div>
                     <Link
-                      href="/planner"
+                      href="/ai-assistant"
                       onClick={() => {
                         if (searchQuery.trim()) {
                           void sendAiQuery(searchQuery);
