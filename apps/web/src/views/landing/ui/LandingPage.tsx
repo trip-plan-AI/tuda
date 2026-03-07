@@ -15,6 +15,7 @@ import {
   Wind,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { startOfToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { api } from '@/shared/api';
 import { useTripStore, tripsApi } from '@/entities/trip';
@@ -716,6 +717,7 @@ export function LandingPage() {
                                 selected={
                                   manualForm.dateFrom ? new Date(manualForm.dateFrom) : undefined
                                 }
+                                disabled={(date) => date < startOfToday()}
                                 onSelect={(date) => {
                                   setManualForm((p) => ({
                                     ...p,
@@ -757,7 +759,8 @@ export function LandingPage() {
                                   manualForm.dateTo ? new Date(manualForm.dateTo) : undefined
                                 }
                                 disabled={(date) =>
-                                  !!manualForm.dateFrom && date < new Date(manualForm.dateFrom)
+                                  date < startOfToday() ||
+                                  (!!manualForm.dateFrom && date < new Date(manualForm.dateFrom))
                                 }
                                 onSelect={(date) => {
                                   setManualForm((p) => ({
