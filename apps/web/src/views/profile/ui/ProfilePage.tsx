@@ -485,7 +485,7 @@ export function ProfilePage() {
                       </Button>
                     </div>
 
-                    <div className="w-full aspect-[16/11] md:aspect-video rounded-[2rem] overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100">
+                    <div className="w-full aspect-[16/9] md:aspect-video rounded-[2rem] overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100">
                       <RouteMap points={activeRoute.points || []} onPointDragEnd={() => {}} />
                     </div>
 
@@ -502,7 +502,7 @@ export function ProfilePage() {
                         </div>
                       </div>
 
-                      <div className="relative flex-1 min-h-[72px] md:min-h-[140px]">
+                      <div className="relative flex-1 min-h-[40px] md:min-h-[120px]">
                         <div
                           ref={routePointsScrollRef}
                           onScroll={handleContentScroll}
@@ -528,15 +528,15 @@ export function ProfilePage() {
                         </div>
 
                         {/* Вариант 2: мягкие индикаторы прокрутки */}
-                        <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-white to-transparent" />
-                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-white to-transparent" />
+                        <div className="pointer-events-none absolute inset-x-0 top-0 h-3 md:h-5 bg-gradient-to-b from-white to-transparent" />
+                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 md:h-6 bg-gradient-to-t from-white to-transparent" />
                       </div>
 
-                      <div className="mt-5 md:mt-8 pt-4 md:pt-6 border-t border-slate-50 shrink-0">
+                      <div className="mt-3 md:mt-8 pt-3 md:pt-6 border-t border-slate-50 shrink-0">
                         <BudgetSummary
                           plannedBudget={activeRoute.budget}
                           totalBudget={activeRouteTotalBudget}
-                          className="space-y-2 md:space-y-3"
+                          className="space-y-1.5 md:space-y-3"
                         />
                       </div>
                     </div>
