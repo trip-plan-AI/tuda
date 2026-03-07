@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   User as UserIcon,
@@ -37,15 +37,62 @@ export function ProfilePage() {
   const [savedTrips, setSavedTrips] = useState<Trip[]>([])
   const [isLoadingTrips, setIsLoadingTrips] = useState(true)
   const [showScrollTop, setShowScrollTop] = useState(false)
+  const [isScrollableSavedList, setIsScrollableSavedList] = useState(false)
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const contentScrollRef = useRef<HTMLDivElement>(null)
+  const scrollRafRef = useRef<number | null>(null)
+  const isFabVisibleRef = useRef(false)
   const startY = useRef(0)
   const startHeight = useRef(0)
 
-  const handleScrollToTop = () => {
-    contentScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+  const evaluateScrollState = useCallback(() => {
+    const container = contentScrollRef.current
+    if (!container) return
+
+    const { scrollTop, clientHeight, scrollHeight } = container
+    const isScrollable = scrollHeight > clientHeight + 1
+    setIsScrollableSavedList(isScrollable)
+
+    if (!isScrollable) {
+      isFabVisibleRef.current = false
+      setShowScrollTop(false)
+      return
+    }
+
+    // Гистерезис: показываем позже, скрываем раньше, чтобы не мигало на границе.
+    const showThreshold = clientHeight * 1.25
+    const hideThreshold = clientHeight * 0.4
+    const shouldShow = isFabVisibleRef.current ? scrollTop > hideThreshold : scrollTop > showThreshold
+
+    isFabVisibleRef.current = shouldShow
+    setShowScrollTop(shouldShow)
+  }, [])
+
+  const handleContentScroll = useCallback(() => {
+    if (scrollRafRef.current != null) return
+    scrollRafRef.current = window.requestAnimationFrame(() => {
+      scrollRafRef.current = null
+      evaluateScrollState()
+    })
+  }, [evaluateScrollState])
+
+  const handleScrollToTop = useCallback(() => {
+    const container = contentScrollRef.current
+    if (!container) return
+
+    const currentTop = container.scrollTop
+    if (currentTop > 4000) {
+      container.scrollTo({ top: 1200, behavior: 'auto' })
+      window.requestAnimationFrame(() => {
+        contentScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+      })
+      return
+    }
+
+    container.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -65,6 +112,35 @@ export function ProfilePage() {
         setIsLoadingTrips(false)
       })
   }, [isAuthenticated, router])
+
+  useEffect(() => {
+    evaluateScrollState()
+  }, [activeTab, savedTrips, isLoadingTrips, evaluateScrollState])
+
+  useEffect(() => {
+    const viewport = window.visualViewport
+    if (!viewport) return
+
+    const handleViewportResize = () => {
+      const keyboardLikelyOpen = viewport.height < window.innerHeight * 0.75
+      setIsKeyboardOpen(keyboardLikelyOpen)
+    }
+
+    viewport.addEventListener('resize', handleViewportResize)
+    handleViewportResize()
+
+    return () => {
+      viewport.removeEventListener('resize', handleViewportResize)
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current != null) {
+        window.cancelAnimationFrame(scrollRafRef.current)
+      }
+    }
+  }, [])
 
   const activeRoute = savedTrips.find((t) => t.isActive)
 
@@ -205,7 +281,7 @@ export function ProfilePage() {
 
           <div
             ref={contentScrollRef}
-            onScroll={(e) => setShowScrollTop(e.currentTarget.scrollTop > 320)}
+            onScroll={handleContentScroll}
             className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col pb-28 md:pb-10 no-scrollbar"
           >
             <div className="flex flex-col items-center md:items-start mb-10">
@@ -419,22 +495,23 @@ export function ProfilePage() {
                 )
               )}
 
-              {activeTab === 'saved' && showScrollTop && savedTrips.length > 0 && (
-                <Button
-                  type="button"
-                  onClick={handleScrollToTop}
-                  variant="brand-indigo"
-                  shape="xl"
-                  className="absolute right-4 bottom-4 md:right-6 md:bottom-6 px-4 py-2 h-auto shadow-lg"
-                >
-                  <ArrowUp size={16} className="mr-2" />
-                  Наверх
-                </Button>
-              )}
             </div>
           </div>
         </div>
       </div>
+
+      {activeTab === 'saved' && isScrollableSavedList && showScrollTop && !isKeyboardOpen && (
+        <Button
+          type="button"
+          aria-label="Вернуться наверх"
+          onClick={handleScrollToTop}
+          variant="brand-indigo"
+          className="fixed right-4 md:right-8 z-40 h-12 min-w-12 px-3 rounded-full shadow-xl transition-all duration-200 hover:scale-[1.03] active:scale-95 opacity-90 hover:opacity-100"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}
+        >
+          <ArrowUp size={18} />
+        </Button>
+      )}
     </div>
   )
 }
