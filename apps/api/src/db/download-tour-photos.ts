@@ -1,7 +1,8 @@
 import { writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
-const TOURS_DIR = join(__dirname, '..', 'apps', 'web', 'public', 'assets', 'tours')
+// Из apps/api/src/db/ три уровня вверх = apps/, затем web/public/assets/tours
+const TOURS_DIR = join(__dirname, '..', '..', '..', 'web', 'public', 'assets', 'tours')
 
 interface PhotoEntry {
   slug: string
