@@ -134,15 +134,15 @@ export function ProfilePage() {
   const progressTrackColor = '#e2e8f0';
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mainContentScrollRef = useRef<HTMLDivElement>(null);
   const savedListScrollRef = useRef<HTMLDivElement>(null);
-  const routesListScrollRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
   const isFabVisibleRef = useRef(false);
   const startY = useRef(0);
   const startHeight = useRef(0);
 
   const evaluateScrollState = useCallback(() => {
-    const container = activeTab === 'saved' ? savedListScrollRef.current : routesListScrollRef.current;
+    const container = activeTab === 'saved' ? savedListScrollRef.current : mainContentScrollRef.current;
     if (!container) return;
 
     const { scrollTop, clientHeight, scrollHeight } = container;
@@ -179,7 +179,7 @@ export function ProfilePage() {
   }, [evaluateScrollState]);
 
   const handleScrollToTop = useCallback(() => {
-    const container = activeTab === 'saved' ? savedListScrollRef.current : routesListScrollRef.current;
+    const container = activeTab === 'saved' ? savedListScrollRef.current : mainContentScrollRef.current;
     if (!container) return;
 
     const currentTop = container.scrollTop;
@@ -187,7 +187,7 @@ export function ProfilePage() {
       container.scrollTo({ top: 1200, behavior: 'auto' });
       window.requestAnimationFrame(() => {
         const currentContainer =
-          activeTab === 'saved' ? savedListScrollRef.current : routesListScrollRef.current;
+          activeTab === 'saved' ? savedListScrollRef.current : mainContentScrollRef.current;
         currentContainer?.scrollTo({ top: 0, behavior: 'smooth' });
       });
       return;
@@ -367,7 +367,11 @@ export function ProfilePage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col pb-[calc(env(safe-area-inset-bottom,0px)+9.5rem)] md:pb-10 no-scrollbar">
+          <div
+            ref={mainContentScrollRef}
+            onScroll={activeTab === 'routes' ? handleContentScroll : undefined}
+            className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col pb-[calc(env(safe-area-inset-bottom,0px)+9.5rem)] md:pb-10 no-scrollbar"
+          >
             <div className="flex flex-col items-center md:items-start mb-10">
               <div
                 onClick={handleAvatarClick}
@@ -454,96 +458,84 @@ export function ProfilePage() {
             <div
               className={cn(
                 'bg-slate-50/50 rounded-[2.5rem] border border-slate-100 relative p-4 md:p-8',
-                'flex-1 min-h-[clamp(430px,58vh,720px)] overflow-hidden',
+                activeTab === 'saved'
+                  ? 'flex-1 min-h-[clamp(430px,58vh,720px)] overflow-hidden'
+                  : 'h-auto overflow-visible',
               )}
             >
               {activeTab === 'routes' ? (
                 // "Активно" tab
                 activeRoute ? (
-                  <div
-                    ref={routesListScrollRef}
-                    onScroll={handleContentScroll}
-                    className="h-full overflow-y-auto pr-1 no-scrollbar"
-                  >
-                    <div className="space-y-6 w-full animate-in fade-in duration-500 pb-2">
-                      <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-black text-brand-indigo uppercase tracking-widest">
-                          Активный маршрут
-                        </h3>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditRoute(activeRoute)}
-                          className="rounded-xl border-slate-200 text-slate-500 font-bold"
-                        >
-                          <Pencil size={14} className="mr-2" />
-                          ИЗМЕНИТЬ
-                        </Button>
-                      </div>
+                  <div className="space-y-6 w-full animate-in fade-in duration-500 pb-2">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-lg font-black text-brand-indigo uppercase tracking-widest">
+                        Активный маршрут
+                      </h3>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleEditRoute(activeRoute)}
+                        className="rounded-xl border-slate-200 text-slate-500 font-bold"
+                      >
+                        <Pencil size={14} className="mr-2" />
+                        ИЗМЕНИТЬ
+                      </Button>
+                    </div>
 
-                      <div className="w-full aspect-[4/5] md:aspect-video rounded-[2rem] overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100">
-                        <RouteMap points={activeRoute.points || []} onPointDragEnd={() => {}} />
-                      </div>
+                    <div className="w-full aspect-[4/5] md:aspect-video rounded-[2rem] overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100">
+                      <RouteMap points={activeRoute.points || []} onPointDragEnd={() => {}} />
+                    </div>
 
-                      <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
-                        <div className="flex items-center gap-4 mb-6">
-                          <div className="w-12 h-12 rounded-2xl bg-brand-blue/10 text-brand-blue flex items-center justify-center">
-                            <MapIcon size={24} />
-                          </div>
-                          <div>
-                            <p className="text-xs font-black text-slate-300 uppercase tracking-widest">
-                              Маршрут
-                            </p>
-                            <p className="text-xl font-black text-brand-indigo">
-                              {activeRoute.title}
-                            </p>
-                          </div>
+                    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                      <div className="flex items-center gap-4 mb-6">
+                        <div className="w-12 h-12 rounded-2xl bg-brand-blue/10 text-brand-blue flex items-center justify-center">
+                          <MapIcon size={24} />
                         </div>
+                        <div>
+                          <p className="text-xs font-black text-slate-300 uppercase tracking-widest">
+                            Маршрут
+                          </p>
+                          <p className="text-xl font-black text-brand-indigo">{activeRoute.title}</p>
+                        </div>
+                      </div>
 
-                        <div className="space-y-4">
-                          {activeRoute.points?.map((point, idx) => (
-                            <div key={point.id} className="flex items-start gap-4">
-                              <div className="w-6 h-6 rounded-full bg-brand-blue text-white font-black flex items-center justify-center text-[10px] shrink-0 mt-0.5">
-                                {idx + 1}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-black text-slate-700">{point.title}</p>
-                                <p className="text-xs text-slate-400 font-bold">
-                                  {point.budget
-                                    ? `${point.budget.toLocaleString('ru-RU')} ₽`
-                                    : 'Бесплатно'}
-                                </p>
-                              </div>
+                      <div className="space-y-4">
+                        {activeRoute.points?.map((point, idx) => (
+                          <div key={point.id} className="flex items-start gap-4">
+                            <div className="w-6 h-6 rounded-full bg-brand-blue text-white font-black flex items-center justify-center text-[10px] shrink-0 mt-0.5">
+                              {idx + 1}
                             </div>
-                          ))}
-                        </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-black text-slate-700">{point.title}</p>
+                              <p className="text-xs text-slate-400 font-bold">
+                                {point.budget
+                                  ? `${point.budget.toLocaleString('ru-RU')} ₽`
+                                  : 'Бесплатно'}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
 
-                        <div className="mt-8 pt-6 border-t border-slate-50">
-                          <BudgetSummary
-                            plannedBudget={activeRoute.budget}
-                            totalBudget={activeRouteTotalBudget}
-                          />
-                        </div>
+                      <div className="mt-8 pt-6 border-t border-slate-50">
+                        <BudgetSummary
+                          plannedBudget={activeRoute.budget}
+                          totalBudget={activeRouteTotalBudget}
+                        />
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div
-                    ref={routesListScrollRef}
-                    onScroll={handleContentScroll}
-                    className="h-full overflow-y-auto pr-1 no-scrollbar"
-                  >
-                    <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-10">
-                      <MapIcon size={48} className="mb-4 opacity-20" />
-                      <p className="text-sm font-bold italic">Нет активного маршрута</p>
-                      <Button
-                        onClick={() => router.push('/planner')}
-                        variant="brand"
-                        className="mt-6 rounded-xl uppercase font-black tracking-widest text-xs"
-                      >
-                        Создать
-                      </Button>
-                    </div>
+                  <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-10">
+                    <MapIcon size={48} className="mb-4 opacity-20" />
+                    <p className="text-sm font-bold italic">Нет активного маршрута</p>
+                    <Button
+                      onClick={() => router.push('/planner')}
+                      variant="brand"
+                      className="mt-6 rounded-xl uppercase font-black tracking-widest text-xs"
+                    >
+                      Создать
+                    </Button>
                   </div>
                 )
               ) : // "Сохранено" tab
