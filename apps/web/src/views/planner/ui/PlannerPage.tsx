@@ -1092,27 +1092,28 @@ export function PlannerPage() {
                     </span>
                   </div>
 
-                  <div className="flex flex-col lg:flex-row gap-4 items-center justify-between bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
-                    <Button
-                      onClick={() => {
-                        if (!isAuthenticated) {
-                          setModal('register');
-                          return;
-                        }
-                        if (points.length > 0) {
-                          setShowClearConfirm(true);
-                        } else {
-                          handleConfirmClear(false);
-                        }
-                      }}
-                      disabled={isAuthenticated && points.length === 0}
-                      variant="ghost"
-                      shape="xl"
-                      className="w-full lg:w-auto px-8 py-4 font-black uppercase tracking-widest text-xs h-auto bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      НОВЫЙ МАРШРУТ
-                    </Button>
-                    <div className="flex flex-col lg:flex-row gap-4 w-full lg:w-auto">
+                  <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 space-y-4">
+                    <div className="flex flex-col lg:flex-row gap-4 w-full">
+                      <Button
+                        onClick={() => {
+                          if (!isAuthenticated) {
+                            setModal('register');
+                            return;
+                          }
+                          if (points.length > 0) {
+                            setShowClearConfirm(true);
+                          } else {
+                            handleConfirmClear(false);
+                          }
+                        }}
+                        disabled={isAuthenticated && points.length === 0}
+                        variant="ghost"
+                        shape="xl"
+                        className="w-full lg:w-auto px-8 py-4 font-black uppercase tracking-widest text-xs h-auto bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        НОВЫЙ МАРШРУТ
+                      </Button>
+
                       <Button
                         onClick={() => {
                           if (!isAuthenticated) {
@@ -1124,36 +1125,37 @@ export function PlannerPage() {
                         disabled={isAuthenticated && points.length === 0}
                         variant="brand-purple"
                         shape="xl"
-                        className="w-full lg:w-auto px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full lg:w-auto lg:ml-auto px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         РЕДАКТИРОВАТЬ С AI
                       </Button>
-                      <Button
-                        onClick={async () => {
-                          if (!isAuthenticated) {
-                            setModal('register');
-                            return;
-                          }
-                          try {
-                            const tripId = await ensureTripId();
-                            const updated = await tripsApi.update(tripId, {
-                              budget: plannedBudget,
-                              isActive: isActiveRoute,
-                            });
-                            updateCurrentTrip(updated);
-                            toast.success('Маршрут сохранён', { id: 'save-route' });
-                          } catch {
-                            toast.error('Не удалось сохранить маршрут', { id: 'save-route' });
-                          }
-                        }}
-                        disabled={isAuthenticated && points.length === 0}
-                        variant="brand-indigo"
-                        shape="xl"
-                        className="w-full lg:w-auto px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        СОХРАНИТЬ МАРШРУТ
-                      </Button>
                     </div>
+
+                    <Button
+                      onClick={async () => {
+                        if (!isAuthenticated) {
+                          setModal('register');
+                          return;
+                        }
+                        try {
+                          const tripId = await ensureTripId();
+                          const updated = await tripsApi.update(tripId, {
+                            budget: plannedBudget,
+                            isActive: isActiveRoute,
+                          });
+                          updateCurrentTrip(updated);
+                          toast.success('Маршрут сохранён', { id: 'save-route' });
+                        } catch {
+                          toast.error('Не удалось сохранить маршрут', { id: 'save-route' });
+                        }
+                      }}
+                      disabled={isAuthenticated && points.length === 0}
+                      variant="brand-indigo"
+                      shape="xl"
+                      className="w-full px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      СОХРАНИТЬ МАРШРУТ
+                    </Button>
                   </div>
                 </div>
               </div>
