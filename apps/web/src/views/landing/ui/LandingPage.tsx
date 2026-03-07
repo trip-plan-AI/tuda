@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Calendar as CalendarIcon, Cloud, CloudSun, Mic, Search, Sun, Wind } from 'lucide-react';
+import { ArrowRight, Calendar as CalendarIcon, Cloud, CloudSun, MapPin, Mic, Search, Sun, Wind } from 'lucide-react';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { api } from '@/shared/api';
@@ -570,26 +570,38 @@ export function LandingPage() {
                               <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
                                 Откуда
                               </label>
-                              <div className="relative flex items-center">
+                              <div className="relative">
+                                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors">
+                                  {isSearchingFrom ? (
+                                    <div className="w-4 h-4 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <MapPin size={16} className="text-slate-400" />
+                                  )}
+                                </div>
                                 <input
                                   type="text"
                                   placeholder="Москва"
                                   value={manualForm.from}
                                   onChange={(e) => {
-                                    setManualForm((p) => ({ ...p, from: e.target.value }));
-                                    setFromDropdownOpen(true);
+                                    const value = e.target.value;
+                                    setManualForm((p) => ({ ...p, from: value }));
+                                    if (value.length > 2) {
+                                      setIsSearchingFrom(true);
+                                      setFromDropdownOpen(true);
+                                    } else {
+                                      setIsSearchingFrom(false);
+                                      setFromSuggestions([]);
+                                      setFromDropdownOpen(false);
+                                    }
                                     if (debounceFromRef.current) clearTimeout(debounceFromRef.current);
                                     debounceFromRef.current = setTimeout(() => {
-                                      void getSuggestions(e.target.value, setFromSuggestions, setIsSearchingFrom);
+                                      void getSuggestions(value, setFromSuggestions, setIsSearchingFrom);
                                     }, 700);
                                   }}
                                   onFocus={() => manualForm.from && setFromDropdownOpen(true)}
                                   onBlur={() => setTimeout(() => setFromDropdownOpen(false), 200)}
-                                  className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
+                                  className="w-full pl-12 px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
                                 />
-                                {isSearchingFrom && (
-                                  <div className="absolute right-5 w-4 h-4 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
-                                )}
                               </div>
                               {fromDropdownOpen && fromSuggestions.length > 0 && (
                                 <div className="absolute top-full mt-1 w-full bg-white rounded-2xl shadow-lg border border-slate-200 z-10 max-h-48 overflow-y-auto">
@@ -614,26 +626,38 @@ export function LandingPage() {
                               <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
                                 Куда
                               </label>
-                              <div className="relative flex items-center">
+                              <div className="relative">
+                                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors">
+                                  {isSearchingTo ? (
+                                    <div className="w-4 h-4 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <MapPin size={16} className="text-slate-400" />
+                                  )}
+                                </div>
                                 <input
                                   type="text"
                                   placeholder="Алтай"
                                   value={manualForm.to}
                                   onChange={(e) => {
-                                    setManualForm((p) => ({ ...p, to: e.target.value }));
-                                    setToDropdownOpen(true);
+                                    const value = e.target.value;
+                                    setManualForm((p) => ({ ...p, to: value }));
+                                    if (value.length > 2) {
+                                      setIsSearchingTo(true);
+                                      setToDropdownOpen(true);
+                                    } else {
+                                      setIsSearchingTo(false);
+                                      setToSuggestions([]);
+                                      setToDropdownOpen(false);
+                                    }
                                     if (debounceToRef.current) clearTimeout(debounceToRef.current);
                                     debounceToRef.current = setTimeout(() => {
-                                      void getSuggestions(e.target.value, setToSuggestions, setIsSearchingTo);
+                                      void getSuggestions(value, setToSuggestions, setIsSearchingTo);
                                     }, 700);
                                   }}
                                   onFocus={() => manualForm.to && setToDropdownOpen(true)}
                                   onBlur={() => setTimeout(() => setToDropdownOpen(false), 200)}
-                                  className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
+                                  className="w-full pl-12 px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
                                 />
-                                {isSearchingTo && (
-                                  <div className="absolute right-5 w-4 h-4 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
-                                )}
                               </div>
                               {toDropdownOpen && toSuggestions.length > 0 && (
                                 <div className="absolute top-full mt-1 w-full bg-white rounded-2xl shadow-lg border border-slate-200 z-10 max-h-48 overflow-y-auto">
