@@ -3,13 +3,13 @@ import {
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import type {
   ParsedIntent,
   PoiCategory,
   SessionMessage,
 } from '../types/pipeline.types';
+import { LlmClientService } from './llm-client.service';
 
 interface PartialIntent {
   city?: unknown;
@@ -57,7 +57,7 @@ const ALL_CATEGORIES: PoiCategory[] = [
 
 @Injectable()
 export class OrchestratorService {
-  private readonly openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  constructor(private readonly llmClientService: LlmClientService) {}
 
   async parseIntent(
     query: string,
@@ -104,11 +104,12 @@ export class OrchestratorService {
           ]
         : messages;
 
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: retryMessages,
-        response_format: { type: 'json_object' },
-      });
+      const response =
+        await this.llmClientService.client.chat.completions.create({
+          model: this.llmClientService.model,
+          messages: retryMessages,
+          response_format: { type: 'json_object' },
+        });
 
       const content = response.choices[0]?.message?.content ?? '{}';
       return JSON.parse(content) as PartialIntent;

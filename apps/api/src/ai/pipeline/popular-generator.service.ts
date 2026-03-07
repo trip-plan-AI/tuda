@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import OpenAI from 'openai';
 import { YandexFetchService } from './yandex-fetch.service';
 import type {
   ParsedIntent,
@@ -7,6 +6,7 @@ import type {
   RoutePlan,
 } from '../types/pipeline.types';
 import type { PoiItem } from '../types/poi.types';
+import { LlmClientService } from './llm-client.service';
 
 interface GeneratedPopularRoute {
   title: string;
@@ -22,9 +22,10 @@ interface GeneratedPopularRoute {
 
 @Injectable()
 export class PopularGeneratorService {
-  private readonly openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-  constructor(private readonly yandexFetchService: YandexFetchService) {}
+  constructor(
+    private readonly yandexFetchService: YandexFetchService,
+    private readonly llmClientService: LlmClientService,
+  ) {}
 
   async generate(city: string): Promise<GeneratedPopularRoute> {
     const normalizedCity = city.trim();
@@ -122,18 +123,19 @@ export class PopularGeneratorService {
 }`;
 
     try {
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content:
-              'Ты помощник для генерации описаний популярных туристических маршрутов. Ответ только JSON.',
-          },
-          { role: 'user', content: prompt },
-        ],
-      });
+      const response =
+        await this.llmClientService.client.chat.completions.create({
+          model: this.llmClientService.model,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Ты помощник для генерации описаний популярных туристических маршрутов. Ответ только JSON.',
+            },
+            { role: 'user', content: prompt },
+          ],
+        });
 
       const content = response.choices[0]?.message?.content ?? '{}';
       const parsed = JSON.parse(content) as {

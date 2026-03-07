@@ -5,11 +5,13 @@ import { YandexFetchService } from './pipeline/yandex-fetch.service';
 import { PopularGeneratorService } from './pipeline/popular-generator.service';
 import { SemanticFilterService } from './pipeline/semantic-filter.service';
 import { SchedulerService } from './pipeline/scheduler.service';
+import { LlmClientService } from './pipeline/llm-client.service';
 
 @Module({
   controllers: [AiController],
   providers: [
     OrchestratorService,
+    LlmClientService,
     YandexFetchService,
     PopularGeneratorService,
     SemanticFilterService,
@@ -17,6 +19,7 @@ import { SchedulerService } from './pipeline/scheduler.service';
   ],
   exports: [
     OrchestratorService,
+    LlmClientService,
     YandexFetchService,
     PopularGeneratorService,
     SemanticFilterService,
