@@ -152,7 +152,7 @@ function SortablePointRow({
     }
     setIsSearching(true);
     try {
-      const url = `/api/suggest?q=${encodeURIComponent(query)}`;
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
       const res = await fetch(url);
       const data = await res.json();
       // Nominatim API returns: { displayName, uri }
@@ -631,7 +631,7 @@ export function PlannerPage() {
     }
     setIsSearching(true);
     try {
-      const url = `/api/suggest?q=${encodeURIComponent(query)}`;
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
       const res = await fetch(url);
       const data = await res.json();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
