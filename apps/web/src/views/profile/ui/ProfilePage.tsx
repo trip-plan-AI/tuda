@@ -83,14 +83,14 @@ function BudgetSummary({
           />
         </div>
 
-        <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between text-[10px] font-bold text-slate-400">
           <span>{plan > 0 ? `Использовано ${progressPercent}%` : 'Лимит не задан'}</span>
           <span>{plan > 0 ? `${(plan - total).toLocaleString('ru-RU')} ₽` : '—'}</span>
         </div>
 
         <div
           className={cn(
-            'flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-[11px] font-black',
+            'flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-[11px] font-black leading-tight break-words',
             isOverBudget
               ? 'border-red-100 bg-red-50/70 text-red-600'
               : 'border-emerald-100 bg-emerald-50/70 text-emerald-600',
@@ -454,13 +454,15 @@ export function ProfilePage() {
             <div
               className={cn(
                 'bg-slate-50/50 rounded-[2.5rem] border border-slate-100 relative p-4 md:p-8',
-                'flex-1 min-h-[clamp(430px,58vh,720px)] overflow-hidden',
+                activeTab === 'routes'
+                  ? 'flex-1 min-h-[clamp(540px,74vh,860px)] overflow-hidden'
+                  : 'flex-1 min-h-[clamp(430px,58vh,720px)] overflow-hidden',
               )}
             >
               {activeTab === 'routes' ? (
                 // "Активно" tab
                 activeRoute ? (
-                  <div className="space-y-6 w-full h-full flex flex-col animate-in fade-in duration-500">
+                  <div className="space-y-4 md:space-y-6 w-full h-full flex flex-col animate-in fade-in duration-500">
                     <div className="flex justify-between items-center">
                       <h3 className="text-lg font-black text-brand-indigo uppercase tracking-widest">
                         Активный маршрут
@@ -476,12 +478,12 @@ export function ProfilePage() {
                       </Button>
                     </div>
 
-                    <div className="w-full aspect-[4/5] md:aspect-video rounded-[2rem] overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100">
+                    <div className="w-full aspect-[16/10] md:aspect-video rounded-[2rem] overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100">
                       <RouteMap points={activeRoute.points || []} onPointDragEnd={() => {}} />
                     </div>
 
-                    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex-1 min-h-0 flex flex-col">
-                      <div className="flex items-center gap-4 mb-6">
+                    <div className="bg-white p-4 md:p-6 rounded-[2rem] border border-slate-100 shadow-sm flex-1 min-h-0 flex flex-col">
+                      <div className="flex items-center gap-4 mb-4 md:mb-6">
                         <div className="w-12 h-12 rounded-2xl bg-brand-blue/10 text-brand-blue flex items-center justify-center">
                           <MapIcon size={24} />
                         </div>
@@ -493,7 +495,7 @@ export function ProfilePage() {
                         </div>
                       </div>
 
-                      <div className="relative flex-1 min-h-[190px] md:min-h-[240px]">
+                      <div className="relative flex-1 min-h-[170px] md:min-h-[240px]">
                         <div
                           ref={routePointsScrollRef}
                           onScroll={handleContentScroll}
@@ -523,10 +525,11 @@ export function ProfilePage() {
                         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-white to-transparent" />
                       </div>
 
-                      <div className="mt-8 pt-6 border-t border-slate-50 shrink-0">
+                      <div className="mt-5 md:mt-8 pt-4 md:pt-6 border-t border-slate-50 shrink-0">
                         <BudgetSummary
                           plannedBudget={activeRoute.budget}
                           totalBudget={activeRouteTotalBudget}
+                          className="space-y-2 md:space-y-3"
                         />
                       </div>
                     </div>
