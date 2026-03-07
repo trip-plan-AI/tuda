@@ -10,7 +10,7 @@ import { LlmClientService } from './llm-client.service';
 
 @Injectable()
 export class SemanticFilterService {
-  private readonly logger = new Logger(SemanticFilterService.name);
+  private readonly logger = new Logger('AI_PIPELINE:SemanticFilter');
 
   constructor(private readonly llmClientService: LlmClientService) {}
 
@@ -19,12 +19,14 @@ export class SemanticFilterService {
     intent: ParsedIntent,
     fallbacks: string[],
   ): Promise<FilteredPoi[]> {
+    this.logger.log(`Starting semantic filter for ${pois.length} points...`);
     const prompt = this.buildPrompt(pois, intent);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15_000);
 
     try {
+      this.logger.log(`Calling YandexGPT API...`);
       const apiKey = process.env.YANDEX_GPT_API_KEY;
       const folderId = process.env.YANDEX_FOLDER_ID;
 
@@ -57,6 +59,10 @@ export class SemanticFilterService {
         throw new Error(`YandexGPT HTTP ${response.status}`);
       }
 
+      this.logger.log(
+        `YandexGPT responded successfully. Processing results...`,
+      );
+
       const payload = (await response.json()) as {
         result?: { alternatives?: Array<{ message?: { text?: string } }> };
       };
@@ -79,8 +85,8 @@ export class SemanticFilterService {
         })
         .filter((item): item is FilteredPoi => item !== null);
 
-      this.logger.warn(
-        `Semantic Yandex selected_raw=${selectedRaw.length} mapped=${selected.length} pois=${pois.length}`,
+      this.logger.log(
+        `Semantic Yandex selected ${selectedRaw.length} points, successfully mapped ${selected.length} out of original ${pois.length}.`,
       );
 
       const minRequired = Math.min(1, pois.length);
@@ -89,10 +95,16 @@ export class SemanticFilterService {
       }
 
       return selected.slice(0, 10);
-    } catch (yandexError) {
+    } catch (yandexError: any) {
+      this.logger.warn(
+        `YandexGPT failed: ${yandexError.message}. Falling back to OpenRouter...`,
+      );
       try {
         return await this.selectWithOpenRouter(pois, intent);
-      } catch (openRouterError) {
+      } catch (openRouterError: any) {
+        this.logger.error(
+          `OpenRouter fallback also failed: ${openRouterError.message}. Skipping semantic filter.`,
+        );
         const yandexReason = this.toFallbackReason('YANDEX', yandexError);
         const openRouterReason = this.toFallbackReason(
           'OPENROUTER',

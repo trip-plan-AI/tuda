@@ -17,24 +17,36 @@ export class ProviderSearchService {
     intent: ParsedIntent,
     fallbacks: string[] = [],
   ): Promise<PoiItem[]> {
-    this.logger.log(`Starting ProviderSearch for ${intent.city}...`);
+    this.logger.log(
+      `[ProviderSearch] Started for city: "${intent.city}", categories: [${intent.categories.join(', ')}]`,
+    );
 
     let pois: PoiItem[] = [];
 
     // 1) Сначала обращаемся к приоритетному источнику (KudaGo)
+    this.logger.log(`[ProviderSearch] Requesting KudaGo API...`);
     const kudagoRaw = await this.kudagoClient.fetchByIntent(intent);
-    this.logger.log(`KudaGo fetched ${kudagoRaw.length} POIs`);
+    this.logger.log(
+      `[ProviderSearch] KudaGo returned ${kudagoRaw.length} points.`,
+    );
 
     if (kudagoRaw.length === 0) {
+      this.logger.warn(
+        `[ProviderSearch] KudaGo returned 0 points. Using fallback: KUDAGO_UNAVAILABLE_OVERPASS_ONLY`,
+      );
       fallbacks.push('KUDAGO_UNAVAILABLE_OVERPASS_ONLY');
     }
 
     // 2) Если точек мало (< 15), добираем через Overpass
     let overpassRaw: PoiItem[] = [];
     if (kudagoRaw.length < 15) {
-      this.logger.log(`Not enough POIs, falling back to Overpass...`);
+      this.logger.log(
+        `[ProviderSearch] KudaGo POIs < 15. Calling Overpass API for supplement...`,
+      );
       overpassRaw = await this.overpassClient.fetchByIntent(intent);
-      this.logger.log(`Overpass fetched ${overpassRaw.length} POIs`);
+      this.logger.log(
+        `[ProviderSearch] Overpass returned ${overpassRaw.length} points.`,
+      );
     }
 
     // 3) Объединяем и дедуплицируем
@@ -42,27 +54,43 @@ export class ProviderSearchService {
 
     // Если после объединения все еще мало POI, пробуем расширить радиус поиска Overpass
     if (pois.length < 3) {
-      this.logger.log(
-        `Still not enough POIs (<3). Retrying Overpass with expanded radius...`,
+      this.logger.warn(
+        `[ProviderSearch] Still low on POIs (${pois.length}). Retrying Overpass with radius * 1.3...`,
       );
       const retryOverpass = await this.overpassClient.fetchByIntent({
         ...intent,
         radius_km: intent.radius_km * 1.3,
       });
       pois = [...kudagoRaw, ...retryOverpass];
+      this.logger.log(
+        `[ProviderSearch] After Overpass retry, total raw points: ${pois.length}`,
+      );
     }
 
     if (pois.length === 0) {
-      this.logger.warn(`ProviderSearch empty result for city=${intent.city}`);
+      this.logger.error(
+        `[ProviderSearch] ❌ FATAL: 0 points found for ${intent.city} across all providers.`,
+      );
       return [];
     }
 
+    this.logger.log(
+      `[ProviderSearch] Starting deduplication of ${pois.length} points...`,
+    );
     const deduped = this.deduplicate(pois);
+    this.logger.log(
+      `[ProviderSearch] Deduplication complete. Unique points: ${deduped.length}`,
+    );
 
     // 4) Pre-filter: оставляем не более 15, сортируем (приоритет: рейтинг)
-    return deduped
+    const result = deduped
       .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
       .slice(0, 15);
+
+    this.logger.log(
+      `[ProviderSearch] Final pre-filter complete. Returning top ${result.length} points for Semantic Filter.`,
+    );
+    return result;
   }
 
   private deduplicate(pois: PoiItem[]): PoiItem[] {

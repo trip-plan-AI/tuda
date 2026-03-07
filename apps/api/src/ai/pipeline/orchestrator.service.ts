@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -57,6 +58,8 @@ const ALL_CATEGORIES: PoiCategory[] = [
 
 @Injectable()
 export class OrchestratorService {
+  private readonly logger = new Logger('AI_PIPELINE:Orchestrator');
+
   constructor(private readonly llmClientService: LlmClientService) {}
 
   async parseIntent(
@@ -72,9 +75,15 @@ export class OrchestratorService {
       { role: 'user', content: query },
     ];
 
+    this.logger.log(
+      `Calling LLM model=${this.llmClientService.model} for intent parsing...`,
+    );
     const parsed = await this.callWithTimeout(messages, 20_000);
 
     const intent = this.normalizeIntent(parsed);
+    this.logger.log(
+      `LLM returned city: "${intent.city}", budget: ${intent.budget_total}`,
+    );
 
     if (!intent.city) {
       throw new UnprocessableEntityException(
@@ -113,8 +122,10 @@ export class OrchestratorService {
 
       const content = response.choices[0]?.message?.content ?? '{}';
       return JSON.parse(content) as PartialIntent;
-    } catch {
+    } catch (e: any) {
+      this.logger.error(`Failed to parse intent: ${e.message}`);
       if (!isRetry) {
+        this.logger.warn('Retrying intent parsing...');
         return this.callWithTimeout(messages, timeoutMs, true);
       }
 

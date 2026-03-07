@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Inject,
+  Logger,
   Post,
   UnprocessableEntityException,
   UseGuards,
@@ -23,6 +24,8 @@ import type { SessionMessage } from './types/pipeline.types';
 @Controller('ai')
 @UseGuards(JwtAuthGuard)
 export class AiController {
+  private readonly logger = new Logger('AI_PIPELINE');
+
   constructor(
     @Inject(DRIZZLE)
     private readonly db: NodePgDatabase<typeof schema>,

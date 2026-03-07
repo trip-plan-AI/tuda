@@ -102,7 +102,10 @@ export class OverpassClientService {
 
       if (!response.ok) return null;
 
-      const data = (await response.json()) as Array<{ lat: string; lon: string }>;
+      const data = (await response.json()) as Array<{
+        lat: string;
+        lon: string;
+      }>;
       if (data && data.length > 0 && data[0]) {
         return {
           lat: parseFloat(data[0].lat),

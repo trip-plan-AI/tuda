@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type {
   ParsedIntent,
   PlanDay,
@@ -21,7 +21,12 @@ const TRANSIT_DURATION_MIN = 25;
 
 @Injectable()
 export class SchedulerService {
+  private readonly logger = new Logger('AI_PIPELINE:Scheduler');
+
   buildPlan(pois: FilteredPoi[], intent: ParsedIntent): RoutePlan {
+    this.logger.log(
+      `Starting to build route plan for ${intent.days} days with ${pois.length} selected POIs...`,
+    );
     const startMinutes = this.timeToMinutes(intent.start_time);
     const endMinutes = this.timeToMinutes(intent.end_time);
     const dayBudget =
@@ -80,7 +85,7 @@ export class SchedulerService {
       0,
     );
 
-    return {
+    const plan = {
       city: intent.city,
       total_budget_estimated: totalBudgetEstimated,
       days,
@@ -89,6 +94,11 @@ export class SchedulerService {
           ? 'Часть точек не попала в расписание из-за ограничения времени дня.'
           : undefined,
     };
+
+    this.logger.log(
+      `Route plan successfully generated. Total budget estimated: ${totalBudgetEstimated} rub.`,
+    );
+    return plan;
   }
 
   private estimatePointCost(poi: FilteredPoi, dayBudget: number): number {
