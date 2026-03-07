@@ -628,7 +628,10 @@ export function LandingPage() {
                             />
                           </div>
                           {fromDropdownOpen && fromSuggestions.length > 0 && (
-                            <div className="absolute top-full mt-1 w-full bg-white rounded-2xl shadow-lg border border-slate-200 z-10 max-h-48 overflow-y-auto">
+                            <div
+                              style={{ position: 'absolute' }}
+                              className="left-0 right-0 top-[calc(100%+4px)] w-full bg-white rounded-2xl shadow-lg border border-slate-200 z-50 max-h-48 overflow-y-auto"
+                            >
                               {fromSuggestions.map((suggestion, idx) => (
                                 <button
                                   key={idx}
@@ -684,7 +687,10 @@ export function LandingPage() {
                             />
                           </div>
                           {toDropdownOpen && toSuggestions.length > 0 && (
-                            <div className="absolute top-full mt-1 w-full bg-white rounded-2xl shadow-lg border border-slate-200 z-10 max-h-48 overflow-y-auto">
+                            <div
+                              style={{ position: 'absolute' }}
+                              className="left-0 right-0 top-[calc(100%+4px)] w-full bg-white rounded-2xl shadow-lg border border-slate-200 z-50 max-h-48 overflow-y-auto"
+                            >
                               {toSuggestions.map((suggestion, idx) => (
                                 <button
                                   key={idx}
