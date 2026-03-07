@@ -8,6 +8,7 @@ import {
   Calendar as CalendarIcon,
   Cloud,
   CloudSun,
+  MapPin,
   Mic,
   Search,
   Sun,
@@ -155,6 +156,8 @@ export function LandingPage() {
   const [toSuggestions, setToSuggestions] = useState<GeoSuggestion[]>([]);
   const [fromDropdownOpen, setFromDropdownOpen] = useState(false);
   const [toDropdownOpen, setToDropdownOpen] = useState(false);
+  const [isSearchingFrom, setIsSearchingFrom] = useState(false);
+  const [isSearchingTo, setIsSearchingTo] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const debounceFromRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceToRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -238,19 +241,27 @@ export function LandingPage() {
   }, [filteredTrips, selectedFilter]);
 
   // Получение подсказок при вводе
-  const getSuggestions = async (query: string, setter: (suggestions: GeoSuggestion[]) => void) => {
+  const getSuggestions = async (
+    query: string,
+    setter: (suggestions: GeoSuggestion[]) => void,
+    setLoading?: (loading: boolean) => void,
+  ) => {
     if (!query.trim() || query.length < 2) {
       setter([]);
+      setLoading?.(false);
       return;
     }
+    setLoading?.(true);
     try {
-      const res = await fetch(`${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`);
+      const res = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       const results = data.results ?? [];
       setter(results);
     } catch (e) {
       console.error('Failed to fetch suggestions:', e);
       setter([]);
+    } finally {
+      setLoading?.(false);
     }
   };
 
@@ -258,7 +269,7 @@ export function LandingPage() {
   const geocodePlace = async (place: string): Promise<{ lat: number; lon: number } | null> => {
     if (!place.trim()) return null;
     try {
-      const res = await fetch(`${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(place)}`);
+      const res = await fetch(`/api/suggest?q=${encodeURIComponent(place)}`);
       const data = await res.json();
       const results = data.results ?? [];
       if (results.length > 0) {
@@ -569,22 +580,39 @@ export function LandingPage() {
                           <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
                             Откуда
                           </label>
-                          <input
-                            type="text"
-                            placeholder="Москва"
-                            value={manualForm.from}
-                            onChange={(e) => {
-                              setManualForm((p) => ({ ...p, from: e.target.value }));
-                              setFromDropdownOpen(true);
-                              if (debounceFromRef.current) clearTimeout(debounceFromRef.current);
-                              debounceFromRef.current = setTimeout(() => {
-                                void getSuggestions(e.target.value, setFromSuggestions);
-                              }, 400);
-                            }}
-                            onFocus={() => manualForm.from && setFromDropdownOpen(true)}
-                            onBlur={() => setTimeout(() => setFromDropdownOpen(false), 200)}
-                            className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
-                          />
+                          <div className="relative">
+                            <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors">
+                              {isSearchingFrom ? (
+                                <div className="w-4 h-4 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <MapPin size={16} className="text-slate-400" />
+                              )}
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="Москва"
+                              value={manualForm.from}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setManualForm((p) => ({ ...p, from: value }));
+                                if (value.length > 2) {
+                                  setIsSearchingFrom(true);
+                                  setFromDropdownOpen(true);
+                                } else {
+                                  setIsSearchingFrom(false);
+                                  setFromSuggestions([]);
+                                  setFromDropdownOpen(false);
+                                }
+                                if (debounceFromRef.current) clearTimeout(debounceFromRef.current);
+                                debounceFromRef.current = setTimeout(() => {
+                                  void getSuggestions(value, setFromSuggestions, setIsSearchingFrom);
+                                }, 700);
+                              }}
+                              onFocus={() => manualForm.from && setFromDropdownOpen(true)}
+                              onBlur={() => setTimeout(() => setFromDropdownOpen(false), 200)}
+                              className="w-full pl-12 px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
+                            />
+                          </div>
                           {fromDropdownOpen && fromSuggestions.length > 0 && (
                             <div className="absolute top-full mt-1 w-full bg-white rounded-2xl shadow-lg border border-slate-200 z-10 max-h-48 overflow-y-auto">
                               {fromSuggestions.map((suggestion, idx) => (
@@ -608,22 +636,39 @@ export function LandingPage() {
                           <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
                             Куда
                           </label>
-                          <input
-                            type="text"
-                            placeholder="Алтай"
-                            value={manualForm.to}
-                            onChange={(e) => {
-                              setManualForm((p) => ({ ...p, to: e.target.value }));
-                              setToDropdownOpen(true);
-                              if (debounceToRef.current) clearTimeout(debounceToRef.current);
-                              debounceToRef.current = setTimeout(() => {
-                                void getSuggestions(e.target.value, setToSuggestions);
-                              }, 400);
-                            }}
-                            onFocus={() => manualForm.to && setToDropdownOpen(true)}
-                            onBlur={() => setTimeout(() => setToDropdownOpen(false), 200)}
-                            className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
-                          />
+                          <div className="relative">
+                            <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors">
+                              {isSearchingTo ? (
+                                <div className="w-4 h-4 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <MapPin size={16} className="text-slate-400" />
+                              )}
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="Алтай"
+                              value={manualForm.to}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setManualForm((p) => ({ ...p, to: value }));
+                                if (value.length > 2) {
+                                  setIsSearchingTo(true);
+                                  setToDropdownOpen(true);
+                                } else {
+                                  setIsSearchingTo(false);
+                                  setToSuggestions([]);
+                                  setToDropdownOpen(false);
+                                }
+                                if (debounceToRef.current) clearTimeout(debounceToRef.current);
+                                debounceToRef.current = setTimeout(() => {
+                                  void getSuggestions(value, setToSuggestions, setIsSearchingTo);
+                                }, 700);
+                              }}
+                              onFocus={() => manualForm.to && setToDropdownOpen(true)}
+                              onBlur={() => setTimeout(() => setToDropdownOpen(false), 200)}
+                              className="w-full pl-12 px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
+                            />
+                          </div>
                           {toDropdownOpen && toSuggestions.length > 0 && (
                             <div className="absolute top-full mt-1 w-full bg-white rounded-2xl shadow-lg border border-slate-200 z-10 max-h-48 overflow-y-auto">
                               {toSuggestions.map((suggestion, idx) => (
