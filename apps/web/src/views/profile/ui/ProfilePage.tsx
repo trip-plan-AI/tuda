@@ -60,9 +60,9 @@ export function ProfilePage() {
       return
     }
 
-    // Гистерезис: показываем позже, скрываем раньше, чтобы не мигало на границе.
-    const showThreshold = clientHeight * 1.25
-    const hideThreshold = clientHeight * 0.4
+    // Гистерезис: показываем раньше и скрываем раньше, чтобы FAB был заметен даже на средних списках.
+    const showThreshold = Math.max(120, clientHeight * 0.45)
+    const hideThreshold = Math.max(40, clientHeight * 0.12)
     const shouldShow = isFabVisibleRef.current ? scrollTop > hideThreshold : scrollTop > showThreshold
 
     isFabVisibleRef.current = shouldShow
@@ -495,8 +495,7 @@ export function ProfilePage() {
           aria-label="Вернуться наверх"
           onClick={handleScrollToTop}
           variant="brand-indigo"
-          className="fixed right-4 md:right-8 z-40 h-12 min-w-12 px-3 rounded-full shadow-xl transition-all duration-200 hover:scale-[1.03] active:scale-95 opacity-90 hover:opacity-100"
-          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}
+          className="fixed right-4 md:right-8 bottom-4 md:bottom-6 z-50 h-12 min-w-12 px-3 rounded-full shadow-xl transition-all duration-200 hover:scale-[1.03] active:scale-95 opacity-90 hover:opacity-100"
         >
           <ArrowUp size={18} />
         </Button>
