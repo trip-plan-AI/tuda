@@ -139,14 +139,6 @@ export function ProfilePage() {
 
   const activeRoute = savedTrips.find((t) => t.isActive);
 
-  const getRouteTotalBudget = (trip: Trip) =>
-    trip.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
-
-  const activeRouteTotalBudget = activeRoute ? getRouteTotalBudget(activeRoute) : 0;
-  const activeRoutePlannedBudget = activeRoute?.budget ?? 0;
-  const isActiveRouteOverBudget =
-    activeRoutePlannedBudget > 0 && activeRouteTotalBudget > activeRoutePlannedBudget;
-
   const handleTouchStart = (e: React.TouchEvent) => {
     setIsDragging(true);
     startY.current = e.touches[0]!.clientY;
@@ -430,26 +422,16 @@ export function ProfilePage() {
                         ))}
                       </div>
 
-                      <div className="mt-8 pt-6 border-t border-slate-50 grid grid-cols-2 gap-4">
+                      <div className="mt-8 pt-6 border-t border-slate-50 flex items-center justify-between">
                         <div className="flex flex-col">
                           <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                            Планируемый
+                            Общий бюджет
                           </span>
                           <span className="text-2xl font-black text-brand-indigo">
-                            {activeRoutePlannedBudget.toLocaleString('ru-RU')} ₽
-                          </span>
-                        </div>
-                        <div className="flex flex-col text-right">
-                          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                            Итого по точкам
-                          </span>
-                          <span
-                            className={cn(
-                              'text-2xl font-black',
-                              isActiveRouteOverBudget ? 'text-red-500' : 'text-brand-indigo',
-                            )}
-                          >
-                            {activeRouteTotalBudget.toLocaleString('ru-RU')} ₽
+                            {(
+                              activeRoute.points?.reduce((sum, p) => sum + (p.budget || 0), 0) || 0
+                            ).toLocaleString('ru-RU')}{' '}
+                            ₽
                           </span>
                         </div>
                       </div>
@@ -482,17 +464,11 @@ export function ProfilePage() {
                   className="h-full overflow-y-auto pr-1 no-scrollbar"
                 >
                   <div className="space-y-4 w-full animate-in fade-in duration-500 pb-2">
-                    {savedTrips.map((route) => {
-                      const routeTotalBudget = getRouteTotalBudget(route);
-                      const routePlannedBudget = route.budget ?? 0;
-                      const isRouteOverBudget =
-                        routePlannedBudget > 0 && routeTotalBudget > routePlannedBudget;
-
-                      return (
-                        <div
-                          key={route.id}
-                          className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all"
-                        >
+                    {savedTrips.map((route) => (
+                      <div
+                        key={route.id}
+                        className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all"
+                      >
                         <div className="flex items-center justify-between mb-6">
                           <div className="flex items-center gap-4">
                             <div className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center">
@@ -518,50 +494,35 @@ export function ProfilePage() {
                           </div>
                         </div>
 
-                        <div className="pt-4 border-t border-slate-50 space-y-4">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="flex flex-col">
-                              <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                                Планируемый
-                              </span>
-                              <span className="text-xl font-black text-brand-indigo">
-                                {routePlannedBudget.toLocaleString('ru-RU')} ₽
-                              </span>
-                            </div>
-                            <div className="flex flex-col text-right">
-                              <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                                Итого по точкам
-                              </span>
-                              <span
-                                className={cn(
-                                  'text-xl font-black',
-                                  isRouteOverBudget ? 'text-red-500' : 'text-brand-indigo',
-                                )}
-                              >
-                                {routeTotalBudget.toLocaleString('ru-RU')} ₽
-                              </span>
-                            </div>
+                        <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                              Бюджет
+                            </span>
+                            <span className="text-xl font-black text-brand-indigo">
+                              {(
+                                route.points?.reduce((sum, p) => sum + (p.budget || 0), 0) || 0
+                              ).toLocaleString('ru-RU')}{' '}
+                              ₽
+                            </span>
                           </div>
-                          <div className="flex justify-end">
-                            <label className="flex items-center gap-3 cursor-pointer group">
-                              <span className="text-xs font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors">
-                                {route.isActive ? 'Активен' : 'Активировать'}
-                              </span>
-                              <div className="relative">
-                                <input
-                                  type="checkbox"
-                                  className="sr-only peer"
-                                  checked={route.isActive}
-                                  onChange={() => handleToggleActive(route.id)}
-                                />
-                                <div className="w-12 h-7 bg-slate-100 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:start-[4px] after:bg-white after:border-slate-200 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-blue"></div>
-                              </div>
-                            </label>
-                          </div>
+                          <label className="flex items-center gap-3 cursor-pointer group">
+                            <span className="text-xs font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors">
+                              {route.isActive ? 'Активен' : 'Активировать'}
+                            </span>
+                            <div className="relative">
+                              <input
+                                type="checkbox"
+                                className="sr-only peer"
+                                checked={route.isActive}
+                                onChange={() => handleToggleActive(route.id)}
+                              />
+                              <div className="w-12 h-7 bg-slate-100 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:start-[4px] after:bg-white after:border-slate-200 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-blue"></div>
+                            </div>
+                          </label>
                         </div>
                       </div>
-                      );
-                    })}
+                    ))}
                   </div>
                 </div>
               ) : (
