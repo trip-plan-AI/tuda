@@ -851,34 +851,21 @@ export function PlannerPage() {
             {/* Поисковая строка */}
               <div className="mb-10 w-full">
                 {isBudgetExceeded && (
-                  <>
-                    <div className="hidden md:block sticky top-[4.5rem] z-20 mb-4">
-                      <div className="rounded-2xl border border-red-200 bg-red-50/95 backdrop-blur px-4 py-3 shadow-sm">
-                        <div className="flex items-start gap-3">
-                          <div className="mt-0.5 rounded-full bg-red-100 text-red-600 p-1.5 shrink-0">
-                            <AlertTriangle size={16} />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-black text-red-700">Превышен планируемый бюджет</p>
-                            <p className="text-xs font-semibold text-red-600">
-                              Итого по точкам больше лимита на {budgetOverrun.toLocaleString('ru-RU')} ₽
-                            </p>
-                          </div>
-                        </div>
+                  <div className="fixed right-4 bottom-20 md:bottom-6 z-40 pointer-events-none">
+                    <div className="pointer-events-auto flex items-start gap-2 rounded-2xl border border-red-200 bg-white/95 backdrop-blur px-3 py-2 shadow-lg max-w-[300px]">
+                      <div className="mt-0.5 rounded-full bg-red-100 text-red-600 p-1.5 shrink-0">
+                        <AlertTriangle size={14} />
                       </div>
-                    </div>
-
-                    <div className="fixed md:hidden right-4 bottom-20 z-40 pointer-events-none">
-                      <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-red-200 bg-white/95 backdrop-blur px-3 py-2 shadow-lg max-w-[280px]">
-                        <div className="rounded-full bg-red-100 text-red-600 p-1.5 shrink-0">
-                          <AlertTriangle size={14} />
-                        </div>
-                        <p className="text-xs font-black text-red-700 leading-tight truncate">
-                          Превышение: +{budgetOverrun.toLocaleString('ru-RU')} ₽
+                      <div className="min-w-0">
+                        <p className="text-xs md:text-sm font-black text-red-700 leading-tight">
+                          Лимит превышен на {budgetOverrun.toLocaleString('ru-RU')} ₽
+                        </p>
+                        <p className="text-[11px] md:text-xs font-semibold text-slate-500 leading-tight mt-0.5">
+                          Итого по точкам выше планируемого бюджета
                         </p>
                       </div>
                     </div>
-                  </>
+                  </div>
                 )}
               <div
                 ref={searchContainerRef}
