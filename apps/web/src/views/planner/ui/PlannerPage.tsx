@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import {
   Search,
   MapPin,
@@ -488,7 +488,6 @@ export function PlannerPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [modal, setModal] = useState<'login' | 'register' | null>(null);
 
-  const router = useRouter();
   const { points, setPoints, currentTrip, setCurrentTrip, updateCurrentTrip } = useTripStore();
   const { isAuthenticated } = useAuthStore();
   const crud = usePointCrud(currentTrip?.id);
@@ -727,9 +726,9 @@ export function PlannerPage() {
     searchDebounceRef.current = setTimeout(() => geocode(value), 1000);
   };
 
-  // Геокодирование через ymaps3.search() — работает с Maps JS ключом без отдельного geocoder ключа
+  // Геокодирование по тексту через ymaps3.search()
   const resolveCoords = useCallback(async (query: string) => {
-    await loadYandexMaps(env.yandexMapsKey); // гарантируем что ymaps3 загружен
+    await loadYandexMaps(env.yandexMapsKey);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ymap = (window as any).ymaps3;
     if (!ymap?.search) return null;
@@ -738,6 +737,22 @@ export function PlannerPage() {
     const coords = results[0]?.geometry?.coordinates as [number, number] | undefined;
     if (!coords) return null;
     return { lon: coords[0], lat: coords[1], address: query };
+  }, []);
+
+  // Обратное геокодирование (по координатам) через ymaps3.search()
+  const resolveMapCoords = useCallback(async (coords: { lon: number; lat: number }) => {
+    await loadYandexMaps(env.yandexMapsKey);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ymap = (window as any).ymaps3;
+    if (!ymap?.search) return null;
+    try {
+      const results = await ymap.search({ coordinates: [coords.lon, coords.lat], results: 1, type: 'geo' });
+      if (!results?.length) return null;
+      const name = results[0]?.properties?.name || results[0]?.properties?.description || null;
+      return { address: name, title: name };
+    } catch {
+      return null;
+    }
   }, []);
 
   const addPoint_ = useCallback(
@@ -825,6 +840,23 @@ export function PlannerPage() {
       setIsSearching(false);
     }
   };
+
+  const handleMapClick = useCallback(async (coords: { lon: number; lat: number }) => {
+    setIsSearching(true);
+    try {
+      const geoData = await resolveMapCoords(coords);
+      await addPoint_({
+        title: geoData?.title || `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`,
+        lat: coords.lat,
+        lon: coords.lon,
+        address: geoData?.address || `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`,
+      });
+    } catch (e) {
+      console.error('Не удалось добавить точку с карты:', e);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [addPoint_, resolveMapCoords]);
 
   return (
     <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
@@ -971,6 +1003,7 @@ export function PlannerPage() {
                 focusCoords={focusCoords}
                 onPointDragEnd={handlePointDragEnd}
                 isDropdownOpen={showDropdown}
+                onMapClick={handleMapClick}
               />
             </div>
 
@@ -1074,7 +1107,7 @@ export function PlannerPage() {
                 )}
 
                 {/* Итого */}
-                <div className="mt-4 pt-6 border-t border-slate-200/60 flex flex-col gap-6">
+                <div className="mt-6 pt-4 border-t border-slate-200/60 flex flex-col gap-6">
                   <div className="flex items-center justify-between px-2">
                     <span className="font-black text-slate-400 uppercase tracking-widest text-xs md:text-sm">
                       Итого по точкам
@@ -1091,29 +1124,27 @@ export function PlannerPage() {
                       {totalBudget.toLocaleString('ru-RU')} ₽
                     </span>
                   </div>
-
-                  <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 space-y-4">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 w-full">
-                      <Button
-                        onClick={() => {
-                          if (!isAuthenticated) {
-                            setModal('register');
-                            return;
-                          }
-                          if (points.length > 0) {
-                            setShowClearConfirm(true);
-                          } else {
-                            handleConfirmClear(false);
-                          }
-                        }}
-                        disabled={isAuthenticated && points.length === 0}
-                        variant="ghost"
-                        shape="xl"
-                        className="w-full px-8 py-4 font-black uppercase tracking-widest text-xs h-auto bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
-                      >
-                        НОВЫЙ МАРШРУТ
-                      </Button>
-
+                  <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-start lg:justify-between bg-slate-50/50 p-4 rounded-2xl border border-slate-100 w-full">
+                    <Button
+                      onClick={() => {
+                        if (!isAuthenticated) {
+                          setModal('register');
+                          return;
+                        }
+                        if (points.length > 0) {
+                          setShowClearConfirm(true);
+                        } else {
+                          handleConfirmClear(false);
+                        }
+                      }}
+                      disabled={isAuthenticated && points.length === 0}
+                      variant="ghost"
+                      shape="xl"
+                      className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      НОВЫЙ МАРШРУТ
+                    </Button>
+                    <div className="flex flex-col lg:flex-row gap-3 w-full lg:w-auto">
                       <Button
                         onClick={() => {
                           if (!isAuthenticated) {
@@ -1125,19 +1156,16 @@ export function PlannerPage() {
                         disabled={isAuthenticated && points.length === 0}
                         variant="brand-purple"
                         shape="xl"
-                        className="w-full px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
                       >
                         РЕДАКТИРОВАТЬ С AI
                       </Button>
-                    </div>
-
-                    <Button
-                      onClick={async () => {
-                        if (!isAuthenticated) {
-                          setModal('register');
-                          return;
-                        }
-                        try {
+                      <Button
+                        onClick={async () => {
+                          if (!isAuthenticated) {
+                            setModal('register');
+                            return;
+                          }
                           const tripId = await ensureTripId();
                           const updated = await tripsApi.update(tripId, {
                             budget: plannedBudget,
@@ -1145,17 +1173,15 @@ export function PlannerPage() {
                           });
                           updateCurrentTrip(updated);
                           toast.success('Маршрут сохранён', { id: 'save-route' });
-                        } catch {
-                          toast.error('Не удалось сохранить маршрут', { id: 'save-route' });
-                        }
-                      }}
-                      disabled={isAuthenticated && points.length === 0}
-                      variant="brand-indigo"
-                      shape="xl"
-                      className="w-full px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      СОХРАНИТЬ МАРШРУТ
-                    </Button>
+                        }}
+                        disabled={isAuthenticated && points.length === 0}
+                        variant="brand-indigo"
+                        shape="xl"
+                        className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
+                      >
+                        СОХРАНИТЬ МАРШРУТ
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>

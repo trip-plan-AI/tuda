@@ -11,12 +11,13 @@ interface RouteMapProps {
   focusCoords?: { lon: number; lat: number } | null
   onPointDragEnd: (pointId: string, newCoords: { lon: number; lat: number }, newAddress: string, newTitle: string) => void
   isDropdownOpen?: boolean
+  onMapClick?: (coords: { lon: number; lat: number }) => void
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const ymaps3: any
 
-export function RouteMap({ points, focusCoords, onPointDragEnd, isDropdownOpen }: RouteMapProps) {
+export function RouteMap({ points, focusCoords, onPointDragEnd, isDropdownOpen, onMapClick }: RouteMapProps) {
   const resolveCoords = async (coords: { lon: number; lat: number }) => {
     await loadYandexMaps(env.yandexMapsKey);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,6 +48,12 @@ export function RouteMap({ points, focusCoords, onPointDragEnd, isDropdownOpen }
   const controlsRef = useRef<any>(null)
   const [mapReady, setMapReady] = useState(false)
   const prevCoordsKey = useRef<string>('')
+  const onMapClickRef = useRef(onMapClick)
+
+  // Обновляем ref при изменении onMapClick
+  useEffect(() => {
+    onMapClickRef.current = onMapClick
+  }, [onMapClick])
 
   // Инициализация карты
   useEffect(() => {
@@ -71,6 +78,27 @@ export function RouteMap({ points, focusCoords, onPointDragEnd, isDropdownOpen }
       controls.addChild(new YMapZoomControl())
       mapRef.current.addChild(controls)
       controlsRef.current = controls; // Сохраняем
+
+      // Добавляем YMapListener для обработки кликов на карту
+      if (onMapClickRef.current) {
+        const listener = new ymaps3.YMapListener({
+          onClick: (object: any, event: any) => {
+            try {
+              // event.coordinates — географические координаты [lon, lat]
+              const coords = event?.coordinates
+              if (coords && Array.isArray(coords) && coords.length >= 2) {
+                const [lon, lat] = coords
+                if (isFinite(lon) && isFinite(lat)) {
+                  onMapClickRef.current?.({ lon, lat })
+                }
+              }
+            } catch (error) {
+              console.error('[RouteMap] Error in map click handler:', error)
+            }
+          },
+        })
+        mapRef.current.addChild(listener)
+      }
 
       setMapReady(true) // триггерит points-эффект если точки уже есть
     }).catch((err) => {
