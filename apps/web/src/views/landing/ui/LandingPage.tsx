@@ -253,7 +253,7 @@ export function LandingPage() {
     }
     setLoading?.(true);
     try {
-      const res = await fetch(`${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`);
+      const res = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       const results = data.results ?? [];
       setter(results);
@@ -269,7 +269,7 @@ export function LandingPage() {
   const geocodePlace = async (place: string): Promise<{ lat: number; lon: number } | null> => {
     if (!place.trim()) return null;
     try {
-      const res = await fetch(`${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(place)}`);
+      const res = await fetch(`/api/suggest?q=${encodeURIComponent(place)}`);
       const data = await res.json();
       const results = data.results ?? [];
       if (results.length > 0) {
