@@ -8,6 +8,9 @@ export interface Trip {
   ownerId: string
   isActive: boolean
   isPredefined: boolean
+  img?: string | null
+  tags?: string[] | null
+  temp?: string | null
   startDate: string | null
   endDate: string | null
   createdAt: string

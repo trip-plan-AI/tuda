@@ -42,7 +42,6 @@ import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point';
 import { toast } from 'sonner';
 import { cn } from '@/shared/lib/utils';
-import { PREDEFINED_ROUTES } from '@/shared/data/predefined-routes';
 import { Button } from '@/shared/ui/button';
 import { Chip } from '@/shared/ui/chip';
 import { SegmentedControl } from '@/shared/ui/segmented-control';
@@ -468,6 +467,7 @@ export function PlannerPage() {
   const [editingTitle, setEditingTitle] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<Filter>('Все');
   const [popularSearch, setPopularSearch] = useState('');
+  const [predefinedRoutes, setPredefinedRoutes] = useState<Trip[]>([]);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [modal, setModal] = useState<'login' | 'register' | null>(null);
 
@@ -479,7 +479,12 @@ export function PlannerPage() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const { clearPlanner } = useTripStore();
-  
+
+  // Загружаем предопределённые туры
+  useEffect(() => {
+    tripsApi.getPredefined().then(setPredefinedRoutes).catch(console.error);
+  }, []);
+
   // Синхронизируем plannedBudget из бюджета трипа при смене трипа.
   // Срабатывает когда лендинг передаёт трип с заполненным бюджетом (через setCurrentTrip)
   // и сразу переходит на /planner — в этом случае основной useEffect пропускает tripsApi.getAll()
@@ -1115,9 +1120,9 @@ export function PlannerPage() {
 
             {/* Грид карточек */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12 pb-10">
-              {PREDEFINED_ROUTES.filter(
+              {predefinedRoutes.filter(
                 (route) =>
-                  selectedFilter === 'Все' || route.tags.some((t) => t.includes(selectedFilter)),
+                  selectedFilter === 'Все' || (route.tags ?? []).some((t) => t.includes(selectedFilter)),
               )
                 .filter(
                   (route) =>
@@ -1133,7 +1138,7 @@ export function PlannerPage() {
                     <div className="relative aspect-4/5 md:aspect-16/10 rounded-[3rem] overflow-hidden mb-6 shadow-2xl">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={route.img}
+                        src={route.img ?? ''}
                         className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 will-change-transform"
                         alt={route.title}
                       />
@@ -1148,12 +1153,12 @@ export function PlannerPage() {
                           {route.title}
                         </h3>
                         <div className="bg-brand-yellow text-white px-6 py-2.5 rounded-full text-sm font-black uppercase tracking-widest inline-block shadow-xl">
-                          {route.total}
+                          {route.budget ? `${route.budget.toLocaleString('ru-RU')} ₽` : ''}
                         </div>
                       </div>
                     </div>
                     <p className="text-slate-500 text-lg font-medium leading-relaxed px-4 text-left">
-                      {route.desc}
+                      {route.description}
                     </p>
                   </Link>
                 ))}

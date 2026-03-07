@@ -207,20 +207,14 @@ export function LandingPage() {
 
   const popularCards = useMemo(() => {
     if (filteredTrips.length > 0) {
-      return filteredTrips.map((trip, idx) => ({
+      return filteredTrips.map((trip) => ({
         id: trip.id,
         title: trip.title,
         desc: trip.description ?? 'Маршрут с живописными локациями и насыщенной программой.',
         total: trip.budget ? `${trip.budget.toLocaleString('ru-RU')} ₽` : 'По запросу',
-        img:
-          idx % 4 === 0
-            ? '/assets/images/sochi.webp'
-            : idx % 4 === 1
-              ? '/assets/images/altay.webp'
-              : idx % 4 === 2
-                ? '/assets/images/karelia.webp'
-                : '/assets/images/kavkaz.webp',
-        temp: '+12°',
+        img: trip.img ?? '/assets/images/sochi.webp',
+        temp: trip.temp ?? '+12°',
+        tags: trip.tags ?? ['Все'],
       }));
     }
 
@@ -424,7 +418,7 @@ export function LandingPage() {
       if (searchQuery.trim()) {
         void sendAiQuery(searchQuery);
       }
-      router.push('/ai-assistant');
+      router.push('/planner');
       return;
     }
 
@@ -540,7 +534,7 @@ export function LandingPage() {
                       </button>
                     </div>
                     <Link
-                      href="/ai-assistant"
+                      href="/planner"
                       onClick={() => {
                         if (searchQuery.trim()) {
                           void sendAiQuery(searchQuery);
@@ -797,13 +791,12 @@ export function LandingPage() {
                 {popularCards.map((trip, idx) => {
                   const Icon = weatherIcons[idx % weatherIcons.length] ?? Cloud;
                   const isDemo = String(trip.id).startsWith('demo-');
-                  const tourId = isDemo ? String(trip.id).replace('demo-', '') : null;
                   return (
                     <Link
                       key={trip.id}
-                      href={tourId ? `/tours/${tourId}` : '#'}
+                      href={isDemo ? '#' : `/tours/${trip.id}`}
                       onClick={(e) => {
-                        if (!isDemo) {
+                        if (isDemo) {
                           e.preventDefault();
                           handleSearch();
                         }
