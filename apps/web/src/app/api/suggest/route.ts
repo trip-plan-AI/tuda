@@ -247,12 +247,11 @@ async function getDadataSuggestions(q: string, userCoords?: UserCoords | null, i
     const results = suggestions
       .map((item: any) => {
         const value = item.value || ''
-        const unrestricted_value = item.unrestricted_value || ''
 
         if (!value) return null
 
         return {
-          displayName: unrestricted_value || value,
+          displayName: value,
           uri: `ymapsbm1://geo?text=${encodeURIComponent(value)}&z=12`,
         }
       })
