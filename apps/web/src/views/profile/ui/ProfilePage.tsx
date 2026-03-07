@@ -38,17 +38,16 @@ export function ProfilePage() {
   const [isLoadingTrips, setIsLoadingTrips] = useState(true)
   const [showScrollTop, setShowScrollTop] = useState(false)
   const [isScrollableSavedList, setIsScrollableSavedList] = useState(false)
-  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const contentScrollRef = useRef<HTMLDivElement>(null)
+  const savedListScrollRef = useRef<HTMLDivElement>(null)
   const scrollRafRef = useRef<number | null>(null)
   const isFabVisibleRef = useRef(false)
   const startY = useRef(0)
   const startHeight = useRef(0)
 
   const evaluateScrollState = useCallback(() => {
-    const container = contentScrollRef.current
+    const container = savedListScrollRef.current
     if (!container) return
 
     const { scrollTop, clientHeight, scrollHeight } = container
@@ -79,14 +78,14 @@ export function ProfilePage() {
   }, [evaluateScrollState])
 
   const handleScrollToTop = useCallback(() => {
-    const container = contentScrollRef.current
+    const container = savedListScrollRef.current
     if (!container) return
 
     const currentTop = container.scrollTop
     if (currentTop > 4000) {
       container.scrollTo({ top: 1200, behavior: 'auto' })
       window.requestAnimationFrame(() => {
-        contentScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+        savedListScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
       })
       return
     }
@@ -116,23 +115,6 @@ export function ProfilePage() {
   useEffect(() => {
     evaluateScrollState()
   }, [activeTab, savedTrips, isLoadingTrips, evaluateScrollState])
-
-  useEffect(() => {
-    const viewport = window.visualViewport
-    if (!viewport) return
-
-    const handleViewportResize = () => {
-      const keyboardLikelyOpen = viewport.height < window.innerHeight * 0.75
-      setIsKeyboardOpen(keyboardLikelyOpen)
-    }
-
-    viewport.addEventListener('resize', handleViewportResize)
-    handleViewportResize()
-
-    return () => {
-      viewport.removeEventListener('resize', handleViewportResize)
-    }
-  }, [])
 
   useEffect(() => {
     return () => {
@@ -279,11 +261,7 @@ export function ProfilePage() {
             </div>
           </div>
 
-          <div
-            ref={contentScrollRef}
-            onScroll={handleContentScroll}
-            className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col pb-28 md:pb-10 no-scrollbar"
-          >
+          <div className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col pb-28 md:pb-10 no-scrollbar">
             <div className="flex flex-col items-center md:items-start mb-10">
               <div
                 onClick={handleAvatarClick}
@@ -359,7 +337,12 @@ export function ProfilePage() {
               </button>
             </div>
 
-            <div className="flex-1 min-h-[300px] bg-slate-50/50 rounded-[2.5rem] border border-slate-100 relative p-4 md:p-8">
+            <div
+              className={cn(
+                'flex-1 min-h-[300px] bg-slate-50/50 rounded-[2.5rem] border border-slate-100 relative p-4 md:p-8',
+                activeTab === 'saved' && 'overflow-hidden',
+              )}
+            >
               {activeTab === "routes" ? (
                 // "Активно" tab
                 activeRoute ? (
@@ -438,9 +421,14 @@ export function ProfilePage() {
                        {[1,2,3].map(i => <div key={i} className="h-32 bg-slate-100 animate-pulse rounded-3xl" />)}
                    </div>
                 ) : savedTrips.length > 0 ? (
-                  <div className="space-y-4 w-full animate-in fade-in duration-500">
-                    {savedTrips.map((route) => (
-                      <div key={route.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all">
+                  <div
+                    ref={savedListScrollRef}
+                    onScroll={handleContentScroll}
+                    className="h-full overflow-y-auto pr-1 no-scrollbar"
+                  >
+                    <div className="space-y-4 w-full animate-in fade-in duration-500 pb-2">
+                      {savedTrips.map((route) => (
+                        <div key={route.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all">
                         <div className="flex items-center justify-between mb-6">
                           <div className="flex items-center gap-4">
                             <div className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center">
@@ -484,8 +472,9 @@ export function ProfilePage() {
                             </div>
                           </label>
                         </div>
-                      </div>
-                    ))}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ) : (
                   <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-10">
@@ -500,7 +489,7 @@ export function ProfilePage() {
         </div>
       </div>
 
-      {activeTab === 'saved' && isScrollableSavedList && showScrollTop && !isKeyboardOpen && (
+      {activeTab === 'saved' && isScrollableSavedList && showScrollTop && (
         <Button
           type="button"
           aria-label="Вернуться наверх"
