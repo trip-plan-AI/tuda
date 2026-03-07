@@ -47,21 +47,23 @@ function BudgetSummary({
 
   return (
     <div className={cn('space-y-3', className)}>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+        <div className="flex flex-col min-w-0 text-left">
           <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
             Планируемый
           </span>
-          <span className="text-xl md:text-2xl font-black text-brand-indigo">{plan.toLocaleString('ru-RU')} ₽</span>
+          <span className="text-lg sm:text-xl md:text-2xl font-black text-brand-indigo leading-tight break-words">
+            {plan.toLocaleString('ru-RU')} ₽
+          </span>
         </div>
 
-        <div className="flex flex-col text-right">
+        <div className="flex flex-col min-w-0 text-left md:text-right">
           <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
             Итого по точкам
           </span>
           <span
             className={cn(
-              'text-xl md:text-2xl font-black',
+              'text-lg sm:text-xl md:text-2xl font-black leading-tight break-words',
               isOverBudget ? 'text-red-500' : 'text-brand-indigo',
             )}
           >
