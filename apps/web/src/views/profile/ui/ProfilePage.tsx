@@ -450,8 +450,7 @@ export function ProfilePage() {
 
             <div
               className={cn(
-                'bg-slate-50/50 rounded-[2.5rem] border border-slate-100 relative p-4 md:p-8',
-                activeTab === 'saved' ? 'flex-1 min-h-[300px] overflow-hidden' : 'h-auto',
+                'bg-slate-50/50 rounded-[2.5rem] border border-slate-100 relative p-4 md:p-8 h-auto',
               )}
             >
               {activeTab === 'routes' ? (
@@ -542,7 +541,7 @@ export function ProfilePage() {
                 <div
                   ref={savedListScrollRef}
                   onScroll={handleContentScroll}
-                  className="h-full overflow-y-auto pr-1 no-scrollbar"
+                  className="h-auto overflow-visible pr-1"
                 >
                   <div className="space-y-4 w-full animate-in fade-in duration-500 pb-2">
                     {savedTrips.map((route) => {
