@@ -81,8 +81,7 @@ interface GeoSuggestion {
 
 const FILTERS = ['Все', 'Активный', 'Зима', 'Экстрим'] as const;
 type Filter = (typeof FILTERS)[number];
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface PointRowProps {
   point: RoutePoint;
@@ -502,7 +501,6 @@ export function PlannerPage() {
     tripsApi.getPredefined().then(setPredefinedRoutes).catch(console.error);
   }, []);
 
-
   // Синхронизируем plannedBudget из бюджета трипа при смене трипа.
   // Срабатывает когда лендинг передаёт трип с заполненным бюджетом (через setCurrentTrip)
   // и сразу переходит на /planner — в этом случае основной useEffect пропускает tripsApi.getAll()
@@ -853,26 +851,25 @@ export function PlannerPage() {
 
         {activeTab === 'my' ? (
           <div className="animate-in fade-in duration-500">
-
             {/* Поисковая строка */}
-              <div className="mb-10 w-full">
-                {isBudgetExceeded && (
-                  <div className="fixed right-4 bottom-20 md:bottom-6 z-40 pointer-events-none">
-                    <div className="pointer-events-auto flex items-start gap-2 rounded-2xl border border-red-200 bg-white/95 backdrop-blur px-3 py-2 shadow-lg max-w-[300px]">
-                      <div className="mt-0.5 rounded-full bg-red-100 text-red-600 p-1.5 shrink-0">
-                        <AlertTriangle size={14} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs md:text-sm font-black text-red-700 leading-tight">
-                          Лимит превышен на {budgetOverrun.toLocaleString('ru-RU')} ₽
-                        </p>
-                        <p className="text-[11px] md:text-xs font-semibold text-slate-500 leading-tight mt-0.5">
-                          Итого по точкам выше планируемого бюджета
-                        </p>
-                      </div>
+            <div className="mb-10 w-full">
+              {isBudgetExceeded && (
+                <div className="fixed right-4 bottom-20 md:bottom-6 z-40 pointer-events-none">
+                  <div className="pointer-events-auto flex items-start gap-2 rounded-2xl border border-red-200 bg-white/95 backdrop-blur px-3 py-2 shadow-lg max-w-[300px]">
+                    <div className="mt-0.5 rounded-full bg-red-100 text-red-600 p-1.5 shrink-0">
+                      <AlertTriangle size={14} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs md:text-sm font-black text-red-700 leading-tight">
+                        Лимит превышен на {budgetOverrun.toLocaleString('ru-RU')} ₽
+                      </p>
+                      <p className="text-[11px] md:text-xs font-semibold text-slate-500 leading-tight mt-0.5">
+                        Итого по точкам выше планируемого бюджета
+                      </p>
                     </div>
                   </div>
-                )}
+                </div>
+              )}
               <div
                 ref={searchContainerRef}
                 className="flex flex-col md:flex-row gap-4 w-full relative items-center z-30"
@@ -1208,10 +1205,12 @@ export function PlannerPage() {
 
             {/* Грид карточек */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12 pb-10">
-              {predefinedRoutes.filter(
-                (route) =>
-                  selectedFilter === 'Все' || (route.tags ?? []).some((t) => t.includes(selectedFilter)),
-              )
+              {predefinedRoutes
+                .filter(
+                  (route) =>
+                    selectedFilter === 'Все' ||
+                    (route.tags ?? []).some((t) => t.includes(selectedFilter)),
+                )
                 .filter(
                   (route) =>
                     !popularSearch.trim() ||
