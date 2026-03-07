@@ -54,10 +54,20 @@ export function AiChat({
 }: AiChatProps) {
   const [query, setQuery] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isFirstAutoScrollRef = useRef(true);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    if (isFirstAutoScrollRef.current) {
+      container.scrollTop = container.scrollHeight;
+      isFirstAutoScrollRef.current = false;
+      return;
+    }
+
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
   }, [messages, isLoading]);
 
   const handleSubmit = () => {
@@ -82,7 +92,7 @@ export function AiChat({
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (
           <div className="flex h-full items-center justify-center text-center">
             <p className="max-w-sm text-sm text-slate-500">
@@ -103,8 +113,6 @@ export function AiChat({
             {isLoading && <AiResponseSkeleton />}
           </div>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
       <div className="border-t border-slate-200 bg-white px-4 py-4">

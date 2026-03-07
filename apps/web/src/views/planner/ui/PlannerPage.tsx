@@ -15,6 +15,7 @@ import {
   X,
   GripVertical,
   Calendar as CalendarIcon,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   DndContext,
@@ -32,6 +33,8 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { format } from 'date-fns';
+import { startOfMonth } from 'date-fns';
+import { startOfToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { useTripStore, tripsApi, type CreateTripPayload, type Trip } from '@/entities/trip';
 import { usePointCrud } from '@/features/route-create';
@@ -78,6 +81,8 @@ interface GeoSuggestion {
 
 const FILTERS = ['Все', 'Активный', 'Зима', 'Экстрим'] as const;
 type Filter = (typeof FILTERS)[number];
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface PointRowProps {
   point: RoutePoint;
@@ -151,7 +156,8 @@ function SortablePointRow({
     }
     setIsSearching(true);
     try {
-      const res = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
+      const res = await fetch(url);
       const data = await res.json();
       // Nominatim API returns: { displayName, uri }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -170,8 +176,15 @@ function SortablePointRow({
 
   const handleAddressChange = (val: string) => {
     setAddressVal(val);
+    if (val.length > 2) {
+      setIsSearching(true);
+    } else {
+      setIsSearching(false);
+      setSuggestions([]);
+      setShowDropdownState(false);
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => getSuggestions(val), 400);
+    debounceRef.current = setTimeout(() => getSuggestions(val), 700);
   };
 
   const resolveCoords = async (query: string) => {
@@ -223,7 +236,10 @@ function SortablePointRow({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex flex-row items-center lg:items-start justify-start gap-3 md:gap-4 group bg-slate-50 p-4 rounded-2xl border border-transparent hover:border-slate-200 transition-all shadow-sm hover:shadow-md relative z-10"
+      className={cn(
+        'flex flex-row items-center lg:items-start justify-start gap-3 md:gap-4 group bg-slate-50 p-4 rounded-2xl border border-transparent hover:border-slate-200 transition-all shadow-sm hover:shadow-md relative z-0',
+        showDropdownState && 'z-50',
+      )}
     >
       {/* Кнопка удаления */}
       <Button
@@ -335,9 +351,10 @@ function SortablePointRow({
                     onUpdate(point.id, { visitDate: date?.toISOString() });
                     setDateOpen(false);
                   }}
+                  disabled={(date) => date < startOfToday()}
                   locale={ru}
                   captionLayout="dropdown"
-                  startMonth={new Date(2020, 0)}
+                  startMonth={startOfMonth(startOfToday())}
                   endMonth={new Date(2035, 11)}
                   classNames={{ caption_label: 'hidden' }}
                 />
@@ -485,6 +502,7 @@ export function PlannerPage() {
     tripsApi.getPredefined().then(setPredefinedRoutes).catch(console.error);
   }, []);
 
+
   // Синхронизируем plannedBudget из бюджета трипа при смене трипа.
   // Срабатывает когда лендинг передаёт трип с заполненным бюджетом (через setCurrentTrip)
   // и сразу переходит на /planner — в этом случае основной useEffect пропускает tripsApi.getAll()
@@ -581,7 +599,45 @@ export function PlannerPage() {
 
   // Если трипа нет — создаём «Мой маршрут» и сразу возвращаем его id
   const ensureTripId = useCallback(async (): Promise<string> => {
-    if (currentTrip) return currentTrip.id;
+    if (
+      currentTrip &&
+      !(isAuthenticated && (currentTrip.id.startsWith('guest-') || !UUID_RE.test(currentTrip.id)))
+    ) {
+      return currentTrip.id;
+    }
+
+    // Если пользователь авторизовался с невалидным/гостевым маршрутом в сторе,
+    // создаём реальный trip и переносим точки на backend.
+    if (
+      currentTrip &&
+      isAuthenticated &&
+      (currentTrip.id.startsWith('guest-') || !UUID_RE.test(currentTrip.id))
+    ) {
+      const trip = await tripsApi.create({
+        title: currentTrip.title || 'Мой маршрут',
+        isActive: isActiveRoute,
+        budget: plannedBudget,
+      } as CreateTripPayload);
+
+      const createdPoints = await Promise.all(
+        points.map((p) =>
+          pointsApi.create(trip.id, {
+            title: p.title,
+            lat: p.lat,
+            lon: p.lon,
+            budget: p.budget ?? 0,
+            visitDate: p.visitDate ?? undefined,
+            imageUrl: p.imageUrl ?? undefined,
+            order: p.order,
+            address: p.address ?? undefined,
+          }),
+        ),
+      );
+
+      setCurrentTrip(trip);
+      setPoints(createdPoints);
+      return trip.id;
+    }
 
     if (!isAuthenticated) {
       const guestTrip: Trip = {
@@ -608,12 +664,22 @@ export function PlannerPage() {
     } as CreateTripPayload);
     setCurrentTrip(trip);
     return trip.id;
-  }, [currentTrip, setCurrentTrip, isActiveRoute, plannedBudget, isAuthenticated]);
+  }, [
+    currentTrip,
+    setCurrentTrip,
+    isActiveRoute,
+    plannedBudget,
+    isAuthenticated,
+    points,
+    setPoints,
+  ]);
 
   const totalBudget = useMemo(
     () => points.reduce((sum: number, p: RoutePoint) => sum + (p.budget ?? 0), 0),
     [points],
   );
+  const budgetOverrun = Math.max(0, totalBudget - plannedBudget);
+  const isBudgetExceeded = plannedBudget > 0 && budgetOverrun > 0;
 
   // Закрыть дропдаун при клике снаружи
   useEffect(() => {
@@ -635,7 +701,8 @@ export function PlannerPage() {
     }
     setIsSearching(true);
     try {
-      const res = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
+      const res = await fetch(url);
       const data = await res.json();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const found: GeoSuggestion[] = (data.results ?? []).map((item: any) => ({
@@ -663,7 +730,7 @@ export function PlannerPage() {
       setShowDropdown(false);
     }
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => geocode(value), 400);
+    searchDebounceRef.current = setTimeout(() => geocode(value), 1000);
   };
 
   // Геокодирование через ymaps3.search() — работает с Maps JS ключом без отдельного geocoder ключа
@@ -767,7 +834,7 @@ export function PlannerPage() {
 
   return (
     <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
-      <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-10 w-full flex-1 flex flex-col">
+      <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-10 w-full flex-1 flex flex-col relative">
         {/* Заголовок + табы */}
         <div className="mb-8 bg-white md:p-0 rounded-none w-full">
           <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight mb-6 text-left">
@@ -786,8 +853,26 @@ export function PlannerPage() {
 
         {activeTab === 'my' ? (
           <div className="animate-in fade-in duration-500">
+
             {/* Поисковая строка */}
-            <div className="mb-10 w-full">
+              <div className="mb-10 w-full">
+                {isBudgetExceeded && (
+                  <div className="fixed right-4 bottom-20 md:bottom-6 z-40 pointer-events-none">
+                    <div className="pointer-events-auto flex items-start gap-2 rounded-2xl border border-red-200 bg-white/95 backdrop-blur px-3 py-2 shadow-lg max-w-[300px]">
+                      <div className="mt-0.5 rounded-full bg-red-100 text-red-600 p-1.5 shrink-0">
+                        <AlertTriangle size={14} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs md:text-sm font-black text-red-700 leading-tight">
+                          Лимит превышен на {budgetOverrun.toLocaleString('ru-RU')} ₽
+                        </p>
+                        <p className="text-[11px] md:text-xs font-semibold text-slate-500 leading-tight mt-0.5">
+                          Итого по точкам выше планируемого бюджета
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               <div
                 ref={searchContainerRef}
                 className="flex flex-col md:flex-row gap-4 w-full relative items-center z-30"
@@ -1013,27 +1098,28 @@ export function PlannerPage() {
                     </span>
                   </div>
 
-                  <div className="flex flex-col lg:flex-row gap-4 items-center justify-between bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
-                    <Button
-                      onClick={() => {
-                        if (!isAuthenticated) {
-                          setModal('register');
-                          return;
-                        }
-                        if (points.length > 0) {
-                          setShowClearConfirm(true);
-                        } else {
-                          handleConfirmClear(false);
-                        }
-                      }}
-                      disabled={isAuthenticated && points.length === 0}
-                      variant="ghost"
-                      shape="xl"
-                      className="w-full lg:w-auto px-8 py-4 font-black uppercase tracking-widest text-xs h-auto bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      НОВЫЙ МАРШРУТ
-                    </Button>
-                    <div className="flex flex-col lg:flex-row gap-4 w-full lg:w-auto">
+                  <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 space-y-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 w-full">
+                      <Button
+                        onClick={() => {
+                          if (!isAuthenticated) {
+                            setModal('register');
+                            return;
+                          }
+                          if (points.length > 0) {
+                            setShowClearConfirm(true);
+                          } else {
+                            handleConfirmClear(false);
+                          }
+                        }}
+                        disabled={isAuthenticated && points.length === 0}
+                        variant="ghost"
+                        shape="xl"
+                        className="w-full px-8 py-4 font-black uppercase tracking-widest text-xs h-auto bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        НОВЫЙ МАРШРУТ
+                      </Button>
+
                       <Button
                         onClick={() => {
                           if (!isAuthenticated) {
@@ -1045,35 +1131,37 @@ export function PlannerPage() {
                         disabled={isAuthenticated && points.length === 0}
                         variant="brand-purple"
                         shape="xl"
-                        className="w-full lg:w-auto px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         РЕДАКТИРОВАТЬ С AI
                       </Button>
-                      <Button
-                        onClick={async () => {
-                          if (!isAuthenticated) {
-                            setModal('register');
-                            return;
-                          }
+                    </div>
+
+                    <Button
+                      onClick={async () => {
+                        if (!isAuthenticated) {
+                          setModal('register');
+                          return;
+                        }
+                        try {
                           const tripId = await ensureTripId();
                           const updated = await tripsApi.update(tripId, {
                             budget: plannedBudget,
                             isActive: isActiveRoute,
                           });
                           updateCurrentTrip(updated);
-                          await Promise.all(
-                            points.map((p) => crud.update(p.id, { budget: p.budget ?? 0 })),
-                          );
                           toast.success('Маршрут сохранён', { id: 'save-route' });
-                        }}
-                        disabled={isAuthenticated && points.length === 0}
-                        variant="brand-indigo"
-                        shape="xl"
-                        className="w-full lg:w-auto px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        СОХРАНИТЬ МАРШРУТ
-                      </Button>
-                    </div>
+                        } catch {
+                          toast.error('Не удалось сохранить маршрут', { id: 'save-route' });
+                        }
+                      }}
+                      disabled={isAuthenticated && points.length === 0}
+                      variant="brand-indigo"
+                      shape="xl"
+                      className="w-full px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      СОХРАНИТЬ МАРШРУТ
+                    </Button>
                   </div>
                 </div>
               </div>
