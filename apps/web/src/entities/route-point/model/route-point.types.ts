@@ -2,6 +2,7 @@ export interface RoutePoint {
   id: string
   tripId: string
   title: string
+  description?: string | null
   lat: number
   lon: number
   budget: number | null
