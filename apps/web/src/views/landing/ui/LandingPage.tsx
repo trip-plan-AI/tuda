@@ -594,48 +594,54 @@ export function LandingPage() {
                           <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
                             Откуда
                           </label>
-                          <div className="relative">
-                            <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors">
-                              {isSearchingFrom ? (
-                                <div className="w-4 h-4 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
-                              ) : (
-                                <MapPin size={16} className="text-slate-400" />
-                              )}
-                            </div>
-                            <input
-                              type="text"
-                              placeholder="Москва"
-                              value={manualForm.from}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                setManualForm((p) => ({ ...p, from: value }));
-                                if (value.length > 2) {
-                                  setIsSearchingFrom(true);
-                                  setFromDropdownOpen(true);
-                                } else {
-                                  setIsSearchingFrom(false);
-                                  setFromSuggestions([]);
-                                  setFromDropdownOpen(false);
-                                }
-                                if (debounceFromRef.current) clearTimeout(debounceFromRef.current);
-                                debounceFromRef.current = setTimeout(() => {
-                                  void getSuggestions(value, setFromSuggestions, setIsSearchingFrom);
-                                }, 700);
-                              }}
-                              onFocus={() => manualForm.from && setFromDropdownOpen(true)}
-                              onBlur={() => setTimeout(() => setFromDropdownOpen(false), 200)}
-                              className="w-full pl-12 px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
-                            />
-                          </div>
-                          {fromDropdownOpen && fromSuggestions.length > 0 && (
-                            <div
-                              style={{ position: 'absolute' }}
-                              className="left-0 right-0 top-[calc(100%+4px)] w-full bg-white rounded-2xl shadow-lg border border-slate-200 z-50 max-h-48 overflow-y-auto"
+                          <Popover
+                            open={fromDropdownOpen && fromSuggestions.length > 0}
+                            onOpenChange={(open) => setFromDropdownOpen(open)}
+                          >
+                            <PopoverTrigger asChild>
+                              <div className="relative">
+                                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors">
+                                  {isSearchingFrom ? (
+                                    <div className="w-4 h-4 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <MapPin size={16} className="text-slate-400" />
+                                  )}
+                                </div>
+                                <input
+                                  type="text"
+                                  placeholder="Москва"
+                                  value={manualForm.from}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    setManualForm((p) => ({ ...p, from: value }));
+                                    if (value.length > 2) {
+                                      setIsSearchingFrom(true);
+                                      setFromDropdownOpen(true);
+                                    } else {
+                                      setIsSearchingFrom(false);
+                                      setFromSuggestions([]);
+                                      setFromDropdownOpen(false);
+                                    }
+                                    if (debounceFromRef.current) clearTimeout(debounceFromRef.current);
+                                    debounceFromRef.current = setTimeout(() => {
+                                      void getSuggestions(value, setFromSuggestions, setIsSearchingFrom);
+                                    }, 700);
+                                  }}
+                                  onFocus={() => manualForm.from && setFromDropdownOpen(true)}
+                                  className="w-full pl-12 px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
+                                />
+                              </div>
+                            </PopoverTrigger>
+
+                            <PopoverContent
+                              align="start"
+                              sideOffset={4}
+                              className="w-[var(--radix-popover-trigger-width)] p-0 bg-white rounded-2xl shadow-lg border border-slate-200 z-50 max-h-48 overflow-y-auto"
                             >
                               {fromSuggestions.map((suggestion, idx) => (
                                 <button
                                   key={idx}
-                                  onMouseDown={() => {
+                                  onClick={() => {
                                     setManualForm((p) => ({ ...p, from: suggestion.displayName }));
                                     setFromDropdownOpen(false);
                                     setFromSuggestions([]);
@@ -645,8 +651,8 @@ export function LandingPage() {
                                   {suggestion.displayName}
                                 </button>
                               ))}
-                            </div>
-                          )}
+                            </PopoverContent>
+                          </Popover>
                         </div>
                         {/* Куда */}
                         <div className="space-y-2 relative">
