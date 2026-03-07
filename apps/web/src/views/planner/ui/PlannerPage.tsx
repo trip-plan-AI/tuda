@@ -1093,7 +1093,7 @@ export function PlannerPage() {
                   </div>
 
                   <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 space-y-4">
-                    <div className="flex flex-col lg:flex-row gap-4 w-full">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 w-full">
                       <Button
                         onClick={() => {
                           if (!isAuthenticated) {
@@ -1109,7 +1109,7 @@ export function PlannerPage() {
                         disabled={isAuthenticated && points.length === 0}
                         variant="ghost"
                         shape="xl"
-                        className="w-full lg:w-auto px-8 py-4 font-black uppercase tracking-widest text-xs h-auto bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="w-full px-8 py-4 font-black uppercase tracking-widest text-xs h-auto bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
                       >
                         НОВЫЙ МАРШРУТ
                       </Button>
@@ -1125,7 +1125,7 @@ export function PlannerPage() {
                         disabled={isAuthenticated && points.length === 0}
                         variant="brand-purple"
                         shape="xl"
-                        className="w-full lg:w-auto lg:ml-auto px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full px-8 py-4 font-black uppercase tracking-widest text-sm h-auto disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         РЕДАКТИРОВАТЬ С AI
                       </Button>
