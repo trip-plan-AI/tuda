@@ -337,7 +337,7 @@ export function ProfilePage() {
         {/* ПРОФИЛЬ */}
           <div
             className={cn(
-              'absolute bottom-[calc(env(safe-area-inset-bottom,0px)+4rem)] md:bottom-0 h-[var(--sheet-height)] md:h-full w-full md:static flex flex-col bg-white z-10 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.2)] md:shadow-none rounded-t-[2.5rem] md:rounded-none transition-[height] duration-75 ease-out overflow-hidden',
+              'absolute bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] md:bottom-0 h-[var(--sheet-height)] md:h-full w-full md:static flex flex-col bg-white z-10 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.2)] md:shadow-none rounded-t-[2.5rem] md:rounded-none transition-[height] duration-75 ease-out overflow-hidden',
               'md:max-w-4xl md:mx-auto md:px-10',
             )}
             style={{ ['--sheet-height' as string]: `${sheetHeight}%` }}
