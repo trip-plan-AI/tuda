@@ -136,13 +136,20 @@ export function ProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mainContentScrollRef = useRef<HTMLDivElement>(null);
   const savedListScrollRef = useRef<HTMLDivElement>(null);
+  const routesListScrollRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
   const isFabVisibleRef = useRef(false);
   const startY = useRef(0);
   const startHeight = useRef(0);
 
   const evaluateScrollState = useCallback(() => {
-    const container = activeTab === 'saved' ? savedListScrollRef.current : mainContentScrollRef.current;
+    const isDesktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
+    const container =
+      activeTab === 'saved'
+        ? savedListScrollRef.current
+        : isDesktop
+          ? routesListScrollRef.current
+          : mainContentScrollRef.current;
     if (!container) return;
 
     const { scrollTop, clientHeight, scrollHeight } = container;
@@ -179,7 +186,13 @@ export function ProfilePage() {
   }, [evaluateScrollState]);
 
   const handleScrollToTop = useCallback(() => {
-    const container = activeTab === 'saved' ? savedListScrollRef.current : mainContentScrollRef.current;
+    const isDesktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
+    const container =
+      activeTab === 'saved'
+        ? savedListScrollRef.current
+        : isDesktop
+          ? routesListScrollRef.current
+          : mainContentScrollRef.current;
     if (!container) return;
 
     const currentTop = container.scrollTop;
@@ -187,7 +200,11 @@ export function ProfilePage() {
       container.scrollTo({ top: 1200, behavior: 'auto' });
       window.requestAnimationFrame(() => {
         const currentContainer =
-          activeTab === 'saved' ? savedListScrollRef.current : mainContentScrollRef.current;
+          activeTab === 'saved'
+            ? savedListScrollRef.current
+            : isDesktop
+              ? routesListScrollRef.current
+              : mainContentScrollRef.current;
         currentContainer?.scrollTo({ top: 0, behavior: 'smooth' });
       });
       return;
@@ -466,7 +483,11 @@ export function ProfilePage() {
               {activeTab === 'routes' ? (
                 // "Активно" tab
                 activeRoute ? (
-                  <div className="space-y-6 w-full animate-in fade-in duration-500 pb-2">
+                  <div
+                    ref={routesListScrollRef}
+                    onScroll={handleContentScroll}
+                    className="space-y-6 w-full animate-in fade-in duration-500 pb-2 md:h-full md:overflow-y-auto md:pr-1 md:no-scrollbar"
+                  >
                     <div className="flex justify-between items-center">
                       <h3 className="text-lg font-black text-brand-indigo uppercase tracking-widest">
                         Активный маршрут
