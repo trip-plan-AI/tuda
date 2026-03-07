@@ -9,6 +9,8 @@ import {
   Map as MapIcon,
   ChevronLeft,
   ArrowUp,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useUserStore, usersApi, type User } from '@/entities/user';
@@ -68,16 +70,40 @@ function BudgetSummary({
         </div>
       </div>
 
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
           <div
-            className={cn('h-full rounded-full transition-all duration-300', isOverBudget ? 'bg-red-500' : 'bg-emerald-500')}
+            className={cn(
+              'h-full rounded-full transition-all duration-300',
+              isOverBudget ? 'bg-red-500' : 'bg-emerald-500',
+            )}
             style={{ width: `${progressPercent}%` }}
           />
         </div>
-        <div className="flex justify-between text-[10px] font-bold text-slate-400">
+
+        <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
           <span>{plan > 0 ? `Использовано ${progressPercent}%` : 'Лимит не задан'}</span>
-          {isOverBudget && <span className="text-red-500">Перерасход</span>}
+          <span>{plan > 0 ? `${(plan - total).toLocaleString('ru-RU')} ₽` : '—'}</span>
+        </div>
+
+        <div
+          className={cn(
+            'flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-[11px] font-black',
+            isOverBudget
+              ? 'border-red-100 bg-red-50/70 text-red-600'
+              : 'border-emerald-100 bg-emerald-50/70 text-emerald-600',
+          )}
+        >
+          {isOverBudget ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
+          {plan > 0 ? (
+            isOverBudget ? (
+              <span>Перерасход: +{(total - plan).toLocaleString('ru-RU')} ₽</span>
+            ) : (
+              <span>Остаток: {(plan - total).toLocaleString('ru-RU')} ₽</span>
+            )
+          ) : (
+            <span>Задайте планируемый бюджет для контроля расхода</span>
+          )}
         </div>
       </div>
     </div>
