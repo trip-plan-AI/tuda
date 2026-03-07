@@ -42,7 +42,7 @@ function Calendar({
         day: "h-9 w-9 text-center text-sm p-0 relative [&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
         day_button: cn(
           buttonVariants({ variant: "ghost" }),
-          "h-9 w-9 p-0 font-normal aria-selected:opacity-100 rounded-full disabled:opacity-35 disabled:cursor-not-allowed"
+          "h-9 w-9 p-0 font-normal aria-selected:opacity-100 rounded-full disabled:opacity-60 disabled:cursor-not-allowed"
         ),
         range_end: "day-range-end",
         selected:
@@ -50,7 +50,7 @@ function Calendar({
         today: "rounded-full ring-1 ring-slate-300",
         outside:
           "day-outside text-muted-foreground aria-selected:bg-accent/50 aria-selected:text-muted-foreground",
-        disabled: "text-slate-300 opacity-70 line-through",
+        disabled: "text-slate-400 opacity-100 bg-slate-100/60",
         range_middle:
           "aria-selected:bg-accent aria-selected:text-accent-foreground",
         hidden: "invisible",
