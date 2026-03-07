@@ -73,7 +73,8 @@ export class GeosearchService {
   private filterResults(results: SuggestItem[]): SuggestItem[] {
     return results.filter(
       (item) =>
-        Boolean(item.displayName?.trim()) && !item.displayName.trim().startsWith(','),
+        Boolean(item.displayName?.trim()) &&
+        !item.displayName.trim().startsWith(','),
     );
   }
 
@@ -91,15 +92,23 @@ export class GeosearchService {
     return req?.ip ?? null;
   }
 
-  private async getUserCoordsByIp(ip: string | null): Promise<UserCoords | null> {
+  private async getUserCoordsByIp(
+    ip: string | null,
+  ): Promise<UserCoords | null> {
     try {
       if (!ip || ip === '::1' || ip.startsWith('127.')) return null;
 
       const res = await fetch(`https://ipapi.co/${ip}/json/`);
       if (!res.ok) return null;
 
-      const data = (await res.json()) as { latitude?: number; longitude?: number };
-      if (typeof data.latitude === 'number' && typeof data.longitude === 'number') {
+      const data = (await res.json()) as {
+        latitude?: number;
+        longitude?: number;
+      };
+      if (
+        typeof data.latitude === 'number' &&
+        typeof data.longitude === 'number'
+      ) {
         return { lat: data.latitude, lon: data.longitude };
       }
     } catch {
@@ -128,7 +137,10 @@ export class GeosearchService {
     return R * c;
   }
 
-  private async getKladrByCoords(lat: number, lon: number): Promise<string | null> {
+  private async getKladrByCoords(
+    lat: number,
+    lon: number,
+  ): Promise<string | null> {
     if (!this.dadataApiKey) return null;
 
     try {
@@ -283,7 +295,9 @@ export class GeosearchService {
           if (!coords) return null;
 
           const name = feature.properties?.name ?? '';
-          const city = feature.properties?.city ? `, ${feature.properties.city}` : '';
+          const city = feature.properties?.city
+            ? `, ${feature.properties.city}`
+            : '';
           const country = feature.properties?.country
             ? ` (${feature.properties.country})`
             : '';

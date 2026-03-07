@@ -48,9 +48,13 @@ export class SchedulerService {
 
         points.push({
           poi_id: poi.id,
+          poi,
           order: points.length + 1,
           arrival_time: this.minutesToTime(currentTime),
           departure_time: this.minutesToTime(leaveTime),
+          visit_duration_min: visitDuration,
+          travel_from_prev_min:
+            points.length === 0 ? undefined : TRANSIT_DURATION_MIN,
           estimated_cost: pointCost,
         });
 
@@ -65,6 +69,8 @@ export class SchedulerService {
         day_number: dayNumber,
         date: this.dayDateFromNow(dayNumber - 1),
         day_budget_estimated: dayCost,
+        day_start_time: intent.start_time,
+        day_end_time: intent.end_time,
         points,
       });
     }

@@ -1,5 +1,7 @@
 export type ChatRole = 'user' | 'assistant';
 
+import type { PoiItem } from './poi.types';
+
 export interface SessionMessage {
   role: ChatRole;
   content: string;
@@ -31,9 +33,12 @@ export interface ParsedIntent {
 
 export interface PlanDayPoint {
   poi_id: string;
+  poi: PoiItem;
   order: number;
   arrival_time: string;
   departure_time: string;
+  visit_duration_min: number;
+  travel_from_prev_min?: number;
   estimated_cost: number;
 }
 
@@ -41,6 +46,8 @@ export interface PlanDay {
   day_number: number;
   date: string;
   day_budget_estimated: number;
+  day_start_time: string;
+  day_end_time: string;
   points: PlanDayPoint[];
 }
 

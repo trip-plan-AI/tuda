@@ -16,6 +16,12 @@ interface HttpError {
   message?: string;
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
 interface AiQueryStore {
   messages: ChatMessage[];
   isLoading: boolean;
@@ -50,19 +56,31 @@ function mapErrorToUserMessage(error: HttpError) {
 
 function toRoutePoints(routePlan: ChatRoutePlan, tripId: string): RoutePoint[] {
   return routePlan.days.flatMap((day) =>
-    day.points.map((point) => ({
-      id: point.poi.id,
-      tripId,
-      title: point.poi.name,
-      lat: point.poi.coordinates.lat,
-      lon: point.poi.coordinates.lon,
-      budget: point.estimated_cost ?? null,
-      visitDate: day.date,
-      imageUrl: point.poi.image_url ?? null,
-      address: point.poi.address,
-      order: point.order,
-      createdAt: new Date().toISOString(),
-    })),
+    day.points.flatMap((point) => {
+      const poi = point?.poi;
+      const lat = poi?.coordinates?.lat;
+      const lon = poi?.coordinates?.lon;
+
+      if (!poi || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return [];
+      }
+
+      return [
+        {
+          id: poi.id,
+          tripId,
+          title: poi.name,
+          lat,
+          lon,
+          budget: point.estimated_cost ?? null,
+          visitDate: day.date,
+          imageUrl: poi.image_url ?? null,
+          address: poi.address,
+          order: point.order,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    }),
   );
 }
 
@@ -100,10 +118,21 @@ export const useAiQueryStore = create<AiQueryStore>()(
         }));
 
         try {
-          const response = await api.post<AiPlanResponse>('/ai/plan', {
+          const payload: {
+            user_query: string;
+            trip_id?: string;
+            session_id: string | null;
+          } = {
             user_query: normalized,
-            trip_id: tripId,
             session_id: get().sessionId,
+          };
+
+          if (tripId && isUuid(tripId)) {
+            payload.trip_id = tripId;
+          }
+
+          const response = await api.post<AiPlanResponse>('/ai/plan', {
+            ...payload,
           });
 
           const assistantMessage: ChatMessage = {

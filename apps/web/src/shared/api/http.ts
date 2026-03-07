@@ -1,9 +1,26 @@
-const isLocalBrowser =
-  typeof window !== 'undefined' &&
-  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+function resolveApiBase(): string {
+  const configured = process.env.NEXT_PUBLIC_API_URL;
 
-const BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? (isLocalBrowser ? 'http://localhost:3001/api' : '/api');
+  if (typeof window === 'undefined') {
+    return configured ?? '/api';
+  }
+
+  const host = window.location.hostname;
+  const isLocalHost = host === 'localhost' || host === '127.0.0.1';
+
+  if (!configured) {
+    return isLocalHost ? 'http://localhost:3001/api' : '/api';
+  }
+
+  const pointsToLocalhost = /localhost|127\.0\.0\.1/i.test(configured);
+  if (!isLocalHost && pointsToLocalhost) {
+    return '/api';
+  }
+
+  return configured;
+}
+
+const BASE = resolveApiBase();
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
