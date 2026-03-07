@@ -4,39 +4,25 @@ const YANDEX_API_KEY = process.env.YANDEX_SUGGEST_KEY
 const DADATA_API_KEY = process.env.DADATA_API_KEY
 const DADATA_SECRET_KEY = process.env.DADATA_SECRET_KEY
 
-interface YandexSuggestion {
-  title?: { text: string }
-  subtitle?: { text: string }
-  geometry?: { point: { lon: number; lat: number } }
-}
-
-interface NominatimItem {
-  display_name: string
-  lon: number
-  lat: number
-}
-
 interface UserCoords {
   lat: number
   lon: number
 }
 
+interface CachedLocation {
+  kladrId: string
+  lat: number
+  lon: number
+  timestamp: number
+}
+
+// Simple in-memory cache: IP -> { kladrId, lat, lon, timestamp }
+const locationCache = new Map<string, CachedLocation>()
+
 async function getUserCoords(req: NextRequest): Promise<UserCoords | null> {
   try {
-    // Dev mode: allow override via ?testLat=X&testLon=Y for localhost testing
-    const testLat = req.nextUrl.searchParams.get('testLat')
-    const testLon = req.nextUrl.searchParams.get('testLon')
-    if (testLat && testLon) {
-      const lat = parseFloat(testLat)
-      const lon = parseFloat(testLon)
-      if (!isNaN(lat) && !isNaN(lon)) {
-        console.log(`📍 Test coords: lat=${lat}, lon=${lon}`)
-        return { lat, lon }
-      }
-    }
-
     const forwarded = req.headers.get('x-forwarded-for')
-    const ip = forwarded ? forwarded.split(',')[0].trim() : null
+    const ip = forwarded?.split(',')[0]?.trim() ?? null
 
     // Skip for localhost/development
     if (!ip || ip === '::1' || ip.startsWith('127.')) {
@@ -66,6 +52,72 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
     Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2)
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
   return R * c
+}
+
+async function getKladrByCoords(lat: number, lon: number): Promise<string | null> {
+  if (!DADATA_API_KEY) return null
+
+  try {
+    console.log(`🔍 Reverse geocoding for KLADR: ${lat}, ${lon}`)
+    const res = await fetch('https://suggestions.dadata.ru/suggestions/api/4_1/rs/geolocate/address', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Token ${DADATA_API_KEY}`,
+      },
+      body: JSON.stringify({ lat, lon }),
+    })
+
+    if (!res.ok) {
+      console.error('❌ DaData reverse geocoding error, status:', res.status)
+      return null
+    }
+
+    const data = await res.json()
+    const kladrId = data.suggestions?.[0]?.data?.kladr_id
+    if (kladrId) {
+      console.log(`✅ Found KLADR: ${kladrId}`)
+      return kladrId
+    }
+  } catch (error) {
+    console.error('❌ Reverse geocoding error:', error)
+  }
+  return null
+}
+
+async function getCachedKladrByCoords(ip: string, lat: number, lon: number): Promise<string | null> {
+  // Check cache
+  const cached = locationCache.get(ip)
+  const CACHE_VALIDITY_HOURS = 24
+  const LOCATION_CHANGE_KM = 50
+
+  if (cached) {
+    const ageHours = (Date.now() - cached.timestamp) / (1000 * 60 * 60)
+    const distance = haversineKm(cached.lat, cached.lon, lat, lon)
+
+    console.log(`📦 Cache check - age: ${ageHours.toFixed(1)}h, distance from cached: ${distance.toFixed(1)}km`)
+
+    // Use cache if valid and location hasn't changed much
+    if (ageHours < CACHE_VALIDITY_HOURS && distance < LOCATION_CHANGE_KM) {
+      console.log(`✅ Using cached KLADR: ${cached.kladrId}`)
+      return cached.kladrId
+    }
+    console.log(`⚠️ Cache invalid (age or distance), refreshing...`)
+  }
+
+  // Get new KLADR
+  const kladrId = await getKladrByCoords(lat, lon)
+  if (kladrId) {
+    // Update cache
+    locationCache.set(ip, {
+      kladrId,
+      lat,
+      lon,
+      timestamp: Date.now(),
+    })
+    console.log(`💾 Cached KLADR for IP ${ip}`)
+  }
+  return kladrId
 }
 
 async function getYandexSuggestions(q: string): Promise<any[] | null> {
@@ -139,7 +191,7 @@ async function getYandexSuggestions(q: string): Promise<any[] | null> {
   }
 }
 
-async function getDadataSuggestions(q: string, userCoords?: UserCoords | null): Promise<any[]> {
+async function getDadataSuggestions(q: string, userCoords?: UserCoords | null, ip?: string | null): Promise<any[]> {
   if (!DADATA_API_KEY || !DADATA_SECRET_KEY) {
     console.log('❌ DaData keys not set')
     return []
@@ -151,10 +203,16 @@ async function getDadataSuggestions(q: string, userCoords?: UserCoords | null): 
   try {
     // Suggest endpoint for autocomplete (suggestions.dadata.ru, not suggest.dadata.ru)
     const body: any = { query: q }
-    if (userCoords) {
-      body.locations_boost = [{ lat: userCoords.lat, lon: userCoords.lon, radius_meters: 100000 }]
+    if (userCoords && ip) {
+      // Get KLADR code for user's city with caching
+      const kladrId = await getCachedKladrByCoords(ip, userCoords.lat, userCoords.lon)
+      if (kladrId && typeof kladrId === 'string') {
+        body.locations_boost = [{ kladr_id: kladrId }]
+        console.log(`📍 Adding locations_boost with KLADR: ${kladrId}`)
+      }
     }
 
+    console.log(`📦 DaData request body:`, JSON.stringify(body))
     const res = await fetch('https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address', {
       method: 'POST',
       headers: {
@@ -185,19 +243,17 @@ async function getDadataSuggestions(q: string, userCoords?: UserCoords | null): 
       return []
     }
 
+    console.log(`🔍 Processing ${suggestions.length} DaData suggestions`)
     const results = suggestions
       .map((item: any) => {
         const value = item.value || ''
         const unrestricted_value = item.unrestricted_value || ''
-        const geo = item.data?.geo
 
         if (!value) return null
 
         return {
           displayName: unrestricted_value || value,
-          uri: geo
-            ? `ymapsbm1://geo?ll=${geo.lon},${geo.lat}&z=12`
-            : `ymapsbm1://geo?text=${encodeURIComponent(value)}&z=12`,
+          uri: `ymapsbm1://geo?text=${encodeURIComponent(value)}&z=12`,
         }
       })
       .filter(Boolean)
@@ -303,27 +359,28 @@ async function getNominatimSuggestions(q: string, rusOnly: boolean = true, userC
     }
 
     const data = await res.json()
-    const results = Array.isArray(data)
-      ? data
-          .map((item: any) => {
-            const distance = userCoords ? haversineKm(userCoords.lat, userCoords.lon, item.lat, item.lon) : undefined
-            return {
-              displayName: item.display_name,
-              uri: `ymapsbm1://geo?ll=${item.lon},${item.lat}&z=12`,
-              importance: item.importance || 0,
-              distance,
-            }
-          })
-          .sort((a, b) => {
-            // If user coords available, sort by distance first
-            if (a.distance !== undefined && b.distance !== undefined) {
-              return a.distance - b.distance
-            }
-            // Fallback to importance/relevance score
-            return (b.importance || 0) - (a.importance || 0)
-          })
-          .map(({ displayName, uri }) => ({ displayName, uri })) // remove importance and distance fields
+    const withDistances = Array.isArray(data)
+      ? data.map((item: any) => {
+          const distance = userCoords ? haversineKm(userCoords.lat, userCoords.lon, item.lat, item.lon) : undefined
+          return {
+            displayName: item.display_name,
+            uri: `ymapsbm1://geo?ll=${item.lon},${item.lat}&z=12`,
+            importance: item.importance || 0,
+            distance,
+          }
+        })
       : []
+
+    const results = withDistances
+      .sort((a, b) => {
+        // If user coords available, sort by distance first
+        if (a.distance !== undefined && b.distance !== undefined) {
+          return a.distance - b.distance
+        }
+        // Fallback to importance/relevance score
+        return (b.importance || 0) - (a.importance || 0)
+      })
+      .map(({ displayName, uri }) => ({ displayName, uri })) // remove importance and distance fields
 
     console.log(`✅ Nominatim returned ${results.length} suggestions`)
     return results
@@ -338,9 +395,15 @@ export async function GET(req: NextRequest) {
   if (q.length < 2) return Response.json({ results: [] })
 
   console.log(`\n📍 === SUGGEST REQUEST: "${q}" ===`)
+  console.log(`🔗 Request URL: ${req.url}`)
 
   // Get user's approximate location from IP
   const userCoords = await getUserCoords(req)
+  console.log(`📌 userCoords result:`, userCoords)
+
+  // Extract IP for caching
+  const forwarded = req.headers.get('x-forwarded-for')
+  const ip = forwarded?.split(',')[0]?.trim() ?? null
 
   try {
     const filterResults = (results: any[]) => results.filter(
@@ -349,44 +412,44 @@ export async function GET(req: NextRequest) {
 
     // Step 1: Try DaData in Russia (best for RU addresses)
     console.log(`🏠 Trying DaData (Russia)...`)
-    let results = await getDadataSuggestions(q, userCoords)
+    let results = await getDadataSuggestions(q, userCoords, ip)
     let filtered = filterResults(results)
 
-    // Step 2: If DaData failed, try Photon in Russia
-    if (!filtered || filtered.length === 0) {
+    if (filtered && filtered.length > 0) {
+      console.log(`✅ DaData returned ${filtered.length} results`)
+    } else {
+      // Step 2: If DaData failed, try Photon in Russia
       console.log(`⚠️ DaData empty/filtered out, trying Photon (Russia)...`)
       results = await getPhotonSuggestions(q, true, userCoords)
       filtered = filterResults(results)
 
-      // Step 3: If Photon Russia failed, try Nominatim in Russia
-      if (!filtered || filtered.length === 0) {
+      if (filtered && filtered.length > 0) {
+        console.log(`✅ Photon (Russia) returned ${filtered.length} results`)
+      } else {
+        // Step 3: If Photon Russia failed, try Nominatim in Russia
         console.log(`⚠️ Photon (Russia) empty/filtered out, trying Nominatim (Russia)...`)
         results = await getNominatimSuggestions(q, true, userCoords)
         filtered = filterResults(results)
 
-        // Step 4: If still nothing, try Photon worldwide
-        if (!filtered || filtered.length === 0) {
+        if (filtered && filtered.length > 0) {
+          console.log(`✅ Nominatim (Russia) returned ${filtered.length} results`)
+        } else {
+          // Step 4: If still nothing, try Photon worldwide
           console.log(`⚠️ Nominatim (Russia) empty/filtered out, trying Photon (worldwide)...`)
           results = await getPhotonSuggestions(q, false, userCoords)
           filtered = filterResults(results)
 
-          // Step 5: Last fallback - Nominatim worldwide
-          if (!filtered || filtered.length === 0) {
+          if (filtered && filtered.length > 0) {
+            console.log(`✅ Photon (worldwide) returned ${filtered.length} results`)
+          } else {
+            // Step 5: Last fallback - Nominatim worldwide
             console.log(`⚠️ Photon (worldwide) empty/filtered out, trying Nominatim (worldwide)...`)
             results = await getNominatimSuggestions(q, false, userCoords)
             filtered = filterResults(results)
             console.log(`✅ Nominatim (worldwide) returned ${filtered.length} results`)
-          } else {
-            console.log(`✅ Photon (worldwide) returned ${filtered.length} results`)
           }
-        } else {
-          console.log(`✅ Nominatim (Russia) returned ${filtered.length} results`)
         }
-      } else {
-        console.log(`✅ Photon (Russia) returned ${filtered.length} results`)
       }
-    } else {
-      console.log(`✅ DaData returned ${filtered.length} results`)
     }
 
     console.log(`📤 Sending ${filtered.length} results to client\n`)
