@@ -3,9 +3,39 @@
 import * as React from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { DayPicker } from "react-day-picker"
+import type { DropdownProps } from "react-day-picker"
 
 import { cn } from "@/shared/lib/utils"
 import { buttonVariants } from "@/shared/ui/button"
+
+function CalendarDropdown({ className, options, ...props }: DropdownProps) {
+  return (
+    <div className="relative">
+      <select
+        className={cn(
+          "h-8 min-w-[7.5rem] rounded-xl border border-slate-200 bg-slate-50 px-3 py-1 pr-8 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-blue/20",
+          className
+        )}
+        {...props}
+      >
+        {options?.map((option) => (
+          <option
+            key={option.value}
+            value={option.value}
+            disabled={option.disabled}
+            className="bg-slate-50 text-brand-indigo font-bold"
+          >
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <span
+        className="pointer-events-none absolute right-3 top-1/2 h-2 w-2 -translate-y-1/2 rotate-45 border-r-2 border-b-2 border-slate-500"
+        aria-hidden
+      />
+    </div>
+  )
+}
 
 export type CalendarProps = React.ComponentProps<typeof DayPicker>
 
@@ -55,11 +85,11 @@ function Calendar({
         range_middle:
           "aria-selected:bg-accent aria-selected:text-accent-foreground",
         hidden: "invisible",
-        dropdown:
-          "h-8 min-w-[7.5rem] rounded-xl border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-blue/20 cursor-pointer",
+        dropdown: "cursor-pointer",
         ...classNames,
       }}
       components={{
+        Dropdown: CalendarDropdown,
         Chevron: ({ orientation }) =>
           orientation === "left" ? (
             <ChevronLeft className="h-4 w-4" />
