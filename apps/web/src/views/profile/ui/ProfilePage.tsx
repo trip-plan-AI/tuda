@@ -335,16 +335,13 @@ export function ProfilePage() {
         </div>
 
         {/* ПРОФИЛЬ */}
-        <div
-          className={cn(
-            'absolute bottom-0 w-full md:static md:h-full flex flex-col bg-white z-10 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.2)] md:shadow-none rounded-t-[2.5rem] md:rounded-none transition-[height] duration-75 ease-out overflow-hidden',
-            'md:max-w-4xl md:mx-auto md:px-10',
-          )}
-          style={{
-            height:
-              typeof window !== 'undefined' && window.innerWidth < 768 ? `${sheetHeight}%` : '100%',
-          }}
-        >
+          <div
+            className={cn(
+              'absolute bottom-0 h-[var(--sheet-height)] md:h-full w-full md:static flex flex-col bg-white z-10 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.2)] md:shadow-none rounded-t-[2.5rem] md:rounded-none transition-[height] duration-75 ease-out overflow-hidden',
+              'md:max-w-4xl md:mx-auto md:px-10',
+            )}
+            style={{ ['--sheet-height' as string]: `${sheetHeight}%` }}
+          >
           {/* Зона перетаскивания и Навигация */}
           <div
             className="w-full pt-3 shrink-0 bg-white rounded-t-[2.5rem] md:rounded-none border-b border-slate-50 md:cursor-default cursor-grab active:cursor-grabbing touch-none"
