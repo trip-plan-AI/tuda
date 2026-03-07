@@ -493,8 +493,7 @@ export function ProfilePage() {
                         </div>
                       </div>
 
-                      <div className="flex-1 min-h-[190px] md:min-h-[240px] flex flex-col">
-                        <div className="h-px bg-slate-100 mb-3" />
+                      <div className="relative flex-1 min-h-[190px] md:min-h-[240px]">
                         <div
                           ref={routePointsScrollRef}
                           onScroll={handleContentScroll}
@@ -518,7 +517,10 @@ export function ProfilePage() {
                             ))}
                           </div>
                         </div>
-                        <div className="h-px bg-slate-100 mt-3" />
+
+                        {/* Вариант 2: мягкие индикаторы прокрутки */}
+                        <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-white to-transparent" />
+                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-white to-transparent" />
                       </div>
 
                       <div className="mt-8 pt-6 border-t border-slate-50 shrink-0">
