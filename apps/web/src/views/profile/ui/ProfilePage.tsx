@@ -450,8 +450,8 @@ export function ProfilePage() {
 
             <div
               className={cn(
-                'flex-1 min-h-[300px] bg-slate-50/50 rounded-[2.5rem] border border-slate-100 relative p-4 md:p-8',
-                activeTab === 'saved' && 'overflow-hidden',
+                'bg-slate-50/50 rounded-[2.5rem] border border-slate-100 relative p-4 md:p-8',
+                activeTab === 'saved' ? 'flex-1 min-h-[300px] overflow-hidden' : 'h-auto',
               )}
             >
               {activeTab === 'routes' ? (
