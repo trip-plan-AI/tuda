@@ -38,6 +38,7 @@ export function ProfilePage() {
   const [isLoadingTrips, setIsLoadingTrips] = useState(true)
   const [showScrollTop, setShowScrollTop] = useState(false)
   const [isScrollableSavedList, setIsScrollableSavedList] = useState(false)
+  const [scrollProgress, setScrollProgress] = useState(0)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const savedListScrollRef = useRef<HTMLDivElement>(null)
@@ -51,19 +52,23 @@ export function ProfilePage() {
     if (!container) return
 
     const { scrollTop, clientHeight, scrollHeight } = container
+    const maxScrollTop = Math.max(1, scrollHeight - clientHeight)
+    const progress = Math.max(0, Math.min(1, scrollTop / maxScrollTop))
     const isScrollable = scrollHeight > clientHeight + 1
+    setScrollProgress(progress)
     setIsScrollableSavedList(isScrollable)
 
     if (!isScrollable) {
       isFabVisibleRef.current = false
       setShowScrollTop(false)
+      setScrollProgress(0)
       return
     }
 
-    // Гистерезис: показываем раньше и скрываем раньше, чтобы FAB был заметен даже на средних списках.
-    const showThreshold = Math.max(120, clientHeight * 0.45)
-    const hideThreshold = Math.max(40, clientHeight * 0.12)
-    const shouldShow = isFabVisibleRef.current ? scrollTop > hideThreshold : scrollTop > showThreshold
+    // Гистерезис по прогрессу скролла: одинаковое поведение на desktop/mobile и при любой высоте контейнера.
+    const showThreshold = 0.15
+    const hideThreshold = 0.05
+    const shouldShow = isFabVisibleRef.current ? progress > hideThreshold : progress > showThreshold
 
     isFabVisibleRef.current = shouldShow
     setShowScrollTop(shouldShow)
@@ -92,6 +97,8 @@ export function ProfilePage() {
 
     container.scrollTo({ top: 0, behavior: 'smooth' })
   }, [])
+
+  const progressDegrees = Math.round(scrollProgress * 360)
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -484,21 +491,51 @@ export function ProfilePage() {
                 )
               )}
 
+              {activeTab === 'saved' && isScrollableSavedList && showScrollTop && (
+                <div className="hidden md:block absolute right-4 bottom-4 z-30">
+                  <button
+                    type="button"
+                    aria-label="Вернуться наверх"
+                    onClick={handleScrollToTop}
+                    className="relative h-14 w-14 rounded-full shadow-lg transition-transform duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-brand-blue/40"
+                  >
+                    <span
+                      className="absolute inset-0 rounded-full"
+                      style={{
+                        background: `conic-gradient(#4f46e5 ${progressDegrees}deg, #e2e8f0 ${progressDegrees}deg)`,
+                      }}
+                    />
+                    <span className="absolute inset-[3px] rounded-full bg-white" />
+                    <span className="relative z-10 flex h-full w-full items-center justify-center text-brand-indigo">
+                      <ArrowUp size={18} />
+                    </span>
+                  </button>
+                </div>
+              )}
+
             </div>
           </div>
         </div>
       </div>
 
       {activeTab === 'saved' && isScrollableSavedList && showScrollTop && (
-        <Button
+        <button
           type="button"
           aria-label="Вернуться наверх"
           onClick={handleScrollToTop}
-          variant="brand-indigo"
-          className="fixed right-4 md:right-8 bottom-4 md:bottom-6 z-50 h-12 min-w-12 px-3 rounded-full shadow-xl transition-all duration-200 hover:scale-[1.03] active:scale-95 opacity-90 hover:opacity-100"
+          className="md:hidden fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+16px)] z-50 h-14 w-14 rounded-full shadow-xl transition-transform duration-200 active:scale-95 focus:outline-none focus:ring-2 focus:ring-brand-blue/40"
         >
-          <ArrowUp size={18} />
-        </Button>
+          <span
+            className="absolute inset-0 rounded-full"
+            style={{
+              background: `conic-gradient(#4f46e5 ${progressDegrees}deg, #e2e8f0 ${progressDegrees}deg)`,
+            }}
+          />
+          <span className="absolute inset-[3px] rounded-full bg-white" />
+          <span className="relative z-10 flex h-full w-full items-center justify-center text-brand-indigo">
+            <ArrowUp size={18} />
+          </span>
+        </button>
       )}
     </div>
   )
