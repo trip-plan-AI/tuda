@@ -18,13 +18,14 @@ function Calendar({
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
-      className={cn("p-3 px-8", className)}
+      className={cn("tp-calendar p-3 px-8", className)}
       classNames={{
         months: "flex flex-col sm:flex-row gap-0",
         month: "flex flex-col gap-4 min-h-[320px]",
         month_caption: "flex justify-center relative items-center h-9",
         caption_label: "text-sm font-medium",
         dropdowns: "flex justify-center gap-2",
+        dropdown_root: "relative",
         nav: "flex items-center",
         button_previous: cn(
           buttonVariants({ variant: "ghost" }),

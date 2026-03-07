@@ -179,3 +179,30 @@ a {
 button {
   cursor: pointer !important;
 }
+
+.tp-calendar select {
+  appearance: none;
+}
+
+.tp-calendar .rdp-dropdown_root::after {
+  content: '';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid #64748b;
+  border-bottom: 2px solid #64748b;
+  transform: translateY(-60%) rotate(45deg);
+  pointer-events: none;
+}
+
+.tp-calendar .rdp-dropdown {
+  padding-right: 2rem;
+}
+
+.tp-calendar .rdp-dropdown option {
+  background-color: #f8fafc;
+  color: #1e1b4b;
+  font-weight: 700;
+}
