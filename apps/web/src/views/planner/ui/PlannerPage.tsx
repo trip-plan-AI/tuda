@@ -15,6 +15,7 @@ import {
   X,
   GripVertical,
   Calendar as CalendarIcon,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   DndContext,
@@ -671,6 +672,8 @@ export function PlannerPage() {
     () => points.reduce((sum: number, p: RoutePoint) => sum + (p.budget ?? 0), 0),
     [points],
   );
+  const budgetOverrun = Math.max(0, totalBudget - plannedBudget);
+  const isBudgetExceeded = plannedBudget > 0 && budgetOverrun > 0;
 
   // Закрыть дропдаун при клике снаружи
   useEffect(() => {
@@ -844,6 +847,23 @@ export function PlannerPage() {
 
         {activeTab === 'my' ? (
           <div className="animate-in fade-in duration-500">
+            {isBudgetExceeded && (
+              <div className="sticky top-[4.5rem] z-20 mb-4">
+                <div className="rounded-2xl border border-red-200 bg-red-50/95 backdrop-blur px-4 py-3 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 rounded-full bg-red-100 text-red-600 p-1.5 shrink-0">
+                      <AlertTriangle size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm md:text-base font-black text-red-700">Превышен планируемый бюджет</p>
+                      <p className="text-xs md:text-sm font-semibold text-red-600">
+                        Итого по точкам больше лимита на {budgetOverrun.toLocaleString('ru-RU')} ₽
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Поисковая строка */}
             <div className="mb-10 w-full">
               <div
