@@ -780,7 +780,7 @@ export function PlannerPage() {
     setShowClearConfirm(false);
     if (save && points.length > 0) {
       if (!isAuthenticated) {
-        setModal('register');
+        setModal('login');
         return;
       }
       try {
@@ -1103,7 +1103,7 @@ export function PlannerPage() {
                       <Button
                         onClick={() => {
                           if (!isAuthenticated) {
-                            setModal('register');
+                            setModal('login');
                             return;
                           }
                           if (points.length > 0) {
@@ -1123,7 +1123,7 @@ export function PlannerPage() {
                       <Button
                         onClick={() => {
                           if (!isAuthenticated) {
-                            setModal('register');
+                            router.push('/ai-assistant');
                             return;
                           }
                           /* TODO: TRI-32 AI редактирование */
@@ -1140,7 +1140,7 @@ export function PlannerPage() {
                     <Button
                       onClick={async () => {
                         if (!isAuthenticated) {
-                          setModal('register');
+                          setModal('login');
                           return;
                         }
                         try {
