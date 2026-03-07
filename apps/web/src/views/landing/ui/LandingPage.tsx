@@ -452,7 +452,7 @@ export function LandingPage() {
       if (searchQuery.trim()) {
         void sendAiQuery(searchQuery);
       }
-      router.push('/planner');
+      router.push('/ai-assistent');
       return;
     }
 

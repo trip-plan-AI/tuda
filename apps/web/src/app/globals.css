@@ -26,6 +26,10 @@ body {
   overflow-x: hidden;
 }
 
+html {
+  overflow-y: overlay;
+}
+
 /* Safari safe area — фон растягивается под шторку */
 html {
   background: var(--background, #fff);
@@ -38,6 +42,30 @@ body {
 
 * {
   box-sizing: border-box;
+}
+
+/* Прозрачный скроллбар */
+::-webkit-scrollbar {
+  width: 8px;
+  background: transparent;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
 }
 
 a {
