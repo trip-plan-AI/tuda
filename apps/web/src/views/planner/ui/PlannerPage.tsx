@@ -172,8 +172,15 @@ function SortablePointRow({
 
   const handleAddressChange = (val: string) => {
     setAddressVal(val);
+    if (val.length > 2) {
+      setIsSearching(true);
+    } else {
+      setIsSearching(false);
+      setSuggestions([]);
+      setShowDropdownState(false);
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => getSuggestions(val), 1000);
+    debounceRef.current = setTimeout(() => getSuggestions(val), 700);
   };
 
   const resolveCoords = async (query: string) => {
