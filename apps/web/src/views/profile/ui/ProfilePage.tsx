@@ -132,6 +132,7 @@ export function ProfilePage() {
   const [tempName, setTempName] = useState(user?.name || '');
   const [savedTrips, setSavedTrips] = useState<Trip[]>([]);
   const [isLoadingTrips, setIsLoadingTrips] = useState(true);
+  const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [isScrollableList, setIsScrollableList] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -206,7 +207,16 @@ export function ProfilePage() {
   const progressDegrees = Math.round(scrollProgress * 360);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    setIsAuthResolved(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthResolved) return;
+
+    const hasStoredToken =
+      typeof window !== 'undefined' && Boolean(window.localStorage.getItem('accessToken'));
+
+    if (!isAuthenticated && !hasStoredToken) {
       router.push('/');
       return;
     }
@@ -222,7 +232,7 @@ export function ProfilePage() {
         console.error('Failed to load trips:', err);
         setIsLoadingTrips(false);
       });
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, isAuthResolved, router]);
 
   useEffect(() => {
     evaluateScrollState();
