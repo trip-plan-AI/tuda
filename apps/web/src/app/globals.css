@@ -26,6 +26,11 @@ body {
   overflow-x: hidden;
 }
 
+/* Safari safe area — фон растягивается под шторку */
+html {
+  background: var(--background, #fff);
+}
+
 body {
   @apply bg-background text-foreground;
   font-family: 'Inter', sans-serif;
@@ -178,4 +183,30 @@ a {
 
 button {
   cursor: pointer !important;
+}
+
+/* Прозрачный скроллбар */
+::-webkit-scrollbar {
+  width: 6px;
+  background: transparent;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+*:hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover {
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
 }

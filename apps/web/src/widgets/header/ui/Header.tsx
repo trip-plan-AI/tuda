@@ -75,8 +75,8 @@ export function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-50 h-16 bg-white/95 backdrop-blur-md border-b border-slate-100 shrink-0 w-full flex justify-center">
-        <div className="max-w-5xl px-4 md:px-6 h-full flex items-center justify-between w-full">
+      <header className="sticky top-0 z-50 bg-transparent backdrop-blur-none border-b-0 shrink-0 w-full flex justify-center" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+        <div className="max-w-5xl px-4 md:px-6 h-16 flex items-center justify-between w-full">
           {/* Логотип */}
           <Link href="/" className="flex items-center gap-3 transition-colors">
             <div className="bg-brand-sky text-white p-2 rounded-xl shadow-sm">
