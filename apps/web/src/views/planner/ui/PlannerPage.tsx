@@ -968,7 +968,7 @@ export function PlannerPage() {
             </div>
 
             {/* Карта */}
-            <div className="w-full aspect-[4/5] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden relative z-0 border border-slate-200 shadow-inner bg-slate-50 group">
+            <div className="w-full aspect-[4/5] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden relative z-0 group">
               <RouteMap
                 points={points}
                 focusCoords={focusCoords}
