@@ -105,10 +105,11 @@ jobs:
 
           echo "[deploy] expected commit: $EXPECTED_SHA"
           cd /opt/apps/travel-planner
-          echo "[deploy] current commit before pull: $(git rev-parse HEAD)"
-          git pull --ff-only origin main
+          echo "[deploy] current commit before update: $(git rev-parse HEAD)"
+          git fetch origin main
+          git reset --hard origin/main
           CURRENT_SHA="$(git rev-parse HEAD)"
-          echo "[deploy] current commit after pull: $CURRENT_SHA"
+          echo "[deploy] current commit after update: $CURRENT_SHA"
           if [ "$CURRENT_SHA" != "$EXPECTED_SHA" ]; then
             echo "[deploy][error] commit mismatch: expected=$EXPECTED_SHA actual=$CURRENT_SHA"
             exit 1
@@ -156,18 +157,24 @@ jobs:
           fi
 
           echo "[deploy][step] docker build started"
-          docker compose -f docker-compose.prod.yml build --no-cache api nginx
+          docker compose -f docker-compose.prod.yml build api nginx
           echo "[deploy][step] docker build finished"
 
           echo "[deploy][step] docker up started"
-          docker compose -f docker-compose.prod.yml up -d --build
+          docker compose -f docker-compose.prod.yml up -d --wait
           echo "[deploy][step] docker up finished"
 
-          echo "[deploy][step] wait healthchecks"
-          docker compose -f docker-compose.prod.yml ps
-          docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
-          docker compose -f docker-compose.prod.yml exec --interactive=false -T api sh -lc 'node -e "http=require('"'"'http'"'"');req=http.get('"'"'http://127.0.0.1:3001/api/trips/predefined'"'"',res=>process.exit(res.statusCode<500?0:1));req.on('"'"'error'"'"',()=>process.exit(1));"'
-          docker compose -f docker-compose.prod.yml exec --interactive=false -T web sh -lc 'node -e "http=require('"'"'http'"'"');req=http.get('"'"'http://127.0.0.1:3000/'"'"',res=>process.exit(res.statusCode<500?0:1));req.on('"'"'error'"'"',()=>process.exit(1));"'
+          echo "[deploy][step] test nginx routing to API"
+          if ! curl -s -f -k -H "Host: tuda.pro" -o /dev/null https://127.0.0.1/api/trips/predefined; then
+            echo "[deploy][error] Nginx to API routing failed (HTTP error code received)"
+            exit 1
+          fi
+
+          echo "[deploy][step] test nginx routing to Web"
+          if ! curl -s -f -k -H "Host: tuda.pro" -o /dev/null https://127.0.0.1/; then
+            echo "[deploy][error] Nginx to Web routing failed (HTTP error code received)"
+            exit 1
+          fi
 
           echo "[deploy] docker images"
           docker compose -f docker-compose.prod.yml images
