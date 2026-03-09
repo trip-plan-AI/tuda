@@ -50,7 +50,7 @@ function formatDistance(meters: number) {
 
 export function TourDetailPage({ tourId }: TourDetailPageProps) {
   const router = useRouter();
-  const { currentTrip, setCurrentTrip, setPoints, clearPlanner, isDirty } = useTripStore();
+  const { currentTrip, setCurrentTrip, setPoints, clearPlanner, isDirty, setCachedRouteInfo } = useTripStore();
   const points = currentTrip?.points || [];
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
   const [isOpening, setIsOpening] = useState(false);
@@ -173,13 +173,14 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
         });
       }
       setPoints(newPoints);
+      if (routeInfo) setCachedRouteInfo(routeInfo);
       router.push('/planner?profile=driving');
     } catch (e) {
       console.error('[TourDetail] Failed to open route:', e);
     } finally {
       setIsOpening(false);
     }
-  }, [tour, focusCoords, attractions, geocodeCity, clearPlanner, setCurrentTrip, setPoints, router]);
+  }, [tour, focusCoords, attractions, geocodeCity, clearPlanner, setCurrentTrip, setPoints, router, routeInfo, setCachedRouteInfo]);
 
   const handleOpenRoute = useCallback(() => {
     if (points && points.length > 0 && isDirty) {
