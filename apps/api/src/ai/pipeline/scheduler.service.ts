@@ -18,6 +18,8 @@ const VISIT_DURATION: Record<string, number> = {
 };
 
 const TRANSIT_DURATION_MIN = 25;
+const RESTAURANT_MIN_GAP_MIN = 4 * 60;
+const CAFE_AFTER_MEAL_MIN = 60;
 
 @Injectable()
 export class SchedulerService {
@@ -35,6 +37,20 @@ export class SchedulerService {
         ? Math.max(0, Math.round(intent.budget_total / intent.days))
         : 0);
 
+    // Добавляем POI до необходимого минимума, дублируя если не хватает
+    const targetPoiCount = intent.days * 2;
+    const expandedPois = [...pois];
+    if (expandedPois.length > 0 && expandedPois.length < targetPoiCount) {
+      this.logger.warn(
+        `Only ${expandedPois.length} POIs available, but ${targetPoiCount} needed. Duplicating points to ensure minimum 2 per day.`,
+      );
+      let cloneCursor = 0;
+      while (expandedPois.length < targetPoiCount) {
+        expandedPois.push(expandedPois[cloneCursor % pois.length]);
+        cloneCursor++;
+      }
+    }
+
     const days: PlanDay[] = [];
     let poiCursor = 0;
 
@@ -43,8 +59,45 @@ export class SchedulerService {
       let currentTime = startMinutes;
       let dayCost = 0;
 
-      while (poiCursor < pois.length) {
-        const poi = pois[poiCursor];
+      // Выделяем POI для текущего дня
+      // Либо равномерно, либо минимум 2
+      const pointsRemaining = expandedPois.length - poiCursor;
+      const daysRemaining = intent.days - dayNumber + 1;
+      const pointsForThisDay = Math.max(
+        2,
+        Math.ceil(pointsRemaining / daysRemaining),
+      );
+
+      let currentDayPoints = 0;
+
+      let lastRestaurantArrival: number | null = null;
+
+      while (
+        poiCursor < expandedPois.length &&
+        currentDayPoints < pointsForThisDay
+      ) {
+        const poi = expandedPois[poiCursor];
+        const isRestaurant = poi.category === 'restaurant';
+        const isCafe = poi.category === 'cafe';
+
+        if (
+          isRestaurant &&
+          lastRestaurantArrival !== null &&
+          currentTime - lastRestaurantArrival < RESTAURANT_MIN_GAP_MIN
+        ) {
+          poiCursor += 1;
+          continue;
+        }
+
+        if (
+          isCafe &&
+          lastRestaurantArrival !== null &&
+          currentTime - lastRestaurantArrival < CAFE_AFTER_MEAL_MIN
+        ) {
+          poiCursor += 1;
+          continue;
+        }
+
         const visitDuration = VISIT_DURATION[poi.category] ?? 60;
         const pointCost = this.estimatePointCost(poi, dayBudget);
         const leaveTime = currentTime + visitDuration;
@@ -64,10 +117,14 @@ export class SchedulerService {
         });
 
         dayCost += pointCost;
+        if (isRestaurant) {
+          lastRestaurantArrival = currentTime;
+        }
         poiCursor += 1;
+        currentDayPoints += 1;
         currentTime = leaveTime + TRANSIT_DURATION_MIN;
 
-        if (currentTime >= endMinutes) break;
+        if (currentTime >= endMinutes && currentDayPoints >= 2) break; // Позволяем превысить время, если не набрали 2 точки
       }
 
       days.push({
@@ -90,18 +147,22 @@ export class SchedulerService {
       total_budget_estimated: totalBudgetEstimated,
       days,
       notes:
-        poiCursor < pois.length
+        poiCursor < expandedPois.length
           ? 'Часть точек не попала в расписание из-за ограничения времени дня.'
-          : undefined,
+          : pois.length < targetPoiCount
+            ? 'Из-за недостатка мест в городе некоторые точки добавлены в маршрут повторно.'
+            : undefined,
     };
 
     this.logger.log(
       `Route plan successfully generated. Total budget estimated: ${totalBudgetEstimated} rub.`,
     );
-    plan.days.forEach(day => {
+    plan.days.forEach((day) => {
       this.logger.log(`  Day ${day.day_number}: ${day.points.length} points`);
-      day.points.forEach(point => {
-        this.logger.log(`    - [${point.arrival_time}-${point.departure_time}] ${point.poi.name}`);
+      day.points.forEach((point) => {
+        this.logger.log(
+          `    - [${point.arrival_time}-${point.departure_time}] ${point.poi.name}`,
+        );
       });
     });
 

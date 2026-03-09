@@ -37,17 +37,20 @@ export class OverpassClientService {
       return [];
     }
 
-    const radiusMeters = intent.radius_km * 1000;
-    const queries = intent.categories.map((cat) =>
-      this.buildCategoryQuery(cat),
-    );
-    const filters = queries.join('');
+    // Расширяем радиус для захвата максимального числа мест (минимум 15 км, максимум 30)
+    const radiusMeters = Math.max(intent.radius_km * 1000, 15000);
+    const center = `${radiusMeters},${cityCoords.lat},${cityCoords.lon}`;
 
-    // Формируем Overpass QL запрос
+    // Широкий поиск: берем вообще все популярные туристические/досуговые теги,
+    // ИГНОРИРУЯ запрошенные юзером категории, чтобы отдать максимум данных на откуп LLM
     const query = `
-      [out:json][timeout:12];
+      [out:json][timeout:15];
       (
-        ${filters.replace(/\{\{center\}\}/g, `${radiusMeters},${cityCoords.lat},${cityCoords.lon}`)}
+        nwr["tourism"](around:${center});
+        nwr["historic"](around:${center});
+        nwr["leisure"~"park|garden|amusement_ride|water_park"](around:${center});
+        nwr["amenity"~"restaurant|cafe|theatre|cinema|place_of_worship"](around:${center});
+        nwr["shop"~"mall|department_store"](around:${center});
       );
       out center;
     `;
@@ -73,11 +76,12 @@ export class OverpassClientService {
       const data = (await response.json()) as { elements?: OverpassElement[] };
       const elements = data.elements ?? [];
 
+      // Отключаем строгую фильтрацию по intent.categories,
+      // оставляем только исключенные (по желанию, хотя LLM тоже с ними справится)
       return elements
         .map((el) => this.normalize(el, intent.city))
         .filter((item): item is PoiItem => item !== null)
-        .filter((item) => !intent.excluded_categories.includes(item.category))
-        .filter((item) => intent.categories.includes(item.category));
+        .filter((item) => !intent.excluded_categories.includes(item.category));
     } catch (e) {
       this.logger.error(`Error fetching from Overpass:`, e);
       return [];
@@ -117,23 +121,6 @@ export class OverpassClientService {
       this.logger.warn(`Geocoding failed for ${city}:`, e);
       return null;
     }
-  }
-
-  private buildCategoryQuery(category: PoiCategory): string {
-    const map: Record<PoiCategory, string> = {
-      museum:
-        'nwr["tourism"="museum"](around:{{center}});nwr["tourism"="gallery"](around:{{center}});',
-      park: 'nwr["leisure"="park"](around:{{center}});nwr["leisure"="garden"](around:{{center}});',
-      restaurant: 'nwr["amenity"="restaurant"](around:{{center}});',
-      cafe: 'nwr["amenity"="cafe"](around:{{center}});',
-      shopping:
-        'nwr["shop"="mall"](around:{{center}});nwr["shop"="department_store"](around:{{center}});',
-      entertainment:
-        'nwr["amenity"="theatre"](around:{{center}});nwr["amenity"="cinema"](around:{{center}});nwr["leisure"="amusement_ride"](around:{{center}});',
-      attraction:
-        'nwr["tourism"="attraction"](around:{{center}});nwr["historic"](around:{{center}});',
-    };
-    return map[category] || '';
   }
 
   private normalize(item: OverpassElement, city: string): PoiItem | null {

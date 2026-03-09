@@ -92,21 +92,29 @@ export class SemanticFilterService {
         this.logger.log(`  ${i + 1}. ${poi.name} - ${poi.description}`);
       });
 
-      const minRequired = Math.min(1, pois.length);
+      const minRequired = Math.min(intent.days * 2, pois.length);
       if (selected.length < minRequired) {
         throw new Error('Semantic output too small');
       }
 
-      return selected.slice(0, 10);
+      return selected.slice(0, Math.max(minRequired, 15));
     } catch (yandexError: any) {
+      const yErrMessage =
+        yandexError instanceof Error
+          ? yandexError.message
+          : String(yandexError);
       this.logger.warn(
-        `YandexGPT failed: ${yandexError.message}. Falling back to OpenRouter...`,
+        `YandexGPT failed: ${yErrMessage}. Falling back to OpenRouter...`,
       );
       try {
         return await this.selectWithOpenRouter(pois, intent);
       } catch (openRouterError: any) {
+        const oErrMessage =
+          openRouterError instanceof Error
+            ? openRouterError.message
+            : String(openRouterError);
         this.logger.error(
-          `OpenRouter fallback also failed: ${openRouterError.message}. Skipping semantic filter.`,
+          `OpenRouter fallback also failed: ${oErrMessage}. Skipping semantic filter.`,
         );
         const yandexReason = this.toFallbackReason('YANDEX', yandexError);
         const openRouterReason = this.toFallbackReason(
@@ -177,12 +185,12 @@ export class SemanticFilterService {
       `Semantic OpenRouter selected_raw=${selectedRaw.length} mapped=${selected.length} pois=${pois.length}`,
     );
 
-    const minRequired = Math.min(1, pois.length);
+    const minRequired = Math.min(intent.days * 2, pois.length);
     if (selected.length < minRequired) {
       throw new Error('Semantic output too small');
     }
 
-    return selected.slice(0, 10);
+    return selected.slice(0, Math.max(minRequired, 15));
   }
 
   private toFallbackReason(provider: 'YANDEX' | 'OPENROUTER', error: unknown) {
@@ -228,13 +236,36 @@ export class SemanticFilterService {
   }
 
   private buildPrompt(pois: PoiItem[], intent: ParsedIntent): string {
-    const minPlaces = Math.min(1, pois.length);
-    const maxPlaces = Math.min(10, Math.max(1, pois.length));
+    const minPlaces = Math.min(intent.days * 2, pois.length);
+    const maxPlaces = Math.min(
+      Math.max(minPlaces, 15),
+      Math.max(minPlaces, pois.length),
+    );
+    const preferences = intent.preferences_text.toLowerCase();
+    const hasFoodFocus =
+      preferences.includes('гастро') ||
+      preferences.includes('ресторан') ||
+      preferences.includes('кофе') ||
+      preferences.includes('еда') ||
+      preferences.includes('дегустац');
+    const maxRestaurants = intent.days * 3;
+    const maxCafes = intent.days * 2;
 
-    return `Выбери от ${minPlaces} до ${maxPlaces} самых подходящих мест для посещения.
-Предпочтения: ${intent.preferences_text}
-Тип группы: ${intent.party_type}
-Бюджет: ${intent.budget_total ?? 'не указан'} руб.
+    return `Мы собрали список из ${pois.length} мест вокруг. Выбери из них от ${minPlaces} до ${maxPlaces} самых интересных и подходящих мест для туристического маршрута.
+
+Критерии выбора:
+1. Запрос пользователя: ${intent.preferences_text}
+2. Тип компании: ${intent.party_type}
+3. Бюджет: ${intent.budget_total ?? 'не указан'} руб.
+4. Категории: постарайся найти места, соответствующие категориям [${intent.categories.join(', ')}].
+5. Избегай категорий: [${intent.excluded_categories.join(', ')}].
+6. Выбирай разнообразные места, чтобы маршрут был интересным.
+7. Правила по питанию (anti-food-spam):
+   - Явный гастро-фокус в запросе: ${hasFoodFocus ? 'ДА' : 'НЕТ'}.
+   - Если гастро-фокуса НЕТ, то ограничь точки питания:
+     - category="restaurant": не более ${maxRestaurants} на весь маршрут;
+     - category="cafe": не более ${maxCafes} на весь маршрут.
+   - Если гастро-фокус ЕСТЬ, эти лимиты можно ослабить.
 
 Список мест (JSON):
 ${JSON.stringify(

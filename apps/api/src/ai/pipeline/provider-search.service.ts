@@ -3,6 +3,8 @@ import type { ParsedIntent } from '../types/pipeline.types';
 import type { PoiItem } from '../types/poi.types';
 import { KudagoClientService } from './kudago-client.service';
 import { OverpassClientService } from './overpass-client.service';
+import { LlmClientService } from './llm-client.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class ProviderSearchService {
@@ -11,6 +13,7 @@ export class ProviderSearchService {
   constructor(
     private readonly kudagoClient: KudagoClientService,
     private readonly overpassClient: OverpassClientService,
+    private readonly llmClientService: LlmClientService,
   ) {}
 
   async fetchAndFilter(
@@ -67,9 +70,38 @@ export class ProviderSearchService {
       );
     }
 
+    const minRequired = intent.days * 2;
+
+    // 4) Если точек всё ещё не хватает (меньше days * 2), генерируем недостающие через LLM
+    if (pois.length < minRequired) {
+      this.logger.warn(
+        `[ProviderSearch] Only ${pois.length} points found, but ${minRequired} needed for ${intent.days} days. Requesting LLM to generate missing points...`,
+      );
+      const missingCount = minRequired - pois.length;
+      try {
+        const generatedPois = await this.generateMissingPois(
+          intent.city,
+          missingCount,
+          pois,
+        );
+        pois = [...pois, ...generatedPois];
+        fallbacks.push('LLM_GENERATED_MISSING_POIS');
+        this.logger.log(
+          `[ProviderSearch] Successfully generated ${generatedPois.length} missing points. Total now: ${pois.length}`,
+        );
+      } catch (error: any) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `[ProviderSearch] Failed to generate missing points via LLM: ${errorMessage}`,
+        );
+        fallbacks.push('LLM_POI_GENERATION_FAILED');
+      }
+    }
+
     if (pois.length === 0) {
       this.logger.error(
-        `[ProviderSearch] ❌ FATAL: 0 points found for ${intent.city} across all providers.`,
+        `[ProviderSearch] ❌ FATAL: 0 points found for ${intent.city} across all providers and generators.`,
       );
       return [];
     }
@@ -82,17 +114,16 @@ export class ProviderSearchService {
       `[ProviderSearch] Deduplication complete. Unique points: ${deduped.length}`,
     );
 
-    // 4) Pre-filter: оставляем не более 15, сортируем (приоритет: рейтинг)
+    // 5) Pre-filter: оставляем топ-100 точек для YandexGPT/OpenRouter.
+    // Больше отдавать нельзя из-за лимитов контекстного окна LLM.
+    const MAX_POINTS_FOR_LLM = 100;
     const result = deduped
       .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
-      .slice(0, 15);
+      .slice(0, Math.max(minRequired, MAX_POINTS_FOR_LLM));
 
     this.logger.log(
-      `[ProviderSearch] Final pre-filter complete. Returning top ${result.length} points for Semantic Filter:`,
+      `[ProviderSearch] Final pre-filter complete (min ${minRequired}, limited to ${result.length} for LLM context limits). Returning points for Semantic Filter.`,
     );
-    result.forEach((poi, i) => {
-      this.logger.log(`  ${i + 1}. [${poi.category}] ${poi.name} (rating: ${poi.rating})`);
-    });
     return result;
   }
 
@@ -145,5 +176,86 @@ export class ProviderSearchService {
       Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
 
     return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  private async generateMissingPois(
+    city: string,
+    count: number,
+    existingPois: PoiItem[],
+  ): Promise<PoiItem[]> {
+    const existingNames = existingPois.map((p) => p.name).join(', ');
+    const prompt = `Пользователь ищет интересные места (достопримечательности, парки, музеи, кафе) в городе "${city}".
+Мы нашли только эти места: ${existingNames || 'ничего'}.
+Нам нужно еще ${count} реальных интересных мест в этом городе.
+Они должны реально существовать в городе ${city}.
+Сгенерируй JSON с массивом из ${count} объектов:
+{
+  "points": [
+    {
+      "name": "Название места",
+      "category": "attraction|museum|park|restaurant|cafe",
+      "rating": 4.5,
+      "address": "Примерный адрес в городе ${city}"
+    }
+  ]
+}
+Верни строго валидный JSON. Без markdown. Без ничего лишнего.`;
+
+    const response = await this.llmClientService.client.chat.completions.create(
+      {
+        model: this.llmClientService.model,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Ты эксперт по туризму. Твоя задача — подсказывать реально существующие места в заданном городе, если база данных пуста. Возвращай только JSON.',
+          },
+          { role: 'user', content: prompt },
+        ],
+      },
+    );
+
+    const content = response.choices[0]?.message?.content ?? '{}';
+    const parsed = JSON.parse(content) as {
+      points?: Array<{
+        name?: string;
+        category?: string;
+        rating?: number;
+        address?: string;
+      }>;
+    };
+
+    if (!Array.isArray(parsed.points)) {
+      throw new Error('LLM returned invalid format (missing points array)');
+    }
+
+    return parsed.points
+      .filter((p) => p.name && typeof p.name === 'string')
+      .slice(0, count)
+      .map((p) => {
+        // Делаем фейковые координаты около центра города, так как LLM их не даст точно
+        // В реальном проекте тут можно было бы вызвать геокодер Dadata/Yandex
+        const lat =
+          existingPois.length > 0
+            ? existingPois[0].coordinates.lat + (Math.random() - 0.5) * 0.02
+            : 55.75;
+        const lon =
+          existingPois.length > 0
+            ? existingPois[0].coordinates.lon + (Math.random() - 0.5) * 0.02
+            : 37.61;
+
+        return {
+          id: `llm-${randomUUID()}`,
+          name: p.name!,
+          address: p.address || city,
+          category:
+            (p.category as import('../types/pipeline.types').PoiCategory) ||
+            'attraction',
+          coordinates: { lat, lon },
+          price_segment: 'mid',
+          rating: p.rating ?? 4.0,
+        };
+      });
   }
 }

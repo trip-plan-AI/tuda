@@ -95,10 +95,9 @@ export class KudagoClientService {
     // Если категория в исключенных - пропускаем
     if (intent.excluded_categories.includes(category)) return null;
 
-    // Если категория не запрашивалась - пропускаем
-    // Но если это attraction, а запрашивали museum, можно оставить для разнообразия,
-    // если логика пайплайна строгая, оставляем только запрошенные
-    if (!intent.categories.includes(category)) return null;
+    // Снимаем строгую фильтрацию по запрошенным категориям,
+    // чтобы отдавать LLM более широкий выбор
+    // if (!intent.categories.includes(category)) return null;
 
     const name = item.title.charAt(0).toUpperCase() + item.title.slice(1);
     const address = item.address
