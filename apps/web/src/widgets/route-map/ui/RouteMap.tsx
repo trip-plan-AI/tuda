@@ -33,6 +33,13 @@ interface RouteMapProps {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const ymaps3: any;
 
+// In-memory кэш OSRM-ответов (переживает ремаунт компонента)
+const osrmCache = new Map<string, { geometry: any; duration: number; distance: number } | null>();
+
+function getOsrmCacheKey(fromLon: number, fromLat: number, toLon: number, toLat: number, profile: string) {
+  return `${fromLon},${fromLat};${toLon},${toLat}|${profile}`;
+}
+
 export function RouteMap({
   points,
   focusCoords,
@@ -340,12 +347,24 @@ export function RouteMap({
           };
         }
 
+        const cacheKey = getOsrmCacheKey(from.lon, from.lat, to.lon, to.lat, profile);
+        const cached = osrmCache.get(cacheKey);
+        if (cached !== undefined) {
+          return {
+            index: segmentIndex,
+            data: cached
+              ? { geometry: cached.geometry, info: { duration: cached.duration, distance: cached.distance }, profile }
+              : { geometry: { type: 'LineString' as const, coordinates: [[from.lon, from.lat], [to.lon, to.lat]] }, info: null, profile },
+          };
+        }
+
         try {
           const coordsString = `${from.lon},${from.lat};${to.lon},${to.lat}`;
           const res = await fetch(`${env.apiUrl}/geosearch/route?profile=${profile}&coords=${coordsString}`);
           const data = await res.json();
           if (data.code === 'Ok' && data.routes?.[0]) {
             const r = data.routes[0];
+            osrmCache.set(cacheKey, { geometry: r.geometry, duration: r.duration, distance: r.distance });
             return {
               index: segmentIndex,
               data: {
@@ -357,6 +376,7 @@ export function RouteMap({
           }
         } catch {}
         // fallback: straight line
+        osrmCache.set(cacheKey, null);
         return {
           index: segmentIndex,
           data: {
