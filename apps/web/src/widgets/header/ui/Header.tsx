@@ -81,7 +81,7 @@ export function Header() {
           'sticky top-0 z-50 shrink-0 w-full',
           isHome
             ? 'bg-black/20 backdrop-blur-xl border-b border-white/10'
-            : 'bg-transparent border-b border-slate-200',
+            : 'bg-white border-b border-slate-200',
         )}
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
