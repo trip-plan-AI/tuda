@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile.api
     container_name: travel-planner-db-seed
+    profiles: ['seed']
     restart: 'no'
     environment:
       NODE_ENV: production
@@ -31,8 +32,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      db-seed:
-        condition: service_completed_successfully
 
   web:
     build:

@@ -132,10 +132,19 @@ jobs:
           fi
 
           echo "[deploy] run db:push"
-          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T api pnpm --filter api db:push --force < /dev/null; then
+          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T --no-deps api pnpm --filter api db:push --force < /dev/null; then
             echo "[deploy] db:push finished"
           else
             echo "[deploy][warn] db:push returned non-zero, continue deploy"
+          fi
+
+          echo "[deploy] run db:seed"
+          if docker compose -f docker-compose.prod.yml --profile seed run --rm -T db-seed; then
+            echo "[deploy] db:seed finished"
+          else
+            echo "[deploy][error] db:seed failed"
+            docker compose -f docker-compose.prod.yml logs --no-color --tail=200 db-seed || true
+            exit 1
           fi
 
           echo "[deploy] public schema (tables and columns)"
@@ -146,14 +155,6 @@ jobs:
           fi
 
           docker compose -f docker-compose.prod.yml up -d --build
-
-          echo "[deploy] db-seed status"
-          if docker compose -f docker-compose.prod.yml ps db-seed; then
-            echo "[deploy] db-seed logs"
-            docker compose -f docker-compose.prod.yml logs --no-color --tail=200 db-seed || echo "[deploy][warn] failed to read db-seed logs"
-          else
-            echo "[deploy][warn] db-seed service is not found in compose output"
-          fi
 
           echo "[deploy] docker images"
           docker compose -f docker-compose.prod.yml images
