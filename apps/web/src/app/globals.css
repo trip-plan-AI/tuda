@@ -217,3 +217,41 @@ html {
   scrollbar-width: none !important; /* Firefox */
   -ms-overflow-style: none !important; /* IE 10+ */
 }
+
+/* Скрываем хедер на мобильных устройствах (до md breakpoint) */
+
+/* Стили футера */
+footer {
+  @apply border-t border-border;
+}
+
+/* Голубое свечение текста при наведении (как у тревел-гид на лендинге) */
+.hover-glow-sky {
+  transition: color 0.2s ease, text-shadow 0.2s ease;
+}
+.hover-glow-sky:hover {
+  color: #0ea5e9;
+  text-shadow:
+    0 0 8px rgba(14, 165, 233, 0.7),
+    0 0 20px rgba(14, 165, 233, 0.4);
+}
+
+/* Показываем хедер на мобильных, но скрываем кнопки (вход/регистрация) */
+@media (max-width: 767px) {
+  header {
+    display: flex !important;
+    position: absolute !important;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 50;
+  }
+  header button {
+    display: none !important;
+  }
+}
+
+/* Стили футера: черный текст и линия сверху */
+footer {
+  @apply text-foreground border-t border-border;
+}
