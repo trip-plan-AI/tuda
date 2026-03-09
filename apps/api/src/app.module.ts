@@ -6,6 +6,7 @@ import { TripsModule } from './trips/trips.module';
 import { PointsModule } from './points/points.module';
 import { UsersModule } from './users/users.module';
 import { CollaborationModule } from './collaboration/collaboration.module';
+import { AiModule } from './ai/ai.module';
 import { GeosearchModule } from './geosearch/geosearch.module';
 
 @Module({
@@ -17,6 +18,7 @@ import { GeosearchModule } from './geosearch/geosearch.module';
     PointsModule,
     UsersModule,
     CollaborationModule,
+    AiModule,
     GeosearchModule,
   ],
 })

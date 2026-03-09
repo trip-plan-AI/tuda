@@ -4,6 +4,8 @@
 
 Этот документ фиксирует обязательные архитектурные правила, чтобы изменения AI-агентов не откатывали принятый подход «все внешние API только через backend».
 
+> Комментарий к изменению: для AI-пайплайна принят отказ от платного Yandex Search API. Источники POI для backend-поиска: KudaGo как приоритетный и Overpass как бесплатный источник добора.
+
 ## Обязательное правило №1
 
 **Внешние API вызываются только на backend.**
@@ -11,6 +13,7 @@
 Нельзя делать прямые вызовы внешних сервисов из frontend-кода (`apps/web/src/**`), включая:
 - geocode/suggest сервисы;
 - LLM/AI provider API;
+- KudaGo API и Overpass API;
 - любые внешние HTTP API, влияющие на бизнес-логику.
 
 ## Обязательное правило №2
@@ -37,6 +40,8 @@
 - Геопоиск/подсказки: `GET /api/geosearch/suggest?q=...`
 - Реализация: `apps/api/src/geosearch/geosearch.controller.ts`
 - Бизнес-логика и fallback: `apps/api/src/geosearch/geosearch.service.ts`
+- AI-поиск POI для чата: `POST /api/ai/plan` (внутри backend pipeline)
+- Источники STEP 2: KudaGo API → Overpass API (fallback/добор)
 
 ## Инварианты для code review (обязательно)
 
@@ -45,6 +50,8 @@
 2. В `apps/web/src/**` нет прямых внешних `fetch('https://...')` для geocode/suggest/LLM.
 3. В `apps/web/src/app/api/` нет business route для suggest/geocode.
 4. Все клиентские suggest-вызовы идут на `${env.apiUrl}/geosearch/suggest`.
+5. В frontend нет прямых вызовов в KudaGo и Overpass.
+6. В AI pipeline нет обращения к `search-maps.yandex.ru/v1/`.
 
 ## Быстрый чек-лист для AI-агента
 
@@ -52,6 +59,8 @@
 - [ ] Я не добавил прямые внешние API-запросы во frontend.
 - [ ] Я использую backend endpoint `/api/geosearch/suggest`.
 - [ ] Я не сломал существующие потоки `/` и `/planner`.
+- [ ] Я использую backend provider search только через NestJS сервисы.
+- [ ] Я не использую платный Yandex Search API в AI pipeline.
 
 ## Если требуется новый внешний провайдер
 
