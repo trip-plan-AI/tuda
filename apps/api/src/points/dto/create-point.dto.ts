@@ -36,4 +36,8 @@ export class CreatePointDto {
   @IsOptional()
   @IsString()
   address?: string;
+
+  @IsOptional()
+  @IsString()
+  transportMode?: string;
 }

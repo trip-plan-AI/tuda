@@ -3,12 +3,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Cloud, CloudSun, Sun, Wind } from 'lucide-react';
 import { useTripStore, tripsApi } from '@/entities/trip';
 import type { Trip } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point';
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/shared/ui';
-import { loadYandexMaps } from '@/shared/lib/yandex-maps';
 import { env } from '@/shared/config/env';
 
 const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
@@ -24,9 +23,12 @@ interface TourDetailPageProps {
   tourId: string;
 }
 
+const weatherIcons = [Cloud, Sun, CloudSun, Wind];
+
 export function TourDetailPage({ tourId }: TourDetailPageProps) {
   const router = useRouter();
-  const { currentTrip, points, setCurrentTrip, setPoints, clearPlanner } = useTripStore();
+  const { currentTrip, setCurrentTrip, updateCurrentTrip, setPoints, clearPlanner, isDirty } = useTripStore();
+  const points = currentTrip?.points || [];
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
   const [isOpening, setIsOpening] = useState(false);
   const [showConfirmOverwrite, setShowConfirmOverwrite] = useState(false);
@@ -46,20 +48,34 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
   }, [tourId]);
 
   const attractions = tour?.points ?? [];
+  const tourIdHash = tourId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const WeatherIcon = weatherIcons[tourIdHash % weatherIcons.length] ?? Cloud;
 
   const geocodeCity = useCallback(
     async (cityName: string): Promise<{ lon: number; lat: number } | null> => {
       try {
-        await loadYandexMaps(env.yandexMapsKey);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ymap = (window as any).ymaps3;
-        if (!ymap?.search) return null;
-        const results = await ymap.search({ text: cityName, results: 1 });
-        if (!results?.length) return null;
-        const coords = results[0]?.geometry?.coordinates as [number, number] | undefined;
-        if (!coords) return null;
-        return { lon: coords[0], lat: coords[1] };
-      } catch {
+        const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(cityName)}`;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const data = await res.json();
+        const results = data.results ?? [];
+
+        if (results.length > 0) {
+          const first = results[0];
+          // Извлекаем координаты из uri формата ymapsbm1://geo?ll=lon,lat
+          const match = first.uri?.match(/[?&]ll=([^&]+)/);
+          if (match) {
+            const [lonStr, latStr] = decodeURIComponent(match[1]).split(',');
+            const lon = Number(lonStr);
+            const lat = Number(latStr);
+            if (Number.isFinite(lon) && Number.isFinite(lat)) {
+              return { lon, lat };
+            }
+          }
+        }
+        return null;
+      } catch (e) {
+        console.error('[Geosearch] City geocoding failed:', e);
         return null;
       }
     },
@@ -79,11 +95,11 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     if (!tour) return;
     setIsOpening(true);
     try {
-      const city = tour.title.split(':')[0]?.trim() ?? tour.title;
+      const cityName = tour.title.split(':')[0]?.trim() ?? tour.title;
 
       let coords: { lon: number; lat: number } | null = focusCoords;
       if (!coords) {
-        coords = await geocodeCity(city);
+        coords = await geocodeCity(cityName);
       }
 
       clearPlanner();
@@ -101,6 +117,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
         isPredefined: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        points: [],
       };
       setCurrentTrip(tourTrip);
 
@@ -114,7 +131,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
               tripId,
               title: attr.title,
               description: attr.description,
-              address: `${city}, ${attr.title}`,
+              address: `${cityName}, ${attr.title}`,
               lat: attr.lat || safeCoords.lat + (Math.random() - 0.5) * 0.05,
               lon: attr.lon || safeCoords.lon + (Math.random() - 0.5) * 0.05,
               budget: attr.budget,
@@ -128,9 +145,9 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           newPoints.push({
             id: `tour-city-${Date.now()}`,
             tripId,
-            title: city,
+            title: cityName,
             description: null,
-            address: city,
+            address: cityName,
             lat: safeCoords.lat,
             lon: safeCoords.lon,
             budget: 0,
@@ -142,20 +159,21 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
         }
       }
       setPoints(newPoints);
-
-      router.push('/planner');
+      router.push('/planner?profile=direct');
+    } catch (e) {
+      console.error('[TourDetail] Failed to open route:', e);
     } finally {
       setIsOpening(false);
     }
   }, [tour, focusCoords, attractions, geocodeCity, clearPlanner, setCurrentTrip, setPoints, router]);
 
   const handleOpenRoute = useCallback(() => {
-    if (points && points.length > 0) {
+    if (points && points.length > 0 && isDirty) {
       setShowConfirmOverwrite(true);
     } else {
       doOpenRoute();
     }
-  }, [points, doOpenRoute]);
+  }, [points, doOpenRoute, isDirty]);
 
   const confirmOverwrite = () => {
     setShowConfirmOverwrite(false);
@@ -201,11 +219,10 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
                 {tag}
               </span>
             ))}
-            {tour.temp && (
-              <span className="inline-flex items-center px-4 py-2 rounded-full bg-white text-slate-500 border-2 border-slate-100 text-xs font-black shadow-sm">
-                {tour.temp}
-              </span>
-            )}
+            <span className="inline-flex items-center px-4 py-2 rounded-full bg-white text-slate-500 border-2 border-slate-100 text-xs font-black shadow-sm gap-1.5">
+              <WeatherIcon size={14} />
+              {tour.temp}
+            </span>
           </div>
 
           <h1 className="text-4xl md:text-6xl font-black text-brand-indigo tracking-tight leading-[0.9] mb-6">
@@ -250,7 +267,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
         {/* Достопримечательности */}
         {attractions.length > 0 && (
           <div>
-            <h2 className="text-[clamp(2rem,5vw,3.5rem)] font-black text-brand-indigo tracking-tight leading-[0.9] mb-16">
+            <h2 className="text-[clamp(1.5rem,5vw,3.5rem)] font-black text-brand-indigo tracking-tight leading-[0.9] mb-16">
               Что <span className="text-brand-sky">посмотреть</span>
             </h2>
 

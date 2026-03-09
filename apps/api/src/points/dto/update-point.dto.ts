@@ -33,4 +33,8 @@ export class UpdatePointDto {
   @IsOptional()
   @IsString()
   address?: string;
+
+  @IsOptional()
+  @IsString()
+  transportMode?: string;
 }

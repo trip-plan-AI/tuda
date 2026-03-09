@@ -47,6 +47,7 @@
     "@types/node": "^22.15.3",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
+    "@yandex/ymaps3-types": "^1.0.18856213",
     "autoprefixer": "^10.4.24",
     "eslint": "^9.39.1",
     "jsdom": "^28.1.0",

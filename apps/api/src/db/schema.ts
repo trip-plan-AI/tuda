@@ -28,9 +28,10 @@ export const poiCategoryEnum = pgEnum('poi_category', [
   'entertainment',
 ]);
 export const transportModeEnum = pgEnum('transport_mode', [
-  'walk',
-  'transit',
-  'auto',
+  'driving',
+  'foot',
+  'bike',
+  'direct',
 ]);
 
 // users
@@ -98,6 +99,7 @@ export const routePoints = pgTable('route_points', {
   imageUrl: text('image_url'),
   order: integer('order').notNull().default(0),
   address: text('address'),
+  transportMode: text('transport_mode').notNull().default('driving'),
   isTitleLocked: boolean('is_title_locked').notNull().default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
@@ -120,7 +122,7 @@ export const optimizationResults = pgTable('optimization_results', {
   savedKm: doublePrecision('saved_km').notNull().default(0),
   savedRub: doublePrecision('saved_rub').notNull().default(0),
   savedHours: doublePrecision('saved_hours').notNull().default(0),
-  transportMode: transportModeEnum('transport_mode').notNull().default('auto'),
+  transportMode: transportModeEnum('transport_mode').notNull().default('driving'),
   params: jsonb('params'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });

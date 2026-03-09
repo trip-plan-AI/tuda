@@ -1,5 +1,4 @@
 @import 'tailwindcss';
-@import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 
 @custom-variant dark (&:is(.dark *));
@@ -13,8 +12,8 @@
   --color-brand-amber: #f59e0b;
   --color-brand-yellow: #f59e0b;
   --color-brand-yellow-hover: #d97706;
-  --color-brand-purple: #9333ea;
-  --color-brand-purple-hover: #7e22ce;
+  --color-brand-purple: #6366f1;
+  --color-brand-purple-hover: #4f46e5;
   --color-brand-light: #f0f9ff;
   --color-brand-bg: #f0f6ff;
   --font-weight-black: 800;
@@ -24,11 +23,12 @@ html,
 body {
   max-width: 100vw;
   overflow-x: hidden;
+  min-height: 100vh;
+  background: #fff;
 }
 
 html {
   font-size: 90%;
-  overflow-y: overlay;
   transform-origin: top center;
 }
 
@@ -44,30 +44,6 @@ body {
 
 * {
   box-sizing: border-box;
-}
-
-/* Прозрачный скроллбар */
-::-webkit-scrollbar {
-  width: 8px;
-  background: transparent;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.35);
-}
-
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
 }
 
 a {
@@ -212,32 +188,32 @@ a {
 }
 
 button {
-  cursor: pointer !important;
+  cursor: pointer;
 }
 
-/* Прозрачный скроллбар */
-::-webkit-scrollbar {
-  width: 6px;
-  background: transparent;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 3px;
-  transition: background 0.2s;
-}
-*:hover::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
+button:disabled {
+  cursor: default;
 }
 
-/* Firefox */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-*:hover {
-  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+/* Hide number input spinners */
+input[type='number'] {
+  -moz-appearance: textfield;
 }
 
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Скроллбар скрыт — не занимает место, видео на всю ширину */
+html::-webkit-scrollbar {
+  display: none;
+  width: 0 !important;
+  background: transparent !important;
+}
+
+html {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE 10+ */
+}

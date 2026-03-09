@@ -10,6 +10,7 @@ export interface CreatePointPayload {
   imageUrl?: string
   order?: number
   address?: string
+  transportMode?: 'driving' | 'foot' | 'bike' | 'direct'
 }
 
 export interface UpdatePointPayload {
@@ -20,6 +21,7 @@ export interface UpdatePointPayload {
   visitDate?: string
   imageUrl?: string
   address?: string | null
+  transportMode?: 'driving' | 'foot' | 'bike' | 'direct'
 }
 
 const base = (tripId: string) => `/trips/${tripId}/points`
