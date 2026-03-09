@@ -7,6 +7,7 @@ import { PointsModule } from './points/points.module';
 import { UsersModule } from './users/users.module';
 import { CollaborationModule } from './collaboration/collaboration.module';
 import { AiModule } from './ai/ai.module';
+import { GeosearchModule } from './geosearch/geosearch.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { AiModule } from './ai/ai.module';
     UsersModule,
     CollaborationModule,
     AiModule,
+    GeosearchModule,
   ],
 })
 export class AppModule {}
