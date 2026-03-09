@@ -30,6 +30,11 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       AI_MODEL: ${AI_MODEL:-gpt-4o-mini}
+      YANDEX_GPT_API_KEY: ${YANDEX_GPT_API_KEY}
+      YANDEX_MAPS_API_KEY: ${YANDEX_MAPS_API_KEY}
+      YANDEX_FOLDER_ID: ${YANDEX_FOLDER_ID}
+      DADATA_API_KEY: ${DADATA_API_KEY}
+      DADATA_SECRET_KEY: ${DADATA_SECRET_KEY}
     expose:
       - '3001'
     depends_on:
