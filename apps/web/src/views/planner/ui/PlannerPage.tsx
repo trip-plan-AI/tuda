@@ -52,7 +52,6 @@ import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point';
 import { toast } from 'sonner';
 import { cn } from '@/shared/lib/utils';
-import { PREDEFINED_ROUTES } from '@/shared/data/predefined-routes';
 import { Button } from '@/shared/ui/button';
 import { Chip } from '@/shared/ui/chip';
 import { SegmentedControl } from '@/shared/ui/segmented-control';
@@ -601,6 +600,7 @@ export function PlannerPage() {
   const [editingTitle, setEditingTitle] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<Filter>('Все');
   const [popularSearch, setPopularSearch] = useState('');
+  const [predefinedTrips, setPredefinedTrips] = useState<Trip[]>([]);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [modal, setModal] = useState<'login' | 'register' | null>(null);
   const [isAddPointMode, setIsAddPointMode] = useState(false);
@@ -614,7 +614,7 @@ export function PlannerPage() {
     duration: number;
     distance: number;
     legs: { duration: number; distance: number }[];
-  } | null>(null);
+  } | null>(() => useTripStore.getState().cachedRouteInfo ?? null);
   const [isRouteLoading, setIsRouteLoading] = useState(false);
   const [affectedSegments, setAffectedSegments] = useState<Set<number>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -695,6 +695,10 @@ export function PlannerPage() {
   );
 
   useEffect(() => {
+    useTripStore.getState().setCachedRouteInfo(null);
+  }, []);
+
+  useEffect(() => {
     if (!currentTrip?.id || currentTrip.id.startsWith('guest-')) return;
     if (justMigratedRef.current) {
       justMigratedRef.current = false;
@@ -746,6 +750,11 @@ export function PlannerPage() {
       })
       .catch(console.error);
   }, [currentTrip, setCurrentTrip, isAuthenticated, _hasHydrated]);
+
+  // Загружаем предзаданные туры для вкладки «Популярные»
+  useEffect(() => {
+    tripsApi.getPredefined().then(setPredefinedTrips).catch(console.error);
+  }, []);
 
   // Синхронизация routeProfile с transportMode точек
   useEffect(() => {
@@ -1666,46 +1675,48 @@ export function PlannerPage() {
               </div>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12 pb-10">
-              {PREDEFINED_ROUTES.filter(
-                (route) =>
-                  selectedFilter === 'Все' || route.tags.some((t) => t.includes(selectedFilter)),
-              )
+              {predefinedTrips
                 .filter(
-                  (route) =>
-                    !popularSearch.trim() ||
-                    route.title.toLowerCase().includes(popularSearch.toLowerCase()),
+                  (trip) =>
+                    selectedFilter === 'Все' ||
+                    (trip.tags ?? []).some((t) => t.includes(selectedFilter)),
                 )
-                .map((route, idx) => {
+                .filter(
+                  (trip) =>
+                    !popularSearch.trim() ||
+                    trip.title.toLowerCase().includes(popularSearch.toLowerCase()),
+                )
+                .map((trip, idx) => {
                   const WeatherIcon = weatherIcons[idx % weatherIcons.length] ?? Cloud;
                   return (
                     <Link
-                      key={route.id}
+                      key={trip.id}
                       className="group block w-full cursor-pointer"
-                      href={`/tours/${route.id}`}
+                      href={`/tours/${trip.id}`}
                     >
                       <div className="relative aspect-4/5 md:aspect-16/10 rounded-[3rem] overflow-hidden mb-6 shadow-2xl">
                         <img
-                          src={route.img}
+                          src={trip.img ?? ''}
                           className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 will-change-transform"
-                          alt={route.title}
+                          alt={trip.title}
                         />
                         <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/20 to-transparent" />
                         <div className="absolute top-6 left-6">
                           <div className="bg-slate-900/40 backdrop-blur-md border border-white/10 rounded-xl px-3 py-1.5 text-white font-bold text-xs shadow-lg flex items-center gap-1.5">
-                            <WeatherIcon size={14} /> {route.temp}
+                            <WeatherIcon size={14} /> {trip.temp}
                           </div>
                         </div>
                         <div className="absolute bottom-6 left-6 right-6 text-left">
                           <h3 className="text-2xl lg:text-4xl font-black text-white mb-4 tracking-tight leading-none drop-shadow-[0_25px_25px_rgba(0,0,0,0.15)]">
-                            {route.title}
+                            {trip.title}
                           </h3>
                           <div className="bg-brand-yellow text-white px-6 py-2.5 rounded-full text-sm font-black uppercase tracking-widest inline-block shadow-xl">
-                            {route.total}
+                            {trip.budget ? `${trip.budget.toLocaleString('ru-RU')} ₽` : 'По запросу'}
                           </div>
                         </div>
                       </div>
                       <p className="text-slate-500 text-lg font-medium leading-relaxed px-4 text-left">
-                        {route.desc}
+                        {trip.description ?? ''}
                       </p>
                     </Link>
                   );
