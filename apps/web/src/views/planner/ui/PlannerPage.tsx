@@ -614,14 +614,7 @@ export function PlannerPage() {
     duration: number;
     distance: number;
     legs: { duration: number; distance: number }[];
-  } | null>(() => {
-    const cached = useTripStore.getState().cachedRouteInfo;
-    if (cached) {
-      useTripStore.getState().setCachedRouteInfo(null);
-      return cached;
-    }
-    return null;
-  });
+  } | null>(() => useTripStore.getState().cachedRouteInfo ?? null);
   const [isRouteLoading, setIsRouteLoading] = useState(false);
   const [affectedSegments, setAffectedSegments] = useState<Set<number>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -700,6 +693,10 @@ export function PlannerPage() {
       activationConstraint: { delay: 0, tolerance: 0 },
     }),
   );
+
+  useEffect(() => {
+    useTripStore.getState().setCachedRouteInfo(null);
+  }, []);
 
   useEffect(() => {
     if (!currentTrip?.id || currentTrip.id.startsWith('guest-')) return;
