@@ -76,11 +76,16 @@ export function Header() {
 
   return (
     <>
-      <header className={cn(
-        'sticky top-0 z-50 shrink-0 w-full pt-[env(safe-area-inset-top)]',
-        !isHome && "hidden md:flex"
-      )}>
-        <div className="max-w-5xl px-4 md:px-6 h-full flex items-center justify-between w-full">
+      <header
+        className={cn(
+          'sticky top-0 z-50 shrink-0 w-full',
+          isHome
+            ? 'bg-black/20 backdrop-blur-xl border-b border-white/10'
+            : 'bg-white border-b border-slate-200',
+        )}
+        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      >
+        <div className="max-w-5xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between w-full">
           {/* Логотип */}
           <Link href="/" className="flex items-center gap-3 transition-colors">
             <div className="bg-brand-sky text-white p-2 rounded-xl shadow-sm">
@@ -94,7 +99,7 @@ export function Header() {
           </Link>
 
           {/* Правая часть */}
-          <div className="hidden md:flex items-center gap-2">
+          <div className="flex items-center gap-2">
             {!hydrated ? (
               <div className="w-10 h-10" />
             ) : isAuthenticated ? (
