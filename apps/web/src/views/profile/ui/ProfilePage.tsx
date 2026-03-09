@@ -373,13 +373,7 @@ export function ProfilePage() {
 
             <div className="px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <button
-                  onClick={() => router.back()}
-                  className="md:hidden p-2 -ml-2 text-slate-400"
-                >
-                  <ChevronLeft size={24} />
-                </button>
-                <h1 className="text-xl md:text-2xl font-black text-brand-indigo">Мой профиль</h1>
+                <h1 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight">Профиль</h1>
               </div>
             </div>
           </div>
@@ -415,9 +409,10 @@ export function ProfilePage() {
                     />
                     <button
                       onClick={handleSaveName}
-                      className="p-2 bg-emerald-500 text-white rounded-xl shadow-lg active:scale-90 transition-transform"
+                      className="p-2 hover:scale-110 active:scale-90 transition-all flex items-center justify-center"
+                      aria-label="Сохранить имя"
                     >
-                      <Check size={20} />
+                      <span className="text-xl leading-none">💾</span>
                     </button>
                   </div>
                 ) : (
@@ -430,10 +425,10 @@ export function ProfilePage() {
                         setTempName(user?.name || '');
                         setIsEditingName(true);
                       }}
-                      className="p-2.5 bg-slate-50 text-slate-400 hover:text-brand-blue hover:bg-slate-100 rounded-xl transition-all active:scale-90"
+                      className="p-1 hover:scale-110 active:scale-90 transition-all flex items-center justify-center"
                       aria-label="Редактировать имя"
                     >
-                      <Pencil size={18} />
+                      <span className="text-sm leading-none">✏️</span>
                     </button>
                   </>
                 )}

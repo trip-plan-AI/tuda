@@ -61,6 +61,7 @@ const NAV_ITEMS = [
 
 export function Header() {
   const pathname = usePathname();
+  const isLanding = pathname === '/';
   const { isAuthenticated, logout } = useAuthStore();
   const { user } = useUserStore();
   const [modal, setModal] = useState<Modal>(null);
@@ -75,7 +76,10 @@ export function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-50 h-16 bg-white/95 backdrop-blur-md border-b border-slate-100 shrink-0 w-full flex justify-center">
+      <header className={cn(
+        "sticky top-0 z-50 h-16 bg-white/95 backdrop-blur-md border-b border-slate-100 shrink-0 w-full flex justify-center",
+        !isLanding && "hidden md:flex"
+      )}>
         <div className="max-w-5xl px-4 md:px-6 h-full flex items-center justify-between w-full">
           {/* Логотип */}
           <Link href="/" className="flex items-center gap-3 transition-colors">
@@ -86,7 +90,7 @@ export function Header() {
           </Link>
 
           {/* Правая часть */}
-          <div className="flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-2">
             {!hydrated ? (
               <div className="w-10 h-10" />
             ) : isAuthenticated ? (

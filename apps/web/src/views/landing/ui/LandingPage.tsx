@@ -38,7 +38,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/shared/ui';
-import { loadYandexMaps } from '@/shared/lib/yandex-maps';
 import { env } from '@/shared/config/env';
 
 type Modal = 'login' | 'register' | null;
@@ -164,7 +163,8 @@ export function LandingPage() {
   const debounceFromRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceToRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendAiQuery = useAiQueryStore((state) => state.sendQuery);
-  const { points, setCurrentTrip, addPoint, clearPlanner } = useTripStore();
+  const { currentTrip, setCurrentTrip, addPoint, clearPlanner } = useTripStore();
+  const points = currentTrip?.points || [];
   const { isAuthenticated } = useAuthStore();
   const [showConfirmOverwrite, setShowConfirmOverwrite] = useState(false);
 
@@ -325,6 +325,7 @@ export function LandingPage() {
         isPredefined: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        points: [],
       };
 
       setCurrentTrip(guestTrip);
@@ -515,10 +516,10 @@ export function LandingPage() {
           {/* Content Layer */}
           <div className="relative z-10 w-full max-w-5xl mx-auto px-4 md:px-6 text-center">
             <div className="animate-in fade-in slide-in-from-bottom-10 duration-1000">
-              <h1 className="text-[clamp(2.5rem,8vw,6.5rem)] font-black text-white mb-6 tracking-tight leading-[0.9] drop-shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+              <h1 className="text-[clamp(2rem,8vw,6.5rem)] font-black text-white mb-6 tracking-tight leading-[0.9] drop-shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
                 Личный <br /> <span className="text-brand-blue">тревел-гид</span>
               </h1>
-              <p className="text-white text-[clamp(1.125rem,2.5vw,1.5rem)] font-medium mb-12 max-w-3xl mx-auto drop-shadow-2xl leading-relaxed">
+              <p className="text-white text-[clamp(0.875rem,2.5vw,1.5rem)] font-medium mb-12 max-w-3xl mx-auto drop-shadow-2xl leading-relaxed">
                 Планирование ещё никогда не было таким простым.
               </p>
             </div>
@@ -564,7 +565,7 @@ export function LandingPage() {
                         }}
                         placeholder="Например: Сочи за 45 000 руб на 5 дней"
                         rows={inputRows}
-                        className="w-full py-3 md:py-4 lg:py-6 !pl-10 md:!pl-12 lg:!pl-14 pr-12 md:pr-14 bg-transparent outline-none text-slate-800 font-bold text-[clamp(1rem,1.5vw,1.25rem)] placeholder:text-slate-400 placeholder:font-normal resize-none overflow-hidden leading-snug md:leading-normal transition-none"
+                        className="w-full py-3 md:py-4 lg:py-6 !pl-10 md:!pl-12 lg:!pl-14 pr-12 md:pr-14 bg-transparent outline-none text-slate-800 font-bold text-[clamp(0.875rem,1.5vw,1.25rem)] placeholder:text-slate-400 placeholder:font-normal resize-none overflow-hidden leading-snug md:leading-normal transition-none"
                       />
                       <button
                         type="button"
@@ -893,7 +894,7 @@ export function LandingPage() {
             <div className="mb-32">
               <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-16">
                 <div>
-                  <h2 className="text-[clamp(2.25rem,6vw,4.5rem)] font-black text-brand-indigo tracking-tight leading-[0.9]">
+                  <h2 className="text-[clamp(1.75rem,6vw,4.5rem)] font-black text-brand-indigo tracking-tight leading-[0.9]">
                     Популярное <br /> <span className="text-brand-blue">сейчас</span>
                   </h2>
                 </div>
@@ -951,7 +952,7 @@ export function LandingPage() {
             </div>
 
             <div className="pt-0">
-              <h2 className="text-[clamp(2.25rem,6vw,4.5rem)] font-black text-brand-indigo mb-[clamp(2.5rem,5vw,5rem)] tracking-tight leading-[0.9]">
+              <h2 className="text-[clamp(1.75rem,6vw,4.5rem)] font-black text-brand-indigo mb-[clamp(2.5rem,5vw,5rem)] tracking-tight leading-[0.9]">
                 Ответы <br /> <span className="text-brand-blue">на вопросы</span>
               </h2>
               <div className="space-y-32">
@@ -968,10 +969,10 @@ export function LandingPage() {
                       />
                     </div>
                     <div className="w-full md:w-1/2 text-left">
-                      <h4 className="text-[clamp(1.5rem,4vw,2.5rem)] font-black text-brand-indigo mb-8 leading-tight tracking-tight">
+                      <h4 className="text-[clamp(1.25rem,4vw,2.5rem)] font-black text-brand-indigo mb-8 leading-tight tracking-tight">
                         {card.title}
                       </h4>
-                      <p className="text-slate-500 text-[clamp(1.125rem,2vw,1.25rem)] font-medium leading-relaxed">
+                      <p className="text-slate-500 text-[clamp(1rem,2vw,1.25rem)] font-medium leading-relaxed">
                         {' '}
                         {card.desc}
                       </p>

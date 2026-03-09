@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="https://api-maps.yandex.ru/3.0/?apikey=6d06a9cc-e9d6-4e55-9b2f-cd8fc32223bb&lang=ru_RU"></script>
+  </head>
+  <body>
+    <div id="output">Loading...</div>
+    <script>
+      async function test() {
+        try {
+          await ymaps3.ready;
+          const out = document.getElementById('output');
+          
+          if (typeof ymaps3.route !== 'undefined') {
+            try {
+              const r = await ymaps3.route({
+                points: [[37.6, 55.7], [37.7, 55.8]],
+                type: 'driving'
+              });
+              out.textContent = "Route built! " + typeof r[0].toRoute;
+            } catch(err) {
+              out.textContent = "Error building route: " + (err.message || String(err));
+            }
+          } else {
+            out.textContent = "ymaps3.route is undefined";
+          }
+        } catch(e) {
+          document.getElementById('output').textContent = "Error: " + e.message;
+        }
+      }
+      test();
+    </script>
+  </body>
+</html>

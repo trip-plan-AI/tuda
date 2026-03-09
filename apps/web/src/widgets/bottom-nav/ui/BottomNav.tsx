@@ -8,7 +8,7 @@ import { cn } from '@/shared/lib/utils'
 
 const NAV = [
   { href: '/', icon: Home, label: 'Главная' },
-  { href: '/planner', icon: Map, label: 'Планировщик' },
+  { href: '/planner', icon: Map, label: 'Маршруты' },
   { href: '/ai-assistant', icon: MessageSquare, label: 'AI' },
   { href: '/profile', icon: User, label: 'Профиль' },
 ]

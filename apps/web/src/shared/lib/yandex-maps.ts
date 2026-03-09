@@ -2,6 +2,11 @@ let loadPromise: Promise<void> | null = null
 
 export function loadYandexMaps(apiKey: string): Promise<void> {
   if (typeof window === 'undefined') return Promise.resolve()
+  
+  // Переносим импорт стилей сюда, чтобы они загружались только на клиенте
+  // @ts-ignore
+  import('@yandex/ymaps3-default-ui-theme/dist/esm/index.css').catch(() => {});
+
   if (loadPromise) return loadPromise
 
   loadPromise = new Promise<void>((resolve, reject) => {

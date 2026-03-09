@@ -11,16 +11,16 @@ const config: Config = {
             hover: '#0284c7',
           },
           indigo: {
-            DEFAULT: '#1e1b4b',
-            hover: '#312e81',
+            DEFAULT: '#6366f1',
+            hover: '#4f46e5',
           },
           yellow: {
             DEFAULT: '#f59e0b',
             hover: '#d97706',
           },
           purple: {
-            DEFAULT: '#9333ea',
-            hover: '#7e22ce',
+            DEFAULT: '#6366f1',
+            hover: '#4f46e5',
           },
           sky: '#0ea5e9', // kept for backwards compatibility if used elsewhere
           amber: '#f59e0b', // kept for backwards compatibility

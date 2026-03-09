@@ -12,5 +12,5 @@ export interface Trip {
   endDate: string | null
   createdAt: string
   updatedAt: string
-  points?: RoutePoint[]
+  points: RoutePoint[]
 }

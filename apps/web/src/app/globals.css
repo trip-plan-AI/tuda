@@ -12,11 +12,15 @@
   --color-brand-amber: #f59e0b;
   --color-brand-yellow: #f59e0b;
   --color-brand-yellow-hover: #d97706;
-  --color-brand-purple: #9333ea;
-  --color-brand-purple-hover: #7e22ce;
+  --color-brand-purple: #6366f1;
+  --color-brand-purple-hover: #4f46e5;
   --color-brand-light: #f0f9ff;
   --color-brand-bg: #f0f6ff;
   --font-weight-black: 800;
+}
+
+html {
+  scrollbar-gutter: stable;
 }
 
 html,
@@ -176,7 +180,11 @@ a {
 }
 
 button {
-  cursor: pointer !important;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
 }
 
 /* Hide number input spinners */
