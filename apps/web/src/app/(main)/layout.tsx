@@ -10,21 +10,19 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const isLanding = pathname === '/';
   
-  const isProfile = pathname?.startsWith('/profile');
-
-  return (
+return (
     // 1. Добавили `flex flex-col`, чтобы Header, Контент и Footer аккуратно делили высоту экрана
-    <div className="bg-white h-screen flex flex-col">
+    <div className="bg-white min-h-[112vh] w-full flex flex-col" style={{zoom: 0.9}}>
       {isLanding ? (
         <>
           <div className="relative">
             <div className="absolute top-0 left-0 right-0 z-50">
               <Header />
             </div>
-            <div className="flex flex-1 justify-center w-full">
-              <div className="flex w-full max-w">
+            <div className="flex flex-1 w-full">
+              <div className="flex w-full">
                 <Sidebar />
-                <main className="flex-1 overflow-auto bg-white min-w-0">
+                <main className="flex-1 bg-white min-w-0">
                   {children}
                 </main>
               </div>
@@ -36,10 +34,10 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       ) : (
         <>
           <Header />
-          <div className="flex flex-1 justify-center w-full pt-0">
-            <div className={`flex w-full ${isProfile ? 'max-w-[1900px] ' : 'max-w-[1104px]'}`}>
+          <div className="flex flex-1 w-full pt-0">
+            <div className="flex w-full">
               <Sidebar />
-              <main className={`flex-1 flex flex-col relative w-full min-w-0 bg-white ${isProfile ? '' : 'max-w-5xl'}`}>
+              <main className="flex-1 flex flex-col relative w-full min-w-0 bg-white">
                 {children}
               </main>
             </div>

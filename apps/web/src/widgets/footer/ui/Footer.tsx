@@ -14,7 +14,7 @@ export function Footer() {
 
   // Если это внутренняя страница на мобилке — скрываем подвал полностью (там BottomNav)
   // На десктопе внутренние страницы показывают подвал
-  const footerClasses = `${isProfilePage ? '' : 'border-t border-white/10'} ${isLanding ? 'bg-white' : 'bg-black'} py-12 z-20 ${
+  const footerClasses = `${isProfilePage ? '' : 'border-t border-slate-100'} ${isLanding ? 'bg-white' : 'bg-black'} py-12 z-20 shrink-0 ${
     isInternalPage ? 'hidden md:block' : ''
   }`;
 
