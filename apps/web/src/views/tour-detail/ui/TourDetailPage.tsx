@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Cloud, CloudSun, Sun, Wind } from 'lucide-react';
+import { ArrowLeft, Clock, Cloud, CloudSun, MapPin, Sun, Wind } from 'lucide-react';
 import { useTripStore, tripsApi } from '@/entities/trip';
 import type { Trip } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point';
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/shared/ui';
+import { cn } from '@/shared/lib/utils';
 import { env } from '@/shared/config/env';
 
 const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
@@ -25,15 +26,37 @@ interface TourDetailPageProps {
 
 const weatherIcons = [Cloud, Sun, CloudSun, Wind];
 
+function formatDuration(seconds: number) {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const parts = [];
+  if (d > 0) parts.push(`${d} дн.`);
+  if (h > 0) parts.push(`${h} ч`);
+  if (m > 0) parts.push(`${m} мин`);
+  return parts.length > 0 ? parts.join('  ') : '0 мин';
+}
+
+function formatDistance(meters: number) {
+  if (meters < 1000) return `${Math.round(meters)} м`;
+  return `${(meters / 1000).toFixed(1)} км`;
+}
+
 export function TourDetailPage({ tourId }: TourDetailPageProps) {
   const router = useRouter();
-  const { currentTrip, setCurrentTrip, updateCurrentTrip, setPoints, clearPlanner, isDirty } = useTripStore();
+  const { currentTrip, setCurrentTrip, setPoints, clearPlanner, isDirty } = useTripStore();
   const points = currentTrip?.points || [];
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
   const [isOpening, setIsOpening] = useState(false);
   const [showConfirmOverwrite, setShowConfirmOverwrite] = useState(false);
   const [tour, setTour] = useState<Trip | null>(null);
   const [loading, setLoading] = useState(true);
+  const [routeInfo, setRouteInfo] = useState<{
+    duration: number;
+    distance: number;
+    legs: { duration: number; distance: number }[];
+  } | null>(null);
+  const [isRouteLoading, setIsRouteLoading] = useState(false);
 
   // Загружаем данные тура из API
   useEffect(() => {
@@ -59,18 +82,14 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
         if (!res.ok) return null;
         const data = await res.json();
         const results = data.results ?? [];
-
         if (results.length > 0) {
           const first = results[0];
-          // Извлекаем координаты из uri формата ymapsbm1://geo?ll=lon,lat
           const match = first.uri?.match(/[?&]ll=([^&]+)/);
           if (match) {
             const [lonStr, latStr] = decodeURIComponent(match[1]).split(',');
             const lon = Number(lonStr);
             const lat = Number(latStr);
-            if (Number.isFinite(lon) && Number.isFinite(lat)) {
-              return { lon, lat };
-            }
+            if (Number.isFinite(lon) && Number.isFinite(lat)) return { lon, lat };
           }
         }
         return null;
@@ -82,14 +101,14 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     [],
   );
 
-  // Геокодируем город для центрирования карты
+  // Геокодируем город как fallback для центрирования (если нет точек)
   useEffect(() => {
-    if (!tour) return;
+    if (!tour || attractions.length > 0) return;
     const city = tour.title.split(':')[0]?.trim() ?? tour.title;
     geocodeCity(city).then((coords) => {
       if (coords) setFocusCoords(coords);
     });
-  }, [tour, geocodeCity]);
+  }, [tour, attractions.length, geocodeCity]);
 
   const doOpenRoute = useCallback(async () => {
     if (!tour) return;
@@ -98,9 +117,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
       const cityName = tour.title.split(':')[0]?.trim() ?? tour.title;
 
       let coords: { lon: number; lat: number } | null = focusCoords;
-      if (!coords) {
-        coords = await geocodeCity(cityName);
-      }
+      if (!coords) coords = await geocodeCity(cityName);
 
       clearPlanner();
 
@@ -123,43 +140,41 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
 
       const newPoints: RoutePoint[] = [];
       const safeCoords = coords;
-      if (safeCoords) {
-        if (attractions.length > 0) {
-          attractions.forEach((attr, idx) => {
-            newPoints.push({
-              id: `tour-attr-${Date.now()}-${idx}`,
-              tripId,
-              title: attr.title,
-              description: attr.description,
-              address: `${cityName}, ${attr.title}`,
-              lat: attr.lat || safeCoords.lat + (Math.random() - 0.5) * 0.05,
-              lon: attr.lon || safeCoords.lon + (Math.random() - 0.5) * 0.05,
-              budget: attr.budget,
-              visitDate: null,
-              imageUrl: attr.imageUrl,
-              order: idx,
-              createdAt: new Date().toISOString(),
-            });
-          });
-        } else {
+      if (attractions.length > 0) {
+        attractions.forEach((attr, idx) => {
           newPoints.push({
-            id: `tour-city-${Date.now()}`,
+            id: `tour-attr-${Date.now()}-${idx}`,
             tripId,
-            title: cityName,
-            description: null,
-            address: cityName,
-            lat: safeCoords.lat,
-            lon: safeCoords.lon,
-            budget: 0,
+            title: attr.title,
+            description: attr.description,
+            address: attr.address ?? `${cityName}, ${attr.title}`,
+            lat: attr.lat || (safeCoords ? safeCoords.lat + (Math.random() - 0.5) * 0.05 : 0),
+            lon: attr.lon || (safeCoords ? safeCoords.lon + (Math.random() - 0.5) * 0.05 : 0),
+            budget: attr.budget,
             visitDate: null,
-            imageUrl: null,
-            order: 0,
+            imageUrl: attr.imageUrl,
+            order: idx,
             createdAt: new Date().toISOString(),
           });
-        }
+        });
+      } else if (safeCoords) {
+        newPoints.push({
+          id: `tour-city-${Date.now()}`,
+          tripId,
+          title: cityName,
+          description: null,
+          address: cityName,
+          lat: safeCoords.lat,
+          lon: safeCoords.lon,
+          budget: 0,
+          visitDate: null,
+          imageUrl: null,
+          order: 0,
+          createdAt: new Date().toISOString(),
+        });
       }
       setPoints(newPoints);
-      router.push('/planner?profile=direct');
+      router.push('/planner?profile=driving');
     } catch (e) {
       console.error('[TourDetail] Failed to open route:', e);
     } finally {
@@ -242,18 +257,55 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           )}
         </div>
 
-        {/* Карта */}
-        <div className="w-full aspect-[4/5] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden border border-slate-200 shadow-inner bg-slate-50 mb-8">
-          <RouteMap
-            points={[]}
-            focusCoords={focusCoords}
-            onPointDragEnd={() => undefined}
-            isDropdownOpen={false}
-          />
+        {/* Карта с маршрутом */}
+        <div className="mb-4">
+          <div className="w-full aspect-[4/5] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden border border-slate-200 shadow-inner bg-slate-50">
+            <RouteMap
+              points={attractions}
+              focusCoords={attractions.length === 0 ? focusCoords : null}
+              onPointDragEnd={() => undefined}
+              isDropdownOpen={false}
+              routeProfile="driving"
+              onRouteInfoUpdate={setRouteInfo}
+              onRouteInfoLoading={setIsRouteLoading}
+            />
+          </div>
+
+          {/* Route info */}
+          {(routeInfo || isRouteLoading) && (
+            <div className="mt-4 flex justify-center">
+              <div className="flex items-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 relative overflow-hidden transition-all duration-300">
+                {isRouteLoading && (
+                  <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10">
+                    <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
+                  </div>
+                )}
+                <div className={cn('flex items-center gap-6', isRouteLoading && 'opacity-40')}>
+                  {routeInfo && (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <Clock size={18} className="text-brand-sky" />
+                        <span className="text-sm font-black text-slate-700 leading-none">
+                          {formatDuration(routeInfo.duration)}
+                        </span>
+                      </div>
+                      <div className="w-px h-8 bg-brand-indigo/10" />
+                      <div className="flex items-center gap-2">
+                        <MapPin size={18} className="text-brand-indigo" />
+                        <span className="text-sm font-black text-slate-700 leading-none">
+                          {formatDistance(routeInfo.distance)}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Кнопка открытия маршрута */}
-        <div className="flex justify-center mb-20">
+        <div className="flex justify-center mb-20 mt-10">
           <Button
             onClick={handleOpenRoute}
             disabled={isOpening}
@@ -290,9 +342,14 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
 
                     {/* Текст */}
                     <div className="w-full md:w-1/2 text-left">
-                      <h3 className="text-2xl md:text-3xl font-black text-brand-indigo mb-4 tracking-tight">
-                        {place.title}
-                      </h3>
+                      <div className="flex items-center gap-3 mb-4">
+                        <span className="w-8 h-8 rounded-full bg-brand-indigo text-white text-sm font-black flex items-center justify-center shrink-0">
+                          {idx + 1}
+                        </span>
+                        <h3 className="text-2xl md:text-3xl font-black text-brand-indigo tracking-tight">
+                          {place.title}
+                        </h3>
+                      </div>
                       {place.budget != null && (
                         <div className="mb-4">
                           <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-emerald-50 text-emerald-600 text-sm font-black tracking-widest uppercase">
@@ -334,7 +391,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
             </Button>
             <Button
               variant="brand-indigo"
-              className="flex-1 font-black uppercase tracking-widest h-12 rounded-xl shadow-lg shadow-brand-indigo/20"
+                className="flex-1 font-black uppercase tracking-widest h-12 rounded-xl shadow-lg shadow-brand-indigo/20"
               onClick={confirmOverwrite}
             >
               ПРОДОЛЖИТЬ

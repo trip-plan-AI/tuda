@@ -34,7 +34,7 @@ const PHOTOS: PhotoEntry[] = [
   { slug: 'karelia', index: 5, url: 'https://sorola.ru/upload/medialibrary/82d/82de5f694484c9cb93b6e04fffb7c904.jpg' },
   // Kavkaz
   { slug: 'kavkaz', index: 0, url: 'https://ic.pics.livejournal.com/mg5642/66429722/3172696/3172696_original.jpg' },
-  { slug: 'kavkaz', index: 1, url: 'https://7d9e88a8-f178-4098-bea5-48d960920605.selcdn.net/a13af9f9-2f16-4df8-9c6b-507c300745e1/-/format/webp/-/resize/480x/' },
+  { slug: 'kavkaz', index: 1, url: 'https://resize.tripster.ru/rowd1rhtW9fswhgsZBxdrLc5qHU=/fit-in/600x800/filters:no_upscale()/https://cdn.tripster.ru/photos/43ca4123-5bfb-46b1-b97d-0d145feb070b.jpg?width=1200&height=630' },
   { slug: 'kavkaz', index: 2, url: 'https://turby.by/images/06.2024/Screenshot_6015.jpg' },
   { slug: 'kavkaz', index: 3, url: 'https://mashuk-tour.ru/wp-content/uploads/2020/03/Чегемское-ущелье-2.jpg' },
   { slug: 'kavkaz', index: 4, url: 'https://photocentra.ru/images/main120/1205828_main.jpg' },
