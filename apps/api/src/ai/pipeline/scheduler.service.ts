@@ -20,6 +20,7 @@ const VISIT_DURATION: Record<string, number> = {
 const TRANSIT_DURATION_MIN = 25;
 const RESTAURANT_MIN_GAP_MIN = 4 * 60;
 const CAFE_AFTER_MEAL_MIN = 60;
+const TIME_SHIFT_ON_FOOD_CONFLICT_MIN = 30;
 
 @Injectable()
 export class SchedulerService {
@@ -36,6 +37,13 @@ export class SchedulerService {
       (intent.budget_total
         ? Math.max(0, Math.round(intent.budget_total / intent.days))
         : 0);
+    const preferences = intent.preferences_text.toLowerCase();
+    const skipFoodByUser =
+      preferences.includes('без еды') ||
+      preferences.includes('не нужно есть') ||
+      preferences.includes('без питания') ||
+      preferences.includes('без кафе') ||
+      preferences.includes('без ресторанов');
 
     // Добавляем POI до необходимого минимума, дублируя если не хватает
     const targetPoiCount = intent.days * 2;
@@ -69,6 +77,7 @@ export class SchedulerService {
       );
 
       let currentDayPoints = 0;
+      let dayFoodPoints = 0;
 
       let lastRestaurantArrival: number | null = null;
 
@@ -85,7 +94,8 @@ export class SchedulerService {
           lastRestaurantArrival !== null &&
           currentTime - lastRestaurantArrival < RESTAURANT_MIN_GAP_MIN
         ) {
-          poiCursor += 1;
+          currentTime += TIME_SHIFT_ON_FOOD_CONFLICT_MIN;
+          if (currentTime >= endMinutes) break;
           continue;
         }
 
@@ -94,7 +104,8 @@ export class SchedulerService {
           lastRestaurantArrival !== null &&
           currentTime - lastRestaurantArrival < CAFE_AFTER_MEAL_MIN
         ) {
-          poiCursor += 1;
+          currentTime += TIME_SHIFT_ON_FOOD_CONFLICT_MIN;
+          if (currentTime >= endMinutes) break;
           continue;
         }
 
@@ -120,11 +131,52 @@ export class SchedulerService {
         if (isRestaurant) {
           lastRestaurantArrival = currentTime;
         }
+        if (isRestaurant || isCafe) {
+          dayFoodPoints += 1;
+        }
         poiCursor += 1;
         currentDayPoints += 1;
         currentTime = leaveTime + TRANSIT_DURATION_MIN;
 
         if (currentTime >= endMinutes && currentDayPoints >= 2) break; // Позволяем превысить время, если не набрали 2 точки
+      }
+
+      if (!skipFoodByUser && dayFoodPoints === 0) {
+        const fallbackFoodPoi =
+          expandedPois
+            .slice(poiCursor)
+            .find((p) => p.category === 'restaurant') ??
+          expandedPois.find((p) => p.category === 'restaurant') ??
+          expandedPois.slice(poiCursor).find((p) => p.category === 'cafe') ??
+          expandedPois.find((p) => p.category === 'cafe');
+
+        if (fallbackFoodPoi) {
+          const visitDuration = VISIT_DURATION[fallbackFoodPoi.category] ?? 60;
+          const baseStart =
+            points.length > 0
+              ? Math.max(currentTime, startMinutes + 4 * 60)
+              : Math.max(startMinutes + 4 * 60, startMinutes);
+          const leaveTime = baseStart + visitDuration;
+
+          if (leaveTime <= endMinutes) {
+            const pointCost = this.estimatePointCost(
+              fallbackFoodPoi,
+              dayBudget,
+            );
+            points.push({
+              poi_id: fallbackFoodPoi.id,
+              poi: fallbackFoodPoi,
+              order: points.length + 1,
+              arrival_time: this.minutesToTime(baseStart),
+              departure_time: this.minutesToTime(leaveTime),
+              visit_duration_min: visitDuration,
+              travel_from_prev_min:
+                points.length === 0 ? undefined : TRANSIT_DURATION_MIN,
+              estimated_cost: pointCost,
+            });
+            dayCost += pointCost;
+          }
+        }
       }
 
       days.push({
