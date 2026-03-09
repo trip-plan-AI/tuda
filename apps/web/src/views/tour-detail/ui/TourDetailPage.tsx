@@ -201,11 +201,11 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
       <div className="max-w-5xl mx-auto px-4 md:px-6 py-8 md:py-12">
         {/* Назад */}
         <button
-          onClick={() => router.push('/planner?tab=popular')}
+          onClick={() => router.back()}
           className="flex items-center gap-2 text-slate-400 hover:text-brand-indigo font-bold text-sm transition-colors mb-10 group"
         >
           <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
-          Все маршруты
+          Назад
         </button>
 
         {/* Hero */}

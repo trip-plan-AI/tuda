@@ -51,16 +51,6 @@ interface ManualForm {
   budget: string;
 }
 
-interface PopularTourCard {
-  id: string;
-  title: string;
-  desc: string;
-  total: string;
-  img: string;
-  temp: string;
-  tags: string[];
-}
-
 interface GeoSuggestion {
   displayName: string;
   uri?: string;
@@ -91,45 +81,6 @@ const FAQ_CARDS = [
     title: 'Можно ли редактировать маршрут?',
     desc: 'Можно добавлять и удалять точки, изменять бюджет и настраивать маршрут под себя.',
     image: '/assets/images/photo-1503220317375-aaad61436b1b.avif',
-  },
-];
-
-const DEMO_TOURS: PopularTourCard[] = [
-  {
-    id: 'demo-1',
-    title: 'Сочи Weekend',
-    desc: 'Море, горы и гастрономия: короткий насыщенный маршрут для перезагрузки.',
-    total: 'от 49 900 ₽',
-    img: '/assets/images/sochi.webp',
-    temp: '+15°C',
-    tags: ['Все', 'Активный'],
-  },
-  {
-    id: 'demo-2',
-    title: 'Алтай Explorer',
-    desc: 'Трекинг, панорамы и дикая природа — для тех, кто любит активный отдых.',
-    total: 'от 62 000 ₽',
-    img: '/assets/images/altay.webp',
-    temp: '+10°C',
-    tags: ['Все', 'Экстрим'],
-  },
-  {
-    id: 'demo-3',
-    title: 'Карелия Winter',
-    desc: 'Северные озёра, зимние активности и уютные локации для камерного отдыха.',
-    total: 'от 42 500 ₽',
-    img: '/assets/images/karelia.webp',
-    temp: '-3°C',
-    tags: ['Все', 'Зима'],
-  },
-  {
-    id: 'demo-4',
-    title: 'Кавказ Peaks',
-    desc: 'Высокогорные маршруты и захватывающие виды для любителей эмоций.',
-    total: 'от 68 800 ₽',
-    img: '/assets/images/kavkaz.webp',
-    temp: '+5°C',
-    tags: ['Все', 'Экстрим', 'Активный'],
   },
 ];
 
@@ -219,28 +170,16 @@ export function LandingPage() {
     );
   }, [trips, selectedFilter]);
 
-  const fallbackImages = [
-    '/assets/images/sochi.webp',
-    '/assets/images/altay.webp',
-    '/assets/images/karelia.webp',
-    '/assets/images/kavkaz.webp',
-  ];
-
   const popularCards = useMemo(() => {
-    if (filteredTrips.length > 0) {
-      return filteredTrips.map((trip, idx) => ({
-        id: trip.id,
-        title: trip.title,
-        desc: trip.description ?? 'Маршрут с живописными локациями и насыщенной программой.',
-        total: trip.budget ? `${trip.budget.toLocaleString('ru-RU')} ₽` : 'По запросу',
-        img: trip.img || fallbackImages[idx % fallbackImages.length],
-        temp: '+12°',
-      }));
-    }
-
-    if (selectedFilter === 'Все') return DEMO_TOURS;
-    return DEMO_TOURS.filter((tour) => tour.tags.includes(selectedFilter));
-  }, [filteredTrips, selectedFilter]);
+    return filteredTrips.map((trip, idx) => ({
+      id: trip.id,
+      title: trip.title,
+      desc: trip.description ?? 'Маршрут с живописными локациями и насыщенной программой.',
+      total: trip.budget ? `${trip.budget.toLocaleString('ru-RU')} ₽` : 'По запросу',
+      img: trip.img || fallbackImages[idx % fallbackImages.length],
+      temp: trip.temp ?? '+12°',
+    }));
+  }, [filteredTrips]);
 
   // Получение подсказок при вводе
   const getSuggestions = async (
