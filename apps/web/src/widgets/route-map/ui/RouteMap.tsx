@@ -628,6 +628,17 @@ export function RouteMap({
 
             const fromPoint = points[i]!;
             const toPoint = points[i + 1]!;
+            if (!fromPoint || !toPoint) {
+              console.warn('[RouteMap][debug] invalid segment in loadingSegments (segmentsData branch)', {
+                segmentIndex: i,
+                pointsLength: points.length,
+                hasFromPoint: Boolean(fromPoint),
+                hasToPoint: Boolean(toPoint),
+                loadingSegments: Array.from(loadingSegments),
+                pointsSnapshot: points.map((p, idx) => ({ idx, id: p.id, lat: p.lat, lon: p.lon })),
+              });
+              return;
+            }
             const segmentMode = toPoint.transportMode || routeProfile;
             const segmentColor = profileColors[segmentMode];
 
@@ -659,6 +670,17 @@ export function RouteMap({
 
           const fromPoint = points[i]!;
           const toPoint = points[i + 1]!;
+          if (!fromPoint || !toPoint) {
+            console.warn('[RouteMap][debug] invalid segment in loadingSegments (no segmentsData branch)', {
+              segmentIndex: i,
+              pointsLength: points.length,
+              hasFromPoint: Boolean(fromPoint),
+              hasToPoint: Boolean(toPoint),
+              loadingSegments: Array.from(loadingSegments),
+              pointsSnapshot: points.map((p, idx) => ({ idx, id: p.id, lat: p.lat, lon: p.lon })),
+            });
+            return;
+          }
           const segmentMode = toPoint.transportMode || routeProfile;
           const segmentColor = profileColors[segmentMode];
 
