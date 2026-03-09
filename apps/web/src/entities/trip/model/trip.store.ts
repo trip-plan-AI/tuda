@@ -3,6 +3,12 @@ import { persist } from 'zustand/middleware'
 import type { Trip } from './trip.types'
 import type { RoutePoint } from '@/entities/route-point/model/route-point.types'
 
+export type RouteInfoCache = {
+  duration: number
+  distance: number
+  legs: { duration: number; distance: number }[]
+}
+
 interface TripStore {
   _hasHydrated: boolean
   setHasHydrated: (state: boolean) => void
@@ -10,6 +16,8 @@ interface TripStore {
   setSaved: () => void
   currentTrip: Trip | null
   trips: Trip[]
+  cachedRouteInfo: RouteInfoCache | null
+  setCachedRouteInfo: (info: RouteInfoCache | null) => void
   setCurrentTrip: (t: Trip) => void
   setTrips: (ts: Trip[]) => void
   addTrip: (t: Trip) => void
@@ -32,6 +40,8 @@ export const useTripStore = create<TripStore>()(
       setSaved: () => set({ isDirty: false }),
       currentTrip: null,
       trips: [],
+      cachedRouteInfo: null,
+      setCachedRouteInfo: (cachedRouteInfo) => set({ cachedRouteInfo }),
       setCurrentTrip: (currentTrip) => set({ currentTrip, isDirty: false }),
       setTrips: (trips) => set({ trips }),
       addTrip: (t) => set((s) => ({ trips: [t, ...s.trips] })),

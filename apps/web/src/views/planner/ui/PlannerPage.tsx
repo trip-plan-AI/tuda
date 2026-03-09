@@ -614,7 +614,14 @@ export function PlannerPage() {
     duration: number;
     distance: number;
     legs: { duration: number; distance: number }[];
-  } | null>(null);
+  } | null>(() => {
+    const cached = useTripStore.getState().cachedRouteInfo;
+    if (cached) {
+      useTripStore.getState().setCachedRouteInfo(null);
+      return cached;
+    }
+    return null;
+  });
   const [isRouteLoading, setIsRouteLoading] = useState(false);
   const [affectedSegments, setAffectedSegments] = useState<Set<number>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
