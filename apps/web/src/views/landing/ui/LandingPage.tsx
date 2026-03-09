@@ -219,6 +219,13 @@ export function LandingPage() {
     );
   }, [trips, selectedFilter]);
 
+  const fallbackImages = [
+    '/assets/images/sochi.webp',
+    '/assets/images/altay.webp',
+    '/assets/images/karelia.webp',
+    '/assets/images/kavkaz.webp',
+  ];
+
   const popularCards = useMemo(() => {
     if (filteredTrips.length > 0) {
       return filteredTrips.map((trip, idx) => ({
@@ -226,14 +233,7 @@ export function LandingPage() {
         title: trip.title,
         desc: trip.description ?? 'Маршрут с живописными локациями и насыщенной программой.',
         total: trip.budget ? `${trip.budget.toLocaleString('ru-RU')} ₽` : 'По запросу',
-        img:
-          idx % 4 === 0
-            ? '/assets/images/sochi.webp'
-            : idx % 4 === 1
-              ? '/assets/images/altay.webp'
-              : idx % 4 === 2
-                ? '/assets/images/karelia.webp'
-                : '/assets/images/kavkaz.webp',
+        img: trip.img || fallbackImages[idx % fallbackImages.length],
         temp: '+12°',
       }));
     }
@@ -848,6 +848,10 @@ export function LandingPage() {
                 {QUICK_FILTERS.map((filter, idx) => (
                   <button
                     key={idx}
+                    onClick={() => {
+                      void sendAiQuery(filter.label);
+                      router.push('/ai-assistant');
+                    }}
                     className="px-5 py-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full text-white text-xs md:text-sm font-bold hover:bg-white/20 transition-none"
                   >
                     {filter.icon} {filter.label}
@@ -902,18 +906,10 @@ export function LandingPage() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-20 md:gap-16">
                 {popularCards.map((trip, idx) => {
                   const Icon = weatherIcons[idx % weatherIcons.length] ?? Cloud;
-                  const isDemo = String(trip.id).startsWith('demo-');
-                  const tourId = isDemo ? String(trip.id).replace('demo-', '') : null;
                   return (
                     <Link
                       key={trip.id}
-                      href={tourId ? `/tours/${tourId}` : '#'}
-                      onClick={(e) => {
-                        if (!isDemo) {
-                          e.preventDefault();
-                          handleSearch();
-                        }
-                      }}
+                      href={`/tours/${trip.id}`}
                       className="group block w-full cursor-pointer"
                     >
                       <div className="relative aspect-[4/5] md:aspect-[16/10] rounded-[3rem] overflow-hidden mb-8 shadow-2xl isolation-auto">
