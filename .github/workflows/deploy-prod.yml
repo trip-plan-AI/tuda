@@ -131,34 +131,67 @@ jobs:
             echo "[deploy][warn] db backup failed, continue deploy"
           fi
 
-          echo "[deploy] run db:push"
+          echo "[deploy][step] db:push started"
+          echo "[deploy][step] db:push started"
           if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T --no-deps api pnpm --filter api db:push --force < /dev/null; then
-            echo "[deploy] db:push finished"
+            echo "[deploy][step] db:push finished"
+            echo "[deploy][step] db:push finished"
           else
-            echo "[deploy][warn] db:push returned non-zero, continue deploy"
+            echo "[deploy][error] db:push failed"
+            exit 1
+            echo "[deploy][error] db:push failed"
+            exit 1
           fi
 
-          echo "[deploy] run db:seed"
-          if docker compose -f docker-compose.prod.yml --profile seed run --rm -T db-seed; then
-            echo "[deploy] db:seed finished"
+          echo "[deploy][step] db:seed started"
+          if docker compose -f docker-compose.prod.yml --profile seed run --rm -T db-seed < /dev/null; then
+            echo "[deploy][step] db:seed finished"
+          echo "[deploy][step] db:seed started"
+          if docker compose -f docker-compose.prod.yml --profile seed run --rm -T db-seed < /dev/null; then
+            echo "[deploy][step] db:seed finished"
           else
             echo "[deploy][error] db:seed failed"
             docker compose -f docker-compose.prod.yml logs --no-color --tail=200 db-seed || true
             exit 1
           fi
 
-          echo "[deploy] public schema (tables and columns)"
+          echo "[deploy][step] schema log started"
+          echo "[deploy][step] schema log started"
           if docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT c.table_name, c.column_name, c.data_type, c.is_nullable FROM information_schema.columns AS c WHERE c.table_schema = '\''public'\'' ORDER BY c.table_name, c.ordinal_position;"'; then
-            echo "[deploy] schema log finished"
+            echo "[deploy][step] schema log finished"
+            echo "[deploy][step] schema log finished"
           else
             echo "[deploy][warn] schema log failed, continue deploy"
           fi
 
+          echo "[deploy][step] docker build started"
+          echo "[deploy][step] docker build started"
           docker compose -f docker-compose.prod.yml build --no-cache api nginx
+          echo "[deploy][step] docker build finished"
+
+          echo "[deploy][step] docker up started"
+          echo "[deploy][step] docker build finished"
+
+          echo "[deploy][step] docker up started"
           docker compose -f docker-compose.prod.yml up -d --build
+          echo "[deploy][step] docker up finished"
+
+          echo "[deploy][step] wait healthchecks"
+          docker compose -f docker-compose.prod.yml ps
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T api sh -lc 'node -e "http=require('"'"'http'"'"');req=http.get('"'"'http://127.0.0.1:3001/api/trips/predefined'"'"',res=>process.exit(res.statusCode<500?0:1));req.on('"'"'error'"'"',()=>process.exit(1));"'
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T web sh -lc 'node -e "http=require('"'"'http'"'"');req=http.get('"'"'http://127.0.0.1:3000/'"'"',res=>process.exit(res.statusCode<500?0:1));req.on('"'"'error'"'"',()=>process.exit(1));"'
+          echo "[deploy][step] docker up finished"
+
+          echo "[deploy][step] wait healthchecks"
+          docker compose -f docker-compose.prod.yml ps
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T api sh -lc 'node -e "http=require('"'"'http'"'"');req=http.get('"'"'http://127.0.0.1:3001/api/trips/predefined'"'"',res=>process.exit(res.statusCode<500?0:1));req.on('"'"'error'"'"',()=>process.exit(1));"'
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T web sh -lc 'node -e "http=require('"'"'http'"'"');req=http.get('"'"'http://127.0.0.1:3000/'"'"',res=>process.exit(res.statusCode<500?0:1));req.on('"'"'error'"'"',()=>process.exit(1));"'
 
           echo "[deploy] docker images"
           docker compose -f docker-compose.prod.yml images
           echo "[deploy] docker status"
           docker compose -f docker-compose.prod.yml ps
+          echo "[deploy][done] all deploy steps completed"
           EOF
