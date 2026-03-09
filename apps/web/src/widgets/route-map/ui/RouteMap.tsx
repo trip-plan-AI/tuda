@@ -66,6 +66,7 @@ export function RouteMap({
   }
 
   const [segmentsData, setSegmentsData] = useState<SegmentData[] | null>(null);
+  const [loadingSegments, setLoadingSegments] = useState<Set<number>>(new Set());
 
   const onMapClickRef = useRef(onMapClick);
   const isAddPointModeRef = useRef(isAddPointMode);
@@ -79,6 +80,10 @@ export function RouteMap({
   const transportModesKey = useMemo(
     () => points.map(p => p.transportMode || 'driving').join(','),
     [points],
+  );
+  const loadingSegmentsKey = useMemo(
+    () => Array.from(loadingSegments).sort().join(','),
+    [loadingSegments],
   );
 
   // Сброс флагов при полной очистке маршрута
@@ -312,6 +317,7 @@ export function RouteMap({
 
     // Отправляем информацию о затронутых сегментах
     onAffectedSegmentsChange?.(affectedSegments);
+    setLoadingSegments(affectedSegments);
     onRouteInfoLoading?.(true);
 
     const fetchAffectedSegments = async () => {
@@ -371,6 +377,7 @@ export function RouteMap({
         setSegmentsData(updatedSegments as SegmentData[]);
         prevSegmentsRef.current = updatedSegments as SegmentData[];
       }
+      setLoadingSegments(new Set());
       onRouteInfoLoading?.(false);
     };
 
@@ -584,6 +591,11 @@ export function RouteMap({
             return; // Не показываем маршрут для затронутых сегментов
           }
 
+          // Пропускаем загружаемые сегменты - покажем пунктирные линии для них ниже
+          if (loadingSegments.has(i)) {
+            return;
+          }
+
           const color = profileColors[segment.profile] || activeColor;
           const stroke: any = {
             color,
@@ -604,17 +616,49 @@ export function RouteMap({
           mapRef.current.addChild(polyline);
           objectsRef.current.push(polyline);
         });
-      } else {
-        // Во время загрузки: показываем пунктирную линию для каждого сегмента с его цветом
-        points.slice(1).forEach((point, i) => {
+
+        // Показываем пунктирные линии для загружаемых сегментов
+        if (loadingSegments.size > 0) {
+          loadingSegments.forEach((i) => {
+            // Пропускаем сегменты, которые затронуты перетаскиванием
+            const dragIdx = draggedPointIndexRef.current;
+            if (dragIdx !== null && (dragIdx === i || dragIdx === i + 1)) {
+              return;
+            }
+
+            const fromPoint = points[i]!;
+            const toPoint = points[i + 1]!;
+            const segmentMode = toPoint.transportMode || routeProfile;
+            const segmentColor = profileColors[segmentMode];
+
+            const stroke: any = {
+              color: segmentColor,
+              width: strokeWidth,
+              opacity: 0.5,
+              dash: [10, 10],
+            };
+
+            const coords: [number, number][] = [[fromPoint.lon, fromPoint.lat], [toPoint.lon, toPoint.lat]];
+            const placeholderPolyline = new ymaps3.YMapFeature({
+              geometry: { type: 'LineString', coordinates: coords },
+              style: { stroke: [stroke] },
+            });
+
+            mapRef.current.addChild(placeholderPolyline);
+            objectsRef.current.push(placeholderPolyline);
+          });
+        }
+      } else if (loadingSegments.size > 0) {
+        // Во время загрузки (нет segmentsData): показываем пунктирную линию только для загружаемых сегментов
+        loadingSegments.forEach((i) => {
           // Пропускаем сегменты, которые затронуты перетаскиванием
           const dragIdx = draggedPointIndexRef.current;
           if (dragIdx !== null && (dragIdx === i || dragIdx === i + 1)) {
-            return; // Не показываем плейсхолдер для затронутых сегментов (будут в onDragMove)
+            return;
           }
 
           const fromPoint = points[i]!;
-          const toPoint = point;
+          const toPoint = points[i + 1]!;
           const segmentMode = toPoint.transportMode || routeProfile;
           const segmentColor = profileColors[segmentMode];
 
@@ -631,13 +675,12 @@ export function RouteMap({
             style: { stroke: [stroke] },
           });
 
-          if (i === 0) polylineRef.current = placeholderPolyline;
           mapRef.current.addChild(placeholderPolyline);
           objectsRef.current.push(placeholderPolyline);
         });
       }
     }
-  }, [pointsKey, transportModesKey, mapReady, routeProfile, zoom, segmentsData]);
+  }, [pointsKey, transportModesKey, mapReady, routeProfile, zoom, segmentsData, loadingSegmentsKey]);
 
   // Прочие эффекты (зум при клике, фит на старте)
   useEffect(() => {
