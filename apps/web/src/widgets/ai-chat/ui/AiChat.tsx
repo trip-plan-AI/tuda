@@ -8,6 +8,7 @@ import { MessageBubble } from './MessageBubble';
 import type { ChatMessage } from '@/shared/types/ai-chat';
 
 interface AiChatProps {
+  chatKey?: string;
   messages: ChatMessage[];
   isLoading?: boolean;
   onSend: (query: string) => void | Promise<void>;
@@ -45,6 +46,7 @@ function AiResponseSkeleton() {
 }
 
 export function AiChat({
+  chatKey,
   messages,
   isLoading = false,
   onSend,
@@ -70,6 +72,12 @@ export function AiChat({
     container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
   }, [messages, isLoading]);
 
+  useEffect(() => {
+    setQuery('');
+    setValidationError(null);
+    isFirstAutoScrollRef.current = true;
+  }, [chatKey]);
+
   const handleSubmit = () => {
     const trimmed = query.trim();
     if (!trimmed || isLoading) return;
@@ -84,8 +92,8 @@ export function AiChat({
   };
 
   return (
-    <div className="flex h-full min-h-[560px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-slate-50">
-      <div className="border-b border-slate-200 bg-white px-5 py-4">
+    <div className="flex h-full max-h-[800px] min-h-[560px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 xl:max-h-[calc(100vh-140px)]">
+      <div className="shrink-0 border-b border-slate-200 bg-white px-5 py-4">
         <h2 className="text-base font-bold text-brand-indigo">AI Ассистент</h2>
         <p className="mt-1 text-xs text-slate-500">
           Спросите про маршрут, бюджет и идеи для путешествия
@@ -115,7 +123,7 @@ export function AiChat({
         )}
       </div>
 
-      <div className="border-t border-slate-200 bg-white px-4 py-4">
+      <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-4">
         <div className="mb-3 flex flex-wrap gap-2">
           {quickActions.map((action) => (
             <button
