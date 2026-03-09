@@ -86,6 +86,12 @@ const FAQ_CARDS = [
 
 const weatherIcons = [Cloud, Sun, CloudSun, Wind];
 
+const fallbackImages = [
+  '/assets/images/photo-1524850011238-e3d235c7d4c9.avif',
+  '/assets/images/photo-1460925895917-afdab827c52f.avif',
+  '/assets/images/photo-1503220317375-aaad61436b1b.avif',
+];
+
 export function LandingPage() {
   const router = useRouter();
   const [modal, setModal] = useState<Modal>(null);
