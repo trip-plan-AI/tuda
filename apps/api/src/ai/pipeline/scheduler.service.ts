@@ -45,194 +45,121 @@ export class SchedulerService {
       preferences.includes('без кафе') ||
       preferences.includes('без ресторанов');
 
-    // Добавляем POI до необходимого минимума, дублируя если не хватает
+    // Минимальная целевая ёмкость маршрута
     const targetPoiCount = intent.days * 2;
     const expandedPois = [...pois];
-    if (expandedPois.length > 0 && expandedPois.length < targetPoiCount) {
-      this.logger.warn(
-        `Only ${expandedPois.length} POIs available, but ${targetPoiCount} needed. Duplicating points to ensure minimum 2 per day.`,
-      );
-      let cloneCursor = 0;
-      while (expandedPois.length < targetPoiCount) {
-        expandedPois.push(expandedPois[cloneCursor % pois.length]);
-        cloneCursor++;
-      }
-    }
 
     const days: PlanDay[] = [];
-    let poiCursor = 0;
+    const usedPoiIds = new Set<string>();
 
     for (let dayNumber = 1; dayNumber <= intent.days; dayNumber += 1) {
       const points: PlanDayPoint[] = [];
       let currentTime = startMinutes;
       let dayCost = 0;
-
-      // Выделяем POI для текущего дня
-      // Либо равномерно, либо минимум 2
-      const pointsRemaining = expandedPois.length - poiCursor;
-      const daysRemaining = intent.days - dayNumber + 1;
-      const pointsForThisDay = Math.max(
-        2,
-        Math.ceil(pointsRemaining / daysRemaining),
-      );
-
-      let currentDayPoints = 0;
-      let dayFoodPoints = 0;
-      let dayNonFoodPoints = 0;
-      const hasAnyNonFood = expandedPois.some(
-        (p) => p.category !== 'restaurant' && p.category !== 'cafe',
-      );
-
+      let dayRestaurantPoints = 0;
+      let dayCafePoints = 0;
       let lastRestaurantArrival: number | null = null;
 
-      while (
-        poiCursor < expandedPois.length &&
-        currentDayPoints < pointsForThisDay
-      ) {
-        const poi = expandedPois[poiCursor];
-        const isRestaurant = poi.category === 'restaurant';
-        const isCafe = poi.category === 'cafe';
+      const daysRemaining = intent.days - dayNumber + 1;
+      const remainingUnique = expandedPois.filter((p) => !usedPoiIds.has(p.id));
+      const pointsForThisDay = Math.max(
+        2,
+        Math.ceil(remainingUnique.length / daysRemaining),
+      );
 
-        // Если в целом есть не-food точки, сначала стараемся добавить хотя бы одну
-        // в текущий день, чтобы день не состоял только из питания.
-        if (
-          dayNonFoodPoints === 0 &&
-          hasAnyNonFood &&
-          (isRestaurant || isCafe)
-        ) {
-          poiCursor += 1;
-          continue;
-        }
+      const remainingNonFood = remainingUnique.filter(
+        (p) => p.category !== 'restaurant' && p.category !== 'cafe',
+      );
+      const remainingFood = remainingUnique.filter(
+        (p) => p.category === 'restaurant' || p.category === 'cafe',
+      );
 
-        if (
-          isRestaurant &&
-          lastRestaurantArrival !== null &&
-          currentTime - lastRestaurantArrival < RESTAURANT_MIN_GAP_MIN
-        ) {
-          currentTime += TIME_SHIFT_ON_FOOD_CONFLICT_MIN;
-          if (currentTime >= endMinutes) break;
-          continue;
-        }
-
-        if (
-          isCafe &&
-          lastRestaurantArrival !== null &&
-          currentTime - lastRestaurantArrival < CAFE_AFTER_MEAL_MIN
-        ) {
-          currentTime += TIME_SHIFT_ON_FOOD_CONFLICT_MIN;
-          if (currentTime >= endMinutes) break;
-          continue;
-        }
-
+      const tryAddPoint = (poi: FilteredPoi, customStart?: number): boolean => {
+        const arrival = customStart ?? currentTime;
         const visitDuration = VISIT_DURATION[poi.category] ?? 60;
+        const leaveTime = arrival + visitDuration;
+        if (leaveTime > endMinutes) return false;
+
         const pointCost = this.estimatePointCost(poi, dayBudget);
-        const leaveTime = currentTime + visitDuration;
-
-        if (leaveTime > endMinutes) break;
-
         points.push({
           poi_id: poi.id,
           poi,
           order: points.length + 1,
-          arrival_time: this.minutesToTime(currentTime),
+          arrival_time: this.minutesToTime(arrival),
           departure_time: this.minutesToTime(leaveTime),
           visit_duration_min: visitDuration,
           travel_from_prev_min:
-            points.length === 0 ? undefined : TRANSIT_DURATION_MIN,
+            points.length === 1 ? undefined : TRANSIT_DURATION_MIN,
           estimated_cost: pointCost,
         });
 
         dayCost += pointCost;
-        if (isRestaurant) {
-          lastRestaurantArrival = currentTime;
-        }
-        if (isRestaurant || isCafe) {
-          dayFoodPoints += 1;
-        } else {
-          dayNonFoodPoints += 1;
-        }
-        poiCursor += 1;
-        currentDayPoints += 1;
         currentTime = leaveTime + TRANSIT_DURATION_MIN;
+        usedPoiIds.add(poi.id);
 
-        if (currentTime >= endMinutes && currentDayPoints >= 2) break; // Позволяем превысить время, если не набрали 2 точки
+        if (poi.category === 'restaurant') {
+          dayRestaurantPoints += 1;
+          lastRestaurantArrival = arrival;
+        } else if (poi.category === 'cafe') {
+          dayCafePoints += 1;
+        }
+
+        return true;
+      };
+
+      // Шаг 1: минимум 1 non-food (если доступно)
+      const mandatoryNonFood = remainingNonFood[0];
+      if (mandatoryNonFood) {
+        tryAddPoint(mandatoryNonFood);
       }
 
-      if (!skipFoodByUser && dayFoodPoints === 0) {
-        const fallbackFoodPoi =
-          expandedPois
-            .slice(poiCursor)
-            .find((p) => p.category === 'restaurant') ??
-          expandedPois.find((p) => p.category === 'restaurant') ??
-          expandedPois.slice(poiCursor).find((p) => p.category === 'cafe') ??
-          expandedPois.find((p) => p.category === 'cafe');
-
-        if (fallbackFoodPoi) {
-          const visitDuration = VISIT_DURATION[fallbackFoodPoi.category] ?? 60;
-          const baseStart =
-            points.length > 0
-              ? Math.max(currentTime, startMinutes + 4 * 60)
-              : Math.max(startMinutes + 4 * 60, startMinutes);
-          const leaveTime = baseStart + visitDuration;
-
-          if (leaveTime <= endMinutes) {
-            const pointCost = this.estimatePointCost(
-              fallbackFoodPoi,
-              dayBudget,
-            );
-            points.push({
-              poi_id: fallbackFoodPoi.id,
-              poi: fallbackFoodPoi,
-              order: points.length + 1,
-              arrival_time: this.minutesToTime(baseStart),
-              departure_time: this.minutesToTime(leaveTime),
-              visit_duration_min: visitDuration,
-              travel_from_prev_min:
-                points.length === 0 ? undefined : TRANSIT_DURATION_MIN,
-              estimated_cost: pointCost,
-            });
-            dayCost += pointCost;
-          }
+      // Шаг 2: минимум 1 food (если не отключено пользователем)
+      if (!skipFoodByUser && remainingFood.length > 0) {
+        const mandatoryFood =
+          remainingFood.find((p) => p.category === 'restaurant') ??
+          remainingFood[0];
+        if (mandatoryFood && !usedPoiIds.has(mandatoryFood.id)) {
+          const mealStart = Math.max(currentTime, startMinutes + 3 * 60);
+          tryAddPoint(mandatoryFood, mealStart);
         }
       }
 
-      // Если день получился без не-food активностей, пытаемся добавить хотя бы одну
-      // (если такие активности вообще есть в выдаче).
-      if (dayNonFoodPoints === 0) {
-        const fallbackActivityPoi =
-          expandedPois
-            .slice(poiCursor)
-            .find(
-              (p) => p.category !== 'restaurant' && p.category !== 'cafe',
-            ) ??
-          expandedPois.find(
-            (p) => p.category !== 'restaurant' && p.category !== 'cafe',
-          );
+      // Шаг 3: заполняем день до целевого объема, соблюдая ограничения питания
+      while (points.length < pointsForThisDay && currentTime < endMinutes) {
+        const candidates = expandedPois.filter((p) => !usedPoiIds.has(p.id));
+        if (candidates.length === 0) break;
 
-        if (fallbackActivityPoi) {
-          const visitDuration =
-            VISIT_DURATION[fallbackActivityPoi.category] ?? 60;
-          const baseStart = Math.max(currentTime, startMinutes + 2 * 60);
-          const leaveTime = baseStart + visitDuration;
-
-          if (leaveTime <= endMinutes) {
-            const pointCost = this.estimatePointCost(
-              fallbackActivityPoi,
-              dayBudget,
-            );
-            points.push({
-              poi_id: fallbackActivityPoi.id,
-              poi: fallbackActivityPoi,
-              order: points.length + 1,
-              arrival_time: this.minutesToTime(baseStart),
-              departure_time: this.minutesToTime(leaveTime),
-              visit_duration_min: visitDuration,
-              travel_from_prev_min:
-                points.length === 0 ? undefined : TRANSIT_DURATION_MIN,
-              estimated_cost: pointCost,
-            });
-            dayCost += pointCost;
+        const next = candidates.find((poi) => {
+          if (poi.category === 'restaurant') {
+            if (dayRestaurantPoints >= 3) return false;
+            if (
+              lastRestaurantArrival !== null &&
+              currentTime - lastRestaurantArrival < RESTAURANT_MIN_GAP_MIN
+            ) {
+              return false;
+            }
           }
+
+          if (poi.category === 'cafe') {
+            if (dayCafePoints >= 2) return false;
+            if (
+              lastRestaurantArrival !== null &&
+              currentTime - lastRestaurantArrival < CAFE_AFTER_MEAL_MIN
+            ) {
+              return false;
+            }
+          }
+
+          return true;
+        });
+
+        if (!next) {
+          currentTime += TIME_SHIFT_ON_FOOD_CONFLICT_MIN;
+          continue;
+        }
+
+        if (!tryAddPoint(next)) {
+          break;
         }
       }
 
@@ -256,10 +183,10 @@ export class SchedulerService {
       total_budget_estimated: totalBudgetEstimated,
       days,
       notes:
-        poiCursor < expandedPois.length
+        usedPoiIds.size < expandedPois.length
           ? 'Часть точек не попала в расписание из-за ограничения времени дня.'
           : pois.length < targetPoiCount
-            ? 'Из-за недостатка мест в городе некоторые точки добавлены в маршрут повторно.'
+            ? 'В городе недостаточно уникальных мест для полного покрытия всех дней.'
             : undefined,
     };
 
