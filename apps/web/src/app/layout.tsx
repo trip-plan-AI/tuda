@@ -30,7 +30,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru">
+    <html lang="ru" style={{ zoom: 0.9 }}>
       <body className={`${inter.variable} antialiased font-sans`}>
         {children}
         <Toaster richColors position="top-right" />

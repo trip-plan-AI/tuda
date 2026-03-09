@@ -221,14 +221,20 @@ export function LandingPage() {
 
   const popularCards = useMemo(() => {
     if (filteredTrips.length > 0) {
-      return filteredTrips.map((trip) => ({
+      return filteredTrips.map((trip, idx) => ({
         id: trip.id,
         title: trip.title,
         desc: trip.description ?? 'Маршрут с живописными локациями и насыщенной программой.',
         total: trip.budget ? `${trip.budget.toLocaleString('ru-RU')} ₽` : 'По запросу',
-        img: trip.img ?? '/assets/images/sochi.webp',
-        temp: trip.temp ?? '+12°',
-        tags: trip.tags ?? ['Все'],
+        img:
+          idx % 4 === 0
+            ? '/assets/images/sochi.webp'
+            : idx % 4 === 1
+              ? '/assets/images/altay.webp'
+              : idx % 4 === 2
+                ? '/assets/images/karelia.webp'
+                : '/assets/images/kavkaz.webp',
+        temp: '+12°',
       }));
     }
 
@@ -452,7 +458,7 @@ export function LandingPage() {
       if (searchQuery.trim()) {
         void sendAiQuery(searchQuery);
       }
-      router.push('/ai-assistent');
+      router.push('/ai-assistant');
       return;
     }
 
@@ -472,7 +478,7 @@ export function LandingPage() {
     <>
       <div className="relative flex flex-col min-h-full bg-white">
         {/* 1. CINEMATIC HERO SECTION (Layla Style) */}
-        <div className="relative h-auto md:h-screen flex flex-col items-center justify-start md:justify-center overflow-hidden pt-24 pb-8 md:pt-0 md:pb-0">
+        <div className="relative h-auto md:h-screen flex flex-col items-center justify-start md:justify-center overflow-hidden py-8 md:py-0">
           {/* Background Layer */}
           <div className="absolute inset-0 z-0">
             <div
@@ -842,11 +848,6 @@ export function LandingPage() {
                 {QUICK_FILTERS.map((filter, idx) => (
                   <button
                     key={idx}
-                    onClick={() => {
-                      const query = `${filter.icon} ${filter.label}`;
-                      void sendAiQuery(query);
-                      router.push('/ai-assistant');
-                    }}
                     className="px-5 py-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full text-white text-xs md:text-sm font-bold hover:bg-white/20 transition-none"
                   >
                     {filter.icon} {filter.label}
@@ -902,12 +903,13 @@ export function LandingPage() {
                 {popularCards.map((trip, idx) => {
                   const Icon = weatherIcons[idx % weatherIcons.length] ?? Cloud;
                   const isDemo = String(trip.id).startsWith('demo-');
+                  const tourId = isDemo ? String(trip.id).replace('demo-', '') : null;
                   return (
                     <Link
                       key={trip.id}
-                      href={isDemo ? '#' : `/tours/${trip.id}`}
+                      href={tourId ? `/tours/${tourId}` : '#'}
                       onClick={(e) => {
-                        if (isDemo) {
+                        if (!isDemo) {
                           e.preventDefault();
                           handleSearch();
                         }
