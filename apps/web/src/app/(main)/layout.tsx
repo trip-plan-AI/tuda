@@ -12,7 +12,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   
 return (
     // 1. Добавили `flex flex-col`, чтобы Header, Контент и Footer аккуратно делили высоту экрана
-    <div className="bg-white min-h-[112vh] w-full flex flex-col" style={{zoom: 0.9}}>
+    <div className="bg-white min-h-[112vh] w-full flex flex-col" style={{zoom: 0}}>
       {isLanding ? (
         <>
           <div className="relative">
