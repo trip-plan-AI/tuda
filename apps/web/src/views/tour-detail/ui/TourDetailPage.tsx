@@ -4,9 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Cloud, CloudSun, Sun, Wind } from 'lucide-react';
-import { PREDEFINED_ROUTES } from '@/shared/data/predefined-routes';
-import { TOUR_ATTRACTIONS } from '@/shared/data/tour-attractions';
-import { useTripStore } from '@/entities/trip';
+import { useTripStore, tripsApi } from '@/entities/trip';
 import type { Trip } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point';
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/shared/ui';
@@ -22,7 +20,7 @@ const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.Route
 });
 
 interface TourDetailPageProps {
-  tourId: number;
+  tourId: string;
 }
 
 const weatherIcons = [Cloud, Sun, CloudSun, Wind];
@@ -34,10 +32,24 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
   const [isOpening, setIsOpening] = useState(false);
   const [showConfirmOverwrite, setShowConfirmOverwrite] = useState(false);
+  const [tour, setTour] = useState<Trip | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const route = PREDEFINED_ROUTES.find((r) => r.id === tourId);
-  const attractions = TOUR_ATTRACTIONS[tourId] ?? [];
-  const WeatherIcon = weatherIcons[tourId % weatherIcons.length] ?? Cloud;
+  // Загружаем данные тура из API
+  useEffect(() => {
+    tripsApi
+      .getPredefined()
+      .then((tours) => {
+        const found = tours.find((t) => t.id === tourId);
+        setTour(found ?? null);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [tourId]);
+
+  const attractions = tour?.points ?? [];
+  const tourIdHash = tourId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const WeatherIcon = weatherIcons[tourIdHash % weatherIcons.length] ?? Cloud;
 
   const geocodeCity = useCallback(
     async (cityName: string): Promise<{ lon: number; lat: number } | null> => {
@@ -72,34 +84,22 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
 
   // Геокодируем город для центрирования карты
   useEffect(() => {
-    if (!route) return;
-    const city = route.title.split(':')[0]?.trim() ?? route.title;
+    if (!tour) return;
+    const city = tour.title.split(':')[0]?.trim() ?? tour.title;
     geocodeCity(city).then((coords) => {
       if (coords) setFocusCoords(coords);
     });
-  }, [route, geocodeCity]);
+  }, [tour, geocodeCity]);
 
-  const doOpenRoute = async () => {
-    if (!route) return;
+  const doOpenRoute = useCallback(async () => {
+    if (!tour) return;
     setIsOpening(true);
     try {
-      const budgetNum = parseInt(route.total.replace(/\D/g, ''), 10) || 0;
-      const cityName = route.title.split(':')[0]?.trim() ?? route.title;
-
-      // Дефолтные координаты для популярных направлений, если геокодинг даст сбой
-      const defaults: Record<number, { lat: number; lon: number }> = {
-        1: { lat: 43.5855, lon: 39.7231 }, // Сочи
-        2: { lat: 51.8333, lon: 87.3167 }, // Алтай (Телецкое)
-        3: { lat: 61.7833, lon: 34.3500 }, // Карелия (Петрозаводск)
-        4: { lat: 43.2500, lon: 42.5000 }, // Кавказ (Приэльбрусье)
-      };
+      const cityName = tour.title.split(':')[0]?.trim() ?? tour.title;
 
       let coords: { lon: number; lat: number } | null = focusCoords;
       if (!coords) {
         coords = await geocodeCity(cityName);
-      }
-      if (!coords && defaults[tourId]) {
-        coords = { lon: defaults[tourId].lon, lat: defaults[tourId].lat };
       }
 
       clearPlanner();
@@ -108,9 +108,9 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
       const tourTrip: Trip = {
         id: tripId,
         ownerId: 'guest',
-        title: route.title,
-        description: route.desc,
-        budget: budgetNum,
+        title: tour.title,
+        description: tour.description,
+        budget: tour.budget,
         startDate: null,
         endDate: null,
         isActive: false,
@@ -122,44 +122,41 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
       setCurrentTrip(tourTrip);
 
       const newPoints: RoutePoint[] = [];
-      const safeCoords = coords || { lat: 55.7558, lon: 37.6173 }; // Москва как совсем крайний вариант
-
-      if (attractions.length > 0) {
-        attractions.forEach((attr, idx) => {
-          // Используем небольшой разброс, чтобы точки не накладывались
-          const offset = 0.02 * (idx + 1);
+      const safeCoords = coords;
+      if (safeCoords) {
+        if (attractions.length > 0) {
+          attractions.forEach((attr, idx) => {
+            newPoints.push({
+              id: `tour-attr-${Date.now()}-${idx}`,
+              tripId,
+              title: attr.title,
+              description: attr.description,
+              address: `${cityName}, ${attr.title}`,
+              lat: attr.lat || safeCoords.lat + (Math.random() - 0.5) * 0.05,
+              lon: attr.lon || safeCoords.lon + (Math.random() - 0.5) * 0.05,
+              budget: attr.budget,
+              visitDate: null,
+              imageUrl: attr.imageUrl,
+              order: idx,
+              createdAt: new Date().toISOString(),
+            });
+          });
+        } else {
           newPoints.push({
-            id: `tour-attr-${Date.now()}-${idx}`,
+            id: `tour-city-${Date.now()}`,
             tripId,
-            title: attr.title,
-            address: `${cityName}, ${attr.title}`,
-            lat: safeCoords.lat + (Math.sin(idx) * offset),
-            lon: safeCoords.lon + (Math.cos(idx) * offset),
+            title: cityName,
+            description: null,
+            address: cityName,
+            lat: safeCoords.lat,
+            lon: safeCoords.lon,
             budget: 0,
             visitDate: null,
-            imageUrl: attr.imageUrl,
-            order: idx,
+            imageUrl: null,
+            order: 0,
             createdAt: new Date().toISOString(),
           });
-        });
-      } else {
-        newPoints.push({
-          id: `tour-city-${Date.now()}`,
-          tripId,
-          title: cityName,
-          address: cityName,
-          lat: safeCoords.lat,
-          lon: safeCoords.lon,
-          budget: 0,
-          visitDate: null,
-          imageUrl: null,
-          order: 0,
-          createdAt: new Date().toISOString(),
-        });
-      }
-      
-      if (currentTrip) {
-        updateCurrentTrip({ budget: budgetNum });
+        }
       }
       setPoints(newPoints);
       router.push('/planner?profile=direct');
@@ -168,7 +165,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     } finally {
       setIsOpening(false);
     }
-  };
+  }, [tour, focusCoords, attractions, geocodeCity, clearPlanner, setCurrentTrip, setPoints, router]);
 
   const handleOpenRoute = useCallback(() => {
     if (points && points.length > 0 && isDirty) {
@@ -176,14 +173,22 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     } else {
       doOpenRoute();
     }
-  }, [points, isDirty]);
+  }, [points, doOpenRoute, isDirty]);
 
   const confirmOverwrite = () => {
     setShowConfirmOverwrite(false);
     doOpenRoute();
   };
 
-  if (!route) {
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-brand-sky border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!tour) {
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-400 font-bold">
         Маршрут не найден
@@ -206,7 +211,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
         {/* Hero */}
         <div className="mb-10">
           <div className="flex flex-wrap items-center gap-2 mb-4">
-            {route.tags.map((tag) => (
+            {(tour.tags ?? []).map((tag) => (
               <span
                 key={tag}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-slate-500 border-2 border-slate-100 text-xs font-black uppercase tracking-widest shadow-sm"
@@ -216,21 +221,25 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
             ))}
             <span className="inline-flex items-center px-4 py-2 rounded-full bg-white text-slate-500 border-2 border-slate-100 text-xs font-black shadow-sm gap-1.5">
               <WeatherIcon size={14} />
-              {route.temp}
+              {tour.temp}
             </span>
           </div>
 
           <h1 className="text-4xl md:text-6xl font-black text-brand-indigo tracking-tight leading-[0.9] mb-6">
-            {route.title}
+            {tour.title}
           </h1>
           <p className="text-lg md:text-xl text-slate-500 font-medium max-w-2xl leading-relaxed">
-            {route.desc}
+            {tour.description}
           </p>
 
-          <div className="mt-6 inline-flex items-center gap-2 bg-brand-yellow/10 rounded-2xl px-5 py-3">
-            <span className="text-slate-500 font-bold text-sm uppercase tracking-widest">Стоимость:</span>
-            <span className="text-brand-yellow font-black text-xl">{route.total}</span>
-          </div>
+          {tour.budget != null && (
+            <div className="mt-6 inline-flex items-center gap-2 bg-brand-yellow/10 rounded-2xl px-5 py-3">
+              <span className="text-slate-500 font-bold text-sm uppercase tracking-widest">Стоимость:</span>
+              <span className="text-brand-yellow font-black text-xl">
+                {tour.budget.toLocaleString('ru-RU')} ₽
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Карта */}
@@ -264,16 +273,16 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
 
             <div className="flex flex-col gap-20 md:gap-24">
               {attractions.map((place, idx) => {
-                const isOdd = idx % 2 === 0; // нечётный индекс = изображение слева
+                const isOdd = idx % 2 === 0;
                 return (
                   <div
-                    key={idx}
+                    key={place.id}
                     className={`flex flex-col md:flex-row items-center gap-10 md:gap-16 ${!isOdd ? 'md:flex-row-reverse' : ''}`}
                   >
                     {/* Изображение */}
                     <div className="w-full md:w-1/2 aspect-[4/3] rounded-[2rem] overflow-hidden shadow-2xl shrink-0">
                       <img
-                        src={place.imageUrl}
+                        src={place.imageUrl ?? ''}
                         alt={place.title}
                         className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
                       />
@@ -284,14 +293,18 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
                       <h3 className="text-2xl md:text-3xl font-black text-brand-indigo mb-4 tracking-tight">
                         {place.title}
                       </h3>
-                      <div className="mb-4">
-                        <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-emerald-50 text-emerald-600 text-sm font-black tracking-widest uppercase">
-                          {place.price.toLocaleString('ru-RU')} ₽
-                        </span>
-                      </div>
-                      <p className="text-slate-500 text-base md:text-lg leading-relaxed font-medium">
-                        {place.description}
-                      </p>
+                      {place.budget != null && (
+                        <div className="mb-4">
+                          <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-emerald-50 text-emerald-600 text-sm font-black tracking-widest uppercase">
+                            {place.budget.toLocaleString('ru-RU')} ₽
+                          </span>
+                        </div>
+                      )}
+                      {place.description && (
+                        <p className="text-slate-500 text-base md:text-lg leading-relaxed font-medium">
+                          {place.description}
+                        </p>
+                      )}
                     </div>
                   </div>
                 );

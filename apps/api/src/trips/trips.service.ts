@@ -34,6 +34,11 @@ export class TripsService {
   findPredefined() {
     return this.db.query.trips.findMany({
       where: eq(schema.trips.isPredefined, true),
+      with: {
+        points: {
+          orderBy: [schema.routePoints.order],
+        },
+      },
     });
   }
 

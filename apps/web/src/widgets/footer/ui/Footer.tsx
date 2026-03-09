@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { Mail, Github, Map } from 'lucide-react';
+import { cn } from '@/shared/lib/utils';
 
 const INTERNAL_PAGES = ['/planner', '/ai-assistant', '/profile', '/tours', '/recommendations'];
 
@@ -23,7 +24,14 @@ export function Footer() {
             <Map size={24} />
           </div>
           <div className="flex flex-col text-left">
-            <span className="font-bold text-xl text-brand-indigo leading-none">Tuda</span>
+            <span
+              className={cn(
+                'font-bold text-xl leading-none',
+                isLanding ? 'text-brand-indigo' : 'text-white',
+              )}
+            >
+              Tuda
+            </span>
             <span className="text-[10px] text-slate-400 mt-2 font-medium leading-none uppercase tracking-widest">
               AI-powered trip planning
             </span>
@@ -33,7 +41,10 @@ export function Footer() {
         <div className="flex flex-col items-center md:items-start gap-3">
           <a
             href="mailto:feedback@tripai.com"
-            className="flex items-center gap-2 !text-brand-indigo hover:!text-brand-blue transition-colors font-bold text-sm"
+            className={cn(
+              'flex items-center gap-2 hover:!text-brand-blue transition-colors font-bold text-sm',
+              isLanding ? '!text-brand-indigo' : '!text-white',
+            )}
           >
             <Mail size={18} />
             feedback@tuda.pro
@@ -42,7 +53,10 @@ export function Footer() {
             href="https://github.com/trip-plan-AI/travel-planner"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 !text-brand-indigo hover:!text-brand-blue transition-colors font-bold text-sm"
+            className={cn(
+              'flex items-center gap-2 hover:!text-brand-blue transition-colors font-bold text-sm',
+              isLanding ? '!text-brand-indigo' : '!text-white',
+            )}
           >
             <Github size={18} />
             github.com/trip-plan-ai/tuda

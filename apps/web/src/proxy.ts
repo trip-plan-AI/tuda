@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const PROTECTED = ['/ai-assistant', '/profile'];
+const PROTECTED = ['/profile'];
 
 export function proxy(req: NextRequest) {
   const token = req.cookies.get('token')?.value;
@@ -11,4 +11,4 @@ export function proxy(req: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: ['/ai-assistant/:path*', '/profile/:path*'] };
+export const config = { matcher: ['/profile/:path*'] };
