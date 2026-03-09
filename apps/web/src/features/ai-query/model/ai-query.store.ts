@@ -34,6 +34,7 @@ interface AiQueryStore {
   createNewSession: (tripId?: string | null) => string;
   switchSession: (sessionId: string) => void;
   deleteSession: (sessionId: string) => void;
+  hydrateFromPersist: () => void;
   clearChat: () => void;
 }
 
@@ -159,7 +160,7 @@ export const useAiQueryStore = create<AiQueryStore>()(
 
         const ensured = ensureActiveSession(get());
         const activeId = ensured.activeSessionId;
-        const currentSession = ensured.sessions[activeId];
+        const currentSession = ensured.sessions[activeId] ?? createSession(tripId ?? null);
         const requestId = crypto.randomUUID();
 
         const userMessage: ChatMessage = {
@@ -371,6 +372,31 @@ export const useAiQueryStore = create<AiQueryStore>()(
         });
       },
 
+      hydrateFromPersist: () => {
+        set((state) => {
+          const sessionIds = Object.keys(state.sessions);
+
+          if (sessionIds.length === 0) {
+            return {
+              activeSessionId: null,
+              messages: [],
+              sessionId: null,
+              lastAppliedPlanMessageId: null,
+            };
+          }
+
+          const resolvedActiveSessionId =
+            state.activeSessionId && state.sessions[state.activeSessionId]
+              ? state.activeSessionId
+              : sessionIds[0]!;
+
+          return {
+            activeSessionId: resolvedActiveSessionId,
+            ...syncLegacyFields(state.sessions, resolvedActiveSessionId),
+          };
+        });
+      },
+
       clearChat: () => {
         set((state) => {
           const activeSession = state.activeSessionId ? state.sessions[state.activeSessionId] : null;
@@ -412,6 +438,9 @@ export const useAiQueryStore = create<AiQueryStore>()(
         sessions: state.sessions,
         activeSessionId: state.activeSessionId,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.hydrateFromPersist();
+      },
     },
   ),
 );
