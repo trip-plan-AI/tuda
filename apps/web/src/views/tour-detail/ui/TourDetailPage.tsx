@@ -24,6 +24,12 @@ interface TourDetailPageProps {
   tourId: string;
 }
 
+type RouteInfo = {
+  duration: number;
+  distance: number;
+  legs: { duration: number; distance: number }[];
+};
+
 const weatherIcons = [Cloud, Sun, CloudSun, Wind];
 
 function formatDuration(seconds: number) {
@@ -34,7 +40,7 @@ function formatDuration(seconds: number) {
   if (d > 0) parts.push(`${d} дн.`);
   if (h > 0) parts.push(`${h} ч`);
   if (m > 0) parts.push(`${m} мин`);
-  return parts.length > 0 ? parts.join('  ') : '0 мин';
+  return parts.length > 0 ? parts.join(' ') : '< 1 мин';
 }
 
 function formatDistance(meters: number) {
@@ -51,14 +57,9 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
   const [showConfirmOverwrite, setShowConfirmOverwrite] = useState(false);
   const [tour, setTour] = useState<Trip | null>(null);
   const [loading, setLoading] = useState(true);
-  const [routeInfo, setRouteInfo] = useState<{
-    duration: number;
-    distance: number;
-    legs: { duration: number; distance: number }[];
-  } | null>(null);
+  const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [isRouteLoading, setIsRouteLoading] = useState(false);
 
-  // Загружаем данные тура из API
   useEffect(() => {
     tripsApi
       .getPredefined()
@@ -101,7 +102,6 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     [],
   );
 
-  // Геокодируем город как fallback для центрирования (если нет точек)
   useEffect(() => {
     if (!tour || attractions.length > 0) return;
     const city = tour.title.split(':')[0]?.trim() ?? tour.title;
@@ -115,7 +115,6 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     setIsOpening(true);
     try {
       const cityName = tour.title.split(':')[0]?.trim() ?? tour.title;
-
       let coords: { lon: number; lat: number } | null = focusCoords;
       if (!coords) coords = await geocodeCity(cityName);
 
@@ -214,6 +213,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
   return (
     <div className="bg-white min-h-screen">
       <div className="max-w-5xl mx-auto px-4 md:px-6 py-8 md:py-12">
+
         {/* Назад */}
         <button
           onClick={() => router.back()}
@@ -258,7 +258,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
         </div>
 
         {/* Карта с маршрутом */}
-        <div className="mb-4">
+        <div className="mb-6">
           <div className="w-full aspect-[4/5] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden border border-slate-200 shadow-inner bg-slate-50">
             <RouteMap
               points={attractions}
@@ -271,10 +271,10 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
             />
           </div>
 
-          {/* Route info */}
+          {/* Суммарный route info — как в планере */}
           {(routeInfo || isRouteLoading) && (
             <div className="mt-4 flex justify-center">
-              <div className="flex items-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 relative overflow-hidden transition-all duration-300">
+              <div className="flex items-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 relative overflow-hidden transition-all duration-300 min-h-[48px]">
                 {isRouteLoading && (
                   <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10">
                     <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
@@ -284,14 +284,14 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
                   {routeInfo && (
                     <>
                       <div className="flex items-center gap-2">
-                        <Clock size={18} className="text-brand-sky" />
+                        <Clock size={16} className="text-brand-sky" />
                         <span className="text-sm font-black text-slate-700 leading-none">
                           {formatDuration(routeInfo.duration)}
                         </span>
                       </div>
-                      <div className="w-px h-8 bg-brand-indigo/10" />
+                      <div className="w-px h-6 bg-brand-indigo/10" />
                       <div className="flex items-center gap-2">
-                        <MapPin size={18} className="text-brand-indigo" />
+                        <MapPin size={16} className="text-brand-indigo" />
                         <span className="text-sm font-black text-slate-700 leading-none">
                           {formatDistance(routeInfo.distance)}
                         </span>
@@ -304,8 +304,8 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           )}
         </div>
 
-        {/* Кнопка открытия маршрута */}
-        <div className="flex justify-center mb-20 mt-10">
+        {/* Кнопка в конструктор */}
+        <div className="flex justify-center mb-20">
           <Button
             onClick={handleOpenRoute}
             disabled={isOpening}
@@ -316,7 +316,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           </Button>
         </div>
 
-        {/* Достопримечательности */}
+        {/* Достопримечательности — детальные карточки */}
         {attractions.length > 0 && (
           <div>
             <h2 className="text-[clamp(1.5rem,5vw,3.5rem)] font-black text-brand-indigo tracking-tight leading-[0.9] mb-16">
@@ -331,7 +331,6 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
                     key={place.id}
                     className={`flex flex-col md:flex-row items-center gap-10 md:gap-16 ${!isOdd ? 'md:flex-row-reverse' : ''}`}
                   >
-                    {/* Изображение */}
                     <div className="w-full md:w-1/2 aspect-[4/3] rounded-[2rem] overflow-hidden shadow-2xl shrink-0">
                       <img
                         src={place.imageUrl ?? ''}
@@ -340,7 +339,6 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
                       />
                     </div>
 
-                    {/* Текст */}
                     <div className="w-full md:w-1/2 text-left">
                       <div className="flex items-center gap-3 mb-4">
                         <span className="w-8 h-8 rounded-full bg-brand-indigo text-white text-sm font-black flex items-center justify-center shrink-0">
@@ -391,7 +389,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
             </Button>
             <Button
               variant="brand-indigo"
-                className="flex-1 font-black uppercase tracking-widest h-12 rounded-xl shadow-lg shadow-brand-indigo/20"
+              className="flex-1 font-black uppercase tracking-widest h-12 rounded-xl shadow-lg shadow-brand-indigo/20"
               onClick={confirmOverwrite}
             >
               ПРОДОЛЖИТЬ
