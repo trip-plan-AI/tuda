@@ -7,22 +7,22 @@ import {
   Check,
   Pencil,
   Map as MapIcon,
-  ChevronLeft,
   ArrowUp,
   AlertTriangle,
   CheckCircle2,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import { useUserStore, usersApi, type User } from '@/entities/user';
-import { useTripStore, tripsApi, type Trip } from '@/entities/trip';
+import { useUserStore, usersApi } from '@/entities/user';
+import { useTripStore, type Trip } from '@/entities/trip';
 import { useAuthStore } from '@/features/auth';
+import { tripsApi } from '@/entities/trip';
 import { toast } from 'sonner';
 import { cn } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/button';
 
 const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
   ssr: false,
-  loading: () => <div className="w-full h-full bg-slate-50 animate-pulse rounded-3xl" />,
+  loading: () => <div className="w-full h-full bg-slate-50 animate-pulse rounded-2xl" />,
 });
 
 function getBudgetMetrics(plannedBudget: number | null | undefined, totalBudget: number) {
@@ -30,12 +30,10 @@ function getBudgetMetrics(plannedBudget: number | null | undefined, totalBudget:
   const total = Math.max(0, totalBudget);
   const isOverBudget = plan > 0 && total > plan;
   const progressPercent = plan > 0 ? Math.min(100, Math.round((total / plan) * 100)) : 0;
-
   return { plan, total, isOverBudget, progressPercent };
 }
 
 function formatRub(value: number) {
-  // Заменяем неразрывные пробелы на обычные, чтобы длинные суммы могли переноситься в контейнере.
   return value.toLocaleString('ru-RU').replace(/\u00A0/g, ' ');
 }
 
@@ -51,65 +49,36 @@ function BudgetSummary({
   const { plan, total, isOverBudget, progressPercent } = getBudgetMetrics(plannedBudget, totalBudget);
 
   return (
-    <div className={cn('space-y-3', className)}>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+    <div className={cn('space-y-2', className)}>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         <div className="flex flex-col min-w-0 text-left">
-          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-            Планируемый
-          </span>
-          <span className="text-base sm:text-lg md:text-xl lg:text-2xl font-black text-brand-indigo leading-tight break-all">
+          <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Планируемый</span>
+          <span className="text-sm sm:text-base md:text-lg font-black text-brand-indigo leading-tight break-all">
             {formatRub(plan)} ₽
           </span>
         </div>
-
         <div className="flex flex-col min-w-0 text-left md:text-right">
-          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-            Итого по точкам
-          </span>
-          <span
-            className={cn(
-              'text-base sm:text-lg md:text-xl lg:text-2xl font-black leading-tight break-all',
-              isOverBudget ? 'text-red-500' : 'text-brand-indigo',
-            )}
-          >
+          <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Итого по точкам</span>
+          <span className={cn('text-sm sm:text-base md:text-lg font-black leading-tight break-all', isOverBudget ? 'text-red-500' : 'text-brand-indigo')}>
             {formatRub(total)} ₽
           </span>
         </div>
       </div>
-
-      <div className="space-y-2">
-        <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+      <div className="space-y-1.5">
+        <div className="h-1 rounded-full bg-slate-100 overflow-hidden">
           <div
-            className={cn(
-              'h-full rounded-full transition-all duration-300',
-              isOverBudget ? 'bg-red-500' : 'bg-emerald-500',
-            )}
+            className={cn('h-full rounded-full transition-all duration-300', isOverBudget ? 'bg-red-500' : 'bg-emerald-500')}
             style={{ width: `${progressPercent}%` }}
           />
         </div>
-
-        <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-400">
-          <span className="min-w-0 break-words">
-            {plan > 0 ? `Использовано ${progressPercent}%` : 'Лимит не задан'}
-          </span>
+        <div className="grid grid-cols-2 gap-2 text-[9px] font-bold text-slate-400">
+          <span className="min-w-0 break-words">{plan > 0 ? `Использовано ${progressPercent}%` : 'Лимит не задан'}</span>
           <span className="min-w-0 text-right break-all">{plan > 0 ? `${formatRub(plan - total)} ₽` : '—'}</span>
         </div>
-
-        <div
-          className={cn(
-            'flex items-start gap-2 rounded-xl border px-2.5 py-1.5 text-[10px] sm:text-[11px] font-black leading-tight break-words',
-            isOverBudget
-              ? 'border-red-100 bg-red-50/70 text-red-600'
-              : 'border-emerald-100 bg-emerald-50/70 text-emerald-600',
-          )}
-        >
-          {isOverBudget ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
+        <div className={cn('flex items-start gap-2 rounded-lg border px-2 py-1 text-[9px] sm:text-[10px] font-black leading-tight break-words', isOverBudget ? 'border-red-100 bg-red-50/70 text-red-600' : 'border-emerald-100 bg-emerald-50/70 text-emerald-600')}>
+          {isOverBudget ? <AlertTriangle size={10} /> : <CheckCircle2 size={10} />}
           {plan > 0 ? (
-            isOverBudget ? (
-              <span>Перерасход: +{formatRub(total - plan)} ₽</span>
-            ) : (
-              <span>Остаток: {formatRub(plan - total)} ₽</span>
-            )
+            isOverBudget ? <span>Перерасход: +{formatRub(total - plan)} ₽</span> : <span>Остаток: {formatRub(plan - total)} ₽</span>
           ) : (
             <span>Задайте планируемый бюджет для контроля расхода</span>
           )}
@@ -134,48 +103,26 @@ export function ProfilePage() {
   const [isLoadingTrips, setIsLoadingTrips] = useState(true);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
-  const [isScrollableList, setIsScrollableList] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
 
-  const progressColor =
-    scrollProgress < 0.4 ? '#0ea5e9' : scrollProgress < 0.8 ? '#4f46e5' : '#9333ea';
+  const progressColor = scrollProgress < 0.4 ? '#0ea5e9' : scrollProgress < 0.8 ? '#4f46e5' : '#9333ea';
   const progressTrackColor = '#e2e8f0';
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const savedListScrollRef = useRef<HTMLDivElement>(null);
   const routePointsScrollRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
-  const isFabVisibleRef = useRef(false);
   const startY = useRef(0);
   const startHeight = useRef(0);
 
   const evaluateScrollState = useCallback(() => {
     const container = activeTab === 'saved' ? savedListScrollRef.current : routePointsScrollRef.current;
     if (!container) return;
-
     const { scrollTop, clientHeight, scrollHeight } = container;
     const maxScrollTop = Math.max(1, scrollHeight - clientHeight);
     const progress = Math.max(0, Math.min(1, scrollTop / maxScrollTop));
-    const isScrollable = scrollHeight > clientHeight + 1;
     setScrollProgress(progress);
-    setIsScrollableList(isScrollable);
-
-    if (!isScrollable) {
-      isFabVisibleRef.current = false;
-      setShowScrollTop(false);
-      setScrollProgress(0);
-      return;
-    }
-
-    // Гистерезис по прогрессу скролла: одинаковое поведение на desktop/mobile и при любой высоте контейнера.
-    const showThreshold = 0.15;
-    const hideThreshold = 0.05;
-    const shouldShow = isFabVisibleRef.current
-      ? progress > hideThreshold
-      : progress > showThreshold;
-
-    isFabVisibleRef.current = shouldShow;
-    setShowScrollTop(shouldShow);
+    setShowScrollTop(scrollTop > 10);
   }, [activeTab]);
 
   const handleContentScroll = useCallback(() => {
@@ -189,104 +136,67 @@ export function ProfilePage() {
   const handleScrollToTop = useCallback(() => {
     const container = activeTab === 'saved' ? savedListScrollRef.current : routePointsScrollRef.current;
     if (!container) return;
-
     const currentTop = container.scrollTop;
     if (currentTop > 4000) {
       container.scrollTo({ top: 1200, behavior: 'auto' });
       window.requestAnimationFrame(() => {
-        const currentContainer =
-          activeTab === 'saved' ? savedListScrollRef.current : routePointsScrollRef.current;
-        currentContainer?.scrollTo({ top: 0, behavior: 'smooth' });
+        const c = activeTab === 'saved' ? savedListScrollRef.current : routePointsScrollRef.current;
+        c?.scrollTo({ top: 0, behavior: 'smooth' });
       });
       return;
     }
-
     container.scrollTo({ top: 0, behavior: 'smooth' });
   }, [activeTab]);
 
   const progressDegrees = Math.round(scrollProgress * 360);
 
-  useEffect(() => {
-    setIsAuthResolved(true);
-  }, []);
+  useEffect(() => { setIsAuthResolved(true); }, []);
 
   useEffect(() => {
     if (!isAuthResolved) return;
-
-    const hasStoredToken =
-      typeof window !== 'undefined' && Boolean(window.localStorage.getItem('accessToken'));
-
-    if (!isAuthenticated && !hasStoredToken) {
-      router.push('/');
-      return;
-    }
-
-    // Загружаем все маршруты пользователя
-    tripsApi
-      .getAll()
-      .then((trips) => {
-        setSavedTrips(trips);
-        setIsLoadingTrips(false);
-      })
-      .catch((err) => {
-        console.error('Failed to load trips:', err);
-        setIsLoadingTrips(false);
-      });
+    const hasStoredToken = typeof window !== 'undefined' && Boolean(window.localStorage.getItem('accessToken'));
+    if (!isAuthenticated && !hasStoredToken) { router.push('/'); return; }
+    tripsApi.getAll()
+      .then((trips) => { setSavedTrips(trips); setIsLoadingTrips(false); })
+      .catch((err) => { console.error('Failed to load trips:', err); setIsLoadingTrips(false); });
   }, [isAuthenticated, isAuthResolved, router]);
 
-  useEffect(() => {
-    evaluateScrollState();
-  }, [activeTab, savedTrips, isLoadingTrips, evaluateScrollState]);
+  useEffect(() => { evaluateScrollState(); }, [activeTab, savedTrips, isLoadingTrips, evaluateScrollState]);
 
   useEffect(() => {
-    return () => {
-      if (scrollRafRef.current != null) {
-        window.cancelAnimationFrame(scrollRafRef.current);
-      }
-    };
+    return () => { if (scrollRafRef.current != null) window.cancelAnimationFrame(scrollRafRef.current); };
   }, []);
 
   const activeRoute = savedTrips.find((t) => t.isActive);
-  const activeRouteTotalBudget =
-    activeRoute?.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
+  const activeRouteTotalBudget = activeRoute?.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setIsDragging(true);
     startY.current = e.touches[0]!.clientY;
     startHeight.current = sheetHeight;
   };
-
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!isDragging) return;
-    const currentY = e.touches[0]!.clientY;
-    const deltaY = startY.current - currentY;
-    const windowHeight = window.innerHeight;
-    const deltaPercent = (deltaY / windowHeight) * 100;
+    const deltaY = startY.current - e.touches[0]!.clientY;
+    const deltaPercent = (deltaY / window.innerHeight) * 100;
     let newHeight = startHeight.current + deltaPercent;
-    if (newHeight < 20) newHeight = 20;
-    if (newHeight > 90) newHeight = 90;
+    newHeight = Math.max(20, Math.min(90, newHeight));
     setSheetHeight(newHeight);
   };
-
   const handleTouchEnd = () => setIsDragging(false);
 
-  const handleAvatarClick = () => {
-    fileInputRef.current?.click();
-  };
+  const handleAvatarClick = () => fileInputRef.current?.click();
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onloadend = async () => {
-        const base64 = reader.result as string;
         try {
-          const updatedUser = await usersApi.updateMe({ photo: base64 });
+          const updatedUser = await usersApi.updateMe({ photo: reader.result as string });
           setUser(updatedUser);
           toast.success('Фото профиля обновлено');
-        } catch (err) {
-          toast.error('Не удалось обновить фото');
-        }
+        } catch { toast.error('Не удалось обновить фото'); }
       };
       reader.readAsDataURL(file);
     }
@@ -299,32 +209,18 @@ export function ProfilePage() {
       setUser(updatedUser);
       setIsEditingName(false);
       toast.success('Имя обновлено');
-    } catch (err) {
-      toast.error('Не удалось обновить имя');
-    }
+    } catch { toast.error('Не удалось обновить имя'); }
   };
 
   const handleToggleActive = async (routeId: string) => {
     try {
       const trip = savedTrips.find((t) => t.id === routeId);
       if (!trip) return;
-
       const newIsActive = !trip.isActive;
-
-      // Если мы активируем маршрут, нужно деактивировать все остальные на клиенте
-      const updatedTrips = savedTrips.map((t) => ({
-        ...t,
-        isActive: t.id === routeId ? newIsActive : false,
-      }));
-      setSavedTrips(updatedTrips);
-
-      // Отправляем запрос на сервер
+      setSavedTrips(savedTrips.map((t) => ({ ...t, isActive: t.id === routeId ? newIsActive : false })));
       await tripsApi.update(routeId, { isActive: newIsActive });
-
       toast.success(newIsActive ? 'Маршрут активирован' : 'Маршрут деактивирован');
-    } catch (err) {
-      toast.error('Ошибка при обновлении статуса');
-    }
+    } catch { toast.error('Ошибка при обновлении статуса'); }
   };
 
   const handleEditRoute = (trip: Trip) => {
@@ -333,301 +229,235 @@ export function ProfilePage() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-white relative overflow-hidden">
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        accept="image/*"
-        className="hidden"
-      />
+    <div className="flex flex-col h-full max-h-[calc(100vh-100px)] bg-slate-50 relative overflow-hidden w-full rounded-[1.5rem] shadow-sm border border-slate-200 animate-in fade-in slide-in-from-bottom-8 duration-1000 ease-out">
+      <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
 
-      <div className="flex-1 flex flex-col relative overflow-hidden">
-        {/* Мобильная шапка/фон */}
-        <div className="md:hidden h-1/3 w-full bg-slate-100 flex items-center justify-center">
+      {/* ── ШАПКА ПРОФИЛЯ ── */}
+      <div className="w-full shrink-0 bg-white border-b border-slate-200 z-20 px-4 py-3 md:px-5 md:py-4 shadow-sm">
+        <div className="flex items-center gap-3 mb-3 md:mb-4 w-full">
+          <h1 className="text-lg md:text-xl font-black text-brand-indigo">Мой профиль</h1>
+        </div>
+        <div className="flex items-center gap-4 md:gap-5">
+          <div
+            onClick={handleAvatarClick}
+            className="w-16 h-16 md:w-20 md:h-20 bg-slate-50 rounded-full flex items-center justify-center border-2 border-white shadow-md overflow-hidden cursor-pointer group relative shrink-0"
+          >
+            {user?.photo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={user.photo} className="w-full h-full object-cover" alt={user.name} />
+            ) : (
+              <UserIcon size={32} className="text-slate-200" />
+            )}
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <Pencil size={20} className="text-white" />
+            </div>
+          </div>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              {isEditingName ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={tempName}
+                    onChange={(e) => setTempName(e.target.value)}
+                    onBlur={handleSaveName}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
+                    className="text-lg md:text-xl font-black text-brand-indigo border-b-2 border-brand-blue outline-none bg-transparent min-w-[150px]"
+                  />
+                  <button onClick={handleSaveName} className="p-1.5 bg-emerald-500 text-white rounded-lg shadow-lg active:scale-90 transition-transform">
+                    <Check size={16} />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <h2 className="text-lg md:text-xl font-black text-brand-indigo">{user?.name}</h2>
+                  <button
+                    onClick={() => { setTempName(user?.name || ''); setIsEditingName(true); }}
+                    className="p-1.5 bg-slate-50 text-slate-400 hover:text-brand-blue hover:bg-slate-100 rounded-lg transition-all active:scale-90"
+                    aria-label="Редактировать имя"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                </>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+              Путешественник с {user?.createdAt ? new Date(user.createdAt).getFullYear() : '2026'} года
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── ОСНОВНАЯ ОБЛАСТЬ ── */}
+      <div className="flex-1 flex flex-col md:flex-row relative overflow-hidden w-full">
+
+        {/* Мобильный бэкграунд */}
+        <div className="md:hidden absolute inset-0 bg-slate-100 flex items-start justify-center pt-4">
           {activeRoute && activeRoute.points && activeRoute.points.length > 0 ? (
-            <div className="w-full h-full opacity-50 grayscale pointer-events-none">
+            <div className="w-full h-1/2 opacity-60 pointer-events-none grayscale">
               <RouteMap points={activeRoute.points} onPointDragEnd={() => {}} />
             </div>
           ) : (
-            <MapIcon size={64} className="text-slate-200" />
+            <MapIcon size={48} className="text-slate-200 mt-10" />
           )}
         </div>
 
-        {/* ПРОФИЛЬ */}
+        {/* ── ЛЕВАЯ КОЛОНКА: Список ── */}
+        <div
+          className={cn(
+            'absolute bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] md:bottom-auto md:top-0',
+            'h-[var(--sheet-height)] md:h-full w-full md:static',
+            'flex flex-col bg-white z-10',
+            'shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] md:shadow-none',
+            'rounded-t-[1.5rem] md:rounded-none',
+            'transition-[height] duration-75 ease-out overflow-hidden',
+            'md:w-[40%] lg:w-[35%] xl:w-[400px] shrink-0 md:border-r md:border-slate-200',
+          )}
+          style={{ ['--sheet-height' as string]: `${sheetHeight}%` }}
+        >
           <div
-            className={cn(
-              'absolute bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] md:bottom-0 h-[var(--sheet-height)] md:h-full w-full md:static flex flex-col bg-white z-10 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.2)] md:shadow-none rounded-t-[2.5rem] md:rounded-none transition-[height] duration-75 ease-out overflow-hidden',
-              'md:max-w-4xl md:mx-auto md:px-10',
-            )}
-            style={{ ['--sheet-height' as string]: `${sheetHeight}%` }}
-          >
-          {/* Зона перетаскивания и Навигация */}
-          <div
-            className="w-full pt-3 shrink-0 bg-white rounded-t-[2.5rem] md:rounded-none border-b border-slate-50 md:cursor-default cursor-grab active:cursor-grabbing touch-none"
+            className="w-full pt-2 pb-1 shrink-0 bg-white rounded-t-[1.5rem] md:hidden cursor-grab active:cursor-grabbing touch-none"
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
           >
-            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-2 md:hidden"></div>
-
-            <div className="px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => router.back()}
-                  className="md:hidden p-2 -ml-2 text-slate-400"
-                >
-                  <ChevronLeft size={24} />
-                </button>
-                <h1 className="text-xl md:text-2xl font-black text-brand-indigo">Мой профиль</h1>
-              </div>
-            </div>
+            <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto" />
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col pb-[calc(env(safe-area-inset-bottom,0px)+9.5rem)] md:pb-10 no-scrollbar">
-            <div className="flex flex-col items-center md:items-start mb-10">
-              <div
-                onClick={handleAvatarClick}
-                className="w-24 h-24 md:w-28 md:h-28 bg-slate-50 rounded-full flex items-center justify-center mb-4 border-4 border-white shadow-md overflow-hidden cursor-pointer group relative"
-              >
-                {user?.photo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={user.photo} className="w-full h-full object-cover" alt={user.name} />
-                ) : (
-                  <UserIcon size={48} className="text-slate-200" />
-                )}
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Pencil size={24} className="text-white" />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                {isEditingName ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      autoFocus
-                      type="text"
-                      value={tempName}
-                      onChange={(e) => setTempName(e.target.value)}
-                      onBlur={handleSaveName}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
-                      className="text-xl md:text-2xl font-black text-brand-indigo border-b-2 border-brand-blue outline-none bg-transparent min-w-[200px]"
-                    />
-                    <button
-                      onClick={handleSaveName}
-                      className="p-2 bg-emerald-500 text-white rounded-xl shadow-lg active:scale-90 transition-transform"
-                    >
-                      <Check size={20} />
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <h2 className="text-xl md:text-2xl font-black text-brand-indigo">
-                      {user?.name}
-                    </h2>
-                    <button
-                      onClick={() => {
-                        setTempName(user?.name || '');
-                        setIsEditingName(true);
-                      }}
-                      className="p-2.5 bg-slate-50 text-slate-400 hover:text-brand-blue hover:bg-slate-100 rounded-xl transition-all active:scale-90"
-                      aria-label="Редактировать имя"
-                    >
-                      <Pencil size={18} />
-                    </button>
-                  </>
-                )}
-              </div>
-
-              <p className="text-sm text-slate-400 font-bold mt-1">
-                Путешественник с {user?.createdAt ? new Date(user.createdAt).getFullYear() : '2026'}{' '}
-                года
-              </p>
-            </div>
-
-            <div className="flex p-1.5 bg-slate-50 rounded-2xl mb-8">
+          <div className="px-3 md:px-4 pt-3 md:pt-4 shrink-0 bg-white z-20">
+            <div className="flex w-full p-1 bg-slate-100 rounded-xl">
               <button
                 onClick={() => setActiveTab('routes')}
-                className={cn(
-                  'flex-1 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all',
-                  activeTab === 'routes'
-                    ? 'bg-white text-brand-indigo shadow-sm'
-                    : 'text-slate-400',
-                )}
+                className={cn('flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all', activeTab === 'routes' ? 'bg-white text-brand-indigo shadow-sm' : 'text-slate-400 hover:text-slate-600')}
               >
                 Активно
               </button>
               <button
                 onClick={() => setActiveTab('saved')}
-                className={cn(
-                  'flex-1 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all',
-                  activeTab === 'saved' ? 'bg-white text-brand-indigo shadow-sm' : 'text-slate-400',
-                )}
+                className={cn('flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all', activeTab === 'saved' ? 'bg-white text-brand-indigo shadow-sm' : 'text-slate-400 hover:text-slate-600')}
               >
                 Сохранено
               </button>
             </div>
+          </div>
 
+          <div className="flex-1 relative min-h-0">
             <div
               className={cn(
-                'bg-slate-50/50 rounded-[2.5rem] border border-slate-100 relative p-4 md:p-8',
-                activeTab === 'routes'
-                  ? 'flex-1 min-h-[clamp(620px,82vh,980px)] md:min-h-[clamp(700px,86vh,1060px)] overflow-hidden'
-                  : 'flex-1 min-h-[clamp(430px,58vh,720px)] overflow-hidden',
+                'absolute right-3 bottom-3 md:right-4 md:bottom-4 z-30',
+                'transition-all duration-300',
+                showScrollTop ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-2 invisible pointer-events-none',
               )}
             >
+              <button
+                type="button"
+                onClick={handleScrollToTop}
+                className="relative h-10 w-10 rounded-full shadow-md transition-transform hover:scale-105 active:scale-95"
+              >
+                <span
+                  className="absolute inset-0 rounded-full"
+                  style={{ background: `conic-gradient(${progressColor} ${progressDegrees}deg, ${progressTrackColor} ${progressDegrees}deg)` }}
+                />
+                <span className="absolute inset-[2px] rounded-full bg-white" />
+                <span className="relative z-10 flex h-full w-full items-center justify-center text-brand-indigo">
+                  <ArrowUp size={14} />
+                </span>
+              </button>
+            </div>
+
+            <div className="h-full overflow-y-auto p-3 md:p-4 flex flex-col no-scrollbar">
               {activeTab === 'routes' ? (
-                // "Активно" tab
                 activeRoute ? (
-                  <div className="space-y-4 md:space-y-6 w-full h-full flex flex-col animate-in fade-in duration-500">
-                    <div className="flex justify-between items-center">
-                      <h3 className="text-lg font-black text-brand-indigo uppercase tracking-widest">
-                        Активный маршрут
-                      </h3>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEditRoute(activeRoute)}
-                        className="rounded-xl border-slate-200 text-slate-500 font-bold"
-                      >
-                        <Pencil size={14} className="mr-2" />
+                  <div className="space-y-3 w-full h-full flex flex-col animate-in fade-in duration-500">
+                    <div className="flex justify-between items-center px-1">
+                      <h3 className="text-[10px] font-black text-brand-indigo uppercase tracking-widest">Активный маршрут</h3>
+                      <Button variant="outline" size="sm" onClick={() => handleEditRoute(activeRoute)} className="h-7 px-2 rounded-lg border-slate-200 text-slate-500 font-bold text-[9px]">
+                        <Pencil size={12} className="mr-1" />
                         ИЗМЕНИТЬ
                       </Button>
                     </div>
 
-                    <div className="w-full aspect-[16/9] md:aspect-video rounded-[2rem] overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100">
-                      <RouteMap points={activeRoute.points || []} onPointDragEnd={() => {}} />
-                    </div>
-
-                    <div className="bg-white p-4 md:p-6 rounded-[2rem] border border-slate-100 shadow-sm flex-1 min-h-0 flex flex-col">
-                      <div className="flex items-center gap-4 mb-4 md:mb-6">
-                        <div className="w-12 h-12 rounded-2xl bg-brand-blue/10 text-brand-blue flex items-center justify-center">
-                          <MapIcon size={24} />
+                    <div className="bg-white p-3 md:p-4 rounded-2xl border border-slate-100 shadow-sm flex-1 min-h-0 flex flex-col">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-xl bg-brand-blue/10 text-brand-blue flex items-center justify-center shrink-0">
+                          <MapIcon size={20} />
                         </div>
-                        <div>
-                          <p className="text-xs font-black text-slate-300 uppercase tracking-widest">
-                            Маршрут
-                          </p>
-                          <p className="text-xl font-black text-brand-indigo">{activeRoute.title}</p>
+                        <div className="min-w-0">
+                          <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest truncate">Маршрут</p>
+                          <p className="text-base font-black text-brand-indigo truncate leading-tight">{activeRoute.title}</p>
                         </div>
                       </div>
 
-                      <div className="relative flex-1 min-h-[40px] md:min-h-[120px]">
-                        <div
-                          ref={routePointsScrollRef}
-                          onScroll={handleContentScroll}
-                          className="h-full overflow-y-auto pr-1 no-scrollbar"
-                        >
-                          <div className="space-y-4 pb-2">
+                      <div className="relative flex-1 min-h-[100px]">
+                        <div ref={routePointsScrollRef} onScroll={handleContentScroll} className="h-full overflow-y-auto pr-1 no-scrollbar">
+                          <div className="space-y-2.5 pb-2">
                             {activeRoute.points?.map((point, idx) => (
-                              <div key={point.id} className="flex items-start gap-4">
-                                <div className="w-6 h-6 rounded-full bg-brand-blue text-white font-black flex items-center justify-center text-[10px] shrink-0 mt-0.5">
+                              <div key={point.id} className="flex items-start gap-3">
+                                <div className="w-5 h-5 rounded-full bg-brand-blue text-white font-black flex items-center justify-center text-[8px] shrink-0 mt-0.5">
                                   {idx + 1}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-black text-slate-700">{point.title}</p>
-                                  <p className="text-xs text-slate-400 font-bold">
-                                    {point.budget
-                                      ? `${point.budget.toLocaleString('ru-RU')} ₽`
-                                      : 'Бесплатно'}
+                                  <p className="text-xs font-black text-slate-700 leading-tight">{point.title}</p>
+                                  <p className="text-[10px] text-slate-400 font-bold">
+                                    {point.budget ? `${point.budget.toLocaleString('ru-RU')} ₽` : 'Бесплатно'}
                                   </p>
                                 </div>
                               </div>
                             ))}
                           </div>
                         </div>
-
-                        {/* Вариант 2: мягкие индикаторы прокрутки */}
-                        <div className="pointer-events-none absolute inset-x-0 top-0 h-3 md:h-5 bg-gradient-to-b from-white to-transparent" />
-                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 md:h-6 bg-gradient-to-t from-white to-transparent" />
                       </div>
 
-                      <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-50 shrink-0">
-                        <BudgetSummary
-                          plannedBudget={activeRoute.budget}
-                          totalBudget={activeRouteTotalBudget}
-                          className="space-y-1.5 md:space-y-3"
-                        />
+                      <div className="mt-2 pt-2 border-t border-slate-50 shrink-0">
+                        <BudgetSummary plannedBudget={activeRoute.budget} totalBudget={activeRouteTotalBudget} />
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-10">
-                    <MapIcon size={48} className="mb-4 opacity-20" />
-                    <p className="text-sm font-bold italic">Нет активного маршрута</p>
-                    <Button
-                      onClick={() => router.push('/planner')}
-                      variant="brand"
-                      className="mt-6 rounded-xl uppercase font-black tracking-widest text-xs"
-                    >
+                  <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-6">
+                    <MapIcon size={32} className="mb-2 opacity-20" />
+                    <p className="text-[11px] font-bold italic">Нет активного маршрута</p>
+                    <Button onClick={() => router.push('/planner')} variant="brand" className="mt-4 h-8 rounded-lg uppercase font-black tracking-widest text-[9px]">
                       Создать
                     </Button>
                   </div>
                 )
-              ) : // "Сохранено" tab
-              isLoadingTrips ? (
-                <div className="space-y-4">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-32 bg-slate-100 animate-pulse rounded-3xl" />
-                  ))}
+              ) : isLoadingTrips ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => <div key={i} className="h-24 bg-slate-100 animate-pulse rounded-2xl" />)}
                 </div>
               ) : savedTrips.length > 0 ? (
-                <div
-                  ref={savedListScrollRef}
-                  onScroll={handleContentScroll}
-                  className="h-full overflow-y-auto pr-1 no-scrollbar"
-                >
-                  <div className="space-y-4 w-full animate-in fade-in duration-500 pb-2">
+                <div ref={savedListScrollRef} onScroll={handleContentScroll} className="h-full overflow-y-auto pr-1 no-scrollbar">
+                  <div className="space-y-3 w-full animate-in fade-in duration-500 pb-2">
                     {savedTrips.map((route) => {
-                      const routeTotalBudget =
-                        route.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
-
+                      const routeTotalBudget = route.points?.reduce((sum, p) => sum + (p.budget || 0), 0) || 0;
                       return (
-                        <div
-                          key={route.id}
-                          className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all"
-                        >
-                          <div className="flex items-center justify-between mb-6">
-                            <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center">
-                                <MapIcon size={20} />
+                        <div key={route.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center shrink-0">
+                                <MapIcon size={18} />
                               </div>
-                              <div>
-                                <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                                  Маршрут
-                                </p>
-                                <p className="text-lg font-black text-brand-indigo truncate max-w-[150px] md:max-w-xs">
-                                  {route.title}
-                                </p>
+                              <div className="min-w-0">
+                                <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest truncate">Маршрут</p>
+                                <p className="text-base font-black text-brand-indigo truncate leading-tight">{route.title}</p>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleEditRoute(route)}
-                                className="p-2.5 bg-slate-50 text-slate-400 hover:text-brand-blue hover:bg-slate-100 rounded-xl transition-all active:scale-90"
-                                title="Редактировать"
-                              >
-                                <Pencil size={18} />
-                              </button>
-                            </div>
+                            <button onClick={() => handleEditRoute(route)} className="p-2 bg-slate-50 text-slate-400 hover:text-brand-blue rounded-lg transition-all active:scale-90 shrink-0">
+                              <Pencil size={14} />
+                            </button>
                           </div>
-
-                          <div className="pt-4 border-t border-slate-50 space-y-4">
+                          <div className="pt-3 border-t border-slate-50 space-y-3">
                             <BudgetSummary plannedBudget={route.budget} totalBudget={routeTotalBudget} />
-
                             <div className="flex justify-end">
-                              <label className="flex items-center gap-3 cursor-pointer group">
-                                <span className="text-xs font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors">
+                              <label className="flex items-center gap-2 cursor-pointer group">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors">
                                   {route.isActive ? 'Активен' : 'Активировать'}
                                 </span>
                                 <div className="relative">
-                                  <input
-                                    type="checkbox"
-                                    className="sr-only peer"
-                                    checked={route.isActive}
-                                    onChange={() => handleToggleActive(route.id)}
-                                  />
-                                  <div className="w-12 h-7 bg-slate-100 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:start-[4px] after:bg-white after:border-slate-200 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-blue"></div>
+                                  <input type="checkbox" className="sr-only peer" checked={route.isActive} onChange={() => handleToggleActive(route.id)} />
+                                  <div className="w-10 h-6 bg-slate-100 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[3px] after:start-[3px] after:bg-white after:border-slate-200 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-blue" />
                                 </div>
                               </label>
                             </div>
@@ -638,57 +468,30 @@ export function ProfilePage() {
                   </div>
                 </div>
               ) : (
-                <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-10">
-                  <MapIcon size={48} className="mb-4 opacity-20" />
-                  <p className="text-sm font-bold italic">Список пуст</p>
-                </div>
-              )}
-
-              {isScrollableList && showScrollTop && (
-                <div className="hidden md:block absolute right-4 bottom-16 z-30">
-                  <button
-                    type="button"
-                    aria-label="Вернуться наверх"
-                    onClick={handleScrollToTop}
-                    className="relative h-14 w-14 rounded-full shadow-lg transition-transform duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-brand-blue/40"
-                  >
-                    <span
-                      className="absolute inset-0 rounded-full"
-                      style={{
-                        background: `conic-gradient(${progressColor} ${progressDegrees}deg, ${progressTrackColor} ${progressDegrees}deg)`,
-                      }}
-                    />
-                    <span className="absolute inset-[3px] rounded-full bg-white" />
-                    <span className="relative z-10 flex h-full w-full items-center justify-center text-brand-indigo">
-                      <ArrowUp size={18} />
-                    </span>
-                  </button>
+                <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-6">
+                  <MapIcon size={32} className="mb-2 opacity-20" />
+                  <p className="text-[11px] font-bold italic">Список пуст</p>
                 </div>
               )}
             </div>
           </div>
         </div>
-      </div>
 
-      {isScrollableList && showScrollTop && (
-        <button
-          type="button"
-          aria-label="Вернуться наверх"
-          onClick={handleScrollToTop}
-          className="md:hidden fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+92px)] z-[70] h-14 w-14 rounded-full shadow-xl transition-transform duration-200 active:scale-95 focus:outline-none focus:ring-2 focus:ring-brand-blue/40"
-        >
-          <span
-            className="absolute inset-0 rounded-full"
-            style={{
-              background: `conic-gradient(${progressColor} ${progressDegrees}deg, ${progressTrackColor} ${progressDegrees}deg)`,
-            }}
-          />
-          <span className="absolute inset-[3px] rounded-full bg-white" />
-          <span className="relative z-10 flex h-full w-full items-center justify-center text-brand-indigo">
-            <ArrowUp size={18} />
-          </span>
-        </button>
-      )}
+
+        <div className="hidden md:flex flex-1 relative bg-slate-50 items-center justify-center overflow-hidden p-100 md:p-4">
+          <div className="w-full h-full max-w-[96%] max-h-[96%] overflow-hidden relative rounded-2xl border border-slate-200 shadow-lg">
+            {activeRoute && activeRoute.points && activeRoute.points.length > 0 ? (
+              <RouteMap points={activeRoute.points} onPointDragEnd={() => {}} />
+            ) : (
+              <MapIcon 
+                size={44} 
+                className="text-slate-200 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" 
+              />
+            )}
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }

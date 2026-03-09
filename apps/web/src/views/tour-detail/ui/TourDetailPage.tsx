@@ -4,9 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
-import { PREDEFINED_ROUTES } from '@/shared/data/predefined-routes';
-import { TOUR_ATTRACTIONS } from '@/shared/data/tour-attractions';
-import { useTripStore } from '@/entities/trip';
+import { useTripStore, tripsApi } from '@/entities/trip';
 import type { Trip } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point';
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/shared/ui';
@@ -23,7 +21,7 @@ const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.Route
 });
 
 interface TourDetailPageProps {
-  tourId: number;
+  tourId: string;
 }
 
 export function TourDetailPage({ tourId }: TourDetailPageProps) {
@@ -32,9 +30,22 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
   const [isOpening, setIsOpening] = useState(false);
   const [showConfirmOverwrite, setShowConfirmOverwrite] = useState(false);
+  const [tour, setTour] = useState<Trip | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const route = PREDEFINED_ROUTES.find((r) => r.id === tourId);
-  const attractions = TOUR_ATTRACTIONS[tourId] ?? [];
+  // Загружаем данные тура из API
+  useEffect(() => {
+    tripsApi
+      .getPredefined()
+      .then((tours) => {
+        const found = tours.find((t) => t.id === tourId);
+        setTour(found ?? null);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [tourId]);
+
+  const attractions = tour?.points ?? [];
 
   const geocodeCity = useCallback(
     async (cityName: string): Promise<{ lon: number; lat: number } | null> => {
@@ -57,19 +68,18 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
 
   // Геокодируем город для центрирования карты
   useEffect(() => {
-    if (!route) return;
-    const city = route.title.split(':')[0]?.trim() ?? route.title;
+    if (!tour) return;
+    const city = tour.title.split(':')[0]?.trim() ?? tour.title;
     geocodeCity(city).then((coords) => {
       if (coords) setFocusCoords(coords);
     });
-  }, [route, geocodeCity]);
+  }, [tour, geocodeCity]);
 
-  const doOpenRoute = async () => {
-    if (!route) return;
+  const doOpenRoute = useCallback(async () => {
+    if (!tour) return;
     setIsOpening(true);
     try {
-      const budgetNum = parseInt(route.total.replace(/\D/g, ''), 10) || 0;
-      const city = route.title.split(':')[0]?.trim() ?? route.title;
+      const city = tour.title.split(':')[0]?.trim() ?? tour.title;
 
       let coords: { lon: number; lat: number } | null = focusCoords;
       if (!coords) {
@@ -82,9 +92,9 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
       const tourTrip: Trip = {
         id: tripId,
         ownerId: 'guest',
-        title: route.title,
-        description: route.desc,
-        budget: budgetNum,
+        title: tour.title,
+        description: tour.description,
+        budget: tour.budget,
         startDate: null,
         endDate: null,
         isActive: false,
@@ -103,10 +113,11 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
               id: `tour-attr-${Date.now()}-${idx}`,
               tripId,
               title: attr.title,
+              description: attr.description,
               address: `${city}, ${attr.title}`,
-              lat: safeCoords.lat + (Math.random() - 0.5) * 0.05,
-              lon: safeCoords.lon + (Math.random() - 0.5) * 0.05,
-              budget: 0,
+              lat: attr.lat || safeCoords.lat + (Math.random() - 0.5) * 0.05,
+              lon: attr.lon || safeCoords.lon + (Math.random() - 0.5) * 0.05,
+              budget: attr.budget,
               visitDate: null,
               imageUrl: attr.imageUrl,
               order: idx,
@@ -118,6 +129,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
             id: `tour-city-${Date.now()}`,
             tripId,
             title: city,
+            description: null,
             address: city,
             lat: safeCoords.lat,
             lon: safeCoords.lon,
@@ -135,7 +147,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     } finally {
       setIsOpening(false);
     }
-  };
+  }, [tour, focusCoords, attractions, geocodeCity, clearPlanner, setCurrentTrip, setPoints, router]);
 
   const handleOpenRoute = useCallback(() => {
     if (points && points.length > 0) {
@@ -143,14 +155,22 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     } else {
       doOpenRoute();
     }
-  }, [points]);
+  }, [points, doOpenRoute]);
 
   const confirmOverwrite = () => {
     setShowConfirmOverwrite(false);
     doOpenRoute();
   };
 
-  if (!route) {
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-brand-sky border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!tour) {
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-400 font-bold">
         Маршрут не найден
@@ -173,7 +193,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
         {/* Hero */}
         <div className="mb-10">
           <div className="flex flex-wrap items-center gap-2 mb-4">
-            {route.tags.map((tag) => (
+            {(tour.tags ?? []).map((tag) => (
               <span
                 key={tag}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-slate-500 border-2 border-slate-100 text-xs font-black uppercase tracking-widest shadow-sm"
@@ -181,22 +201,28 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
                 {tag}
               </span>
             ))}
-            <span className="inline-flex items-center px-4 py-2 rounded-full bg-white text-slate-500 border-2 border-slate-100 text-xs font-black shadow-sm">
-              {route.temp}
-            </span>
+            {tour.temp && (
+              <span className="inline-flex items-center px-4 py-2 rounded-full bg-white text-slate-500 border-2 border-slate-100 text-xs font-black shadow-sm">
+                {tour.temp}
+              </span>
+            )}
           </div>
 
           <h1 className="text-4xl md:text-6xl font-black text-brand-indigo tracking-tight leading-[0.9] mb-6">
-            {route.title}
+            {tour.title}
           </h1>
           <p className="text-lg md:text-xl text-slate-500 font-medium max-w-2xl leading-relaxed">
-            {route.desc}
+            {tour.description}
           </p>
 
-          <div className="mt-6 inline-flex items-center gap-2 bg-brand-yellow/10 rounded-2xl px-5 py-3">
-            <span className="text-slate-500 font-bold text-sm uppercase tracking-widest">Стоимость:</span>
-            <span className="text-brand-yellow font-black text-xl">{route.total}</span>
-          </div>
+          {tour.budget != null && (
+            <div className="mt-6 inline-flex items-center gap-2 bg-brand-yellow/10 rounded-2xl px-5 py-3">
+              <span className="text-slate-500 font-bold text-sm uppercase tracking-widest">Стоимость:</span>
+              <span className="text-brand-yellow font-black text-xl">
+                {tour.budget.toLocaleString('ru-RU')} ₽
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Карта */}
@@ -230,16 +256,16 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
 
             <div className="flex flex-col gap-20 md:gap-24">
               {attractions.map((place, idx) => {
-                const isOdd = idx % 2 === 0; // нечётный индекс = изображение слева
+                const isOdd = idx % 2 === 0;
                 return (
                   <div
-                    key={idx}
+                    key={place.id}
                     className={`flex flex-col md:flex-row items-center gap-10 md:gap-16 ${!isOdd ? 'md:flex-row-reverse' : ''}`}
                   >
                     {/* Изображение */}
                     <div className="w-full md:w-1/2 aspect-[4/3] rounded-[2rem] overflow-hidden shadow-2xl shrink-0">
                       <img
-                        src={place.imageUrl}
+                        src={place.imageUrl ?? ''}
                         alt={place.title}
                         className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
                       />
@@ -250,14 +276,18 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
                       <h3 className="text-2xl md:text-3xl font-black text-brand-indigo mb-4 tracking-tight">
                         {place.title}
                       </h3>
-                      <div className="mb-4">
-                        <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-emerald-50 text-emerald-600 text-sm font-black tracking-widest uppercase">
-                          {place.price.toLocaleString('ru-RU')} ₽
-                        </span>
-                      </div>
-                      <p className="text-slate-500 text-base md:text-lg leading-relaxed font-medium">
-                        {place.description}
-                      </p>
+                      {place.budget != null && (
+                        <div className="mb-4">
+                          <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-emerald-50 text-emerald-600 text-sm font-black tracking-widest uppercase">
+                            {place.budget.toLocaleString('ru-RU')} ₽
+                          </span>
+                        </div>
+                      )}
+                      {place.description && (
+                        <p className="text-slate-500 text-base md:text-lg leading-relaxed font-medium">
+                          {place.description}
+                        </p>
+                      )}
                     </div>
                   </div>
                 );

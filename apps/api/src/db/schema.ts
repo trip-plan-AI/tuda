@@ -54,6 +54,9 @@ export const trips = pgTable('trips', {
     .references(() => users.id, { onDelete: 'cascade' }),
   isActive: boolean('is_active').notNull().default(false),
   isPredefined: boolean('is_predefined').notNull().default(false),
+  img: text('img'),
+  tags: jsonb('tags').$type<string[]>(),
+  temp: text('temp'),
   startDate: text('start_date'),
   endDate: text('end_date'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -87,6 +90,7 @@ export const routePoints = pgTable('route_points', {
     .notNull()
     .references(() => trips.id, { onDelete: 'cascade' }),
   title: text('title').notNull(),
+  description: text('description'),
   lat: doublePrecision('lat').notNull(),
   lon: doublePrecision('lon').notNull(),
   budget: integer('budget'),

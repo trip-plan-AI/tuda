@@ -61,6 +61,7 @@ const NAV_ITEMS = [
 
 export function Header() {
   const pathname = usePathname();
+  const isHome = pathname === '/';
   const { isAuthenticated, logout } = useAuthStore();
   const { user } = useUserStore();
   const [modal, setModal] = useState<Modal>(null);
@@ -75,14 +76,26 @@ export function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-50 h-16 bg-white/95 backdrop-blur-md border-b border-slate-100 shrink-0 w-full flex justify-center">
-        <div className="max-w-5xl px-4 md:px-6 h-full flex items-center justify-between w-full">
+      <header
+        className={cn(
+          'sticky top-0 z-50 shrink-0 w-full',
+          isHome
+            ? 'bg-black/20 backdrop-blur-xl border-b border-white/10'
+            : 'bg-white border-b border-slate-200',
+        )}
+        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      >
+        <div className="max-w-5xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between w-full">
           {/* Логотип */}
           <Link href="/" className="flex items-center gap-3 transition-colors">
             <div className="bg-brand-sky text-white p-2 rounded-xl shadow-sm">
               <Map size={24} />
             </div>
-            <span className="font-bold text-brand-indigo text-xl leading-none">Tuda</span>
+            <span
+              className={cn('font-bold text-xl leading-none', isHome ? 'text-white' : 'text-black')}
+            >
+              Tuda
+            </span>
           </Link>
 
           {/* Правая часть */}
@@ -95,11 +108,20 @@ export function Header() {
                   <Button
                     variant="ghost"
                     size="lg"
-                    className="h-10 w-10 rounded-full p-0 bg-slate-50 border border-slate-100 text-slate-500 hover:text-brand-indigo hover:bg-slate-100 transition-all shadow-sm focus-visible:ring-0 focus-visible:border-slate-100"
+                    className={cn(
+                      'h-10 w-10 rounded-full p-0 border transition-all shadow-sm focus-visible:ring-0',
+                      isHome
+                        ? 'bg-black/40 border-white/10 text-white hover:bg-black/60 hover:text-white'
+                        : 'bg-slate-50 border-slate-100 text-slate-500 hover:text-brand-indigo hover:bg-slate-100 focus-visible:border-slate-100',
+                    )}
                   >
                     <Avatar size="lg" className="h-10 w-10">
                       <AvatarImage src={user?.photo ?? ''} />
-                      <AvatarFallback className="bg-slate-50 text-slate-500">
+                      <AvatarFallback
+                        className={cn(
+                          isHome ? 'bg-grey/21 text-white' : 'bg-slate-50 text-slate-500',
+                        )}
+                      >
                         <User size={28} strokeWidth={3} />
                       </AvatarFallback>
                     </Avatar>
@@ -107,16 +129,36 @@ export function Header() {
                 </DropdownMenuTrigger>
 
                 <DropdownMenuContent
-                  align="end"
+                  align="center"
                   sideOffset={12}
-                  className="w-64 bg-white rounded-[2rem] border border-slate-100 shadow-2xl z-[2000] py-4 px-2 animate-in fade-in slide-in-from-top-2"
+                  className={cn(
+                    'w-64 rounded-[2rem] border shadow-2xl z-[2000] py-4 px-2 animate-in fade-in slide-in-from-top-2',
+                    isHome
+                      ? 'bg-black/20 backdrop-blur-xl border-white/10'
+                      : 'bg-white border-slate-100',
+                  )}
                 >
                   {/* Шапка профиля */}
-                  <div className="px-4 py-3 border-b border-slate-50 mb-2">
-                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                  <div
+                    className={cn(
+                      'px-4 py-3 border-b mb-2',
+                      isHome ? 'border-white/10' : 'border-slate-50',
+                    )}
+                  >
+                    <p
+                      className={cn(
+                        'text-xs font-black uppercase tracking-widest',
+                        isHome ? 'text-white/60' : 'text-slate-400',
+                      )}
+                    >
                       Профиль
                     </p>
-                    <p className="text-sm font-bold text-brand-indigo truncate">
+                    <p
+                      className={cn(
+                        'text-sm font-bold truncate',
+                        isHome ? 'text-white' : 'text-brand-indigo',
+                      )}
+                    >
                       {user?.name ?? 'Пользователь'}
                     </p>
                   </div>
@@ -138,13 +180,19 @@ export function Header() {
                                 'flex! w-full items-center gap-3 px-4! py-3! rounded-2xl text-sm font-bold transition-all no-underline! cursor-pointer',
                                 isActive
                                   ? activeClass
-                                  : 'text-slate-600! hover:bg-slate-50 hover:text-brand-indigo!',
+                                  : isHome
+                                    ? 'text-white/80! hover:bg-white/10 hover:text-white!'
+                                    : 'text-slate-600! hover:bg-slate-50 hover:text-brand-indigo!',
                               )}
                             >
                               <div
                                 className={cn(
                                   'p-2 rounded-xl transition-all duration-200 shrink-0',
-                                  isActive ? iconActive : iconIdle,
+                                  isActive
+                                    ? iconActive
+                                    : isHome
+                                      ? 'bg-white/10 text-white/60'
+                                      : iconIdle,
                                 )}
                               >
                                 <Icon size={16} stroke={isActive ? '#fff' : 'currentColor'} />
@@ -157,13 +205,28 @@ export function Header() {
                     )}
                   </div>
 
-                  <div className="mt-4 pt-2 border-t border-slate-50">
+                  <div
+                    className={cn(
+                      'mt-4 pt-2 border-t',
+                      isHome ? 'border-white/10' : 'border-slate-50',
+                    )}
+                  >
                     <DropdownMenuItem className="p-0! focus:bg-transparent! outline-none">
                       <button
                         onClick={logout}
-                        className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold text-red-400 hover:bg-red-50 transition-all"
+                        className={cn(
+                          'w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all',
+                          isHome
+                            ? 'text-red-400 hover:bg-red-500/20'
+                            : 'text-red-400 hover:bg-red-50',
+                        )}
                       >
-                        <div className="p-2 rounded-xl bg-red-50 text-red-400">
+                        <div
+                          className={cn(
+                            'p-2 rounded-xl',
+                            isHome ? 'bg-red-500/20 text-red-400' : 'bg-red-50 text-red-400',
+                          )}
+                        >
                           <LogOut size={16} />
                         </div>
                         Выйти
@@ -178,7 +241,10 @@ export function Header() {
                   variant="ghost"
                   size="default"
                   shape="2xl"
-                  className="h-10 px-5 !text-brand-indigo"
+                  className={cn(
+                    'h-10 px-5',
+                    isHome ? '!text-white' : '!text-slate-600 hover:!bg-slate-100',
+                  )}
                   onClick={() => setModal('login')}
                 >
                   Войти
