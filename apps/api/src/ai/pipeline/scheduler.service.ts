@@ -17,7 +17,7 @@ const VISIT_DURATION: Record<string, number> = {
   entertainment: 120,
 };
 
-const TRANSIT_DURATION_MIN = 25;
+const DEFAULT_TRANSIT_DURATION_MIN = 25;
 const RESTAURANT_MIN_GAP_MIN = 4 * 60;
 const CAFE_AFTER_MEAL_MIN = 60;
 const TIME_SHIFT_ON_FOOD_CONFLICT_MIN = 30;
@@ -47,7 +47,10 @@ export class SchedulerService {
 
     // Минимальная целевая ёмкость маршрута
     const targetPoiCount = intent.days * 2;
-    const expandedPois = [...pois];
+    const availablePois = [...pois];
+    const totalNonFood = availablePois.filter(
+      (p) => p.category !== 'restaurant' && p.category !== 'cafe',
+    ).length;
 
     const days: PlanDay[] = [];
     const usedPoiIds = new Set<string>();
@@ -61,7 +64,9 @@ export class SchedulerService {
       let lastRestaurantArrival: number | null = null;
 
       const daysRemaining = intent.days - dayNumber + 1;
-      const remainingUnique = expandedPois.filter((p) => !usedPoiIds.has(p.id));
+      const remainingUnique = availablePois.filter(
+        (p) => !usedPoiIds.has(p.id),
+      );
       const pointsForThisDay = Math.max(
         2,
         Math.ceil(remainingUnique.length / daysRemaining),
@@ -73,12 +78,67 @@ export class SchedulerService {
       const remainingFood = remainingUnique.filter(
         (p) => p.category === 'restaurant' || p.category === 'cafe',
       );
+      const nonFoodQuotaForDay = Math.max(
+        remainingNonFood.length > 0 ? 1 : 0,
+        Math.ceil(totalNonFood / intent.days),
+      );
+      let dayNonFoodPoints = 0;
+
+      const getNearestCandidate = (
+        candidates: FilteredPoi[],
+        fromPoi: FilteredPoi | undefined,
+      ): FilteredPoi | undefined => {
+        if (!fromPoi || candidates.length === 0) return candidates[0];
+
+        let nearest = candidates[0];
+        let minDistance = Infinity;
+
+        for (const candidate of candidates) {
+          const dist = this.haversineKm(
+            fromPoi.coordinates.lat,
+            fromPoi.coordinates.lon,
+            candidate.coordinates.lat,
+            candidate.coordinates.lon,
+          );
+          if (dist < minDistance) {
+            minDistance = dist;
+            nearest = candidate;
+          }
+        }
+        return nearest;
+      };
 
       const tryAddPoint = (poi: FilteredPoi, customStart?: number): boolean => {
-        const arrival = customStart ?? currentTime;
-        const visitDuration = VISIT_DURATION[poi.category] ?? 60;
+        const lastPoi =
+          points.length > 0
+            ? (points[points.length - 1].poi as FilteredPoi)
+            : undefined;
+        let transitTime = DEFAULT_TRANSIT_DURATION_MIN;
+
+        if (lastPoi) {
+          const dist = this.haversineKm(
+            lastPoi.coordinates.lat,
+            lastPoi.coordinates.lon,
+            poi.coordinates.lat,
+            poi.coordinates.lon,
+          );
+          // Если меньше 1 км - идем пешком (~5 км/ч), иначе едем (авто ~25 км/ч)
+          // Добавляем 5 мин на сборы/ожидание
+          const rawMinutes =
+            dist < 1.0 ? (dist / 5) * 60 : (dist / 25) * 60 + 5;
+          transitTime = Math.max(5, Math.min(45, Math.round(rawMinutes)));
+        } else {
+          transitTime = 0; // Первая точка дня
+        }
+
+        const arrival = customStart ?? currentTime + transitTime;
+        // Сокращаем время визита, чтобы больше успеть
+        const baseDuration = VISIT_DURATION[poi.category] ?? 60;
+        const visitDuration = Math.max(30, Math.round(baseDuration * 0.8));
         const leaveTime = arrival + visitDuration;
-        if (leaveTime > endMinutes) return false;
+
+        // Допускаем небольшое превышение времени (до 60 минут), чтобы показать точку
+        if (leaveTime > endMinutes + 60) return false;
 
         const pointCost = this.estimatePointCost(poi, dayBudget);
         points.push({
@@ -88,13 +148,12 @@ export class SchedulerService {
           arrival_time: this.minutesToTime(arrival),
           departure_time: this.minutesToTime(leaveTime),
           visit_duration_min: visitDuration,
-          travel_from_prev_min:
-            points.length === 1 ? undefined : TRANSIT_DURATION_MIN,
+          travel_from_prev_min: points.length === 0 ? undefined : transitTime,
           estimated_cost: pointCost,
         });
 
         dayCost += pointCost;
-        currentTime = leaveTime + TRANSIT_DURATION_MIN;
+        currentTime = leaveTime;
         usedPoiIds.add(poi.id);
 
         if (poi.category === 'restaurant') {
@@ -102,6 +161,8 @@ export class SchedulerService {
           lastRestaurantArrival = arrival;
         } else if (poi.category === 'cafe') {
           dayCafePoints += 1;
+        } else {
+          dayNonFoodPoints += 1;
         }
 
         return true;
@@ -126,10 +187,14 @@ export class SchedulerService {
 
       // Шаг 3: заполняем день до целевого объема, соблюдая ограничения питания
       while (points.length < pointsForThisDay && currentTime < endMinutes) {
-        const candidates = expandedPois.filter((p) => !usedPoiIds.has(p.id));
+        const candidates = availablePois.filter((p) => !usedPoiIds.has(p.id));
         if (candidates.length === 0) break;
+        const hasFoodCandidates = candidates.some(
+          (p) => p.category === 'restaurant' || p.category === 'cafe',
+        );
 
-        const next = candidates.find((poi) => {
+        // Фильтруем кандидатов по бизнес-правилам
+        const validCandidates = candidates.filter((poi) => {
           if (poi.category === 'restaurant') {
             if (dayRestaurantPoints >= 3) return false;
             if (
@@ -150,15 +215,31 @@ export class SchedulerService {
             }
           }
 
+          if (
+            poi.category !== 'restaurant' &&
+            poi.category !== 'cafe' &&
+            dayNonFoodPoints >= nonFoodQuotaForDay &&
+            hasFoodCandidates
+          ) {
+            return false;
+          }
+
           return true;
         });
 
-        if (!next) {
+        if (validCandidates.length === 0) {
           currentTime += TIME_SHIFT_ON_FOOD_CONFLICT_MIN;
           continue;
         }
 
-        if (!tryAddPoint(next)) {
+        // Выбираем географически ближайшую точку
+        const lastPoi =
+          points.length > 0
+            ? (points[points.length - 1].poi as FilteredPoi)
+            : undefined;
+        const next = getNearestCandidate(validCandidates, lastPoi);
+
+        if (!next || !tryAddPoint(next)) {
           break;
         }
       }
@@ -183,7 +264,7 @@ export class SchedulerService {
       total_budget_estimated: totalBudgetEstimated,
       days,
       notes:
-        usedPoiIds.size < expandedPois.length
+        usedPoiIds.size < availablePois.length
           ? 'Часть точек не попала в расписание из-за ограничения времени дня.'
           : pois.length < targetPoiCount
             ? 'В городе недостаточно уникальных мест для полного покрытия всех дней.'
@@ -232,5 +313,22 @@ export class SchedulerService {
     const date = new Date();
     date.setDate(date.getDate() + offsetDays);
     return date.toISOString().slice(0, 10);
+  }
+
+  private haversineKm(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
+    const toRad = (value: number) => (value * Math.PI) / 180;
+
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+
+    return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 }

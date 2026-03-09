@@ -236,10 +236,10 @@ export class SemanticFilterService {
   }
 
   private buildPrompt(pois: PoiItem[], intent: ParsedIntent): string {
-    const minPlaces = Math.min(intent.days * 2, pois.length);
+    const minPlaces = Math.min(intent.days * 4, pois.length);
     const maxPlaces = Math.min(
-      Math.max(minPlaces, 15),
-      Math.max(minPlaces, pois.length),
+      Math.max(minPlaces, intent.days * 6),
+      pois.length,
     );
     const preferences = intent.preferences_text.toLowerCase();
     const hasFoodFocus =
@@ -280,7 +280,7 @@ ${JSON.stringify(
 КРИТИЧЕСКИ ВАЖНО:
 1. Используй ТОЛЬКО значение поля "id" из списка мест выше (это строка с числом от "1" до "${pois.length}").
 2. В итоговом JSON массив "selected" должен содержать объекты, где "id" строго совпадает с выданным номером.
-3. Верни не менее ${minPlaces} мест.
+3. ОБЯЗАТЕЛЬНО верни РОВНО от ${minPlaces} до ${maxPlaces} мест. Не сокращай список по своей инициативе, маршрут должен быть максимально насыщенным.
 
 Верни только JSON без markdown (без \`\`\`json):
 {

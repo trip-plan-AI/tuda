@@ -114,15 +114,31 @@ export class ProviderSearchService {
       `[ProviderSearch] Deduplication complete. Unique points: ${deduped.length}`,
     );
 
-    // 5) Pre-filter: оставляем топ-100 точек для YandexGPT/OpenRouter.
-    // Больше отдавать нельзя из-за лимитов контекстного окна LLM.
-    const MAX_POINTS_FOR_LLM = 100;
-    const result = deduped
+    // 5) Pre-filter с квотированием:
+    // Если просто отсортировать по рейтингу, еда (с дефолтом 4.5) вытеснит все музеи (с дефолтом 4.0).
+    // Поэтому мы разделяем точки и берем Топ-50 не-еды и Топ-50 еды.
+    const MAX_NON_FOOD_FOR_LLM = 50;
+    const MAX_FOOD_FOR_LLM = 50;
+
+    const nonFood = deduped.filter(
+      (p) => p.category !== 'restaurant' && p.category !== 'cafe',
+    );
+    const food = deduped.filter(
+      (p) => p.category === 'restaurant' || p.category === 'cafe',
+    );
+
+    const topNonFood = nonFood
       .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
-      .slice(0, Math.max(minRequired, MAX_POINTS_FOR_LLM));
+      .slice(0, MAX_NON_FOOD_FOR_LLM);
+
+    const topFood = food
+      .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
+      .slice(0, MAX_FOOD_FOR_LLM);
+
+    const result = [...topNonFood, ...topFood];
 
     this.logger.log(
-      `[ProviderSearch] Final pre-filter complete (min ${minRequired}, limited to ${result.length} for LLM context limits). Returning points for Semantic Filter.`,
+      `[ProviderSearch] Final pre-filter complete. Kept ${topNonFood.length} non-food and ${topFood.length} food points (Total: ${result.length}) for Semantic Filter.`,
     );
     return result;
   }
