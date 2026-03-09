@@ -129,8 +129,7 @@ export function Header() {
                 </DropdownMenuTrigger>
 
                 <DropdownMenuContent
-                  align="center"
-
+                  align="end"
                   sideOffset={12}
                   className={cn(
                     'w-64 rounded-[2rem] border shadow-2xl z-[2000] py-4 px-2 animate-in fade-in slide-in-from-top-2',

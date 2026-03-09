@@ -12,9 +12,10 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import { useUserStore, usersApi, type User } from '@/entities/user';
-import { useTripStore, tripsApi, type Trip } from '@/entities/trip';
+import { useUserStore, usersApi } from '@/entities/user';
+import { useTripStore, type Trip } from '@/entities/trip';
 import { useAuthStore } from '@/features/auth';
+import { tripsApi } from '@/entities/trip';
 import { toast } from 'sonner';
 import { cn } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/button';
@@ -49,8 +50,7 @@ function BudgetSummary({
 
   return (
     <div className={cn('space-y-2', className)}>
-      {/* Суммы */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         <div className="flex flex-col min-w-0 text-left">
           <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Планируемый</span>
           <span className="text-sm sm:text-base md:text-lg font-black text-brand-indigo leading-tight break-all">
@@ -64,8 +64,6 @@ function BudgetSummary({
           </span>
         </div>
       </div>
-
-      {/* Прогресс-бар */}
       <div className="space-y-1.5">
         <div className="h-1 rounded-full bg-slate-100 overflow-hidden">
           <div
@@ -73,16 +71,14 @@ function BudgetSummary({
             style={{ width: `${progressPercent}%` }}
           />
         </div>
-        <div className="grid grid-cols-2 gap-1.5 text-[9px] font-bold text-slate-400">
+        <div className="grid grid-cols-2 gap-2 text-[9px] font-bold text-slate-400">
           <span className="min-w-0 break-words">{plan > 0 ? `Использовано ${progressPercent}%` : 'Лимит не задан'}</span>
           <span className="min-w-0 text-right break-all">{plan > 0 ? `${formatRub(plan - total)} ₽` : '—'}</span>
         </div>
-        <div className={cn('flex items-start gap-1.5 rounded-lg border px-2 py-1 text-[9px] font-black leading-tight break-words', isOverBudget ? 'border-red-100 bg-red-50/70 text-red-600' : 'border-emerald-100 bg-emerald-50/70 text-emerald-600')}>
+        <div className={cn('flex items-start gap-2 rounded-lg border px-2 py-1 text-[9px] sm:text-[10px] font-black leading-tight break-words', isOverBudget ? 'border-red-100 bg-red-50/70 text-red-600' : 'border-emerald-100 bg-emerald-50/70 text-emerald-600')}>
           {isOverBudget ? <AlertTriangle size={10} /> : <CheckCircle2 size={10} />}
           {plan > 0 ? (
-            isOverBudget
-              ? <span>Перерасход: +{formatRub(total - plan)} ₽</span>
-              : <span>Остаток: {formatRub(plan - total)} ₽</span>
+            isOverBudget ? <span>Перерасход: +{formatRub(total - plan)} ₽</span> : <span>Остаток: {formatRub(plan - total)} ₽</span>
           ) : (
             <span>Задайте планируемый бюджет для контроля расхода</span>
           )}
@@ -172,7 +168,7 @@ export function ProfilePage() {
   }, []);
 
   const activeRoute = savedTrips.find((t) => t.isActive);
-  const activeRouteTotalBudget = activeRoute?.points?.reduce((sum, p) => sum + (p.budget || 0), 0) || 0;
+  const activeRouteTotalBudget = activeRoute?.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setIsDragging(true);
@@ -233,36 +229,33 @@ export function ProfilePage() {
   };
 
   return (
-    <div className="flex flex-col h-full max-h-[calc(100vh-140px)] bg-slate-50 relative overflow-hidden w-full rounded-2xl shadow-sm border border-slate-200">
+    <div className="flex flex-col h-full max-h-[calc(100vh-100px)] bg-slate-50 relative overflow-hidden w-full rounded-[1.5rem] shadow-sm border border-slate-200 animate-in fade-in slide-in-from-bottom-8 duration-1000 ease-out">
       <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
 
       {/* ── ШАПКА ПРОФИЛЯ ── */}
-      <div className="w-full shrink-0 bg-white border-b border-slate-200 z-20 pl-3 pr-4 py-3 md:pl-4 md:pr-6 md:py-4 shadow-sm">
+      <div className="w-full shrink-0 bg-white border-b border-slate-200 z-20 px-4 py-3 md:px-5 md:py-4 shadow-sm">
         <div className="flex items-center gap-3 mb-3 md:mb-4 w-full">
-          <h1 className="text-base md:text-xl font-black text-brand-indigo">Мой профиль</h1>
+          <h1 className="text-lg md:text-xl font-black text-brand-indigo">Мой профиль</h1>
         </div>
-        <div className="flex items-center gap-3 md:gap-4">
-          {/* Аватар */}
+        <div className="flex items-center gap-4 md:gap-5">
           <div
             onClick={handleAvatarClick}
-            className="w-14 h-14 md:w-16 md:h-16 bg-slate-50 rounded-full flex items-center justify-center border-[3px] border-white shadow-md overflow-hidden cursor-pointer group relative shrink-0"
+            className="w-16 h-16 md:w-20 md:h-20 bg-slate-50 rounded-full flex items-center justify-center border-2 border-white shadow-md overflow-hidden cursor-pointer group relative shrink-0"
           >
             {user?.photo ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={user.photo} className="w-full h-full object-cover" alt={user.name} />
             ) : (
-              <UserIcon size={28} className="text-slate-200" />
+              <UserIcon size={32} className="text-slate-200" />
             )}
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-              <Pencil size={16} className="text-white" />
+              <Pencil size={20} className="text-white" />
             </div>
           </div>
-
-          {/* Имя */}
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
               {isEditingName ? (
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-2">
                   <input
                     autoFocus
                     type="text"
@@ -270,26 +263,26 @@ export function ProfilePage() {
                     onChange={(e) => setTempName(e.target.value)}
                     onBlur={handleSaveName}
                     onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
-                    className="text-base md:text-lg font-black text-brand-indigo border-b-2 border-brand-blue outline-none bg-transparent min-w-[140px]"
+                    className="text-lg md:text-xl font-black text-brand-indigo border-b-2 border-brand-blue outline-none bg-transparent min-w-[150px]"
                   />
-                  <button onClick={handleSaveName} className="p-1.5 bg-emerald-500 text-white rounded-lg shadow active:scale-90 transition-transform">
-                    <Check size={14} />
+                  <button onClick={handleSaveName} className="p-1.5 bg-emerald-500 text-white rounded-lg shadow-lg active:scale-90 transition-transform">
+                    <Check size={16} />
                   </button>
                 </div>
               ) : (
                 <>
-                  <h2 className="text-base md:text-lg font-black text-brand-indigo">{user?.name}</h2>
+                  <h2 className="text-lg md:text-xl font-black text-brand-indigo">{user?.name}</h2>
                   <button
                     onClick={() => { setTempName(user?.name || ''); setIsEditingName(true); }}
                     className="p-1.5 bg-slate-50 text-slate-400 hover:text-brand-blue hover:bg-slate-100 rounded-lg transition-all active:scale-90"
                     aria-label="Редактировать имя"
                   >
-                    <Pencil size={12} />
+                    <Pencil size={14} />
                   </button>
                 </>
               )}
             </div>
-            <p className="text-xs text-slate-400 font-bold mt-0.5">
+            <p className="text-[10px] text-slate-400 font-bold mt-0.5">
               Путешественник с {user?.createdAt ? new Date(user.createdAt).getFullYear() : '2026'} года
             </p>
           </div>
@@ -299,14 +292,14 @@ export function ProfilePage() {
       {/* ── ОСНОВНАЯ ОБЛАСТЬ ── */}
       <div className="flex-1 flex flex-col md:flex-row relative overflow-hidden w-full">
 
-        {/* Мобильный фон (карта позади шторки) */}
-        <div className="md:hidden absolute inset-0 bg-slate-100 flex items-start justify-center pt-3">
+        {/* Мобильный бэкграунд */}
+        <div className="md:hidden absolute inset-0 bg-slate-100 flex items-start justify-center pt-4">
           {activeRoute && activeRoute.points && activeRoute.points.length > 0 ? (
             <div className="w-full h-1/2 opacity-60 pointer-events-none grayscale">
               <RouteMap points={activeRoute.points} onPointDragEnd={() => {}} />
             </div>
           ) : (
-            <MapIcon size={44} className="text-slate-200 mt-8" />
+            <MapIcon size={48} className="text-slate-200 mt-10" />
           )}
         </div>
 
@@ -316,59 +309,51 @@ export function ProfilePage() {
             'absolute bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] md:bottom-auto md:top-0',
             'h-[var(--sheet-height)] md:h-full w-full md:static',
             'flex flex-col bg-white z-10',
-            'shadow-[0_-8px_30px_-12px_rgba(0,0,0,0.2)] md:shadow-none',
-            'rounded-t-[2rem] md:rounded-none',
+            'shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] md:shadow-none',
+            'rounded-t-[1.5rem] md:rounded-none',
             'transition-[height] duration-75 ease-out overflow-hidden',
-            'md:w-[40%] lg:w-[35%] xl:w-[520px] shrink-0 md:border-r md:border-slate-200',
+            'md:w-[40%] lg:w-[35%] xl:w-[400px] shrink-0 md:border-r md:border-slate-200',
           )}
           style={{ ['--sheet-height' as string]: `${sheetHeight}%` }}
         >
-          {/* Зона перетаскивания (только мобилка) */}
           <div
-            className="w-full pt-2.5 pb-1.5 shrink-0 bg-white rounded-t-[2rem] md:hidden cursor-grab active:cursor-grabbing touch-none"
+            className="w-full pt-2 pb-1 shrink-0 bg-white rounded-t-[1.5rem] md:hidden cursor-grab active:cursor-grabbing touch-none"
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
           >
-            <div className="w-8 h-1 bg-slate-200 rounded-full mx-auto" />
+            <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto" />
           </div>
 
-          {/* Табы */}
           <div className="px-3 md:px-4 pt-3 md:pt-4 shrink-0 bg-white z-20">
             <div className="flex w-full p-1 bg-slate-100 rounded-xl">
               <button
                 onClick={() => setActiveTab('routes')}
-                className={cn('flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all', activeTab === 'routes' ? 'bg-white text-brand-indigo shadow-sm' : 'text-slate-400 hover:text-slate-600')}
+                className={cn('flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all', activeTab === 'routes' ? 'bg-white text-brand-indigo shadow-sm' : 'text-slate-400 hover:text-slate-600')}
               >
                 Активно
               </button>
               <button
                 onClick={() => setActiveTab('saved')}
-                className={cn('flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all', activeTab === 'saved' ? 'bg-white text-brand-indigo shadow-sm' : 'text-slate-400 hover:text-slate-600')}
+                className={cn('flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all', activeTab === 'saved' ? 'bg-white text-brand-indigo shadow-sm' : 'text-slate-400 hover:text-slate-600')}
               >
                 Сохранено
               </button>
             </div>
           </div>
 
-          {/* Якорь для FAB */}
           <div className="flex-1 relative min-h-0">
-
-            {/* FAB "наверх" */}
             <div
               className={cn(
                 'absolute right-3 bottom-3 md:right-4 md:bottom-4 z-30',
                 'transition-all duration-300',
-                showScrollTop
-                  ? 'opacity-100 translate-y-0 visible pointer-events-auto'
-                  : 'opacity-0 translate-y-4 invisible pointer-events-none',
+                showScrollTop ? 'opacity-100 translate-y-0 visible' : 'opacity-0 translate-y-2 invisible pointer-events-none',
               )}
             >
               <button
                 type="button"
-                aria-label="Вернуться наверх"
                 onClick={handleScrollToTop}
-                className="relative h-10 w-10 rounded-full shadow-lg transition-transform duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-brand-blue/40"
+                className="relative h-10 w-10 rounded-full shadow-md transition-transform hover:scale-105 active:scale-95"
               >
                 <span
                   className="absolute inset-0 rounded-full"
@@ -376,55 +361,44 @@ export function ProfilePage() {
                 />
                 <span className="absolute inset-[2px] rounded-full bg-white" />
                 <span className="relative z-10 flex h-full w-full items-center justify-center text-brand-indigo">
-                  <ArrowUp size={13} />
+                  <ArrowUp size={14} />
                 </span>
               </button>
             </div>
 
-            {/* Скроллируемый контент */}
             <div className="h-full overflow-y-auto p-3 md:p-4 flex flex-col no-scrollbar">
               {activeTab === 'routes' ? (
                 activeRoute ? (
-                  <div className="space-y-3 md:space-y-4 w-full h-full flex flex-col animate-in fade-in duration-500">
+                  <div className="space-y-3 w-full h-full flex flex-col animate-in fade-in duration-500">
                     <div className="flex justify-between items-center px-1">
-                      <h3 className="text-xs font-black text-brand-indigo uppercase tracking-widest">Активный маршрут</h3>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEditRoute(activeRoute)}
-                        className="rounded-lg border-slate-200 text-slate-500 font-bold text-[11px] h-7 px-2"
-                      >
-                        <Pencil size={10} className="mr-1.5" />
+                      <h3 className="text-[10px] font-black text-brand-indigo uppercase tracking-widest">Активный маршрут</h3>
+                      <Button variant="outline" size="sm" onClick={() => handleEditRoute(activeRoute)} className="h-7 px-2 rounded-lg border-slate-200 text-slate-500 font-bold text-[9px]">
+                        <Pencil size={12} className="mr-1" />
                         ИЗМЕНИТЬ
                       </Button>
                     </div>
 
-                    {/* Превью карты (только мобилка) */}
-                    <div className="w-full aspect-[16/9] md:hidden rounded-2xl overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100">
-                      <RouteMap points={activeRoute.points || []} onPointDragEnd={() => {}} />
-                    </div>
-
                     <div className="bg-white p-3 md:p-4 rounded-2xl border border-slate-100 shadow-sm flex-1 min-h-0 flex flex-col">
-                      <div className="flex items-center gap-3 mb-3 md:mb-4">
-                        <div className="w-8 h-8 rounded-xl bg-brand-blue/10 text-brand-blue flex items-center justify-center shrink-0">
-                          <MapIcon size={16} />
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-xl bg-brand-blue/10 text-brand-blue flex items-center justify-center shrink-0">
+                          <MapIcon size={20} />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest truncate">Маршрут</p>
-                          <p className="text-base font-black text-brand-indigo truncate">{activeRoute.title}</p>
+                          <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest truncate">Маршрут</p>
+                          <p className="text-base font-black text-brand-indigo truncate leading-tight">{activeRoute.title}</p>
                         </div>
                       </div>
 
-                      <div className="relative flex-1 min-h-[80px]">
+                      <div className="relative flex-1 min-h-[100px]">
                         <div ref={routePointsScrollRef} onScroll={handleContentScroll} className="h-full overflow-y-auto pr-1 no-scrollbar">
-                          <div className="space-y-3 pb-3">
+                          <div className="space-y-2.5 pb-2">
                             {activeRoute.points?.map((point, idx) => (
                               <div key={point.id} className="flex items-start gap-3">
-                                <div className="w-5 h-5 rounded-full bg-brand-blue text-white font-black flex items-center justify-center text-[9px] shrink-0 mt-0.5">
+                                <div className="w-5 h-5 rounded-full bg-brand-blue text-white font-black flex items-center justify-center text-[8px] shrink-0 mt-0.5">
                                   {idx + 1}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-black text-slate-700">{point.title}</p>
+                                  <p className="text-xs font-black text-slate-700 leading-tight">{point.title}</p>
                                   <p className="text-[10px] text-slate-400 font-bold">
                                     {point.budget ? `${point.budget.toLocaleString('ru-RU')} ₽` : 'Бесплатно'}
                                   </p>
@@ -433,65 +407,57 @@ export function ProfilePage() {
                             ))}
                           </div>
                         </div>
-                        <div className="pointer-events-none absolute inset-x-0 top-0 h-3 md:h-4 bg-gradient-to-b from-white to-transparent" />
-                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 md:h-5 bg-gradient-to-t from-white to-transparent" />
                       </div>
 
-                      <div className="mt-3 pt-3 border-t border-slate-50 shrink-0">
+                      <div className="mt-2 pt-2 border-t border-slate-50 shrink-0">
                         <BudgetSummary plannedBudget={activeRoute.budget} totalBudget={activeRouteTotalBudget} />
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-7">
-                    <MapIcon size={32} className="mb-3 opacity-20" />
-                    <p className="text-xs font-bold italic">Нет активного маршрута</p>
-                    <Button onClick={() => router.push('/planner')} variant="brand" className="mt-4 rounded-lg uppercase font-black tracking-widest text-[11px]">
+                  <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-6">
+                    <MapIcon size={32} className="mb-2 opacity-20" />
+                    <p className="text-[11px] font-bold italic">Нет активного маршрута</p>
+                    <Button onClick={() => router.push('/planner')} variant="brand" className="mt-4 h-8 rounded-lg uppercase font-black tracking-widest text-[9px]">
                       Создать
                     </Button>
                   </div>
                 )
               ) : isLoadingTrips ? (
                 <div className="space-y-3">
-                  {[1, 2, 3].map((i) => <div key={i} className="h-20 bg-slate-100 animate-pulse rounded-2xl" />)}
+                  {[1, 2, 3].map((i) => <div key={i} className="h-24 bg-slate-100 animate-pulse rounded-2xl" />)}
                 </div>
               ) : savedTrips.length > 0 ? (
                 <div ref={savedListScrollRef} onScroll={handleContentScroll} className="h-full overflow-y-auto pr-1 no-scrollbar">
-                  <div className="space-y-3 w-full animate-in fade-in duration-500 pb-3">
+                  <div className="space-y-3 w-full animate-in fade-in duration-500 pb-2">
                     {savedTrips.map((route) => {
                       const routeTotalBudget = route.points?.reduce((sum, p) => sum + (p.budget || 0), 0) || 0;
                       return (
                         <div key={route.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
                           <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-8 h-8 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center shrink-0">
-                                <MapIcon size={14} />
+                              <div className="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center shrink-0">
+                                <MapIcon size={18} />
                               </div>
                               <div className="min-w-0">
-                                <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest truncate">Маршрут</p>
-                                <p className="text-sm font-black text-brand-indigo truncate">{route.title}</p>
+                                <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest truncate">Маршрут</p>
+                                <p className="text-base font-black text-brand-indigo truncate leading-tight">{route.title}</p>
                               </div>
                             </div>
-                            <button
-                              onClick={() => handleEditRoute(route)}
-                              className="p-2 bg-slate-50 text-slate-400 hover:text-brand-blue hover:bg-slate-100 rounded-lg transition-all active:scale-90 shrink-0"
-                              title="Редактировать"
-                            >
-                              <Pencil size={13} />
+                            <button onClick={() => handleEditRoute(route)} className="p-2 bg-slate-50 text-slate-400 hover:text-brand-blue rounded-lg transition-all active:scale-90 shrink-0">
+                              <Pencil size={14} />
                             </button>
                           </div>
-
                           <div className="pt-3 border-t border-slate-50 space-y-3">
                             <BudgetSummary plannedBudget={route.budget} totalBudget={routeTotalBudget} />
                             <div className="flex justify-end">
                               <label className="flex items-center gap-2 cursor-pointer group">
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors">
                                   {route.isActive ? 'Активен' : 'Активировать'}
                                 </span>
                                 <div className="relative">
                                   <input type="checkbox" className="sr-only peer" checked={route.isActive} onChange={() => handleToggleActive(route.id)} />
-                                  {/* Toggle: w-12 h-7 → w-9 h-5, inner circle: h-5 w-5 → h-3.5 w-3.5, offsets top-[4px] start-[4px] → top-[3px] start-[3px] */}
-                                  <div className="w-9 h-5 bg-slate-100 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[3px] after:start-[3px] after:bg-white after:border-slate-200 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-brand-blue" />
+                                  <div className="w-10 h-6 bg-slate-100 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[3px] after:start-[3px] after:bg-white after:border-slate-200 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-blue" />
                                 </div>
                               </label>
                             </div>
@@ -502,26 +468,25 @@ export function ProfilePage() {
                   </div>
                 </div>
               ) : (
-                <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-7">
-                  <MapIcon size={32} className="mb-3 opacity-20" />
-                  <p className="text-xs font-bold italic">Список пуст</p>
+                <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-6">
+                  <MapIcon size={32} className="mb-2 opacity-20" />
+                  <p className="text-[11px] font-bold italic">Список пуст</p>
                 </div>
               )}
             </div>
-
           </div>
-          {/* конец якоря FAB */}
-
         </div>
-        {/* конец левой колонки */}
 
-        {/* ── ПРАВАЯ КОЛОНКА: Карта ── */}
-        <div className="hidden md:flex flex-1 relative bg-slate-50 p-3 md:p-4 items-center justify-center overflow-hidden">
-          <div className="w-full h-full rounded-2xl border-2 border-slate-200/80 shadow-sm overflow-hidden relative bg-white">
+
+        <div className="hidden md:flex flex-1 relative bg-slate-50 items-center justify-center overflow-hidden p-100 md:p-4">
+          <div className="w-full h-full max-w-[96%] max-h-[96%] overflow-hidden relative rounded-2xl border border-slate-200 shadow-lg">
             {activeRoute && activeRoute.points && activeRoute.points.length > 0 ? (
               <RouteMap points={activeRoute.points} onPointDragEnd={() => {}} />
             ) : (
-              <MapIcon size={44} className="text-slate-200 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+              <MapIcon 
+                size={44} 
+                className="text-slate-200 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" 
+              />
             )}
           </div>
         </div>

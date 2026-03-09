@@ -22,6 +22,7 @@ export function Sidebar() {
   const router = useRouter();
   const { isAuthenticated } = useAuthStore();
   const [modal, setModal] = useState<Modal>(null);
+  const isLanding = pathname === '/';
 
   const handleNavClick = (href: string, e: React.MouseEvent) => {
     if (href === '/profile' && !isAuthenticated) {
@@ -32,8 +33,17 @@ export function Sidebar() {
 
   return (
     <>
-      <aside className="hidden md:flex sticky top-16 h-[calc(100vh-64px)] w-20 backdrop-blur-md flex-col items-center py-8 gap-4 shrink-0 z-40">
-        <div className="flex-1 flex flex-col gap-4 items-center mt-0">
+      <aside
+        className={cn(
+          'hidden md:flex sticky top-16 h-[calc(100vh-64px)] backdrop-blur-md flex-col items-center py-8 gap-4 shrink-0 z-40',
+          'overflow-hidden',
+          'transition-[width,opacity,transform] duration-700 ease-[cubic-bezier(0.4,0,0.2,1)]',
+          isLanding
+            ? 'w-0 opacity-0 -translate-x-6 pointer-events-none'
+            : 'w-20 opacity-100 translate-x-0',
+        )}
+      >
+        <div className="flex-1 flex flex-col gap-4 items-center mt-0 min-w-[5rem]">
           {NAV.map(({ href, icon: Icon, label }) => {
             const isActive = pathname === href;
             return (
