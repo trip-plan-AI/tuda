@@ -80,8 +80,8 @@ export function Header() {
         className={cn(
           'sticky top-0 z-50 shrink-0 w-full',
           isHome
-            ? 'bg-black/20 backdrop-blur-xl border-b border-white/10'
-            : 'bg-white border-b border-slate-200',
+            ? 'block bg-black/20 backdrop-blur-xl border-b border-white/10'
+            : 'hidden md:block bg-white border-b border-slate-200',
         )}
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
@@ -236,7 +236,7 @@ export function Header() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <>
+              <div className="hidden md:flex items-center gap-2">
                 <Button
                   variant="ghost"
                   size="default"
@@ -258,7 +258,7 @@ export function Header() {
                 >
                   Регистрация
                 </Button>
-              </>
+              </div>
             )}
           </div>
         </div>
