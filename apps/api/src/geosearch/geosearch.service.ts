@@ -193,13 +193,13 @@ export class GeosearchService {
       if (!data || !data.address) return null;
 
       let addr = data.address;
-      
+
       // 1. Пытаемся найти название конкретного объекта (POI)
       const poi = data.name || addr.historic || addr.amenity || addr.shop || addr.tourism || addr.office || addr.leisure || addr.man_made || addr.ruins;
 
       // 2. Собираем всё, что относится к улице
       let street = addr.road || addr.street || addr.pedestrian || addr.footway || addr.cycleway || addr.path || addr.square || addr.place || addr.allotments;
-      
+
       // 3. Собираем всё, что относится к номеру дома/зданию (строгий адрес)
       const houseParts: string[] = [];
       if (addr.house_number) houseParts.push(addr.house_number);
@@ -207,7 +207,7 @@ export class GeosearchService {
         houseParts.push(addr.building);
       }
       if (addr.house_name) houseParts.push(addr.house_name);
-      
+
       // 4. ВТОРОЙ КОНТУР: Если Nominatim не нашел номер дома, идем в Photon
       if (houseParts.length === 0) {
         const photonRes = await this.reversePhoton(lat, lon);
@@ -242,7 +242,7 @@ export class GeosearchService {
           }
         }
       }
-      
+
       const houseInfo = houseParts.join(', ');
       const settlement = addr.village || addr.town || addr.hamlet || addr.allotments || addr.suburb || addr.city_district;
       const city = addr.city;
@@ -276,7 +276,7 @@ export class GeosearchService {
 
       // 6. Формируем полный адрес (displayName) по нашему порядку
       const finalParts: string[] = [];
-      
+
       // Блок 1: Самая точная информация (Объект / Улица / Поселение + Дом)
       if (poi && poi !== street && poi !== settlement && !houseInfo) {
         finalParts.push(street ? `${poi}, ${street}` : poi);
@@ -323,7 +323,7 @@ export class GeosearchService {
         // Проверяем, не является ли первый элемент номером дома
         const potentialHouse = checkParts[0];
         const potentialStreet = checkParts[1];
-        
+
         // Если во втором элементе есть слова (улица, переулок и т.д.) или это просто текст
         if (/[а-яА-Яa-zA-Z]/.test(potentialStreet)) {
           checkParts.shift(); // убираем номер
@@ -412,7 +412,7 @@ export class GeosearchService {
           };
         })
         .filter(
-          (item): item is { displayName: string; uri: string } => item !== null,
+          (item: { displayName: string; uri: string } | null): item is { displayName: string; uri: string } => item !== null,
         );
     } catch {
       return null;

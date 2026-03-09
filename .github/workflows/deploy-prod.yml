@@ -11,7 +11,63 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  predeploy-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      base_sha: ${{ steps.sha.outputs.base_sha }}
+      head_sha: ${{ steps.sha.outputs.head_sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Compute push SHAs
+        id: sha
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "base_sha=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
+          echo "head_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+
+      - name: Run predeploy guard
+        env:
+          BASE_SHA: ${{ steps.sha.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.sha.outputs.head_sha }}
+          LOG_DIR: ./artifacts/predeploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./scripts/ci/predeploy-guard.sh
+          ./scripts/ci/predeploy-guard.sh
+
+      - name: Upload predeploy logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: predeploy-guard-logs
+          path: artifacts/predeploy
+          if-no-files-found: warn
+
   deploy:
+    needs: predeploy-guard
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

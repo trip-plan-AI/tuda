@@ -1,48 +1,48 @@
 export interface PredefinedRoute {
-  id: number;
+  id: string;
   title: string;
-  desc: string;
-  total: string;
   img: string;
   tags: string[];
   temp: string;
+  total: string;
+  desc: string;
 }
 
 export const PREDEFINED_ROUTES: PredefinedRoute[] = [
   {
-    id: 1,
-    title: 'Сочи: Горы и Море',
-    desc: 'Идеальный баланс: 2 дня в горах, 3 дня на побережье с живописными видами.',
-    total: '45 000 ₽',
-    img: '/assets/images/sochi.webp',
-    tags: ['⚡ Активный', 'РФ'],
-    temp: '+15°',
+    id: 'route-1',
+    title: 'Золотое кольцо России',
+    img: 'https://images.unsplash.com/photo-1513326212926-6a145e7f47dd?w=800',
+    tags: ['Активный', 'История'],
+    temp: '-5°C',
+    total: '8 дней',
+    desc: 'Путешествие по древним городам России, посетите Москву, Владимир, Суздаль и Ростов Великий.',
   },
   {
-    id: 2,
-    title: 'Алтай: Золотые Горы',
-    desc: 'Дикая природа, бирюзовая Катунь и бескрайние степи Алтая.',
-    total: '55 000 ₽',
-    img: '/assets/images/altay.webp',
-    tags: ['⚡ Активный', 'РФ'],
-    temp: '+8°',
+    id: 'route-2',
+    title: 'Карелия: озера и леса',
+    img: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800',
+    tags: ['Зима', 'Природа'],
+    temp: '-10°C',
+    total: '5 дней',
+    desc: 'Исследуйте красоту озер и лесов Карелии, насладитесь северной природой и северными огнями.',
   },
   {
-    id: 3,
-    title: 'Карелия Winter',
-    desc: 'Северные озёра, зимние активности и уютные локации для камерного отдыха.',
-    total: '42 500 ₽',
-    img: '/assets/images/karelia.webp',
-    tags: ['❄️ Зима', 'РФ'],
-    temp: '-3°',
+    id: 'route-3',
+    title: 'Путешествие по Кавказу',
+    img: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800',
+    tags: ['Экстрим', 'Горы'],
+    temp: '-8°C',
+    total: '10 дней',
+    desc: 'Экстремальное путешествие по горам Кавказа, восхождения и невероятные виды гор.',
   },
   {
-    id: 4,
-    title: 'Кавказ Peaks',
-    desc: 'Высокогорные маршруты и захватывающие виды для любителей эмоций.',
-    total: '68 800 ₽',
-    img: '/assets/images/kavkaz.webp',
-    tags: ['⛰️ Экстрим', 'РФ'],
-    temp: '+5°',
+    id: 'route-4',
+    title: 'Байкал: самое глубокое озеро',
+    img: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800',
+    tags: ['Зима', 'Природа'],
+    temp: '-15°C',
+    total: '7 дней',
+    desc: 'Откройте для себя чудо природы - озеро Байкал, самое глубокое и древнейшее озеро на планете.',
   },
 ];
