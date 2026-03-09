@@ -146,6 +146,15 @@ jobs:
           fi
 
           docker compose -f docker-compose.prod.yml up -d --build
+
+          echo "[deploy] db-seed status"
+          if docker compose -f docker-compose.prod.yml ps db-seed; then
+            echo "[deploy] db-seed logs"
+            docker compose -f docker-compose.prod.yml logs --no-color --tail=200 db-seed || echo "[deploy][warn] failed to read db-seed logs"
+          else
+            echo "[deploy][warn] db-seed service is not found in compose output"
+          fi
+
           echo "[deploy] docker images"
           docker compose -f docker-compose.prod.yml images
           echo "[deploy] docker status"

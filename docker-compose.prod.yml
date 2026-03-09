@@ -1,4 +1,18 @@
 services:
+  db-seed:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: travel-planner-db-seed
+    restart: 'no'
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+    command: ['node', 'apps/api/dist/src/db/seed.js']
+    depends_on:
+      db:
+        condition: service_healthy
+
   api:
     build:
       context: .
@@ -17,6 +31,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      db-seed:
+        condition: service_completed_successfully
 
   web:
     build:
