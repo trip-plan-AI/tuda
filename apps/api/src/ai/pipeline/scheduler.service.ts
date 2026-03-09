@@ -78,6 +78,10 @@ export class SchedulerService {
 
       let currentDayPoints = 0;
       let dayFoodPoints = 0;
+      let dayNonFoodPoints = 0;
+      const hasAnyNonFood = expandedPois.some(
+        (p) => p.category !== 'restaurant' && p.category !== 'cafe',
+      );
 
       let lastRestaurantArrival: number | null = null;
 
@@ -88,6 +92,17 @@ export class SchedulerService {
         const poi = expandedPois[poiCursor];
         const isRestaurant = poi.category === 'restaurant';
         const isCafe = poi.category === 'cafe';
+
+        // Если в целом есть не-food точки, сначала стараемся добавить хотя бы одну
+        // в текущий день, чтобы день не состоял только из питания.
+        if (
+          dayNonFoodPoints === 0 &&
+          hasAnyNonFood &&
+          (isRestaurant || isCafe)
+        ) {
+          poiCursor += 1;
+          continue;
+        }
 
         if (
           isRestaurant &&
@@ -133,6 +148,8 @@ export class SchedulerService {
         }
         if (isRestaurant || isCafe) {
           dayFoodPoints += 1;
+        } else {
+          dayNonFoodPoints += 1;
         }
         poiCursor += 1;
         currentDayPoints += 1;
@@ -166,6 +183,46 @@ export class SchedulerService {
             points.push({
               poi_id: fallbackFoodPoi.id,
               poi: fallbackFoodPoi,
+              order: points.length + 1,
+              arrival_time: this.minutesToTime(baseStart),
+              departure_time: this.minutesToTime(leaveTime),
+              visit_duration_min: visitDuration,
+              travel_from_prev_min:
+                points.length === 0 ? undefined : TRANSIT_DURATION_MIN,
+              estimated_cost: pointCost,
+            });
+            dayCost += pointCost;
+          }
+        }
+      }
+
+      // Если день получился без не-food активностей, пытаемся добавить хотя бы одну
+      // (если такие активности вообще есть в выдаче).
+      if (dayNonFoodPoints === 0) {
+        const fallbackActivityPoi =
+          expandedPois
+            .slice(poiCursor)
+            .find(
+              (p) => p.category !== 'restaurant' && p.category !== 'cafe',
+            ) ??
+          expandedPois.find(
+            (p) => p.category !== 'restaurant' && p.category !== 'cafe',
+          );
+
+        if (fallbackActivityPoi) {
+          const visitDuration =
+            VISIT_DURATION[fallbackActivityPoi.category] ?? 60;
+          const baseStart = Math.max(currentTime, startMinutes + 2 * 60);
+          const leaveTime = baseStart + visitDuration;
+
+          if (leaveTime <= endMinutes) {
+            const pointCost = this.estimatePointCost(
+              fallbackActivityPoi,
+              dayBudget,
+            );
+            points.push({
+              poi_id: fallbackActivityPoi.id,
+              poi: fallbackActivityPoi,
               order: points.length + 1,
               arrival_time: this.minutesToTime(baseStart),
               departure_time: this.minutesToTime(leaveTime),
