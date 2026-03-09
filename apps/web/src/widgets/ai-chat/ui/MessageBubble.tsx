@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import type { ChatMessage } from '@/shared/types/ai-chat';
 
 interface MessageBubbleProps {
@@ -111,13 +112,29 @@ export function MessageBubble({ message, onApplyPlan, wasApplied = false }: Mess
             )}
 
             {onApplyPlan && (
-              <button
-                type="button"
-                onClick={() => onApplyPlan(message.id)}
-                className="rounded-lg bg-brand-sky px-3 py-2 text-xs font-semibold text-white transition hover:bg-brand-sky/90"
-              >
-                {wasApplied ? 'План применен' : 'Применить план в маршрут'}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onApplyPlan(message.id)}
+                  className={[
+                    'rounded-lg px-3 py-2 text-xs font-semibold transition',
+                    wasApplied
+                      ? 'cursor-default bg-emerald-100 text-emerald-700'
+                      : 'bg-brand-sky text-white hover:bg-brand-sky/90',
+                  ].join(' ')}
+                >
+                  {wasApplied ? '✓ План применен' : 'Применить план в маршрут'}
+                </button>
+
+                {wasApplied && (
+                  <Link
+                    href="/planner"
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-brand-indigo hover:text-brand-indigo"
+                  >
+                    Открыть Planner 🗺️
+                  </Link>
+                )}
+              </div>
             )}
           </div>
         )}

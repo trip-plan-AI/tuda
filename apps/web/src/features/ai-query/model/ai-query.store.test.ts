@@ -10,8 +10,23 @@ vi.mock('@/shared/api', () => ({
 }));
 
 describe('useAiQueryStore', () => {
+  const baseSessionId = 'session-local-1';
+
   beforeEach(() => {
     useAiQueryStore.setState({
+      sessions: {
+        [baseSessionId]: {
+          id: baseSessionId,
+          title: 'Новый чат',
+          tripId: 'trip-1',
+          sessionId: null,
+          messages: [],
+          lastAppliedPlanMessageId: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      activeSessionId: baseSessionId,
       messages: [],
       isLoading: false,
       sessionId: null,
@@ -31,9 +46,9 @@ describe('useAiQueryStore', () => {
         endDate: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        points: [],
       },
       trips: [],
-      points: [],
     });
 
     vi.clearAllMocks();
@@ -88,7 +103,6 @@ describe('useAiQueryStore', () => {
 
     expect(api.post).toHaveBeenCalledWith('/ai/plan', {
       user_query: '2 дня в Казани',
-      trip_id: 'trip-1',
       session_id: null,
     });
 
@@ -96,6 +110,7 @@ describe('useAiQueryStore', () => {
     expect(state.sessionId).toBe('s-1');
     expect(state.messages).toHaveLength(2);
     expect(state.messages[1]?.routePlan?.city).toBe('Казань');
+    expect(state.sessions[baseSessionId]?.sessionId).toBe('s-1');
   });
 
   it('maps error by status', async () => {
@@ -109,51 +124,77 @@ describe('useAiQueryStore', () => {
   });
 
   it('applies plan to trip store', async () => {
-    useAiQueryStore.setState({
-      messages: [
-        {
-          id: 'm1',
-          role: 'assistant',
-          content: 'ok',
-          timestamp: new Date().toISOString(),
-          routePlan: {
-            city: 'Казань',
-            total_budget_estimated: 1000,
-            days: [
+    const assistantMessage = {
+      id: 'm1',
+      role: 'assistant' as const,
+      content: 'ok',
+      timestamp: new Date().toISOString(),
+      routePlan: {
+        city: 'Казань',
+        total_budget_estimated: 1000,
+        days: [
+          {
+            day_number: 1,
+            date: '2026-03-05',
+            day_budget_estimated: 1000,
+            day_start_time: '10:00',
+            day_end_time: '21:00',
+            points: [
               {
-                day_number: 1,
-                date: '2026-03-05',
-                day_budget_estimated: 1000,
-                day_start_time: '10:00',
-                day_end_time: '21:00',
-                points: [
-                  {
-                    order: 0,
-                    arrival_time: '10:00',
-                    departure_time: '11:00',
-                    visit_duration_min: 60,
-                    estimated_cost: 500,
-                    poi: {
-                      id: 'poi-1',
-                      name: 'Кремль',
-                      address: 'Адрес',
-                      coordinates: { lat: 55, lon: 49 },
-                      category: 'attraction',
-                    },
-                  },
-                ],
+                order: 0,
+                arrival_time: '10:00',
+                departure_time: '11:00',
+                visit_duration_min: 60,
+                estimated_cost: 500,
+                poi: {
+                  id: 'poi-1',
+                  name: 'Кремль',
+                  address: 'Адрес',
+                  coordinates: { lat: 55, lon: 49 },
+                  category: 'attraction' as const,
+                },
               },
             ],
           },
+        ],
+      },
+    };
+
+    useAiQueryStore.setState({
+      sessions: {
+        [baseSessionId]: {
+          id: baseSessionId,
+          title: 'Тестовый чат',
+          tripId: 'trip-1',
+          sessionId: 's-1',
+          messages: [assistantMessage],
+          lastAppliedPlanMessageId: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         },
-      ],
+      },
+      activeSessionId: baseSessionId,
+      messages: [assistantMessage],
     });
 
     useAiQueryStore.getState().applyPlanToCurrentTrip('m1');
 
-    const points = useTripStore.getState().points;
+    const points = useTripStore.getState().currentTrip?.points ?? [];
     expect(points).toHaveLength(1);
     expect(points[0]?.title).toBe('Кремль');
     expect(useAiQueryStore.getState().lastAppliedPlanMessageId).toBe('m1');
+    expect(useAiQueryStore.getState().sessions[baseSessionId]?.lastAppliedPlanMessageId).toBe('m1');
+  });
+
+  it('creates and switches chat sessions', () => {
+    const state = useAiQueryStore.getState();
+    const newId = state.createNewSession('trip-2');
+
+    const afterCreate = useAiQueryStore.getState();
+    expect(afterCreate.activeSessionId).toBe(newId);
+    expect(afterCreate.sessions[newId]?.tripId).toBe('trip-2');
+
+    afterCreate.switchSession(baseSessionId);
+    expect(useAiQueryStore.getState().activeSessionId).toBe(baseSessionId);
   });
 });
