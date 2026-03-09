@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import type { ChatMessage } from '@/shared/types/ai-chat';
 
 interface MessageBubbleProps {
@@ -11,6 +12,24 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message, onApplyPlan, wasApplied = false }: MessageBubbleProps) {
   const isAssistant = message.role === 'assistant';
+
+  const getFallbackPoi = (point: {
+    poi_id?: string;
+    order: number;
+    poi?: {
+      id?: string;
+      name?: string;
+      address?: string;
+      description?: string;
+    };
+  }) => {
+    const poiId = point.poi?.id ?? point.poi_id ?? `point-${point.order}`;
+    const name = point.poi?.name ?? `Точка #${point.order}`;
+    const address = point.poi?.address ?? 'Адрес не указан';
+    const description = point.poi?.description;
+
+    return { poiId, name, address, description };
+  };
 
   return (
     <div className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}>
@@ -54,24 +73,28 @@ export function MessageBubble({ message, onApplyPlan, wasApplied = false }: Mess
                 </p>
 
                 <div className="mt-2 flex flex-col gap-2">
-                  {day.points.map((point) => (
-                    <div
-                      key={`${day.day_number}-${point.poi.id}-${point.order}`}
-                      className="rounded-lg border border-slate-100 bg-white p-2"
-                    >
-                      <p className="text-sm font-medium text-slate-800">{point.poi.name}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">{point.poi.address}</p>
-                      {point.poi.description && (
-                        <p className="mt-1 text-xs text-slate-500">{point.poi.description}</p>
-                      )}
-                      <p className="mt-1 text-xs text-slate-600">
-                        {point.arrival_time}–{point.departure_time}
-                        {typeof point.estimated_cost === 'number'
-                          ? ` · ${Math.round(point.estimated_cost).toLocaleString('ru-RU')} ₽`
-                          : ''}
-                      </p>
-                    </div>
-                  ))}
+                  {day.points.map((point) => {
+                    const poi = getFallbackPoi(point);
+
+                    return (
+                      <div
+                        key={`${day.day_number}-${poi.poiId}-${point.order}`}
+                        className="rounded-lg border border-slate-100 bg-white p-2"
+                      >
+                        <p className="text-sm font-medium text-slate-800">{poi.name}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{poi.address}</p>
+                        {poi.description && (
+                          <p className="mt-1 text-xs text-slate-500">{poi.description}</p>
+                        )}
+                        <p className="mt-1 text-xs text-slate-600">
+                          {point.arrival_time}–{point.departure_time}
+                          {typeof point.estimated_cost === 'number'
+                            ? ` · ${Math.round(point.estimated_cost).toLocaleString('ru-RU')} ₽`
+                            : ''}
+                        </p>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}
@@ -89,13 +112,29 @@ export function MessageBubble({ message, onApplyPlan, wasApplied = false }: Mess
             )}
 
             {onApplyPlan && (
-              <button
-                type="button"
-                onClick={() => onApplyPlan(message.id)}
-                className="rounded-lg bg-brand-sky px-3 py-2 text-xs font-semibold text-white transition hover:bg-brand-sky/90"
-              >
-                {wasApplied ? 'План применен' : 'Применить план в маршрут'}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onApplyPlan(message.id)}
+                  className={[
+                    'rounded-lg px-3 py-2 text-xs font-semibold transition',
+                    wasApplied
+                      ? 'cursor-default bg-emerald-100 text-emerald-700'
+                      : 'bg-brand-sky text-white hover:bg-brand-sky/90',
+                  ].join(' ')}
+                >
+                  {wasApplied ? '✓ План применен' : 'Применить план в маршрут'}
+                </button>
+
+                {wasApplied && (
+                  <Link
+                    href="/planner"
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-brand-indigo hover:text-brand-indigo"
+                  >
+                    Открыть Planner 🗺️
+                  </Link>
+                )}
+              </div>
             )}
           </div>
         )}

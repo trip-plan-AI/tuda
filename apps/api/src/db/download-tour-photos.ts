@@ -1,13 +1,22 @@
-import { writeFile, mkdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { writeFile, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 
 // Из apps/api/src/db/ три уровня вверх = apps/, затем web/public/assets/tours
-const TOURS_DIR = join(__dirname, '..', '..', '..', 'web', 'public', 'assets', 'tours')
+const TOURS_DIR = join(
+  __dirname,
+  '..',
+  '..',
+  '..',
+  'web',
+  'public',
+  'assets',
+  'tours',
+);
 
 interface PhotoEntry {
-  slug: string
-  index: number
-  url: string
+  slug: string;
+  index: number;
+  url: string;
 }
 
 const PHOTOS: PhotoEntry[] = [
@@ -42,29 +51,35 @@ const PHOTOS: PhotoEntry[] = [
 ]
 
 async function downloadPhoto(entry: PhotoEntry): Promise<void> {
-  const dir = join(TOURS_DIR, entry.slug)
-  await mkdir(dir, { recursive: true })
+  const dir = join(TOURS_DIR, entry.slug);
+  await mkdir(dir, { recursive: true });
 
-  const filePath = join(dir, `attraction-${entry.index}.webp`)
+  const filePath = join(dir, `attraction-${entry.index}.webp`);
 
-  const res = await fetch(entry.url)
+  const res = await fetch(entry.url);
   if (!res.ok) {
-    console.error(`FAIL [${res.status}] ${entry.slug}/attraction-${entry.index} — ${entry.url}`)
-    return
+    console.error(
+      `FAIL [${res.status}] ${entry.slug}/attraction-${entry.index} — ${entry.url}`,
+    );
+    return;
   }
 
-  const buffer = Buffer.from(await res.arrayBuffer())
-  await writeFile(filePath, buffer)
-  console.log(`OK   ${entry.slug}/attraction-${entry.index}.webp (${(buffer.length / 1024).toFixed(0)} KB)`)
+  const buffer = Buffer.from(await res.arrayBuffer());
+  await writeFile(filePath, buffer);
+  console.log(
+    `OK   ${entry.slug}/attraction-${entry.index}.webp (${(buffer.length / 1024).toFixed(0)} KB)`,
+  );
 }
 
 async function main() {
-  console.log(`Downloading ${PHOTOS.length} photos to ${TOURS_DIR}\n`)
+  console.log(`Downloading ${PHOTOS.length} photos to ${TOURS_DIR}\n`);
 
-  const results = await Promise.allSettled(PHOTOS.map(downloadPhoto))
+  const results = await Promise.allSettled(PHOTOS.map(downloadPhoto));
 
-  const failed = results.filter((r) => r.status === 'rejected')
-  console.log(`\nDone: ${results.length - failed.length} OK, ${failed.length} failed`)
+  const failed = results.filter((r) => r.status === 'rejected');
+  console.log(
+    `\nDone: ${results.length - failed.length} OK, ${failed.length} failed`,
+  );
 }
 
-main().catch(console.error)
+main().catch(console.error);
