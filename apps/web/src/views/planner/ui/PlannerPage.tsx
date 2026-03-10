@@ -1630,8 +1630,44 @@ export function PlannerPage() {
                           try {
                             setIsOptimizing(true);
                             const tripId = await ensureTripId();
-                            const result = await tripsApi.optimize(tripId, routeProfile);
-                            if (result.optimizedPoints) {
+                            let result = await tripsApi.optimize(tripId, routeProfile);
+
+                            const backendMessage =
+                              typeof result?.message === 'string' ? result.message : '';
+                            const hasEnoughLocalPoints = points.length >= 2;
+
+                            // Если локально точек достаточно, но бэкенд пишет, что их мало,
+                            // значит точки были только в store и не успели сохраниться в БД.
+                            // Синхронизируем точки в БД и повторяем оптимизацию один раз.
+                            if (
+                              !result?.optimizedPoints &&
+                              hasEnoughLocalPoints &&
+                              backendMessage.includes('Not enough points to optimize')
+                            ) {
+                              const serverPoints = await pointsApi.getAll(tripId);
+                              await Promise.all(serverPoints.map((p) => pointsApi.remove(tripId, p.id)));
+
+                              const recreatedPoints = await Promise.all(
+                                points.map((p, index) =>
+                                  pointsApi.create(tripId, {
+                                    title: p.title,
+                                    lat: p.lat,
+                                    lon: p.lon,
+                                    budget: p.budget ?? 0,
+                                    visitDate: p.visitDate ?? undefined,
+                                    imageUrl: p.imageUrl ?? undefined,
+                                    order: index,
+                                    address: p.address ?? undefined,
+                                    transportMode: p.transportMode,
+                                  }),
+                                ),
+                              );
+
+                              useTripStore.getState().setPoints(recreatedPoints);
+                              result = await tripsApi.optimize(tripId, routeProfile);
+                            }
+
+                            if (result?.optimizedPoints) {
                               useTripStore.getState().setPoints(result.optimizedPoints);
                               if (result.metrics) {
                                 setCompareModalData({
@@ -1641,6 +1677,16 @@ export function PlannerPage() {
                               } else {
                                 toast.success('Маршрут оптимизирован!', { id: 'optimize-success' });
                               }
+                            } else {
+                              const nextBackendMessage =
+                                typeof result?.message === 'string' ? result.message : '';
+                              const userMessage = nextBackendMessage.includes('Not enough points to optimize')
+                                ? 'Недостаточно точек в сохранённом маршруте. Сначала сохраните точки, затем повторите оптимизацию.'
+                                : 'Оптимизация не внесла изменений в маршрут.';
+
+                              toast.info(userMessage, {
+                                id: 'optimize-info',
+                              });
                             }
                           } catch (error) {
                             console.error('Optimization error:', error);
