@@ -1,13 +1,18 @@
 'use client';
 
 import { useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { Plus, Trash2 } from 'lucide-react';
 import { useAiQueryStore } from '@/features/ai-query';
 import { useTripStore } from '@/entities/trip';
 import { AiChat } from '@/widgets/ai-chat';
 import { Button } from '@/shared/ui/button';
+import { toast } from 'sonner';
+
+const AI_QUICK_ACTIONS = ['Сделать дешевле', 'Добавить больше музеев', 'Убрать пешие прогулки'];
 
 export function AIAssistantPage() {
+  const router = useRouter();
   const {
     sessions,
     activeSessionId,
@@ -21,6 +26,7 @@ export function AIAssistantPage() {
     deleteSession,
     loadSessions,
     isSessionsLoading,
+    openOrCreateSessionFromTrip,
   } = useAiQueryStore();
   const currentTrip = useTripStore((state) => state.currentTrip);
 
@@ -50,12 +56,44 @@ export function AIAssistantPage() {
     ];
   }, [messages]);
 
+  const activeSession = activeSessionId ? sessions[activeSessionId] : null;
+
   const handleSend = async (query: string) => {
     await sendQuery(query, currentTrip?.id);
   };
 
+  const handleApplyPlan = async (messageId: string) => {
+    const appliedTripId = await applyPlanToCurrentTrip(messageId);
+    if (!appliedTripId) {
+      toast.error('Не удалось применить маршрут из чата');
+      return;
+    }
+
+    toast.success('Маршрут синхронизирован с Planner');
+  };
+
+  useEffect(() => {
+    const tripId = currentTrip?.id;
+    if (!tripId || tripId.startsWith('guest-')) return;
+
+    const hasTripSession = Object.values(sessions).some((session) => session.tripId === tripId);
+    if (hasTripSession) return;
+
+    void openOrCreateSessionFromTrip(tripId);
+  }, [currentTrip?.id, sessions, openOrCreateSessionFromTrip]);
+
   const handleCreateSession = () => {
     createNewSession(currentTrip?.id ?? null);
+  };
+
+  const handleOpenPlanner = () => {
+    const targetTripId = activeSession?.tripId ?? currentTrip?.id ?? null;
+    if (!targetTripId || targetTripId.startsWith('guest-')) {
+      router.push('/planner');
+      return;
+    }
+
+    router.push(`/planner?applyTripId=${encodeURIComponent(targetTripId)}`);
   };
 
   return (
@@ -128,10 +166,19 @@ export function AIAssistantPage() {
             messages={messagesWithGreeting}
             isLoading={isLoading || isSessionsLoading}
             onSend={handleSend}
-            onApplyPlan={applyPlanToCurrentTrip}
+            onApplyPlan={handleApplyPlan}
             lastAppliedPlanMessageId={lastAppliedPlanMessageId}
             chatKey={activeSessionId ?? 'chat-empty'}
+            quickActions={AI_QUICK_ACTIONS}
+            hasLinkedTrip={Boolean(activeSession?.tripId)}
+            appliedTripId={activeSession?.tripId ?? null}
           />
+
+          <div className="mt-3 flex justify-end">
+            <Button type="button" variant="outline" onClick={handleOpenPlanner}>
+              Открыть Planner 🗺️
+            </Button>
+          </div>
         </div>
       </div>
     </div>

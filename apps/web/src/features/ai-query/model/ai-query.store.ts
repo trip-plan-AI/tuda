@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { api } from '@/shared/api';
 import { useTripStore } from '@/entities/trip';
+import { tripsApi } from '@/entities/trip';
+import { pointsApi } from '@/entities/route-point';
 import type { RoutePoint } from '@/entities/route-point/model/route-point.types';
 import type { ChatMessage, ChatMeta, ChatRoutePlan } from '@/shared/types/ai-chat';
 
@@ -28,6 +30,16 @@ interface AiSessionDetailsResponse {
   }>;
 }
 
+interface ApplySessionPlanResponse {
+  trip_id: string;
+  mode: 'created' | 'updated';
+}
+
+interface SessionFromTripResponse {
+  session_id: string;
+  trip_id: string;
+}
+
 interface HttpError {
   status?: number;
   message?: string;
@@ -49,7 +61,8 @@ interface AiQueryStore {
   lastAppliedPlanMessageId: string | null;
   loadSessions: () => Promise<void>;
   sendQuery: (query: string, tripId?: string) => Promise<void>;
-  applyPlanToCurrentTrip: (messageId: string) => void;
+  applyPlanToCurrentTrip: (messageId: string) => Promise<string | null>;
+  openOrCreateSessionFromTrip: (tripId: string) => Promise<string | null>;
   createNewSession: (tripId?: string | null) => string;
   switchSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
@@ -419,34 +432,107 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         const message = activeSession?.messages.find((item) => item.id === messageId);
         const currentTrip = useTripStore.getState().currentTrip;
 
-        if (!message?.routePlan || !currentTrip) return;
+        if (!activeSession?.sessionId || !message?.routePlan) return Promise.resolve(null);
 
-        const points = toRoutePoints(message.routePlan, currentTrip.id);
-        useTripStore.getState().setPoints(points);
+        return api
+          .post<ApplySessionPlanResponse>(`/ai/sessions/${activeSession.sessionId}/apply`, {
+            message_id: messageId,
+          })
+          .then(async (result) => {
+            const trip = await tripsApi.getAll().then((all) => all.find((item) => item.id === result.trip_id) ?? null);
+            const points = await pointsApi.getAll(result.trip_id);
 
-        set((state) => {
-          if (!state.activeSessionId) return {};
+            if (trip) {
+              useTripStore.getState().setCurrentTrip({ ...trip, points });
+            } else {
+              const fallbackTitle = currentTrip?.title ?? `Маршрут ${new Date().toLocaleDateString('ru-RU')}`;
+              useTripStore.getState().setCurrentTrip({
+                id: result.trip_id,
+                ownerId: currentTrip?.ownerId ?? 'unknown',
+                title: fallbackTitle,
+                description: null,
+                budget: null,
+                startDate: null,
+                endDate: null,
+                isActive: false,
+                isPredefined: false,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                points,
+              });
+            }
 
-          const targetSession = state.sessions[state.activeSessionId];
-          if (!targetSession) return {};
+            set((state) => {
+              if (!state.activeSessionId) return {};
 
-          const nextSession: ChatSession = {
-            ...targetSession,
-            lastAppliedPlanMessageId: messageId,
-            tripId: currentTrip.id,
-            updatedAt: new Date().toISOString(),
-          };
+              const targetSession = state.sessions[state.activeSessionId];
+              if (!targetSession) return {};
 
-          const nextSessions = {
-            ...state.sessions,
-            [nextSession.id]: nextSession,
-          };
+              const nextSession: ChatSession = {
+                ...targetSession,
+                lastAppliedPlanMessageId: messageId,
+                tripId: result.trip_id,
+                updatedAt: new Date().toISOString(),
+              };
 
-          return {
-            sessions: nextSessions,
-            ...syncLegacyFields(nextSessions, state.activeSessionId),
-          };
-        });
+              const nextSessions = {
+                ...state.sessions,
+                [nextSession.id]: nextSession,
+              };
+
+              return {
+                sessions: nextSessions,
+                ...syncLegacyFields(nextSessions, state.activeSessionId),
+              };
+            });
+
+            return result.trip_id;
+          })
+          .catch(() => null);
+      },
+
+      openOrCreateSessionFromTrip: async (tripId) => {
+        if (!tripId || !isUuid(tripId)) return null;
+
+        try {
+          const response = await api.post<SessionFromTripResponse>(`/ai/sessions/from-trip/${tripId}`, {});
+          const sessionDetails = await api.get<AiSessionDetailsResponse>(`/ai/sessions/${response.session_id}`);
+          const mappedMessages = mapStoredMessagesToChatMessages(sessionDetails.messages);
+
+          set((state) => {
+            const baseSession = state.sessions[response.session_id] ?? {
+              id: response.session_id,
+              title: state.sessions[state.activeSessionId ?? '']?.title ?? 'Маршрут',
+              tripId: response.trip_id,
+              sessionId: response.session_id,
+              messages: [],
+              lastAppliedPlanMessageId: null,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+
+            const nextSessions = {
+              ...state.sessions,
+              [response.session_id]: {
+                ...baseSession,
+                tripId: response.trip_id,
+                sessionId: response.session_id,
+                messages: mappedMessages,
+                updatedAt: new Date().toISOString(),
+              },
+            };
+
+            return {
+              sessions: nextSessions,
+              activeSessionId: response.session_id,
+              ...syncLegacyFields(nextSessions, response.session_id),
+            };
+          });
+
+          return response.session_id;
+        } catch {
+          return null;
+        }
       },
 
       createNewSession: (tripId = null) => {

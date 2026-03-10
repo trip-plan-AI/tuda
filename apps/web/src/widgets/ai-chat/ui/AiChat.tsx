@@ -15,6 +15,8 @@ interface AiChatProps {
   onApplyPlan?: (messageId: string) => void;
   lastAppliedPlanMessageId?: string | null;
   quickActions?: string[];
+  hasLinkedTrip?: boolean;
+  appliedTripId?: string | null;
 }
 
 const DEFAULT_QUICK_ACTIONS = [
@@ -53,6 +55,8 @@ export function AiChat({
   onApplyPlan,
   lastAppliedPlanMessageId = null,
   quickActions = DEFAULT_QUICK_ACTIONS,
+  hasLinkedTrip = false,
+  appliedTripId = null,
 }: AiChatProps) {
   const [query, setQuery] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -115,6 +119,8 @@ export function AiChat({
                 message={message}
                 onApplyPlan={onApplyPlan}
                 wasApplied={lastAppliedPlanMessageId === message.id}
+                hasLinkedTrip={hasLinkedTrip}
+                appliedTripId={appliedTripId}
               />
             ))}
 

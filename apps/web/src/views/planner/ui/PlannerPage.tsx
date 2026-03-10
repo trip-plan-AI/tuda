@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search,
   MapPin,
@@ -56,6 +56,7 @@ import { cn } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/button';
 import { Chip } from '@/shared/ui/chip';
 import { SegmentedControl } from '@/shared/ui/segmented-control';
+import { useAiQueryStore } from '@/features/ai-query';
 import {
   Dialog,
   DialogContent,
@@ -582,7 +583,9 @@ function SortablePointRow({
 const weatherIcons = [Cloud, Sun, CloudSun, Wind];
 
 export function PlannerPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const { openOrCreateSessionFromTrip } = useAiQueryStore();
   const initialTab = searchParams.get('tab') === 'popular' ? 'popular' : 'my';
   const [activeTab, setActiveTab] = useState<'my' | 'popular'>(initialTab);
   const [searchInput, setSearchInput] = useState('');
@@ -603,6 +606,10 @@ export function PlannerPage() {
   const [popularSearch, setPopularSearch] = useState('');
   const [predefinedTrips, setPredefinedTrips] = useState<Trip[]>([]);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showApplyConfirm, setShowApplyConfirm] = useState(false);
+  const [applyModalType, setApplyModalType] = useState<'same' | 'different'>('different');
+  const [pendingApplyTripId, setPendingApplyTripId] = useState<string | null>(null);
+  const [pendingApplyTripTitle, setPendingApplyTripTitle] = useState('');
   const [modal, setModal] = useState<'login' | 'register' | null>(null);
   const [isAddPointMode, setIsAddPointMode] = useState(false);
 
@@ -1187,6 +1194,87 @@ export function PlannerPage() {
     }
   };
 
+  const saveCurrentTrip = useCallback(async () => {
+    if (!isAuthenticated) {
+      setModal('register');
+      return false;
+    }
+
+    const tripId = await ensureTripId();
+    const autoTitle =
+      points.length > 1
+        ? `${points[0]!.title} — ${points[points.length - 1]!.title}`
+        : points.length === 1
+          ? points[0]!.title
+          : 'Мой маршрут';
+
+    const updated = await tripsApi.update(tripId, {
+      title: autoTitle,
+      budget: currentTrip?.budget ?? 0,
+      isActive: isActiveRoute,
+    });
+    updateCurrentTrip(updated);
+    setSaved();
+    return true;
+  }, [
+    currentTrip?.budget,
+    ensureTripId,
+    isActiveRoute,
+    isAuthenticated,
+    points,
+    setSaved,
+    updateCurrentTrip,
+  ]);
+
+  const applyIncomingTrip = useCallback(
+    async (tripId: string) => {
+      const all = await tripsApi.getAll();
+      const target = all.find((trip) => trip.id === tripId);
+      if (!target) return;
+
+      const targetPoints = await pointsApi.getAll(tripId);
+      setCurrentTrip({ ...target, points: targetPoints });
+      setSaved();
+      toast.success('Маршрут из AI чата открыт в Planner');
+    },
+    [setCurrentTrip, setSaved],
+  );
+
+  useEffect(() => {
+    const incomingTripId = searchParams.get('applyTripId');
+    if (!incomingTripId || incomingTripId.startsWith('guest-')) return;
+    if (pendingApplyTripId === incomingTripId) return;
+
+    if (!currentTrip || currentTrip.id === incomingTripId) {
+      if (currentTrip?.id === incomingTripId && isDirty) {
+        setPendingApplyTripId(incomingTripId);
+        setApplyModalType('same');
+        setPendingApplyTripTitle(currentTrip.title || 'текущий маршрут');
+        setShowApplyConfirm(true);
+      } else {
+        void applyIncomingTrip(incomingTripId);
+      }
+      return;
+    }
+
+    setPendingApplyTripId(incomingTripId);
+    setPendingApplyTripTitle(currentTrip.title || 'текущий маршрут');
+
+    if (isDirty) {
+      setApplyModalType('different');
+      setShowApplyConfirm(true);
+      return;
+    }
+
+    void applyIncomingTrip(incomingTripId);
+  }, [
+    applyIncomingTrip,
+    currentTrip,
+    isDirty,
+    pendingApplyTripId,
+    searchParams,
+  ]);
+
   return (
     <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
       <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-10 w-full flex-1 flex flex-col relative">
@@ -1708,6 +1796,24 @@ export function PlannerPage() {
                             setModal('register');
                             return;
                           }
+                          void (async () => {
+                            try {
+                              const tripId = await ensureTripId();
+                              const saved = await saveCurrentTrip();
+                              if (!saved) return;
+
+                              const sessionId = await openOrCreateSessionFromTrip(tripId);
+                              if (!sessionId) {
+                                toast.error('Не удалось открыть AI-чат для маршрута');
+                                return;
+                              }
+
+                              toast.success('Маршрут сохранен. Переходим в AI-чат');
+                              router.push(`/ai-assistant?sessionId=${encodeURIComponent(sessionId)}`);
+                            } catch {
+                              toast.error('Не удалось подготовить маршрут для AI');
+                            }
+                          })();
                         }}
                         disabled={isAuthenticated && points.length === 0}
                         variant="brand-purple"
@@ -1870,6 +1976,71 @@ export function PlannerPage() {
               onClick={() => handleConfirmClear(true)}
             >
               СОХРАНИТЬ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showApplyConfirm} onOpenChange={setShowApplyConfirm}>
+        <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl p-8">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-black text-brand-indigo">
+              {applyModalType === 'same' ? 'Есть несохраненные изменения' : 'Сохранить текущий маршрут?'}
+            </DialogTitle>
+            <DialogDescription className="text-slate-600 text-sm">
+              {applyModalType === 'same'
+                ? 'В планировщике открыта старая версия этого маршрута с несохраненными изменениями. Если применить план из AI-чата, текущие правки будут заменены.'
+                : `Сейчас открыт маршрут «${pendingApplyTripTitle}» с несохраненными изменениями. Если открыть маршрут из AI-чата, текущие правки будут потеряны.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row gap-2 mt-4">
+            <Button
+              variant="brand-indigo"
+              className="flex-1"
+              onClick={() => {
+                void (async () => {
+                  if (!pendingApplyTripId) return;
+                  try {
+                    const saved = await saveCurrentTrip();
+                    if (!saved) return;
+                    await applyIncomingTrip(pendingApplyTripId);
+                  } finally {
+                    setShowApplyConfirm(false);
+                    setPendingApplyTripId(null);
+                  }
+                })();
+              }}
+            >
+              {applyModalType === 'same'
+                ? 'Сохранить текущие и обновить'
+                : `Сохранить «${pendingApplyTripTitle}» и открыть новый`}
+            </Button>
+            <Button
+              variant="ghost"
+              className="flex-1 text-rose-600 hover:text-rose-700"
+              onClick={() => {
+                void (async () => {
+                  if (!pendingApplyTripId) return;
+                  await applyIncomingTrip(pendingApplyTripId);
+                  setShowApplyConfirm(false);
+                  setPendingApplyTripId(null);
+                })();
+              }}
+            >
+              {applyModalType === 'same'
+                ? 'Заменить план (без сохранения)'
+                : 'Открыть новый (без сохранения старого)'}
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => {
+                setShowApplyConfirm(false);
+                setPendingApplyTripId(null);
+                toast.info('Применение маршрута из AI-чата отменено');
+              }}
+            >
+              Отмена
             </Button>
           </DialogFooter>
         </DialogContent>
