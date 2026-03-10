@@ -16,6 +16,39 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
+async function getOsrmDistanceMatrix(points: { lon: number; lat: number }[], profile: string): Promise<number[][] | null> {
+  if (profile === 'direct') return null; // Use haversine for direct/transit
+  try {
+    const coords = points.map((p) => `${p.lon},${p.lat}`).join(';');
+    const osrmUrl = process.env.OSRM_URL || 'http://localhost:5000';
+    let fetchUrl = '';
+
+    if (
+      osrmUrl === 'http://localhost:5000' ||
+      osrmUrl.includes('project-osrm.org')
+    ) {
+      if (profile === 'driving') {
+        fetchUrl = `https://router.project-osrm.org/table/v1/driving/${coords}?annotations=distance`;
+      } else {
+        const mode = profile === 'bike' ? 'bike' : 'foot';
+        fetchUrl = `https://routing.openstreetmap.de/routed-${mode}/table/v1/driving/${coords}?annotations=distance`;
+      }
+    } else {
+      fetchUrl = `${osrmUrl}/table/v1/${profile}/${coords}?annotations=distance`;
+    }
+
+    const res = await fetch(fetchUrl);
+    const data = await res.json();
+    if (data.code === 'Ok' && data.distances) {
+      return data.distances as number[][]; // values are in meters
+    }
+    return null;
+  } catch (err) {
+    console.error('[OptimizationService] OSRM matrix error:', err);
+    return null;
+  }
+}
+
 @Injectable()
 export class OptimizationService {
   constructor(
@@ -43,8 +76,18 @@ export class OptimizationService {
     const transportMode = dto.transportMode || 'driving';
     const params = dto.params || {};
 
-    const getWeight = (p1: typeof points[0], p2: typeof points[0]) => {
-      const distance = haversineDistance(p1.lat, p1.lon, p2.lat, p2.lon);
+    // Try to get actual road distances from OSRM to improve TSP accuracy
+    const distanceMatrix = await getOsrmDistanceMatrix(points, transportMode);
+
+    const getDistance = (p1Idx: number, p2Idx: number) => {
+      if (distanceMatrix && distanceMatrix[p1Idx] && distanceMatrix[p1Idx][p2Idx] !== undefined) {
+        return distanceMatrix[p1Idx][p2Idx] / 1000; // convert meters to km
+      }
+      return haversineDistance(points[p1Idx].lat, points[p1Idx].lon, points[p2Idx].lat, points[p2Idx].lon);
+    };
+
+    const getWeight = (p1Idx: number, p2Idx: number) => {
+      const distance = getDistance(p1Idx, p2Idx);
       if (transportMode === 'driving') {
         const consumption = params.consumption ?? 8;
         const fuelPrice = params.fuelPrice ?? 55;
@@ -58,44 +101,42 @@ export class OptimizationService {
       return distance;
     };
 
-    const getDistance = (p1: typeof points[0], p2: typeof points[0]) => {
-      return haversineDistance(p1.lat, p1.lon, p2.lat, p2.lon);
-    };
-
     let originalDistance = 0;
     for (let i = 0; i < points.length - 1; i++) {
-      originalDistance += getDistance(points[i], points[i+1]);
+      originalDistance += getDistance(i, i+1);
     }
 
     // Algorithm: Nearest-Neighbor
-    const unvisited = [...points];
-    const optimizedPoints: typeof points = [];
+    const unvisitedIndices = Array.from({ length: points.length }, (_, i) => i);
+    const optimizedIndices: number[] = [];
     
     // Start with the first point
-    const current = unvisited.shift()!;
-    optimizedPoints.push(current);
+    const currentIdx = unvisitedIndices.shift()!;
+    optimizedIndices.push(currentIdx);
 
-    while (unvisited.length > 0) {
-      let nearestIdx = -1;
+    while (unvisitedIndices.length > 0) {
+      let nearestUnvisitedListIdx = -1;
       let minWeight = Infinity;
-      const lastPoint = optimizedPoints[optimizedPoints.length - 1];
+      const lastIdx = optimizedIndices[optimizedIndices.length - 1];
 
-      for (let i = 0; i < unvisited.length; i++) {
-        const candidate = unvisited[i];
-        const w = getWeight(lastPoint, candidate);
+      for (let i = 0; i < unvisitedIndices.length; i++) {
+        const candidateIdx = unvisitedIndices[i];
+        const w = getWeight(lastIdx, candidateIdx);
         if (w < minWeight) {
           minWeight = w;
-          nearestIdx = i;
+          nearestUnvisitedListIdx = i;
         }
       }
 
-      optimizedPoints.push(unvisited[nearestIdx]);
-      unvisited.splice(nearestIdx, 1);
+      optimizedIndices.push(unvisitedIndices[nearestUnvisitedListIdx]);
+      unvisitedIndices.splice(nearestUnvisitedListIdx, 1);
     }
 
+    const optimizedPoints = optimizedIndices.map(idx => points[idx]);
+
     let newDistance = 0;
-    for (let i = 0; i < optimizedPoints.length - 1; i++) {
-      newDistance += getDistance(optimizedPoints[i], optimizedPoints[i+1]);
+    for (let i = 0; i < optimizedIndices.length - 1; i++) {
+      newDistance += getDistance(optimizedIndices[i], optimizedIndices[i+1]);
     }
 
     const savedKm = originalDistance - newDistance;
