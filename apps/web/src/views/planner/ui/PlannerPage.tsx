@@ -618,6 +618,7 @@ export function PlannerPage() {
   const [isRouteLoading, setIsRouteLoading] = useState(false);
   const [affectedSegments, setAffectedSegments] = useState<Set<number>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [isOptimizing, setIsOptimizing] = useState(false);
 
   const resolveCoords = useCallback(async (query: string) => {
     try {
@@ -1591,6 +1592,34 @@ export function PlannerPage() {
                       НОВЫЙ МАРШРУТ
                     </Button>
                     <div className="flex flex-col lg:flex-row gap-3 w-full lg:w-auto">
+                      <Button
+                        onClick={async () => {
+                          if (!isAuthenticated) {
+                            setModal('register');
+                            return;
+                          }
+                          try {
+                            setIsOptimizing(true);
+                            const tripId = await ensureTripId();
+                            const result = await tripsApi.optimize(tripId);
+                            if (result.optimizedPoints) {
+                              useTripStore.getState().setPoints(result.optimizedPoints);
+                              toast.success('Маршрут оптимизирован!', { id: 'optimize-success' });
+                            }
+                          } catch (error) {
+                            console.error('Optimization error:', error);
+                            toast.error('Ошибка оптимизации', { id: 'optimize-error' });
+                          } finally {
+                            setIsOptimizing(false);
+                          }
+                        }}
+                        disabled={points.length < 2 || isOptimizing}
+                        variant="brand-yellow"
+                        shape="xl"
+                        className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
+                      >
+                        {isOptimizing ? 'ОПТИМИЗАЦИЯ...' : 'ОПТИМИЗИРОВАТЬ МАРШРУТ'}
+                      </Button>
                       <Button
                         onClick={() => {
                           if (!isAuthenticated) {
