@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Map, Home, MessageSquare, MapPin, User, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { toast } from 'sonner';
 
 import {
   Button,
@@ -72,6 +73,29 @@ export function Header() {
     requestAnimationFrame(() => {
       setHydrated(true);
     });
+  }, []);
+
+  useEffect(() => {
+    const openLoginAfterSessionExpired = () => {
+      if (typeof window === 'undefined') return;
+
+      const wasPrompted = sessionStorage.getItem('auth:session-expired-prompted') === '1';
+      if (!wasPrompted) {
+        toast.error('Срок сессии истёк. Войдите снова.');
+        sessionStorage.setItem('auth:session-expired-prompted', '1');
+      }
+
+      setModal('login');
+    };
+
+    if (typeof window !== 'undefined' && sessionStorage.getItem('auth:session-expired') === '1') {
+      openLoginAfterSessionExpired();
+    }
+
+    window.addEventListener('auth:session-expired', openLoginAfterSessionExpired);
+    return () => {
+      window.removeEventListener('auth:session-expired', openLoginAfterSessionExpired);
+    };
   }, []);
 
   return (
