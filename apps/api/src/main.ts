@@ -11,6 +11,7 @@ async function bootstrap() {
     origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
   });
   app.useWebSocketAdapter(new IoAdapter(app));
-  await app.listen(3001);
+  const port = Number(process.env.PORT ?? 3001);
+  await app.listen(port);
 }
 bootstrap();

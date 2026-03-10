@@ -15,6 +15,22 @@ interface NominatimItem {
   importance?: number;
 }
 
+type RouteProvider =
+  | 'locationiq'
+  | 'geoapify'
+  | 'openrouteservice'
+  | 'project_osrm';
+
+interface RoutePoint {
+  lon: number;
+  lat: number;
+}
+
+interface ProviderWindowLimit {
+  maxRequests: number;
+  windowMs: number;
+}
+
 // Классы Nominatim которые исключаем в RU-поиске (только geographic)
 const NOMINATIM_GEO_EXCLUDED = new Set([
   'amenity', 'building', 'shop', 'office', 'craft',
@@ -22,6 +38,18 @@ const NOMINATIM_GEO_EXCLUDED = new Set([
 
 @Injectable()
 export class GeosearchService {
+  private readonly providerWindowLimits: Partial<
+    Record<RouteProvider, ProviderWindowLimit>
+  > = {
+    locationiq: { maxRequests: 2, windowMs: 1000 },
+    geoapify: { maxRequests: 5, windowMs: 1000 },
+    openrouteservice: { maxRequests: 40, windowMs: 60_000 },
+  };
+
+  private readonly providerRequestTimestamps: Partial<
+    Record<RouteProvider, number[]>
+  > = {};
+
   private get yandexApiKey() {
     return (
       process.env.YANDEX_SUGGEST_KEY ??
@@ -227,7 +255,10 @@ export class GeosearchService {
       if (!res.ok) return null;
 
       const data = await res.json();
-      console.log(`[Geosearch] Photon raw response for ${lat}, ${lon}:`, JSON.stringify(data, null, 2));
+      console.log(
+        `[Geosearch] Photon raw response for ${lat}, ${lon}:`,
+        JSON.stringify(data, null, 2),
+      );
       return data.features?.[0] || null;
     } catch {
       return null;
@@ -263,15 +294,37 @@ export class GeosearchService {
       let addr = data.address;
 
       // 1. Пытаемся найти название конкретного объекта (POI)
-      const poi = data.name || addr.historic || addr.amenity || addr.shop || addr.tourism || addr.office || addr.leisure || addr.man_made || addr.ruins;
+      const poi =
+        data.name ||
+        addr.historic ||
+        addr.amenity ||
+        addr.shop ||
+        addr.tourism ||
+        addr.office ||
+        addr.leisure ||
+        addr.man_made ||
+        addr.ruins;
 
       // 2. Собираем всё, что относится к улице
-      let street = addr.road || addr.street || addr.pedestrian || addr.footway || addr.cycleway || addr.path || addr.square || addr.place || addr.allotments;
+      let street =
+        addr.road ||
+        addr.street ||
+        addr.pedestrian ||
+        addr.footway ||
+        addr.cycleway ||
+        addr.path ||
+        addr.square ||
+        addr.place ||
+        addr.allotments;
 
       // 3. Собираем всё, что относится к номеру дома/зданию (строгий адрес)
       const houseParts: string[] = [];
       if (addr.house_number) houseParts.push(addr.house_number);
-      if (addr.building && addr.building !== addr.house_number && !/^(yes|static|industrial)$/.test(addr.building)) {
+      if (
+        addr.building &&
+        addr.building !== addr.house_number &&
+        !/^(yes|static|industrial)$/.test(addr.building)
+      ) {
         houseParts.push(addr.building);
       }
       if (addr.house_name) houseParts.push(addr.house_name);
@@ -301,9 +354,13 @@ export class GeosearchService {
               }
               if (d.house) houseParts.push(d.house);
               if (d.block) houseParts.push(`${d.block_type || 'к'} ${d.block}`);
-              if (d.struc) houseParts.push(`${d.struc_type || 'стр'} ${d.struc}`);
+              if (d.struc)
+                houseParts.push(`${d.struc_type || 'стр'} ${d.struc}`);
               if (!addr.city && d.city) addr.city = d.city;
-              if (!addr.suburb && (d.city_district || d.suburb || d.settlement)) {
+              if (
+                !addr.suburb &&
+                (d.city_district || d.suburb || d.settlement)
+              ) {
                 addr.suburb = d.city_district || d.suburb || d.settlement;
               }
             }
@@ -312,7 +369,13 @@ export class GeosearchService {
       }
 
       const houseInfo = houseParts.join(', ');
-      const settlement = addr.village || addr.town || addr.hamlet || addr.allotments || addr.suburb || addr.city_district;
+      const settlement =
+        addr.village ||
+        addr.town ||
+        addr.hamlet ||
+        addr.allotments ||
+        addr.suburb ||
+        addr.city_district;
       const city = addr.city;
 
       // 5. Формируем заголовок (короткое название) по СТРОГИМ приоритетам пользователя
@@ -338,7 +401,8 @@ export class GeosearchService {
         title = houseInfo ? `${city}, ${houseInfo}` : city;
       } else {
         // Резерв
-        const fallback = addr.state_district || addr.state || data.display_name.split(',')[0];
+        const fallback =
+          addr.state_district || addr.state || data.display_name.split(',')[0];
         title = houseInfo ? `${fallback}, ${houseInfo}` : fallback;
       }
 
@@ -358,17 +422,21 @@ export class GeosearchService {
 
       // Блок 2: Район / Округ (если он отличается от уже добавленного)
       const district = addr.suburb || addr.city_district || addr.neighbourhood;
-      if (district && !finalParts.some(p => p.includes(district))) {
+      if (district && !finalParts.some((p) => p.includes(district))) {
         finalParts.push(district);
       }
 
       // Блок 3: Поселение (если его еще не было в Блоке 1)
-      if (settlement && !finalParts.some(p => p.includes(settlement))) {
+      if (settlement && !finalParts.some((p) => p.includes(settlement))) {
         finalParts.push(settlement);
       }
 
       // Блок 4: Город
-      if (city && city !== settlement && !finalParts.some(p => p.includes(city))) {
+      if (
+        city &&
+        city !== settlement &&
+        !finalParts.some((p) => p.includes(city))
+      ) {
         finalParts.push(city);
       }
 
@@ -386,8 +454,11 @@ export class GeosearchService {
       // ФИНАЛЬНЫЙ ПРЕДОХРАНИТЕЛЬ:
       // Если адрес всё еще начинается с цифр (напр. "10-12 к4, Тихвинский переулок")
       // Мы принудительно меняем местами первые два элемента
-      const checkParts = displayName.split(',').map(p => p.trim());
-      if (checkParts.length > 1 && /^(\d+|[A-Z]?\d+([- /]\d+)?)/.test(checkParts[0])) {
+      const checkParts = displayName.split(',').map((p) => p.trim());
+      if (
+        checkParts.length > 1 &&
+        /^(\d+|[A-Z]?\d+([- /]\d+)?)/.test(checkParts[0])
+      ) {
         // Проверяем, не является ли первый элемент номером дома
         const potentialHouse = checkParts[0];
         const potentialStreet = checkParts[1];
@@ -396,7 +467,10 @@ export class GeosearchService {
         if (/[а-яА-Яa-zA-Z]/.test(potentialStreet)) {
           checkParts.shift(); // убираем номер
           checkParts.shift(); // убираем улицу
-          displayName = [`${potentialStreet}, ${potentialHouse}`, ...checkParts].join(', ');
+          displayName = [
+            `${potentialStreet}, ${potentialHouse}`,
+            ...checkParts,
+          ].join(', ');
         }
       }
 
@@ -414,31 +488,206 @@ export class GeosearchService {
   }
 
   async osrmRoute(profile: string, coords: string) {
-    const osrmUrl = process.env.OSRM_URL || 'http://localhost:5000';
-    let fetchUrl = '';
+    const normalizedProfile = profile || 'driving';
 
-    // Логика перенесена с фронтенда на бэкенд согласно политике
-    if (
-      osrmUrl === 'http://localhost:5000' ||
-      osrmUrl.includes('project-osrm.org')
-    ) {
-      if (profile === 'driving') {
-        fetchUrl = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
-      } else {
-        const mode = profile === 'bike' ? 'bike' : 'foot';
-        fetchUrl = `https://routing.openstreetmap.de/routed-${mode}/route/v1/driving/${coords}?overview=full&geometries=geojson`;
-      }
-    } else {
-      fetchUrl = `${osrmUrl}/route/v1/${profile}/${coords}?overview=full&geometries=geojson`;
-    }
-
-    try {
-      const res = await fetch(fetchUrl);
+    if (normalizedProfile !== 'driving') {
+      const mode = normalizedProfile === 'bike' ? 'bike' : 'foot';
+      const fallbackUrl = `https://routing.openstreetmap.de/routed-${mode}/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+      const res = await fetch(fallbackUrl);
       return await res.json();
-    } catch (error) {
-      console.error('[GeosearchService] OSRM error:', error);
-      throw error;
     }
+
+    const points = this.parseCoords(coords);
+    const waypoints = points.map((p) => `${p.lat},${p.lon}`).join('|');
+    const orsCoordinates = points.map((p) => [p.lon, p.lat]);
+    const locationIqKey = process.env.LOCATIONIQ_API_KEY;
+    const geoapifyKey = process.env.GEOAPIFY_API_KEY;
+    const orsKey = process.env.ORS_API_KEY;
+
+    const providers: Array<{
+      name: RouteProvider;
+      request: () => Promise<Response>;
+    }> = [
+      ...(locationIqKey
+        ? [
+            {
+              name: 'locationiq' as const,
+              request: () =>
+                fetch(
+                  `https://us1.locationiq.com/v1/directions/driving/${coords}?key=${locationIqKey}&overview=full&geometries=geojson`,
+                ),
+            },
+          ]
+        : []),
+      ...(geoapifyKey
+        ? [
+            {
+              name: 'geoapify' as const,
+              request: () =>
+                fetch(
+                  `https://api.geoapify.com/v1/routing?waypoints=${waypoints}&mode=drive&details=instruction_details&apiKey=${geoapifyKey}`,
+                ),
+            },
+          ]
+        : []),
+      ...(orsKey
+        ? [
+            {
+              name: 'openrouteservice' as const,
+              request: () =>
+                fetch(
+                  `https://api.openrouteservice.org/v2/directions/driving-car/geojson`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: orsKey,
+                    },
+                    body: JSON.stringify({ coordinates: orsCoordinates }),
+                  },
+                ),
+            },
+          ]
+        : []),
+      {
+        name: 'project_osrm' as const,
+        request: () =>
+          fetch(
+            `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`,
+          ),
+      },
+    ];
+
+    for (const provider of providers) {
+      try {
+        if (!this.canUseProviderNow(provider.name)) {
+          console.warn(
+            `[GeosearchService] Routing provider fallback: ${provider.name} skipped due to local rate-limit window`,
+          );
+          continue;
+        }
+
+        this.markProviderUsage(provider.name);
+        const startedAt = Date.now();
+        console.log(
+          `[GeosearchService] Routing request -> provider=${provider.name} profile=${normalizedProfile} coords=${coords}`,
+        );
+
+        const res = await provider.request();
+        const elapsedMs = Date.now() - startedAt;
+
+        console.log(
+          `[GeosearchService] Routing response <- provider=${provider.name} status=${res.status} elapsedMs=${elapsedMs}`,
+        );
+
+        if (!res.ok) {
+          if (res.status === 429 || res.status >= 500) {
+            console.warn(
+              `[GeosearchService] Routing provider fallback: ${provider.name} returned ${res.status}`,
+            );
+            continue;
+          }
+          throw new Error(`Provider ${provider.name} returned ${res.status}`);
+        }
+
+        const data = await res.json();
+        const normalized = this.normalizeRouteResponse(provider.name, data);
+        if (normalized) {
+          const route = normalized.routes?.[0];
+          const pointsCount = route?.geometry?.coordinates?.length ?? 0;
+          console.log(
+            `[GeosearchService] Routing success provider=${provider.name} distance=${route?.distance ?? 'n/a'} duration=${route?.duration ?? 'n/a'} points=${pointsCount}`,
+          );
+          return normalized;
+        }
+
+        console.warn(
+          `[GeosearchService] Routing provider fallback: ${provider.name} returned unsupported response format`,
+        );
+      } catch (error) {
+        console.warn(
+          `[GeosearchService] Routing provider fallback: ${provider.name} failed`,
+          error,
+        );
+      }
+    }
+
+    throw new Error('All routing providers failed');
+  }
+
+  private canUseProviderNow(provider: RouteProvider) {
+    const limit = this.providerWindowLimits[provider];
+    if (!limit) return true;
+
+    const now = Date.now();
+    const timestamps = this.providerRequestTimestamps[provider] ?? [];
+    const active = timestamps.filter((ts) => now - ts < limit.windowMs);
+    this.providerRequestTimestamps[provider] = active;
+
+    return active.length < limit.maxRequests;
+  }
+
+  private markProviderUsage(provider: RouteProvider) {
+    if (!this.providerWindowLimits[provider]) return;
+
+    const arr = this.providerRequestTimestamps[provider] ?? [];
+    arr.push(Date.now());
+    this.providerRequestTimestamps[provider] = arr;
+  }
+
+  private parseCoords(coords: string): RoutePoint[] {
+    return coords.split(';').map((item) => {
+      const [lon, lat] = item.split(',').map(Number);
+      return { lon, lat };
+    });
+  }
+
+  private normalizeRouteResponse(provider: RouteProvider, data: any) {
+    if (
+      data?.code === 'Ok' &&
+      Array.isArray(data?.routes) &&
+      data.routes[0]?.geometry
+    ) {
+      return data;
+    }
+
+    if (provider === 'geoapify') {
+      const feature = data?.features?.[0];
+      const geometry = feature?.geometry;
+      const distance = feature?.properties?.distance;
+      const duration = feature?.properties?.time;
+
+      if (
+        geometry &&
+        typeof distance === 'number' &&
+        typeof duration === 'number'
+      ) {
+        return {
+          code: 'Ok',
+          routes: [{ geometry, distance, duration }],
+        };
+      }
+    }
+
+    if (provider === 'openrouteservice') {
+      const feature = data?.features?.[0];
+      const geometry = feature?.geometry;
+      const distance = feature?.properties?.summary?.distance;
+      const duration = feature?.properties?.summary?.duration;
+
+      if (
+        geometry &&
+        typeof distance === 'number' &&
+        typeof duration === 'number'
+      ) {
+        return {
+          code: 'Ok',
+          routes: [{ geometry, distance, duration }],
+        };
+      }
+    }
+
+    return null;
   }
 
   private async getYandexSuggestions(
@@ -480,7 +729,9 @@ export class GeosearchService {
           };
         })
         .filter(
-          (item: { displayName: string; uri: string } | null): item is { displayName: string; uri: string } => item !== null,
+          (
+            item: { displayName: string; uri: string } | null,
+          ): item is { displayName: string; uri: string } => item !== null,
         );
     } catch {
       return null;
