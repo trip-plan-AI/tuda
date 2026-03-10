@@ -155,7 +155,20 @@ export function ProfilePage() {
   useEffect(() => {
     if (!isAuthResolved) return;
     const hasStoredToken = typeof window !== 'undefined' && Boolean(window.localStorage.getItem('accessToken'));
-    if (!isAuthenticated && !hasStoredToken) { router.push('/'); return; }
+    if (!isAuthenticated && !hasStoredToken) {
+      const isSessionExpiredFlow =
+        typeof window !== 'undefined' &&
+        window.sessionStorage.getItem('auth:session-expired') === '1';
+
+      if (isSessionExpiredFlow) {
+        setIsLoadingTrips(false);
+        return;
+      }
+
+      router.push('/');
+      return;
+    }
+
     tripsApi.getAll()
       .then((trips) => { setSavedTrips(trips); setIsLoadingTrips(false); })
       .catch((err) => { console.error('Failed to load trips:', err); setIsLoadingTrips(false); });

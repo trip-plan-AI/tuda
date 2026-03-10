@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Map, Home, MessageSquare, MapPin, User, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
 import {
@@ -22,6 +23,7 @@ import { useAuthStore } from '@/features/auth';
 import { useUserStore } from '@/entities/user';
 import { LoginModal } from '@/features/auth';
 import { RegisterModal } from '@/features/auth';
+import { api } from '@/shared/api';
 
 type Modal = 'login' | 'register' | null;
 
@@ -61,12 +63,14 @@ const NAV_ITEMS = [
 ];
 
 export function Header() {
+  const router = useRouter();
   const pathname = usePathname();
   const isHome = pathname === '/';
   const { isAuthenticated, logout } = useAuthStore();
   const { user } = useUserStore();
   const [modal, setModal] = useState<Modal>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [isSessionExpiredModal, setIsSessionExpiredModal] = useState(false);
 
   useEffect(() => {
     // Zustand с persist загружает данные в микротасках, поэтому используем requestAnimationFrame
@@ -79,16 +83,25 @@ export function Header() {
     const openLoginAfterSessionExpired = () => {
       if (typeof window === 'undefined') return;
 
+      if (window.location.pathname === '/') {
+        return;
+      }
+
       const wasPrompted = sessionStorage.getItem('auth:session-expired-prompted') === '1';
       if (!wasPrompted) {
         toast.error('Срок сессии истёк. Войдите снова.');
         sessionStorage.setItem('auth:session-expired-prompted', '1');
       }
 
+      setIsSessionExpiredModal(true);
       setModal('login');
     };
 
-    if (typeof window !== 'undefined' && sessionStorage.getItem('auth:session-expired') === '1') {
+    if (
+      typeof window !== 'undefined' &&
+      window.location.pathname !== '/' &&
+      sessionStorage.getItem('auth:session-expired') === '1'
+    ) {
       openLoginAfterSessionExpired();
     }
 
@@ -96,7 +109,34 @@ export function Header() {
     return () => {
       window.removeEventListener('auth:session-expired', openLoginAfterSessionExpired);
     };
-  }, []);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (isAuthenticated && isSessionExpiredModal) {
+      setIsSessionExpiredModal(false);
+    }
+  }, [isAuthenticated, isSessionExpiredModal]);
+
+  const handleLoginModalClose = () => {
+    setModal(null);
+
+    const isLoggedInNow = useAuthStore.getState().isAuthenticated;
+
+    if (isSessionExpiredModal && !isLoggedInNow) {
+      setIsSessionExpiredModal(false);
+      router.push('/');
+    }
+  };
+
+  useEffect(() => {
+    if (!hydrated || !isAuthenticated || pathname === '/') {
+      return;
+    }
+
+    api.get('/users/me').catch(() => {
+      // 401 обрабатывается централизованно в shared/api/http.ts
+    });
+  }, [hydrated, isAuthenticated, pathname]);
 
   return (
     <>
@@ -290,7 +330,7 @@ export function Header() {
 
       <LoginModal
         open={modal === 'login'}
-        onClose={() => setModal(null)}
+        onClose={handleLoginModalClose}
         onSwitchToRegister={() => setModal('register')}
       />
       <RegisterModal
