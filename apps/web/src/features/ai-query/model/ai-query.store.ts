@@ -61,7 +61,11 @@ interface AiQueryStore {
   lastAppliedPlanMessageId: string | null;
   loadSessions: () => Promise<void>;
   sendQuery: (query: string, tripId?: string) => Promise<void>;
+  // TRI-104: применяет AI-план в Planner-trip и возвращает tripId для навигации/подсветки UI.
+  // MERGE-NOTE: контракт используется в AIAssistantPage и MessageBubble, не менять тип без синхронных правок UI.
   applyPlanToCurrentTrip: (messageId: string) => Promise<string | null>;
+  // TRI-104: ищет или создаёт AI-сессию для tripId при входе из Planner по кнопке "Редактировать с AI".
+  // MERGE-NOTE: при изменении backend response обновите эту сигнатуру и маппинг ниже.
   openOrCreateSessionFromTrip: (tripId: string) => Promise<string | null>;
   createNewSession: (tripId?: string | null) => string;
   switchSession: (sessionId: string) => Promise<void>;
@@ -427,6 +431,9 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       },
 
       applyPlanToCurrentTrip: (messageId) => {
+        // TRI-104: единая точка sync AI -> Planner (кнопка "Применить/Обновить маршрут").
+        // MERGE-NOTE: если появятся optimistic updates по точкам, не убирайте серверный apply,
+        // иначе потеряется гарантия one-to-one связи session.tripId.
         const { activeSessionId, sessions } = get();
         const activeSession = activeSessionId ? sessions[activeSessionId] : null;
         const message = activeSession?.messages.find((item) => item.id === messageId);
@@ -492,6 +499,9 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       },
 
       openOrCreateSessionFromTrip: async (tripId) => {
+        // TRI-104: единая точка sync Planner -> AI.
+        // Назначение: загрузить готовый контекст маршрута в чат перед переходом на /ai-assistant.
+        // MERGE-NOTE: парсинг сообщений должен оставаться совместимым с backend createSessionFromTrip.
         if (!tripId || !isUuid(tripId)) return null;
 
         try {

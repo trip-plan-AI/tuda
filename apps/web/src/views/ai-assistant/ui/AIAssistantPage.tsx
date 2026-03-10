@@ -73,6 +73,9 @@ export function AIAssistantPage() {
   };
 
   useEffect(() => {
+    // TRI-104: при открытом trip в Planner заранее поднимаем связанный чат,
+    // чтобы пользователь попадал в нужный контекст без ручного выбора.
+    // MERGE-NOTE: при изменении логики active trip/session сохранить приоритет tripId -> session.tripId.
     const tripId = currentTrip?.id;
     if (!tripId || tripId.startsWith('guest-')) return;
 
@@ -87,6 +90,9 @@ export function AIAssistantPage() {
   };
 
   const handleOpenPlanner = () => {
+    // TRI-104: переход в Planner с applyTripId, чтобы PlannerPage могла корректно
+    // обработать конфликты несохранённых изменений (same/different route modal).
+    // MERGE-NOTE: query-параметр applyTripId используется в PlannerPage useEffect.
     const targetTripId = activeSession?.tripId ?? currentTrip?.id ?? null;
     if (!targetTripId || targetTripId.startsWith('guest-')) {
       router.push('/planner');

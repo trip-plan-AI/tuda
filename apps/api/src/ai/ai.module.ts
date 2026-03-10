@@ -14,6 +14,10 @@ import { SemanticFilterService } from './pipeline/semantic-filter.service';
 import { YandexFetchService } from './pipeline/yandex-fetch.service';
 
 @Module({
+  // TRI-104: AI контроллер теперь использует Trips/Points для сценариев
+  // "применить план в маршрут" и "редактировать маршрут с AI".
+  // MERGE-NOTE: при выносе сервисов в другие модули не забудьте обновить imports,
+  // иначе DI упадёт на AiController.
   imports: [TripsModule, PointsModule],
   controllers: [AiController],
   providers: [

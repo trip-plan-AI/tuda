@@ -34,6 +34,10 @@ export class AiSessionsService {
     userId: string;
     routePlan: RoutePlan;
   }) {
+    // TRI-104: AI Assistant -> Planner.
+    // Назначение: атомарно создать/обновить trip из AI routePlan и поддержать связь 1:1 session<->trip.
+    // MERGE-NOTE: если в других ветках меняется формат routePlan или стратегия апдейта точек,
+    // синхронизируйте это место с endpoint `POST /ai/sessions/:id/apply`.
     const { sessionId, userId, routePlan } = params;
 
     if (!routePlan?.days?.length) {
@@ -134,6 +138,8 @@ export class AiSessionsService {
   }
 
   async getOrCreateByTrip(userId: string, tripId: string) {
+    // TRI-104: гарантирует инвариант "один маршрут -> один AI-чат" для пользователя.
+    // MERGE-NOTE: при изменении уникальности/индексов ai_sessions по tripId обновить эту выборку.
     const existing = await this.db.query.aiSessions.findFirst({
       where: and(
         eq(schema.aiSessions.userId, userId),
@@ -166,6 +172,8 @@ export class AiSessionsService {
   }
 
   async appendMessages(sessionId: string, messages: SessionMessage[]) {
+    // TRI-104: сервисный append для сценария инициализации чата из Planner.
+    // MERGE-NOTE: не заменяет историю, а дописывает, чтобы не терять сообщения при параллельной работе.
     const current = await this.db.query.aiSessions.findFirst({
       where: eq(schema.aiSessions.id, sessionId),
     });

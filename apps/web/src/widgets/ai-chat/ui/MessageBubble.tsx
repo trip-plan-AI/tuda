@@ -19,6 +19,10 @@ export function MessageBubble({
   hasLinkedTrip = false,
   appliedTripId = null,
 }: MessageBubbleProps) {
+  // TRI-104: bubble знает контекст связки chat<->trip и меняет CTA:
+  // "Применить план" (первый раз) / "Обновить маршрут" (если trip уже привязан).
+  // MERGE-NOTE: если переносите кнопки из bubble в другой компонент, сохраните эту развилку,
+  // иначе сломается UX-логика one-to-one связи.
   const isAssistant = message.role === 'assistant';
 
   const getFallbackPoi = (point: {
