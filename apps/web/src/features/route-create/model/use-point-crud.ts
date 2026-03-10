@@ -19,6 +19,13 @@ export function usePointCrud(tripId: string | undefined) {
       return
     }
 
+    const snapshotTrip = useTripStore.getState().currentTrip
+    // Если точки уже положили в store (например, из AI-чата),
+    // не перетираем их первым запросом к API.
+    if (snapshotTrip?.id === tripId && (snapshotTrip.points?.length ?? 0) > 0) {
+      return
+    }
+
     pointsApi
       .getAll(tripId)
       .then(setPoints)
