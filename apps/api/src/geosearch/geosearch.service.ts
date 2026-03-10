@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { RedisService } from '../redis/redis.service';
+import { PopularDestinationsService } from './popular-destinations.service';
 
 interface YandexSuggestion {
   title?: { text: string };
@@ -10,6 +12,9 @@ interface NominatimItem {
   display_name: string;
   lon: number;
   lat: number;
+  class: string;
+  type: string;
+  importance?: number;
 }
 
 type RouteProvider =
@@ -28,8 +33,18 @@ interface ProviderWindowLimit {
   windowMs: number;
 }
 
+// Классы Nominatim которые исключаем в RU-поиске (только geographic)
+const NOMINATIM_GEO_EXCLUDED = new Set([
+  'amenity', 'building', 'shop', 'office', 'craft',
+]);
+
 @Injectable()
 export class GeosearchService {
+  constructor(
+    private readonly redis: RedisService,
+    private readonly popularDestinations: PopularDestinationsService,
+  ) {}
+
   private readonly providerWindowLimits: Partial<
     Record<RouteProvider, ProviderWindowLimit>
   > = {
@@ -58,23 +73,93 @@ export class GeosearchService {
     const normalized = query.trim();
     if (normalized.length < 2) return [];
 
-    // 1. Попытка DaData (лучшее для РФ)
-    if (this.dadataApiKey) {
-      const dadataResults = await this.getDaDataSuggestions(normalized);
-      if (dadataResults && dadataResults.length > 0) return dadataResults;
+    // Tier 1: Redis cache (TTL 7 дней)
+    const cacheKey = `geo:suggest:${normalized.toLowerCase()}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    // Tier 0 (DB) + Tier 2: DaData (RU) + Nominatim WW параллельно, timeout 800ms
+    const [tier0Res, dadataRes, nominatimWwRes] = await Promise.allSettled([
+      this.withTimeout(this.popularDestinations.search(normalized), 800),
+      this.dadataApiKey
+        ? this.withTimeout(this.getDaDataSuggestions(normalized), 800)
+        : Promise.resolve(null),
+      this.withTimeout(this.getNominatimSuggestions(normalized, undefined, 'ru,en', false), 800),
+    ]);
+
+    const tier0Items = tier0Res.status === 'fulfilled' ? (tier0Res.value ?? []) : [];
+    const dadataItems = dadataRes.status === 'fulfilled' ? (dadataRes.value ?? []) : [];
+    const nominatimWwItems = nominatimWwRes.status === 'fulfilled' ? (nominatimWwRes.value ?? []) : [];
+
+    // Merge + dedup по координатам (±0.01° ≈ 1км)
+    const seen = new Set<string>();
+    const merged = [...tier0Items, ...dadataItems, ...nominatimWwItems].filter(item => {
+      const match = item.uri.match(/ll=([^&]+)/);
+      if (!match) return true;
+      const [lon, lat] = match[1].split(',').map(Number);
+      if (isNaN(lon) || isNaN(lat)) return true;
+      const key = `${lon.toFixed(2)},${lat.toFixed(2)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    // Score + sort
+    const scored = merged
+      .map(item => {
+        if ('score' in item) return item as any;
+        return { ...item, score: this.scoreResult(item.displayName, normalized) };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+
+    if (scored.length > 0 && scored[0].score >= 2) {
+      await this.redis.set(cacheKey, JSON.stringify(scored), 60 * 60 * 24 * 7);
+      return scored;
     }
 
-    // 2. Попытка Photon (быстрый OSM поиск)
+    // Tier 3: Photon → Yandex (если Tier 2 ничего не нашёл или score слабый)
     const photonResults = await this.getPhotonSuggestions(normalized);
-    if (photonResults && photonResults.length > 0) return photonResults;
+    if (photonResults && photonResults.length > 0) {
+      await this.redis.set(cacheKey, JSON.stringify(photonResults), 60 * 60 * 24 * 7);
+      return photonResults;
+    }
 
-    // 3. Попытка Nominatim (классический OSM)
-    const nominatimResults = await this.getNominatimSuggestions(normalized);
-    if (nominatimResults && nominatimResults.length > 0)
-      return nominatimResults;
+    const yandexResults = await this.getYandexSuggestions(normalized);
+    if (yandexResults && yandexResults.length > 0) {
+      await this.redis.set(cacheKey, JSON.stringify(yandexResults), 60 * 60 * 24 * 7);
+    }
+    return yandexResults;
+  }
 
-    // 4. Попытка Yandex (фоллбэк)
-    return this.getYandexSuggestions(normalized);
+  private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+    return Promise.race([
+      promise,
+      new Promise<null>(resolve => setTimeout(() => resolve(null), ms)),
+    ]);
+  }
+
+  private scoreResult(displayName: string, query: string): number {
+    const dn = displayName.toLowerCase();
+    const words = query.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+
+    let textScore = 0;
+    for (const w of words) {
+      if (dn.startsWith(w)) textScore = Math.max(textScore, 3.0);
+      else if (new RegExp(`\\b${w}\\b`).test(dn)) textScore = Math.max(textScore, 2.5);
+      else if (dn.includes(w)) textScore = Math.max(textScore, 1.5);
+    }
+
+    // type_bonus по ключевым словам
+    let typeBonus = 0;
+    if (/\b(аэропорт|airport|aerodrome|aeroporto)\b/i.test(dn)) typeBonus = 2.0;
+    else if (/\b(город|г\.|city|town|capitale|столица|capital)\b/i.test(dn)) typeBonus = 2.0;
+    else if (/\b(курорт|resort|остров|island|île)\b/i.test(dn)) typeBonus = 1.5;
+    else if (/\b(село|деревня|village|посёлок|хутор|аул|урочище|территория)\b/i.test(dn)) typeBonus = 0.3;
+    else if (/\b(улица|ул\.|проспект|пр-т|переулок|шоссе|street|avenue|road)\b/i.test(dn)) typeBonus = -0.5;
+    else if (/\b(сельское поселение|муниципальный округ|городской округ)\b/i.test(dn)) typeBonus = 0.5;
+
+    return textScore * 2 + typeBonus;
   }
 
   private async getDaDataSuggestions(
@@ -103,10 +188,25 @@ export class GeosearchService {
         ? data.suggestions
         : [];
 
-      return suggestions.map((item: any) => ({
-        displayName: item.value,
-        uri: `ymapsbm1://geo?ll=${item.data.geo_lon},${item.data.geo_lat}&z=12`,
-      }));
+      const matchWords = q.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+      return suggestions
+        .filter((item: any) => {
+          if (!item.data.geo_lon || !item.data.geo_lat) return false;
+          // Проверяем только географические поля (city, settlement, region, street)
+          // чтобы не матчить названия бизнесов ("ресторан Токио в Москве")
+          const d = item.data;
+          // Только city/settlement/region — не street, чтобы "париж" не матчил "Парижской Коммуны"
+          const geoFields = [
+            d.city, d.settlement, d.region, d.area,
+          ].filter(Boolean).map((f: string) => f.toLowerCase());
+          return matchWords.length === 0 || matchWords.some(w =>
+            geoFields.some((field: string) => field.includes(w)),
+          );
+        })
+        .map((item: any) => ({
+          displayName: item.value,
+          uri: `ymapsbm1://geo?ll=${item.data.geo_lon},${item.data.geo_lat}&z=12`,
+        }));
     } catch (error) {
       console.error('[GeosearchService] DaData error:', error);
       return null;
@@ -143,33 +243,28 @@ export class GeosearchService {
     q: string,
   ): Promise<Array<{ displayName: string; uri: string }> | null> {
     try {
-      const params = new URLSearchParams({
-        q,
-        limit: '10',
-        lang: 'ru',
-      });
-
+      const params = new URLSearchParams({ q, limit: '10', lang: 'en' });
       const res = await fetch(`https://photon.komoot.io/api/?${params}`);
       if (!res.ok) return null;
 
       const data = await res.json();
       if (!data || !data.features) return null;
 
-      return data.features.map((f: any) => {
-        const p = f.properties;
-        const name = p.name || '';
-        const city = p.city || '';
-        const street = p.street || '';
-        const house = p.housenumber || '';
-
-        const displayParts = [name, city, street, house].filter(Boolean);
-        const displayName = displayParts.join(', ');
-
-        return {
-          displayName: displayName || p.state || p.country,
-          uri: `ymapsbm1://geo?ll=${f.geometry.coordinates[0]},${f.geometry.coordinates[1]}&z=12`,
-        };
-      });
+      const matchWords = q.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+      return data.features
+        .map((f: any) => {
+          const p = f.properties;
+          const displayParts = [p.name, p.city, p.street, p.housenumber].filter(Boolean);
+          const displayName = displayParts.join(', ') || p.state || p.country;
+          return {
+            displayName,
+            uri: `ymapsbm1://geo?ll=${f.geometry.coordinates[0]},${f.geometry.coordinates[1]}&z=12`,
+          };
+        })
+        .filter((item: { displayName: string }) => {
+          const dn = item.displayName.toLowerCase();
+          return matchWords.length === 0 || matchWords.some(w => dn.includes(w));
+        });
     } catch {
       return null;
     }
@@ -422,6 +517,11 @@ export class GeosearchService {
   async osrmRoute(profile: string, coords: string) {
     const normalizedProfile = profile || 'driving';
 
+    // Redis cache для маршрутов (TTL 30 дней — дороги меняются редко)
+    const routeCacheKey = `route:${normalizedProfile}:${coords}`;
+    const cachedRoute = await this.redis.get(routeCacheKey);
+    if (cachedRoute) return JSON.parse(cachedRoute);
+
     if (normalizedProfile !== 'driving') {
       const mode = normalizedProfile === 'bike' ? 'bike' : 'foot';
       const fallbackUrl = `https://routing.openstreetmap.de/routed-${mode}/route/v1/driving/${coords}?overview=full&geometries=geojson`;
@@ -530,6 +630,7 @@ export class GeosearchService {
           console.log(
             `[GeosearchService] Routing success provider=${provider.name} distance=${route?.distance ?? 'n/a'} duration=${route?.duration ?? 'n/a'} points=${pointsCount}`,
           );
+          await this.redis.set(routeCacheKey, JSON.stringify(normalized), 60 * 60 * 24 * 30);
           return normalized;
         }
 
@@ -672,16 +773,19 @@ export class GeosearchService {
 
   private async getNominatimSuggestions(
     q: string,
+    countrycodes?: string,
+    acceptLanguage = 'ru',
+    excludeAmenity = false,
   ): Promise<Array<{ displayName: string; uri: string }>> {
     try {
       const params = new URLSearchParams({
         q,
         format: 'json',
         limit: '10',
-        countrycodes: 'ru',
-        'accept-language': 'ru',
+        'accept-language': acceptLanguage,
         dedupe: '1',
       });
+      if (countrycodes) params.set('countrycodes', countrycodes);
 
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?${params}`,
@@ -691,10 +795,17 @@ export class GeosearchService {
       const data = await res.json();
       if (!Array.isArray(data)) return [];
 
-      return data.map((item: NominatimItem) => ({
-        displayName: item.display_name,
-        uri: `ymapsbm1://geo?ll=${item.lon},${item.lat}&z=12`,
-      }));
+      const matchWords = q.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+      return data
+        .filter((item: NominatimItem) => {
+          if (excludeAmenity && NOMINATIM_GEO_EXCLUDED.has(item.class)) return false;
+          const dn = item.display_name.toLowerCase();
+          return matchWords.length === 0 || matchWords.some(w => dn.includes(w));
+        })
+        .map((item: NominatimItem) => ({
+          displayName: item.display_name,
+          uri: `ymapsbm1://geo?ll=${item.lon},${item.lat}&z=12`,
+        }));
     } catch {
       return [];
     }
