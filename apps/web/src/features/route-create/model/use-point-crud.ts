@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useTripStore } from '@/entities/trip/model/trip.store'
 import { pointsApi } from '@/entities/route-point'
 import type { CreatePointPayload, UpdatePointPayload } from '@/entities/route-point'
+import { getSocket } from '@/shared/socket/socket-client'
 
 export function usePointCrud(tripId: string | undefined) {
   const { setPoints, addPoint, updatePoint, removePoint, reorderPoints } = useTripStore()
@@ -67,6 +68,8 @@ export function usePointCrud(tripId: string | undefined) {
       updatePoint(id, payload) // optimistic update
       if (!tripId.startsWith('guest-')) {
         await pointsApi.update(tripId, id, payload)
+        // Broadcast to collaborators in real-time
+        getSocket().emit('point:update', { trip_id: tripId, point_id: id, ...payload })
       }
     },
     [tripId, updatePoint],

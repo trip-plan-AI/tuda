@@ -33,6 +33,12 @@ export function useCollaborationSocket(tripId: string) {
     socket.on('point:deleted', ({ point_id }: { point_id: string }) => {
       removePoint(point_id);
     });
+    socket.on(
+      'point:updated',
+      ({ point_id, ...patch }: { point_id: string } & Record<string, unknown>) => {
+        updatePoint(point_id, patch as Parameters<typeof updatePoint>[1]);
+      },
+    );
 
     return () => {
       socket.emit('leave:trip', { trip_id: tripId });
@@ -42,6 +48,7 @@ export function useCollaborationSocket(tripId: string) {
       socket.off('point:added');
       socket.off('point:moved');
       socket.off('point:deleted');
+      socket.off('point:updated');
     };
   }, [tripId]);
 }
