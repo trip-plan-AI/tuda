@@ -1601,7 +1601,7 @@ export function PlannerPage() {
                           try {
                             setIsOptimizing(true);
                             const tripId = await ensureTripId();
-                            const result = await tripsApi.optimize(tripId);
+                            const result = await tripsApi.optimize(tripId, routeProfile);
                             if (result.optimizedPoints) {
                               useTripStore.getState().setPoints(result.optimizedPoints);
                               toast.success('Маршрут оптимизирован!', { id: 'optimize-success' });
