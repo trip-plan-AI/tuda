@@ -5,6 +5,7 @@ import { Pool } from 'pg';
 import { eq } from 'drizzle-orm';
 import * as schema from './schema';
 import * as bcrypt from 'bcrypt';
+import { DESTINATIONS } from './seed-destinations';
 
 const SYSTEM_EMAIL = 'system@travel-planner.local';
 const SYSTEM_PASSWORD = 'system-no-login';
@@ -310,6 +311,21 @@ async function seed() {
     await db.insert(schema.routePoints).values(pointValues);
     console.log(`  → ${pointValues.length} attractions inserted`);
   }
+
+  console.log('\nSeeding popular destinations...');
+  await db.delete(schema.popularDestinations);
+  console.log('Cleared old popular destinations');
+
+  const destinationChunks: typeof DESTINATIONS[] = [];
+  const CHUNK_SIZE = 50;
+  for (let i = 0; i < DESTINATIONS.length; i += CHUNK_SIZE) {
+    destinationChunks.push(DESTINATIONS.slice(i, i + CHUNK_SIZE));
+  }
+
+  for (const chunk of destinationChunks) {
+    await db.insert(schema.popularDestinations).values(chunk);
+  }
+  console.log(`Inserted ${DESTINATIONS.length} popular destinations.`);
 
   console.log('\nSeed completed!');
   await pool.end();

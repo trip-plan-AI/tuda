@@ -48,6 +48,7 @@ import { useTripStore, tripsApi, type CreateTripPayload, type Trip } from '@/ent
 import { usePointCrud } from '@/features/route-create';
 import { pointsApi } from '@/entities/route-point';
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
+import { CompareSaveModal } from '@/widgets/compare-save';
 import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point';
 import { toast } from 'sonner';
@@ -618,6 +619,21 @@ export function PlannerPage() {
   const [isRouteLoading, setIsRouteLoading] = useState(false);
   const [affectedSegments, setAffectedSegments] = useState<Set<number>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [compareModalData, setCompareModalData] = useState<{
+    isOpen: boolean;
+    metrics: {
+      originalKm: number;
+      newKm: number;
+      originalHours: number;
+      newHours: number;
+      originalRub: number;
+      newRub: number;
+    } | null;
+  }>({
+    isOpen: false,
+    metrics: null,
+  });
 
   const resolveCoords = useCallback(async (query: string) => {
     try {
@@ -1592,6 +1608,41 @@ export function PlannerPage() {
                     </Button>
                     <div className="flex flex-col lg:flex-row gap-3 w-full lg:w-auto">
                       <Button
+                        onClick={async () => {
+                          if (!isAuthenticated) {
+                            setModal('register');
+                            return;
+                          }
+                          try {
+                            setIsOptimizing(true);
+                            const tripId = await ensureTripId();
+                            const result = await tripsApi.optimize(tripId, routeProfile);
+                            if (result.optimizedPoints) {
+                              useTripStore.getState().setPoints(result.optimizedPoints);
+                              if (result.metrics) {
+                                setCompareModalData({
+                                  isOpen: true,
+                                  metrics: result.metrics,
+                                });
+                              } else {
+                                toast.success('Маршрут оптимизирован!', { id: 'optimize-success' });
+                              }
+                            }
+                          } catch (error) {
+                            console.error('Optimization error:', error);
+                            toast.error('Ошибка оптимизации', { id: 'optimize-error' });
+                          } finally {
+                            setIsOptimizing(false);
+                          }
+                        }}
+                        disabled={points.length < 2 || isOptimizing}
+                        variant="brand-yellow"
+                        shape="xl"
+                        className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
+                      >
+                        {isOptimizing ? 'ОПТИМИЗАЦИЯ...' : 'ОПТИМИЗИРОВАТЬ МАРШРУТ'}
+                      </Button>
+                      <Button
                         onClick={() => {
                           if (!isAuthenticated) {
                             setModal('register');
@@ -1763,6 +1814,11 @@ export function PlannerPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <CompareSaveModal
+        isOpen={compareModalData.isOpen}
+        onClose={() => setCompareModalData((prev) => ({ ...prev, isOpen: false }))}
+        metrics={compareModalData.metrics!}
+      />
       <LoginModal
         open={modal === 'login'}
         onClose={() => setModal(null)}

@@ -298,7 +298,7 @@ export function RouteMap({
             oldPoint.lon !== newPoint.lon ||
             oldPoint.lat !== newPoint.lat;
 
-        const transportModeChanged = (oldPoint?.transportMode || routeProfile) !== (newPoint?.transportMode || routeProfile);
+        const transportModeChanged = (oldPoint?.transportMode || prevRouteProfileRef.current) !== (newPoint?.transportMode || routeProfile);
 
         if (coordsChanged || transportModeChanged) {
           // Сегмент i-1 (входящий в точку i) затронут если изменились координаты или transportMode
