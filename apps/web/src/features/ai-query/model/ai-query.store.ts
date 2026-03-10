@@ -228,7 +228,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
             return;
           }
 
-          const sessions = list.reduce<Record<string, ChatSession>>((acc, item) => {
+          const remoteSessions = list.reduce<Record<string, ChatSession>>((acc, item) => {
             const id = item.id;
             acc[id] = {
               id,
@@ -243,17 +243,39 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
             return acc;
           }, {});
 
-          const firstSessionId = list[0]?.id ?? null;
+          let nextActiveSessionId: string | null = null;
 
-          set({
-            sessions,
-            activeSessionId: firstSessionId,
-            isSessionsLoading: false,
-            ...syncLegacyFields(sessions, firstSessionId),
+          set((state) => {
+            const localTransientSessions = Object.values(state.sessions).reduce<Record<string, ChatSession>>(
+              (acc, session) => {
+                if (session.sessionId === null) {
+                  acc[session.id] = session;
+                }
+                return acc;
+              },
+              {},
+            );
+
+            const mergedSessions = {
+              ...remoteSessions,
+              ...localTransientSessions,
+            };
+
+            nextActiveSessionId =
+              state.activeSessionId && mergedSessions[state.activeSessionId]
+                ? state.activeSessionId
+                : (list[0]?.id ?? null);
+
+            return {
+              sessions: mergedSessions,
+              activeSessionId: nextActiveSessionId,
+              isSessionsLoading: false,
+              ...syncLegacyFields(mergedSessions, nextActiveSessionId),
+            };
           });
 
-          if (firstSessionId) {
-            await get().switchSession(firstSessionId);
+          if (nextActiveSessionId && remoteSessions[nextActiveSessionId]) {
+            await get().switchSession(nextActiveSessionId);
           }
         } catch {
           set({ isSessionsLoading: false });
@@ -326,7 +348,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           };
 
           set((state) => {
-            const activeSession = state.activeSessionId ? state.sessions[state.activeSessionId] : null;
+            const activeSession = state.sessions[activeId] ?? null;
             if (!activeSession) {
               return { isLoading: false };
             }
@@ -357,7 +379,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           const error = rawError as HttpError;
 
           set((state) => {
-            const activeSession = state.activeSessionId ? state.sessions[state.activeSessionId] : null;
+            const activeSession = state.sessions[activeId] ?? null;
             if (!activeSession) {
               return { isLoading: false };
             }
@@ -383,8 +405,9 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
 
             return {
               sessions: nextSessions,
+              activeSessionId: activeId,
               isLoading: false,
-              ...syncLegacyFields(nextSessions, state.activeSessionId),
+              ...syncLegacyFields(nextSessions, activeId),
             };
           });
         }

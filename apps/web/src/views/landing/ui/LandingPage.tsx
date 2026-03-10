@@ -120,6 +120,7 @@ export function LandingPage() {
   const debounceFromRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceToRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendAiQuery = useAiQueryStore((state) => state.sendQuery);
+  const createNewSession = useAiQueryStore((state) => state.createNewSession);
   const { currentTrip, setCurrentTrip, addPoint, clearPlanner } = useTripStore();
   const points = currentTrip?.points || [];
   const { isAuthenticated } = useAuthStore();
@@ -402,6 +403,7 @@ export function LandingPage() {
   const handleSearch = () => {
     if (searchMode === 'ai') {
       if (searchQuery.trim()) {
+        createNewSession();
         void sendAiQuery(searchQuery);
       }
       router.push('/ai-assistant');
@@ -523,6 +525,7 @@ export function LandingPage() {
                       href="/ai-assistant"
                       onClick={() => {
                         if (searchQuery.trim()) {
+                          createNewSession();
                           void sendAiQuery(searchQuery);
                         }
                       }}
@@ -795,6 +798,7 @@ export function LandingPage() {
                   <button
                     key={idx}
                     onClick={() => {
+                      createNewSession();
                       void sendAiQuery(filter.label);
                       router.push('/ai-assistant');
                     }}
