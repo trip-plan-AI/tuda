@@ -148,9 +148,8 @@ export class TripsService {
       });
       if (!collab) throw new ForbiddenException('Access denied');
 
-      const { isActive, ...rest } = dto;
-      if (Object.keys(rest).length > 0)
-        throw new ForbiddenException('Only owner can update trip details');
+      // Collaborators can only change isActive — extra fields are silently ignored
+      const { isActive } = dto;
 
       if (isActive !== undefined) {
         if (isActive) {
