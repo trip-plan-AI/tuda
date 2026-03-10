@@ -26,7 +26,9 @@ import {
   collaborateApi,
   useCollaborationSocket,
   InviteModal,
+  CollaboratorsModal,
 } from '@/features/route-collaborate';
+import { getSocket } from '@/shared/socket/socket-client';
 
 const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
   ssr: false,
@@ -113,6 +115,7 @@ export function ProfilePage() {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [collaboratorsModalOpen, setCollaboratorsModalOpen] = useState(false);
   const { collaborators, setCollaborators } = useCollaborateStore();
 
   const progressColor = scrollProgress < 0.4 ? '#0ea5e9' : scrollProgress < 0.8 ? '#4f46e5' : '#9333ea';
@@ -197,6 +200,18 @@ export function ProfilePage() {
   const activeRouteTotalBudget = displayedActiveRoute?.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
 
   useCollaborationSocket(activeRoute?.id ?? '');
+
+  // When the current user is invited to a trip, add it to the list in real-time
+  useEffect(() => {
+    const socket = getSocket();
+    socket.on('trip:shared', (trip: Trip) => {
+      setSavedTrips((prev) => {
+        if (prev.some((t) => t.id === trip.id)) return prev;
+        return [...prev, { ...trip, isActive: false }];
+      });
+    });
+    return () => { socket.off('trip:shared'); };
+  }, []);
 
   useEffect(() => {
     if (activeRoute?.id) {
@@ -410,17 +425,23 @@ export function ProfilePage() {
                       <h3 className="text-[10px] font-black text-brand-indigo uppercase tracking-widest">Активный маршрут</h3>
                       <div className="flex items-center gap-2">
                         {collaborators.length > 0 && (
-                          <AvatarGroup>
-                            {collaborators.slice(0, 3).map((c) => (
-                              <Avatar key={c.userId} size="sm">
-                                {c.photo && <AvatarImage src={c.photo} alt={c.name} />}
-                                <AvatarFallback>{c.name.charAt(0).toUpperCase()}</AvatarFallback>
-                              </Avatar>
-                            ))}
-                            {collaborators.length > 3 && (
-                              <AvatarGroupCount>+{collaborators.length - 3}</AvatarGroupCount>
-                            )}
-                          </AvatarGroup>
+                          <button
+                            onClick={() => setCollaboratorsModalOpen(true)}
+                            className="flex items-center hover:opacity-80 transition-opacity"
+                            title="Участники маршрута"
+                          >
+                            <AvatarGroup>
+                              {collaborators.slice(0, 3).map((c) => (
+                                <Avatar key={c.userId} size="sm">
+                                  {c.photo && <AvatarImage src={c.photo} alt={c.name} />}
+                                  <AvatarFallback>{c.name.charAt(0).toUpperCase()}</AvatarFallback>
+                                </Avatar>
+                              ))}
+                              {collaborators.length > 3 && (
+                                <AvatarGroupCount>+{collaborators.length - 3}</AvatarGroupCount>
+                              )}
+                            </AvatarGroup>
+                          </button>
                         )}
                         <Button
                           variant="outline"
@@ -563,6 +584,14 @@ export function ProfilePage() {
           tripId={activeRoute.id}
           open={inviteModalOpen}
           onClose={() => setInviteModalOpen(false)}
+        />
+      )}
+      {activeRoute && (
+        <CollaboratorsModal
+          tripId={activeRoute.id}
+          ownerId={activeRoute.ownerId}
+          open={collaboratorsModalOpen}
+          onClose={() => setCollaboratorsModalOpen(false)}
         />
       )}
     </div>

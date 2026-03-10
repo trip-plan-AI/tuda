@@ -13,6 +13,7 @@ import { CollaboratorsService } from './collaborators.service';
 import { TripsService } from './trips.service';
 import { AddCollaboratorDto } from './dto/add-collaborator.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 
 @Controller('trips/:tripId/collaborators')
 @UseGuards(JwtAuthGuard)
@@ -20,6 +21,7 @@ export class CollaboratorsController {
   constructor(
     private collaboratorsService: CollaboratorsService,
     private tripsService: TripsService,
+    private collabGateway: CollaborationGateway,
   ) {}
 
   @Get()
@@ -37,7 +39,10 @@ export class CollaboratorsController {
     if (trip.ownerId !== req.user.id) {
       throw new ForbiddenException('Only trip owner can invite collaborators');
     }
-    return this.collaboratorsService.add(tripId, dto.userId, dto.role ?? 'editor');
+    const result = await this.collaboratorsService.add(tripId, dto.userId, dto.role ?? 'editor');
+    // Push the trip to the invited user's profile in real-time
+    this.collabGateway.notifyTripShared(dto.userId, trip);
+    return result;
   }
 
   @Delete(':userId')

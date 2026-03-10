@@ -5,3 +5,4 @@ export { useCollaborationSocket } from './hooks/useCollaborationSocket';
 export { InviteModal } from './ui/InviteModal';
 export { CollaboratorList } from './ui/CollaboratorList';
 export { CollaboratorsAvatarGroup } from './ui/CollaboratorsAvatarGroup';
+export { CollaboratorsModal } from './ui/CollaboratorsModal';

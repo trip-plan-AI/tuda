@@ -79,6 +79,7 @@ export const tripCollaborators = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     role: collaboratorRoleEnum('role').notNull().default('viewer'),
+    isActive: boolean('is_active').notNull().default(false),
     joinedAt: timestamp('joined_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.tripId, t.userId] })],

@@ -46,9 +46,16 @@ export class CollaborationGateway
       );
       client.data.userId = payload.sub;
       client.data.email = payload.email;
+      // Personal room so we can push notifications directly to this user
+      client.join(`user_${payload.sub}`);
     } catch {
       client.disconnect();
     }
+  }
+
+  /** Notify a specific user that they were added to a trip */
+  notifyTripShared(userId: string, trip: any) {
+    this.server.to(`user_${userId}`).emit('trip:shared', trip);
   }
 
   handleDisconnect(client: TypedSocket) {
