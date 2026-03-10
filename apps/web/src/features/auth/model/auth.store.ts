@@ -17,6 +17,10 @@ export const useAuthStore = create<AuthStore>()(
       setAuth: (token) => {
         localStorage.setItem('accessToken', token)
         document.cookie = `token=${token}; path=/; max-age=${7 * 24 * 3600}`
+        if (typeof window !== 'undefined') {
+          sessionStorage.removeItem('auth:session-expired')
+          sessionStorage.removeItem('auth:session-expired-prompted')
+        }
         set({ isAuthenticated: true, accessToken: token })
       },
       logout: () => {
