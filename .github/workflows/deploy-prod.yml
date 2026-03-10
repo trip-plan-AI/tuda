@@ -157,7 +157,7 @@ jobs:
           fi
 
           echo "[deploy][step] docker build started"
-          docker compose -f docker-compose.prod.yml build api nginx
+          docker compose -f docker-compose.prod.yml build api web nginx
           echo "[deploy][step] docker build finished"
 
           echo "[deploy][step] docker up started"
