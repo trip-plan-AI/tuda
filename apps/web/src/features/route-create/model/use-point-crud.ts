@@ -6,7 +6,7 @@ import { pointsApi } from '@/entities/route-point'
 import type { CreatePointPayload, UpdatePointPayload } from '@/entities/route-point'
 
 export function usePointCrud(tripId: string | undefined) {
-  const { setPoints, addPoint, updatePoint, removePoint, reorderPoints } = useTripStore()
+  const { setPoints, setCurrentTrip, addPoint, updatePoint, removePoint, reorderPoints } = useTripStore()
   const loadedTripId = useRef<string | null>(null)
 
   // Загружаем точки при смене tripId
@@ -19,8 +19,19 @@ export function usePointCrud(tripId: string | undefined) {
       return
     }
 
-    pointsApi.getAll(tripId).then(setPoints).catch(console.error)
-  }, [tripId, setPoints])
+    pointsApi
+      .getAll(tripId)
+      .then(setPoints)
+      .catch((e) => {
+        const message = e instanceof Error ? e.message : ''
+        if (message.includes('Access denied') || message.includes('403')) {
+          setCurrentTrip(null as any)
+          return
+        }
+
+        console.error(e)
+      })
+  }, [tripId, setPoints, setCurrentTrip])
 
   const add = useCallback(
     async (payload: CreatePointPayload) => {
