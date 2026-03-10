@@ -36,10 +36,22 @@ export class CollaborationService {
   removePresence(socketId: string, server: Server): void {
     const data = this.presence.get(socketId);
     if (data) {
+      this.presence.delete(socketId);
       server
         .to(`trip_${data.tripId}`)
-        .emit('presence:leave', { user_id: data.userId });
-      this.presence.delete(socketId);
+        .emit('presence:update', {
+          onlineUserIds: this.getOnlineUsers(data.tripId),
+        });
     }
+  }
+
+  getOnlineUsers(tripId: string): string[] {
+    const userIds = new Set<string>();
+    for (const info of this.presence.values()) {
+      if (info.tripId === tripId) {
+        userIds.add(info.userId);
+      }
+    }
+    return Array.from(userIds);
   }
 }

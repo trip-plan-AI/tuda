@@ -3,15 +3,18 @@
 import { useEffect } from 'react';
 import { getSocket } from '@/shared/socket/socket-client';
 import { useTripStore } from '@/entities/trip/model/trip.store';
+import { pointsApi } from '@/entities/route-point/api/points.api';
 import { useCollaborateStore } from '../model/collaborate.store';
 import type { Collaborator } from '../model/collaborate.store';
 
-export function useCollaborationSocket(tripId: string) {
+export function useCollaborationSocket(tripId: string, isActive: boolean = true) {
   const { setOnline, addCollaborator, removeCollaborator } = useCollaborateStore();
-  const { addPoint, updatePoint, removePoint } = useTripStore();
+  const { addPoint, updatePoint, removePoint, setPoints } = useTripStore();
 
   useEffect(() => {
-    if (!tripId) return;
+    if (!tripId || !isActive || tripId.startsWith('guest-')) return;
+
+    pointsApi.getAll(tripId).then(setPoints).catch(console.error);
 
     const socket = getSocket();
     socket.emit('join:trip', { trip_id: tripId });
@@ -20,7 +23,9 @@ export function useCollaborationSocket(tripId: string) {
       setOnline(onlineUserIds);
     });
     socket.on('collaborator:added', (c: Collaborator) => addCollaborator(c));
-    socket.on('collaborator:removed', ({ userId }: { userId: string }) => removeCollaborator(userId));
+    socket.on('collaborator:removed', ({ userId }: { userId: string }) =>
+      removeCollaborator(userId),
+    );
 
     // Real-time point sync (changes from other users)
     socket.on('point:added', ({ point }: { point: any }) => addPoint(point));
@@ -50,5 +55,5 @@ export function useCollaborationSocket(tripId: string) {
       socket.off('point:deleted');
       socket.off('point:updated');
     };
-  }, [tripId]);
+  }, [tripId, isActive]);
 }

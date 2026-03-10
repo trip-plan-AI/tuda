@@ -342,7 +342,7 @@ function SortablePointRow({
                   </div>
                 )}
                 {leg && (
-                  <div className={cn("flex items-center gap-1.5", isRouteLoading && "opacity-40")}>
+                  <div className={cn('flex items-center gap-1.5', isRouteLoading && 'opacity-40')}>
                     {(point.transportMode || 'driving') !== 'direct' && (
                       <>
                         <div className="flex items-center gap-1.5 whitespace-nowrap">
@@ -393,7 +393,9 @@ function SortablePointRow({
             {...(canEdit ? listeners : {})}
             className={cn(
               'text-slate-300 transition-colors shrink-0 touch-none',
-              canEdit ? 'hover:text-slate-500 cursor-grab active:cursor-grabbing' : 'cursor-default opacity-30',
+              canEdit
+                ? 'hover:text-slate-500 cursor-grab active:cursor-grabbing'
+                : 'cursor-default opacity-30',
             )}
           >
             <GripVertical size={16} />
@@ -461,7 +463,10 @@ function SortablePointRow({
             </div>
 
             <div className="flex flex-col gap-2 w-full lg:flex-row lg:items-center lg:shrink-0 lg:ml-auto lg:w-auto">
-              <Popover open={canEdit ? dateOpen : false} onOpenChange={canEdit ? setDateOpen : undefined}>
+              <Popover
+                open={canEdit ? dateOpen : false}
+                onOpenChange={canEdit ? setDateOpen : undefined}
+              >
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
@@ -500,7 +505,8 @@ function SortablePointRow({
               <div className="flex items-center justify-between border border-slate-200 rounded-xl px-3 py-2 bg-white hover:border-slate-300 transition-colors w-full lg:w-40">
                 <button
                   onClick={() =>
-                    canEdit && onUpdate(point.id, { budget: Math.max(0, (point.budget ?? 0) - 1000) })
+                    canEdit &&
+                    onUpdate(point.id, { budget: Math.max(0, (point.budget ?? 0) - 1000) })
                   }
                   disabled={!canEdit}
                   className="text-slate-400 hover:text-brand-indigo transition-colors p-0.5 flex items-center justify-center disabled:opacity-40"
@@ -527,7 +533,9 @@ function SortablePointRow({
                   <span className="text-slate-400 font-bold text-sm">₽</span>
                 </div>
                 <button
-                  onClick={() => canEdit && onUpdate(point.id, { budget: (point.budget ?? 0) + 1000 })}
+                  onClick={() =>
+                    canEdit && onUpdate(point.id, { budget: (point.budget ?? 0) + 1000 })
+                  }
                   disabled={!canEdit}
                   className="text-slate-400 hover:text-brand-indigo transition-colors p-0.5 flex items-center justify-center disabled:opacity-40"
                   type="button"
@@ -704,11 +712,58 @@ export function PlannerPage() {
   const points = currentTrip?.points || [];
   const { isAuthenticated } = useAuthStore();
   const { user } = useUserStore();
-  const isOwner = !currentTrip || currentTrip.id.startsWith('guest-') || currentTrip.ownerId === user?.id;
-  const canEdit = isOwner || (currentTrip?.ownerIsActive !== false);
+  const isOwner =
+    !currentTrip || currentTrip.id.startsWith('guest-') || currentTrip.ownerId === user?.id;
+  const canEdit = isOwner || !!currentTrip?.ownerIsActive;
   const crud = usePointCrud(currentTrip?.id);
 
-  useCollaborationSocket(currentTrip?.id ?? '');
+  useCollaborationSocket(currentTrip?.id ?? '', currentTrip?.isActive ?? false);
+
+  useEffect(() => {
+    const socket = getSocket();
+
+    const onPointReorder = ({ trip_id, pointIds }: { trip_id: string; pointIds: string[] }) => {
+      if (trip_id !== currentTrip?.id) return;
+
+      const currentPoints = useTripStore.getState().currentTrip?.points || [];
+      const pointMap = new Map(currentPoints.map((p) => [p.id, p]));
+      const newPoints: RoutePoint[] = [];
+
+      for (const id of pointIds) {
+        const p = pointMap.get(id);
+        if (p) newPoints.push(p);
+      }
+
+      if (newPoints.length === currentPoints.length) {
+        setPoints(newPoints);
+      } else {
+        pointsApi.getAll(trip_id).then(setPoints).catch(console.error);
+      }
+    };
+
+    const onPointUpdate = ({ trip_id, point_id, ...patch }: { trip_id: string; point_id: string } & any) => {
+      if (trip_id !== currentTrip?.id) return;
+      const currentPoints = useTripStore.getState().currentTrip?.points || [];
+      setPoints(currentPoints.map((p) => (p.id === point_id ? { ...p, ...patch } : p)));
+    };
+
+    const onTripUpdate = ({ trip_id, ...patch }: { trip_id: string } & any) => {
+      if (trip_id !== currentTrip?.id) return;
+      updateCurrentTrip(patch);
+    };
+
+    socket.on('point:reorder', onPointReorder);
+    socket.on('point:update', onPointUpdate);
+    socket.on('point:move', onPointUpdate);
+    socket.on('trip:update', onTripUpdate);
+
+    return () => {
+      socket.off('point:reorder', onPointReorder);
+      socket.off('point:update', onPointUpdate);
+      socket.off('point:move', onPointUpdate);
+      socket.off('trip:update', onTripUpdate);
+    };
+  }, [currentTrip?.id, setPoints, updateCurrentTrip]);
 
   const { isMixedRoute, mixedModes } = useMemo(() => {
     if (points.length < 2) return { isMixedRoute: false, mixedModes: [] };
@@ -805,6 +860,31 @@ export function PlannerPage() {
     setRouteProfile(common);
   }, [isMixedRoute, points.map((p) => p.transportMode).join(',')]);
 
+  const handlePointUpdate = useCallback(
+    (
+      id: string,
+      patch: {
+        title?: string;
+        budget?: number;
+        visitDate?: string | undefined;
+        address?: string | null;
+        lat?: number;
+        lon?: number;
+        transportMode?: 'driving' | 'foot' | 'bike' | 'direct';
+      },
+    ) => {
+      crud.update(id, patch);
+      const tripId = currentTrip?.id;
+      if (tripId && !tripId.startsWith('guest-')) {
+        const socket = getSocket();
+        if (socket.connected) {
+          socket.emit('point:update', { trip_id: tripId, point_id: id, ...patch });
+        }
+      }
+    },
+    [crud, currentTrip?.id],
+  );
+
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
   };
@@ -865,7 +945,10 @@ export function PlannerPage() {
       if (newIndex < newOrder.length - 1) affectedIndices.add(newIndex); // сегмент после новой позиции
 
       // Собираем обновления для затронутых точек
-      const pointsToUpdate: Array<{ id: string; transportMode: 'driving' | 'foot' | 'bike' | 'direct' }> = [];
+      const pointsToUpdate: Array<{
+        id: string;
+        transportMode: 'driving' | 'foot' | 'bike' | 'direct';
+      }> = [];
       updatedOrder.forEach((p, i) => {
         if (i > 0 && affectedIndices.has(i - 1)) {
           // Точка i определяет сегмент (i-1)→i, и этот сегмент был затронут
@@ -876,15 +959,25 @@ export function PlannerPage() {
 
       // Обновляем в порядке: сначала reorder, потом обновляем только затронутые точки
       crud.reorder(updatedOrder.map((p) => p.id));
+      const tripId = currentTrip?.id;
+      if (tripId && !tripId.startsWith('guest-')) {
+        const socket = getSocket();
+        if (socket.connected) {
+          socket.emit('point:reorder', {
+            trip_id: tripId,
+            pointIds: updatedOrder.map((p) => p.id),
+          });
+        }
+      }
 
       // Задержка для того чтобы reorder завершился, затем обновляем только затронутые
       setTimeout(() => {
         pointsToUpdate.forEach((update) => {
-          crud.update(update.id, { transportMode: update.transportMode });
+          handlePointUpdate(update.id, { transportMode: update.transportMode });
         });
       }, 0);
     },
-    [points, crud],
+    [points, crud, currentTrip?.id, handlePointUpdate],
   );
 
   const handlePointDragEnd = useCallback(
@@ -1135,9 +1228,11 @@ export function PlannerPage() {
               ? points[0]!.title
               : 'Мой маршрут';
 
-        await tripsApi.update(tripId, isOwner
-          ? { title: autoTitle, budget: currentTrip?.budget || null, isActive: isActiveRoute }
-          : { isActive: isActiveRoute },
+        await tripsApi.update(
+          tripId,
+          isOwner
+            ? { title: autoTitle, budget: currentTrip?.budget || null, isActive: isActiveRoute }
+            : { isActive: isActiveRoute },
         );
         updateCurrentTrip({
           title: autoTitle,
@@ -1227,8 +1322,12 @@ export function PlannerPage() {
   const handleUpdatePlannedBudget = async (val: number) => {
     const newBudget = Math.max(0, val);
     updateCurrentTrip({ budget: newBudget });
-    if (currentTrip && !currentTrip.id.startsWith('guest-') && isOwner) {
+    if (currentTrip && !currentTrip.id.startsWith('guest-') && canEdit) {
       await tripsApi.update(currentTrip.id, { budget: newBudget });
+      const socket = getSocket();
+      if (socket.connected) {
+        socket.emit('trip:update', { trip_id: currentTrip.id, budget: newBudget });
+      }
     }
   };
 
@@ -1490,7 +1589,7 @@ export function PlannerPage() {
                       <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
                     </div>
                   )}
-                  <div className={cn("flex items-center gap-6", isRouteLoading && "opacity-40")}>
+                  <div className={cn('flex items-center gap-6', isRouteLoading && 'opacity-40')}>
                     {routeInfo && routeProfile !== 'direct' && (
                       <>
                         <div className="flex items-center gap-2">
@@ -1519,7 +1618,8 @@ export function PlannerPage() {
               <RouteMap
                 points={points}
                 focusCoords={focusCoords}
-                onPointDragEnd={handlePointDragEnd}
+                draggable={canEdit}
+                onPointDragEnd={canEdit ? handlePointDragEnd : () => {}}
                 isDropdownOpen={showDropdown}
                 onMapClick={canEdit ? handleMapClick : undefined}
                 isAddPointMode={canEdit && isAddPointMode}
@@ -1542,8 +1642,8 @@ export function PlannerPage() {
                   </span>
                   <div className="flex items-center justify-between border border-slate-200 rounded-xl px-2 py-2 bg-white hover:border-slate-300 transition-colors w-full sm:w-48">
                     <button
-                      onClick={() => isOwner && handleUpdatePlannedBudget(plannedBudget - 1000)}
-                      disabled={!isOwner}
+                      onClick={() => canEdit && handleUpdatePlannedBudget(plannedBudget - 1000)}
+                      disabled={!canEdit}
                       className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center disabled:opacity-40"
                       type="button"
                     >
@@ -1555,7 +1655,7 @@ export function PlannerPage() {
                         min="0"
                         step="1000"
                         value={plannedBudget}
-                        disabled={!isOwner}
+                        disabled={!canEdit}
                         onChange={(e) => handleUpdatePlannedBudget(Number(e.target.value) || 0)}
                         className="w-16 md:w-20 bg-transparent text-center font-bold text-brand-indigo outline-none text-sm md:text-base [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:opacity-60"
                         style={{ MozAppearance: 'textfield' }}
@@ -1563,8 +1663,8 @@ export function PlannerPage() {
                       <span className="text-slate-400 font-bold text-sm">₽</span>
                     </div>
                     <button
-                      onClick={() => isOwner && handleUpdatePlannedBudget(plannedBudget + 1000)}
-                      disabled={!isOwner}
+                      onClick={() => canEdit && handleUpdatePlannedBudget(plannedBudget + 1000)}
+                      disabled={!canEdit}
                       className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center disabled:opacity-40"
                       type="button"
                     >
@@ -1595,7 +1695,7 @@ export function PlannerPage() {
                         editingTitle={editingTitle}
                         setEditingPointId={setEditingPointId}
                         setEditingTitle={setEditingTitle}
-                        onUpdate={crud.update}
+                        onUpdate={handlePointUpdate}
                         onRemove={handleRemovePoint}
                         onFocusPoint={setFocusCoords}
                         leg={i > 0 && routeInfo?.legs ? routeInfo.legs[i - 1] : undefined}
@@ -1710,9 +1810,15 @@ export function PlannerPage() {
                               : points.length === 1
                                 ? points[0]!.title
                                 : 'Мой маршрут';
-                          const updated = await tripsApi.update(tripId, isOwner
-                            ? { title: autoTitle, budget: currentTrip?.budget ?? 0, isActive: isActiveRoute }
-                            : { isActive: isActiveRoute },
+                          const updated = await tripsApi.update(
+                            tripId,
+                            isOwner
+                              ? {
+                                  title: autoTitle,
+                                  budget: currentTrip?.budget ?? 0,
+                                  isActive: isActiveRoute,
+                                }
+                              : { isActive: isActiveRoute },
                           );
                           updateCurrentTrip(updated);
                           setSaved();
@@ -1802,7 +1908,9 @@ export function PlannerPage() {
                             {trip.title}
                           </h3>
                           <div className="bg-brand-yellow text-white px-6 py-2.5 rounded-full text-sm font-black uppercase tracking-widest inline-block shadow-xl">
-                            {trip.budget ? `${trip.budget.toLocaleString('ru-RU')} ₽` : 'По запросу'}
+                            {trip.budget
+                              ? `${trip.budget.toLocaleString('ru-RU')} ₽`
+                              : 'По запросу'}
                           </div>
                         </div>
                       </div>

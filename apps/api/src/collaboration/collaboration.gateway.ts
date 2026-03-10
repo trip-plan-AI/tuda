@@ -78,7 +78,9 @@ export class CollaborationGateway
       color: this.collabService.getUserColor(client.data.userId),
     });
 
-    client.to(room).emit('presence:join', presenceData);
+    this.server.to(room).emit('presence:update', {
+      onlineUserIds: this.collabService.getOnlineUsers(data.trip_id),
+    });
   }
 
   @SubscribeMessage('leave:trip')
@@ -88,7 +90,7 @@ export class CollaborationGateway
   ) {
     const room = `trip_${data.trip_id}`;
     client.leave(room);
-    client.to(room).emit('presence:leave', { user_id: client.data.userId });
+    this.collabService.removePresence(client.id, this.server);
   }
 
   @SubscribeMessage('point:add')
@@ -131,11 +133,34 @@ export class CollaborationGateway
   @SubscribeMessage('point:update')
   handlePointUpdate(
     @ConnectedSocket() client: TypedSocket,
-    @MessageBody() data: { trip_id: string; point_id: string } & Record<string, unknown>,
+    @MessageBody()
+    data: { trip_id: string; point_id: string } & Record<string, unknown>,
   ) {
     const { trip_id, ...rest } = data;
     // DB already saved via HTTP PATCH — just broadcast to other collaborators
     client.to(`trip_${trip_id}`).emit('point:updated', rest);
+  }
+
+  @SubscribeMessage('point:reorder')
+  handlePointReorder(
+    @ConnectedSocket() client: TypedSocket,
+    @MessageBody() data: { trip_id: string; pointIds: string[] },
+  ) {
+    // DB already saved via HTTP PATCH — just broadcast new order to other collaborators
+    client.to(`trip_${data.trip_id}`).emit('point:reorder', {
+      trip_id: data.trip_id,
+      pointIds: data.pointIds,
+    });
+  }
+
+  @SubscribeMessage('trip:update')
+  handleTripUpdate(
+    @ConnectedSocket() client: TypedSocket,
+    @MessageBody() data: { trip_id: string } & Record<string, unknown>,
+  ) {
+    const { trip_id, ...patch } = data;
+    // DB already saved via HTTP PATCH — just broadcast to other collaborators
+    client.to(`trip_${trip_id}`).emit('trip:update', { trip_id, ...patch });
   }
 
   @SubscribeMessage('cursor:move')

@@ -43,7 +43,10 @@ export class TripsService {
       collabRows.map((r) => [r.tripId, r.isActive]),
     );
 
-    let collabTrips: ((typeof ownTrips)[0] & { isActive: boolean; ownerIsActive: boolean })[] = [];
+    let collabTrips: ((typeof ownTrips)[0] & {
+      isActive: boolean;
+      ownerIsActive: boolean;
+    })[] = [];
     if (collabIds.length > 0) {
       const trips = await this.db.query.trips.findMany({
         where: inArray(schema.trips.id, collabIds),
@@ -112,8 +115,13 @@ export class TripsService {
         ),
       });
       if (!collab) throw new ForbiddenException('Access denied');
+      return {
+        ...trip,
+        isActive: collab.isActive,
+        ownerIsActive: trip.isActive,
+      };
     }
-    return trip;
+    return { ...trip, ownerIsActive: trip.isActive };
   }
 
   async create(userId: string, dto: CreateTripDto) {
@@ -150,8 +158,15 @@ export class TripsService {
       });
       if (!collab) throw new ForbiddenException('Access denied');
 
-      // Collaborators can only change isActive — extra fields are silently ignored
-      const { isActive } = dto;
+      // Collaborators can only change isActive and budget — extra fields are silently ignored
+      const { isActive, budget } = dto;
+
+      if (budget !== undefined) {
+        await this.db
+          .update(schema.trips)
+          .set({ budget, updatedAt: new Date() })
+          .where(eq(schema.trips.id, id));
+      }
 
       if (isActive !== undefined) {
         if (isActive) {
@@ -188,7 +203,7 @@ export class TripsService {
             );
         }
       }
-      return this.findById(id);
+      return this.findByIdWithAccess(id, userId);
     }
 
     // Owner update
