@@ -128,6 +128,16 @@ export class CollaborationGateway
       .emit('point:deleted', { point_id: data.point_id });
   }
 
+  @SubscribeMessage('point:update')
+  handlePointUpdate(
+    @ConnectedSocket() client: TypedSocket,
+    @MessageBody() data: { trip_id: string; point_id: string } & Record<string, unknown>,
+  ) {
+    const { trip_id, ...rest } = data;
+    // DB already saved via HTTP PATCH — just broadcast to other collaborators
+    client.to(`trip_${trip_id}`).emit('point:updated', rest);
+  }
+
   @SubscribeMessage('cursor:move')
   handleCursor(
     @ConnectedSocket() client: TypedSocket,

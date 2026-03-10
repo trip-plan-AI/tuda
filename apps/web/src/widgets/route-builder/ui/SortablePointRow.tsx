@@ -5,14 +5,16 @@ import { CSS } from '@dnd-kit/utilities'
 import { GripVertical } from 'lucide-react'
 import { PointRow } from './PointRow'
 import type { RoutePoint } from '@/entities/route-point/model/route-point.types'
+import type { UpdatePointPayload } from '@/entities/route-point'
 
 interface SortablePointRowProps {
   point: RoutePoint
   index: number
   onDelete: (id: string) => Promise<void>
+  onUpdate?: (id: string, payload: UpdatePointPayload) => Promise<void>
 }
 
-export function SortablePointRow({ point, index, onDelete }: SortablePointRowProps) {
+export function SortablePointRow({ point, index, onDelete, onUpdate }: SortablePointRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: point.id })
 
@@ -33,7 +35,7 @@ export function SortablePointRow({ point, index, onDelete }: SortablePointRowPro
         <GripVertical className="w-4 h-4" />
       </div>
       <div className="flex-1 min-w-0">
-        <PointRow point={point} index={index} onDelete={onDelete} />
+        <PointRow point={point} index={index} onDelete={onDelete} onUpdate={onUpdate} />
       </div>
     </div>
   )
