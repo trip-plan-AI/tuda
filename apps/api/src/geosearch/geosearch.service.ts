@@ -511,7 +511,18 @@ export class GeosearchService {
         }
 
         this.markProviderUsage(provider.name);
+        const startedAt = Date.now();
+        console.log(
+          `[GeosearchService] Routing request -> provider=${provider.name} profile=${normalizedProfile} coords=${coords}`,
+        );
+
         const res = await provider.request();
+        const elapsedMs = Date.now() - startedAt;
+
+        console.log(
+          `[GeosearchService] Routing response <- provider=${provider.name} status=${res.status} elapsedMs=${elapsedMs}`,
+        );
+
         if (!res.ok) {
           if (res.status === 429 || res.status >= 500) {
             console.warn(
@@ -525,6 +536,11 @@ export class GeosearchService {
         const data = await res.json();
         const normalized = this.normalizeRouteResponse(provider.name, data);
         if (normalized) {
+          const route = normalized.routes?.[0];
+          const pointsCount = route?.geometry?.coordinates?.length ?? 0;
+          console.log(
+            `[GeosearchService] Routing success provider=${provider.name} distance=${route?.distance ?? 'n/a'} duration=${route?.duration ?? 'n/a'} points=${pointsCount}`,
+          );
           return normalized;
         }
 
