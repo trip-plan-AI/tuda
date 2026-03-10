@@ -61,7 +61,7 @@ export class CollaborationGateway
     @MessageBody() data: { trip_id: string },
   ) {
     const room = `trip_${data.trip_id}`;
-    client.join(room);
+    void client.join(room);
     client.data.tripId = data.trip_id;
 
     const presenceData = this.collabService.addPresence(client.id, {
@@ -80,7 +80,7 @@ export class CollaborationGateway
     @MessageBody() data: { trip_id: string },
   ) {
     const room = `trip_${data.trip_id}`;
-    client.leave(room);
+    void client.leave(room);
     client.to(room).emit('presence:leave', { user_id: client.data.userId });
   }
 

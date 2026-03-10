@@ -122,8 +122,9 @@ export class OrchestratorService {
 
       const content = response.choices[0]?.message?.content ?? '{}';
       return JSON.parse(content) as PartialIntent;
-    } catch (e: any) {
-      this.logger.error(`Failed to parse intent: ${e.message}`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'unknown error';
+      this.logger.error(`Failed to parse intent: ${message}`);
       if (!isRetry) {
         this.logger.warn('Retrying intent parsing...');
         return this.callWithTimeout(messages, timeoutMs, true);
