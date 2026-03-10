@@ -27,7 +27,7 @@ export class TripsController {
   @UseGuards(JwtAuthGuard)
   @Get()
   getAll(@CurrentUser() user: { id: string }) {
-    return this.tripsService.findByOwner(user.id);
+    return this.tripsService.findAllForUser(user.id);
   }
 
   @UseGuards(JwtAuthGuard)

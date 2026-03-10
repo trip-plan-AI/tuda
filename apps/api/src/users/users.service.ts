@@ -30,4 +30,12 @@ export class UsersService {
     const { passwordHash: _, ...result } = user;
     return result;
   }
+
+  async findByEmail(email: string) {
+    const user = await this.db.query.users.findFirst({
+      where: eq(schema.users.email, email),
+    });
+    if (!user) return null;
+    return { id: user.id, name: user.name, email: user.email, photo: user.photo };
+  }
 }
