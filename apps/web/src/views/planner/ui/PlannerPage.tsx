@@ -45,6 +45,7 @@ import { startOfMonth } from 'date-fns';
 import { startOfToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { useTripStore, tripsApi, type CreateTripPayload, type Trip } from '@/entities/trip';
+import { useUserStore } from '@/entities/user';
 import { usePointCrud } from '@/features/route-create';
 import { pointsApi } from '@/entities/route-point';
 import { useCollaborationSocket, CollaboratorsAvatarGroup } from '@/features/route-collaborate';
@@ -677,6 +678,8 @@ export function PlannerPage() {
   } = useTripStore();
   const points = currentTrip?.points || [];
   const { isAuthenticated } = useAuthStore();
+  const { user } = useUserStore();
+  const isOwner = !currentTrip || currentTrip.id.startsWith('guest-') || currentTrip.ownerId === user?.id;
   const crud = usePointCrud(currentTrip?.id);
 
   useCollaborationSocket(currentTrip?.id ?? '');
@@ -702,6 +705,11 @@ export function PlannerPage() {
   useEffect(() => {
     useTripStore.getState().setCachedRouteInfo(null);
   }, []);
+
+  // Sync isActiveRoute with the loaded trip's actual active state
+  useEffect(() => {
+    setIsActiveRoute(currentTrip?.isActive ?? false);
+  }, [currentTrip?.id]);
 
   useEffect(() => {
     if (!currentTrip?.id || currentTrip.id.startsWith('guest-')) return;
@@ -1101,11 +1109,10 @@ export function PlannerPage() {
               ? points[0]!.title
               : 'Мой маршрут';
 
-        await tripsApi.update(tripId, {
-          title: autoTitle,
-          budget: currentTrip?.budget || null,
-          isActive: isActiveRoute,
-        });
+        await tripsApi.update(tripId, isOwner
+          ? { title: autoTitle, budget: currentTrip?.budget || null, isActive: isActiveRoute }
+          : { isActive: isActiveRoute },
+        );
         updateCurrentTrip({
           title: autoTitle,
           budget: currentTrip?.budget || null,
@@ -1194,7 +1201,7 @@ export function PlannerPage() {
   const handleUpdatePlannedBudget = async (val: number) => {
     const newBudget = Math.max(0, val);
     updateCurrentTrip({ budget: newBudget });
-    if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+    if (currentTrip && !currentTrip.id.startsWith('guest-') && isOwner) {
       await tripsApi.update(currentTrip.id, { budget: newBudget });
     }
   };
@@ -1665,11 +1672,10 @@ export function PlannerPage() {
                               : points.length === 1
                                 ? points[0]!.title
                                 : 'Мой маршрут';
-                          const updated = await tripsApi.update(tripId, {
-                            title: autoTitle,
-                            budget: currentTrip?.budget ?? 0,
-                            isActive: isActiveRoute,
-                          });
+                          const updated = await tripsApi.update(tripId, isOwner
+                            ? { title: autoTitle, budget: currentTrip?.budget ?? 0, isActive: isActiveRoute }
+                            : { isActive: isActiveRoute },
+                          );
                           updateCurrentTrip(updated);
                           setSaved();
                           toast.success('Маршрут сохранён', { id: 'save-route' });
