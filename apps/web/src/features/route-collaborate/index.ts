@@ -1,4 +1,7 @@
-// FSD Layer: features
-// Slice: route-collaborate
-// Real-time collaboration: WebSocket events, presence, live cursors
-// Imports allowed: entities, shared
+export { useCollaborateStore } from './model/collaborate.store';
+export type { Collaborator } from './model/collaborate.store';
+export { collaborateApi } from './api/collaborate.api';
+export { useCollaborationSocket } from './hooks/useCollaborationSocket';
+export { InviteModal } from './ui/InviteModal';
+export { CollaboratorList } from './ui/CollaboratorList';
+export { CollaboratorsAvatarGroup } from './ui/CollaboratorsAvatarGroup';
