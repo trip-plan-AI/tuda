@@ -725,6 +725,15 @@ export function PlannerPage() {
       .then(setPoints)
       .catch((e) => {
         console.error('Failed to load points:', e);
+
+        const message = e instanceof Error ? e.message : '';
+        // Если в localStorage остался чужой/устаревший tripId, сбрасываем его,
+        // чтобы ниже сработала загрузка доступных поездок текущего пользователя.
+        if (message.includes('Access denied') || message.includes('403')) {
+          setCurrentTrip(null as unknown as Trip);
+          return;
+        }
+
         setPoints([]);
       });
   }, [currentTrip?.id, setPoints]);
