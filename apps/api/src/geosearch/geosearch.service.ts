@@ -420,7 +420,6 @@ export class GeosearchService {
   }
 
   async osrmRoute(profile: string, coords: string) {
-    const osrmUrl = process.env.OSRM_URL || 'https://router.project-osrm.org';
     const normalizedProfile = profile || 'driving';
 
     if (normalizedProfile !== 'driving') {
@@ -486,7 +485,7 @@ export class GeosearchService {
         name: 'project_osrm' as const,
         request: () =>
           fetch(
-            `${osrmUrl}/route/v1/driving/${coords}?overview=full&geometries=geojson`,
+            `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`,
           ),
       },
     ];
