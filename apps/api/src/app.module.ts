@@ -9,10 +9,12 @@ import { CollaborationModule } from './collaboration/collaboration.module';
 import { AiModule } from './ai/ai.module';
 import { GeosearchModule } from './geosearch/geosearch.module';
 import { OptimizationModule } from './optimization/optimization.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '../../.env' }),
+    RedisModule,
     DbModule,
     AuthModule,
     TripsModule,

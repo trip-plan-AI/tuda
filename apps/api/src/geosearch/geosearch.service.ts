@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { RedisService } from '../redis/redis.service';
+import { PopularDestinationsService } from './popular-destinations.service';
 
 interface YandexSuggestion {
   title?: { text: string };
@@ -38,6 +40,11 @@ const NOMINATIM_GEO_EXCLUDED = new Set([
 
 @Injectable()
 export class GeosearchService {
+  constructor(
+    private readonly redis: RedisService,
+    private readonly popularDestinations: PopularDestinationsService,
+  ) {}
+
   private readonly providerWindowLimits: Partial<
     Record<RouteProvider, ProviderWindowLimit>
   > = {
@@ -66,20 +73,27 @@ export class GeosearchService {
     const normalized = query.trim();
     if (normalized.length < 2) return [];
 
-    // Tier 2: DaData (RU) + Nominatim WW параллельно, timeout 800ms
-    const [dadataRes, nominatimWwRes] = await Promise.allSettled([
+    // Tier 1: Redis cache (TTL 7 дней)
+    const cacheKey = `geo:suggest:${normalized.toLowerCase()}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    // Tier 0 (DB) + Tier 2: DaData (RU) + Nominatim WW параллельно, timeout 800ms
+    const [tier0Res, dadataRes, nominatimWwRes] = await Promise.allSettled([
+      this.withTimeout(this.popularDestinations.search(normalized), 800),
       this.dadataApiKey
         ? this.withTimeout(this.getDaDataSuggestions(normalized), 800)
         : Promise.resolve(null),
       this.withTimeout(this.getNominatimSuggestions(normalized, undefined, 'ru,en', false), 800),
     ]);
 
+    const tier0Items = tier0Res.status === 'fulfilled' ? (tier0Res.value ?? []) : [];
     const dadataItems = dadataRes.status === 'fulfilled' ? (dadataRes.value ?? []) : [];
     const nominatimWwItems = nominatimWwRes.status === 'fulfilled' ? (nominatimWwRes.value ?? []) : [];
 
     // Merge + dedup по координатам (±0.01° ≈ 1км)
     const seen = new Set<string>();
-    const merged = [...dadataItems, ...nominatimWwItems].filter(item => {
+    const merged = [...tier0Items, ...dadataItems, ...nominatimWwItems].filter(item => {
       const match = item.uri.match(/ll=([^&]+)/);
       if (!match) return true;
       const [lon, lat] = match[1].split(',').map(Number);
@@ -92,17 +106,30 @@ export class GeosearchService {
 
     // Score + sort
     const scored = merged
-      .map(item => ({ ...item, score: this.scoreResult(item.displayName, normalized) }))
+      .map(item => {
+        if ('score' in item) return item as any;
+        return { ...item, score: this.scoreResult(item.displayName, normalized) };
+      })
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
 
-    if (scored.length > 0 && scored[0].score >= 2) return scored;
+    if (scored.length > 0 && scored[0].score >= 2) {
+      await this.redis.set(cacheKey, JSON.stringify(scored), 60 * 60 * 24 * 7);
+      return scored;
+    }
 
     // Tier 3: Photon → Yandex (если Tier 2 ничего не нашёл или score слабый)
     const photonResults = await this.getPhotonSuggestions(normalized);
-    if (photonResults && photonResults.length > 0) return photonResults;
+    if (photonResults && photonResults.length > 0) {
+      await this.redis.set(cacheKey, JSON.stringify(photonResults), 60 * 60 * 24 * 7);
+      return photonResults;
+    }
 
-    return this.getYandexSuggestions(normalized);
+    const yandexResults = await this.getYandexSuggestions(normalized);
+    if (yandexResults && yandexResults.length > 0) {
+      await this.redis.set(cacheKey, JSON.stringify(yandexResults), 60 * 60 * 24 * 7);
+    }
+    return yandexResults;
   }
 
   private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
@@ -490,6 +517,11 @@ export class GeosearchService {
   async osrmRoute(profile: string, coords: string) {
     const normalizedProfile = profile || 'driving';
 
+    // Redis cache для маршрутов (TTL 30 дней — дороги меняются редко)
+    const routeCacheKey = `route:${normalizedProfile}:${coords}`;
+    const cachedRoute = await this.redis.get(routeCacheKey);
+    if (cachedRoute) return JSON.parse(cachedRoute);
+
     if (normalizedProfile !== 'driving') {
       const mode = normalizedProfile === 'bike' ? 'bike' : 'foot';
       const fallbackUrl = `https://routing.openstreetmap.de/routed-${mode}/route/v1/driving/${coords}?overview=full&geometries=geojson`;
@@ -598,6 +630,7 @@ export class GeosearchService {
           console.log(
             `[GeosearchService] Routing success provider=${provider.name} distance=${route?.distance ?? 'n/a'} duration=${route?.duration ?? 'n/a'} points=${pointsCount}`,
           );
+          await this.redis.set(routeCacheKey, JSON.stringify(normalized), 60 * 60 * 24 * 30);
           return normalized;
         }
 
