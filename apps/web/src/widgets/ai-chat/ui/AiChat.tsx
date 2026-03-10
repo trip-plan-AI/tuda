@@ -15,6 +15,9 @@ interface AiChatProps {
   onApplyPlan?: (messageId: string) => void;
   lastAppliedPlanMessageId?: string | null;
   quickActions?: string[];
+  // TRI-104: флаги, влияющие на CTA внутри MessageBubble:
+  // "Применить" vs "Обновить" + deep-link в Planner по tripId.
+  // MERGE-NOTE: изменение этих пропсов требует синхронной правки MessageBubble.
   hasLinkedTrip?: boolean;
   appliedTripId?: string | null;
 }
@@ -27,6 +30,8 @@ const DEFAULT_QUICK_ACTIONS = [
 ];
 
 function AiResponseSkeleton() {
+  // TRI-104: используем текущий (существующий) skeleton без изменения UX-контракта.
+  // MERGE-NOTE: не заменять на новый лоадер без согласования с UX-требованием задачи.
   return (
     <div className="flex justify-start">
       <div className="w-full max-w-[85%] rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">

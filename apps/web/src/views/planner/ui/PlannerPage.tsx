@@ -583,6 +583,9 @@ function SortablePointRow({
 const weatherIcons = [Cloud, Sun, CloudSun, Wind];
 
 export function PlannerPage() {
+  // TRI-104: Planner выступает конечной точкой синхронизации для маршрутов из AI-чата.
+  // MERGE-NOTE: state below (showApplyConfirm/applyModalType/pendingApplyTripId) участвует
+  // в конфликт-резолвинге при переходе из /ai-assistant, не удалять без замены эквивалентным механизмом.
   const router = useRouter();
   const searchParams = useSearchParams();
   const { openOrCreateSessionFromTrip } = useAiQueryStore();
@@ -1195,6 +1198,9 @@ export function PlannerPage() {
   };
 
   const saveCurrentTrip = useCallback(async () => {
+    // TRI-104: выделенный helper сохранения перед переходом в AI или перед заменой маршрута.
+    // MERGE-NOTE: все новые точки входа, где возможно потерять несохранённые изменения,
+    // должны использовать этот helper, иначе поведение модалок будет расходиться.
     if (!isAuthenticated) {
       setModal('register');
       return false;
@@ -1228,6 +1234,8 @@ export function PlannerPage() {
 
   const applyIncomingTrip = useCallback(
     async (tripId: string) => {
+      // TRI-104: централизованное применение tripId из query-параметра applyTripId.
+      // MERGE-NOTE: если меняется модель загрузки trip/points, правьте здесь и в effect ниже одновременно.
       const all = await tripsApi.getAll();
       const target = all.find((trip) => trip.id === tripId);
       if (!target) return;
@@ -1241,6 +1249,9 @@ export function PlannerPage() {
   );
 
   useEffect(() => {
+    // TRI-104: обработка перехода AI -> Planner с защитой от потери несохранённых правок.
+    // Сценарии: same trip + dirty, different trip + dirty, safe replace без dirty.
+    // MERGE-NOTE: effect завязан на query applyTripId из AIAssistantPage/MessageBubble.
     const incomingTripId = searchParams.get('applyTripId');
     if (!incomingTripId || incomingTripId.startsWith('guest-')) return;
     if (pendingApplyTripId === incomingTripId) return;
@@ -1792,6 +1803,10 @@ export function PlannerPage() {
                       </Button>
                       <Button
                         onClick={() => {
+                          // TRI-104: "Редактировать с AI" = сохранить текущий маршрут,
+                          // найти/создать связанный чат и перейти в AI с sessionId.
+                          // MERGE-NOTE: не переводить в прямой переход без saveCurrentTrip/openOrCreateSessionFromTrip,
+                          // иначе ломается инвариант one-to-one chat<->trip.
                           if (!isAuthenticated) {
                             setModal('register');
                             return;
@@ -1982,6 +1997,8 @@ export function PlannerPage() {
       </Dialog>
 
       <Dialog open={showApplyConfirm} onOpenChange={setShowApplyConfirm}>
+        {/* TRI-104: conflict modal для входящего applyTripId из AI-чата.
+            MERGE-NOTE: три действия (save/replace/cancel) обязательны по PRD и UX-сценарию. */}
         <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl p-8">
           <DialogHeader>
             <DialogTitle className="text-xl font-black text-brand-indigo">

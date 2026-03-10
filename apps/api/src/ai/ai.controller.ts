@@ -42,6 +42,9 @@ export class AiController {
   ) {}
 
   private tryParseRoutePlan(message: SessionMessage): RoutePlan | null {
+    // TRI-104: безопасный парсинг assistant-message в RoutePlan.
+    // MERGE-NOTE: если меняется JSON-структура route plan на клиенте/в scheduler,
+    // поддержите валидацию здесь, иначе apply/from-trip начнут отбрасывать валидные сообщения.
     if (message.role !== 'assistant') return null;
 
     try {
@@ -56,6 +59,8 @@ export class AiController {
   }
 
   private async enrichDescriptions(points: Array<{ title: string; address?: string | null }>) {
+    // TRI-104: генерация описаний точек только на backend (backend-only external API policy).
+    // MERGE-NOTE: любые переносы в frontend запрещены политикой; интеграции внешних LLM только через Nest.
     const apiKey = process.env.YANDEX_GPT_API_KEY?.trim();
     const folderId = process.env.YANDEX_FOLDER_ID?.trim();
 
@@ -253,6 +258,8 @@ ${JSON.stringify(points)}
     @Body() dto: { message_id?: string; route_plan?: RoutePlan },
     @CurrentUser() user: { id: string },
   ) {
+    // TRI-104: применяет AI-план к trip (создание при первом применении, обновление при следующих).
+    // MERGE-NOTE: frontend кнопка apply/update опирается на этот контракт { trip_id, mode }.
     const session = await this.aiSessionsService.getByIdForUser(sessionId, user.id);
     if (!session) {
       throw new NotFoundException('Session not found');
@@ -286,6 +293,9 @@ ${JSON.stringify(points)}
     @Param('tripId') tripId: string,
     @CurrentUser() user: { id: string },
   ) {
+    // TRI-104: сценарий "Редактировать с AI" из Planner.
+    // Назначение: найти/создать чат по tripId, добавить приветствие и маршрут как стартовый контекст.
+    // MERGE-NOTE: если меняете format стартовых сообщений, синхронизируйте mapStoredMessagesToChatMessages в web-store.
     const trip = await this.tripsService.findByIdWithAccess(tripId, user.id);
     if (trip.ownerId !== user.id) {
       throw new ForbiddenException('Only owner can edit this trip with AI');
