@@ -12,6 +12,13 @@ interface NominatimItem {
   lat: number;
 }
 
+type RouteProvider = 'locationiq' | 'geoapify' | 'openrouteservice' | 'project_osrm';
+
+interface RoutePoint {
+  lon: number;
+  lat: number;
+}
+
 @Injectable()
 export class GeosearchService {
   private get yandexApiKey() {
@@ -347,30 +354,157 @@ export class GeosearchService {
 
   async osrmRoute(profile: string, coords: string) {
     const osrmUrl = process.env.OSRM_URL || 'http://localhost:5000';
-    let fetchUrl = '';
+    const normalizedProfile = profile || 'driving';
 
-    // Логика перенесена с фронтенда на бэкенд согласно политике
-    if (
-      osrmUrl === 'http://localhost:5000' ||
-      osrmUrl.includes('project-osrm.org')
-    ) {
-      if (profile === 'driving') {
-        fetchUrl = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
-      } else {
-        const mode = profile === 'bike' ? 'bike' : 'foot';
-        fetchUrl = `https://routing.openstreetmap.de/routed-${mode}/route/v1/driving/${coords}?overview=full&geometries=geojson`;
-      }
-    } else {
-      fetchUrl = `${osrmUrl}/route/v1/${profile}/${coords}?overview=full&geometries=geojson`;
-    }
-
-    try {
-      const res = await fetch(fetchUrl);
+    if (normalizedProfile !== 'driving') {
+      const mode = normalizedProfile === 'bike' ? 'bike' : 'foot';
+      const fallbackUrl = `https://routing.openstreetmap.de/routed-${mode}/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+      const res = await fetch(fallbackUrl);
       return await res.json();
-    } catch (error) {
-      console.error('[GeosearchService] OSRM error:', error);
-      throw error;
     }
+
+    if (
+      osrmUrl !== 'http://localhost:5000' &&
+      !osrmUrl.includes('project-osrm.org')
+    ) {
+      const res = await fetch(
+        `${osrmUrl}/route/v1/${normalizedProfile}/${coords}?overview=full&geometries=geojson`,
+      );
+      return await res.json();
+    }
+
+    const points = this.parseCoords(coords);
+    const waypoints = points.map(p => `${p.lat},${p.lon}`).join('|');
+    const orsCoordinates = points.map(p => [p.lon, p.lat]);
+    const locationIqKey = process.env.LOCATIONIQ_API_KEY;
+    const geoapifyKey = process.env.GEOAPIFY_API_KEY;
+    const orsKey = process.env.ORS_API_KEY;
+
+    const providers: Array<{
+      name: RouteProvider;
+      request: () => Promise<Response>;
+    }> = [
+      ...(locationIqKey
+        ? [
+            {
+              name: 'locationiq' as const,
+              request: () =>
+                fetch(
+                  `https://us1.locationiq.com/v1/directions/driving/${coords}?key=${locationIqKey}&overview=full&geometries=geojson`,
+                ),
+            },
+          ]
+        : []),
+      ...(geoapifyKey
+        ? [
+            {
+              name: 'geoapify' as const,
+              request: () =>
+                fetch(
+                  `https://api.geoapify.com/v1/routing?waypoints=${waypoints}&mode=drive&details=instruction_details&apiKey=${geoapifyKey}`,
+                ),
+            },
+          ]
+        : []),
+      ...(orsKey
+        ? [
+            {
+              name: 'openrouteservice' as const,
+              request: () =>
+                fetch(`https://api.openrouteservice.org/v2/directions/driving-car/geojson`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: orsKey,
+                  },
+                  body: JSON.stringify({ coordinates: orsCoordinates }),
+                }),
+            },
+          ]
+        : []),
+      {
+        name: 'project_osrm' as const,
+        request: () =>
+          fetch(
+            `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`,
+          ),
+      },
+    ];
+
+    for (const provider of providers) {
+      try {
+        const res = await provider.request();
+        if (!res.ok) {
+          if (res.status === 429 || res.status >= 500) {
+            console.warn(
+              `[GeosearchService] Routing provider fallback: ${provider.name} returned ${res.status}`,
+            );
+            continue;
+          }
+          throw new Error(`Provider ${provider.name} returned ${res.status}`);
+        }
+
+        const data = await res.json();
+        const normalized = this.normalizeRouteResponse(provider.name, data);
+        if (normalized) {
+          return normalized;
+        }
+
+        console.warn(
+          `[GeosearchService] Routing provider fallback: ${provider.name} returned unsupported response format`,
+        );
+      } catch (error) {
+        console.warn(
+          `[GeosearchService] Routing provider fallback: ${provider.name} failed`,
+          error,
+        );
+      }
+    }
+
+    throw new Error('All routing providers failed');
+  }
+
+  private parseCoords(coords: string): RoutePoint[] {
+    return coords.split(';').map(item => {
+      const [lon, lat] = item.split(',').map(Number);
+      return { lon, lat };
+    });
+  }
+
+  private normalizeRouteResponse(provider: RouteProvider, data: any) {
+    if (data?.code === 'Ok' && Array.isArray(data?.routes) && data.routes[0]?.geometry) {
+      return data;
+    }
+
+    if (provider === 'geoapify') {
+      const feature = data?.features?.[0];
+      const geometry = feature?.geometry;
+      const distance = feature?.properties?.distance;
+      const duration = feature?.properties?.time;
+
+      if (geometry && typeof distance === 'number' && typeof duration === 'number') {
+        return {
+          code: 'Ok',
+          routes: [{ geometry, distance, duration }],
+        };
+      }
+    }
+
+    if (provider === 'openrouteservice') {
+      const feature = data?.features?.[0];
+      const geometry = feature?.geometry;
+      const distance = feature?.properties?.summary?.distance;
+      const duration = feature?.properties?.summary?.duration;
+
+      if (geometry && typeof distance === 'number' && typeof duration === 'number') {
+        return {
+          code: 'Ok',
+          routes: [{ geometry, distance, duration }],
+        };
+      }
+    }
+
+    return null;
   }
 
   private async getYandexSuggestions(
