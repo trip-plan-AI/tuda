@@ -8,9 +8,17 @@ interface MessageBubbleProps {
   message: ChatMessage;
   onApplyPlan?: (messageId: string) => void;
   wasApplied?: boolean;
+  hasLinkedTrip?: boolean;
+  appliedTripId?: string | null;
 }
 
-export function MessageBubble({ message, onApplyPlan, wasApplied = false }: MessageBubbleProps) {
+export function MessageBubble({
+  message,
+  onApplyPlan,
+  wasApplied = false,
+  hasLinkedTrip = false,
+  appliedTripId = null,
+}: MessageBubbleProps) {
   const isAssistant = message.role === 'assistant';
 
   const getFallbackPoi = (point: {
@@ -123,12 +131,16 @@ export function MessageBubble({ message, onApplyPlan, wasApplied = false }: Mess
                       : 'bg-brand-sky text-white hover:bg-brand-sky/90',
                   ].join(' ')}
                 >
-                  {wasApplied ? '✓ План применен' : 'Применить план в маршрут'}
+                  {wasApplied
+                    ? '✓ План применен'
+                    : hasLinkedTrip
+                      ? 'Обновить маршрут'
+                      : 'Применить план в маршрут'}
                 </button>
 
                 {wasApplied && (
                   <Link
-                    href="/planner"
+                    href={appliedTripId ? `/planner?applyTripId=${encodeURIComponent(appliedTripId)}` : '/planner'}
                     className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-brand-indigo hover:text-brand-indigo"
                   >
                     Открыть Planner 🗺️
