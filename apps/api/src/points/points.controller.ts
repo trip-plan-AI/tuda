@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PointsService } from './points.service';
 import { CreatePointDto } from './dto/create-point.dto';
@@ -39,7 +40,10 @@ export class PointsController {
     @CurrentUser() user: { id: string },
     @Body() dto: CreatePointDto,
   ) {
-    await this.tripsService.findByIdWithAccess(tripId, user.id);
+    const trip = await this.tripsService.findByIdWithAccess(tripId, user.id);
+    if (trip.ownerId !== user.id && !trip.isActive) {
+      throw new ForbiddenException('Route editing is disabled by the owner');
+    }
     return this.pointsService.create(tripId, dto);
   }
 
@@ -49,7 +53,10 @@ export class PointsController {
     @CurrentUser() user: { id: string },
     @Body() dto: ReorderPointsDto,
   ) {
-    await this.tripsService.findByIdWithAccess(tripId, user.id);
+    const trip = await this.tripsService.findByIdWithAccess(tripId, user.id);
+    if (trip.ownerId !== user.id && !trip.isActive) {
+      throw new ForbiddenException('Route editing is disabled by the owner');
+    }
     return this.pointsService.reorder(tripId, dto);
   }
 
@@ -60,7 +67,10 @@ export class PointsController {
     @CurrentUser() user: { id: string },
     @Body() dto: UpdatePointDto,
   ) {
-    await this.tripsService.findByIdWithAccess(tripId, user.id);
+    const trip = await this.tripsService.findByIdWithAccess(tripId, user.id);
+    if (trip.ownerId !== user.id && !trip.isActive) {
+      throw new ForbiddenException('Route editing is disabled by the owner');
+    }
     return this.pointsService.update(id, tripId, dto);
   }
 
@@ -70,7 +80,10 @@ export class PointsController {
     @Param('id') id: string,
     @CurrentUser() user: { id: string },
   ) {
-    await this.tripsService.findByIdWithAccess(tripId, user.id);
+    const trip = await this.tripsService.findByIdWithAccess(tripId, user.id);
+    if (trip.ownerId !== user.id && !trip.isActive) {
+      throw new ForbiddenException('Route editing is disabled by the owner');
+    }
     return this.pointsService.remove(id, tripId);
   }
 }

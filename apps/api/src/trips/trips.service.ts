@@ -43,15 +43,17 @@ export class TripsService {
       collabRows.map((r) => [r.tripId, r.isActive]),
     );
 
-    let collabTrips: ((typeof ownTrips)[0] & { isActive: boolean })[] = [];
+    let collabTrips: ((typeof ownTrips)[0] & { isActive: boolean; ownerIsActive: boolean })[] = [];
     if (collabIds.length > 0) {
       const trips = await this.db.query.trips.findMany({
         where: inArray(schema.trips.id, collabIds),
         with: { points: { orderBy: [schema.routePoints.order] } },
       });
       // Override isActive with the per-user value from tripCollaborators
+      // ownerIsActive = global trips.isActive (the owner's activation state)
       collabTrips = trips.map((t) => ({
         ...t,
+        ownerIsActive: t.isActive,
         isActive: collabActiveMap.get(t.id) ?? false,
       }));
     }

@@ -135,6 +135,7 @@ interface PointRowProps {
   leg?: { duration: number; distance: number };
   isRouteLoading?: boolean;
   routeProfile?: 'driving' | 'foot' | 'bike' | 'direct';
+  canEdit?: boolean;
 }
 
 function SortablePointRow({
@@ -150,6 +151,7 @@ function SortablePointRow({
   leg,
   isRouteLoading,
   routeProfile,
+  canEdit = true,
 }: PointRowProps) {
   const [addressVal, setAddressVal] = useState(point.address ?? '');
   const [suggestions, setSuggestions] = useState<GeoSuggestion[]>([]);
@@ -175,6 +177,7 @@ function SortablePointRow({
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: point.id,
+    disabled: !canEdit,
   });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -275,9 +278,11 @@ function SortablePointRow({
             <>
               <div className="flex items-center gap-1.5 pr-4">
                 <button
-                  onClick={() => onUpdate(point.id, { transportMode: 'driving' })}
+                  onClick={() => canEdit && onUpdate(point.id, { transportMode: 'driving' })}
+                  disabled={!canEdit}
                   className={cn(
-                    'p-1.5 rounded-xl transition-all hover:scale-110',
+                    'p-1.5 rounded-xl transition-all',
+                    canEdit && 'hover:scale-110',
                     (point.transportMode || 'driving') === 'driving'
                       ? 'bg-[#eaf5fd] shadow-sm'
                       : 'grayscale opacity-50 hover:grayscale-0 hover:opacity-100',
@@ -287,9 +292,11 @@ function SortablePointRow({
                   <span className="text-sm md:text-base leading-none">🚗</span>
                 </button>
                 <button
-                  onClick={() => onUpdate(point.id, { transportMode: 'foot' })}
+                  onClick={() => canEdit && onUpdate(point.id, { transportMode: 'foot' })}
+                  disabled={!canEdit}
                   className={cn(
-                    'p-1.5 rounded-xl transition-all hover:scale-110',
+                    'p-1.5 rounded-xl transition-all',
+                    canEdit && 'hover:scale-110',
                     point.transportMode === 'foot'
                       ? 'bg-brand-amber/10 shadow-sm'
                       : 'grayscale opacity-50 hover:grayscale-0 hover:opacity-100',
@@ -299,9 +306,11 @@ function SortablePointRow({
                   <span className="text-sm md:text-base leading-none">🚶</span>
                 </button>
                 <button
-                  onClick={() => onUpdate(point.id, { transportMode: 'bike' })}
+                  onClick={() => canEdit && onUpdate(point.id, { transportMode: 'bike' })}
+                  disabled={!canEdit}
                   className={cn(
-                    'p-1.5 rounded-xl transition-all hover:scale-110',
+                    'p-1.5 rounded-xl transition-all',
+                    canEdit && 'hover:scale-110',
                     point.transportMode === 'bike'
                       ? 'bg-emerald-50 shadow-sm'
                       : 'grayscale opacity-50 hover:grayscale-0 hover:opacity-100',
@@ -311,9 +320,11 @@ function SortablePointRow({
                   <span className="text-sm md:text-base leading-none">🚲</span>
                 </button>
                 <button
-                  onClick={() => onUpdate(point.id, { transportMode: 'direct' })}
+                  onClick={() => canEdit && onUpdate(point.id, { transportMode: 'direct' })}
+                  disabled={!canEdit}
                   className={cn(
-                    'p-1.5 rounded-xl transition-all hover:scale-110',
+                    'p-1.5 rounded-xl transition-all',
+                    canEdit && 'hover:scale-110',
                     point.transportMode === 'direct'
                       ? 'bg-brand-purple/10 shadow-sm'
                       : 'grayscale opacity-50 hover:grayscale-0 hover:opacity-100',
@@ -363,22 +374,27 @@ function SortablePointRow({
           isDragging && 'invisible',
         )}
       >
-        <button
-          onClick={() => onRemove(point.id)}
-          className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-white transition-all active:scale-95 shadow-md border border-slate-50 z-10 group/del"
-        >
-          <X
-            size={14}
-            strokeWidth={2.5}
-            className="group-hover/del:scale-110 transition-transform"
-          />
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => onRemove(point.id)}
+            className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-white transition-all active:scale-95 shadow-md border border-slate-50 z-10 group/del"
+          >
+            <X
+              size={14}
+              strokeWidth={2.5}
+              className="group-hover/del:scale-110 transition-transform"
+            />
+          </button>
+        )}
 
         <div className="flex items-center lg:items-start gap-2 lg:pt-1">
           <button
             {...attributes}
-            {...listeners}
-            className="text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing transition-colors shrink-0 touch-none"
+            {...(canEdit ? listeners : {})}
+            className={cn(
+              'text-slate-300 transition-colors shrink-0 touch-none',
+              canEdit ? 'hover:text-slate-500 cursor-grab active:cursor-grabbing' : 'cursor-default opacity-30',
+            )}
           >
             <GripVertical size={16} />
           </button>
@@ -427,26 +443,29 @@ function SortablePointRow({
                   >
                     {point.title}
                   </span>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => {
-                      setEditingPointId(point.id);
-                      setEditingTitle(point.title);
-                    }}
-                    className="text-slate-300 hover:text-brand-blue hover:bg-transparent transition-all shrink-0"
-                  >
-                    <Pencil size={14} />
-                  </Button>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => {
+                        setEditingPointId(point.id);
+                        setEditingTitle(point.title);
+                      }}
+                      className="text-slate-300 hover:text-brand-blue hover:bg-transparent transition-all shrink-0"
+                    >
+                      <Pencil size={14} />
+                    </Button>
+                  )}
                 </>
               )}
             </div>
 
             <div className="flex flex-col gap-2 w-full lg:flex-row lg:items-center lg:shrink-0 lg:ml-auto lg:w-auto">
-              <Popover open={dateOpen} onOpenChange={setDateOpen}>
+              <Popover open={canEdit ? dateOpen : false} onOpenChange={canEdit ? setDateOpen : undefined}>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
+                    disabled={!canEdit}
                     className={cn(
                       'w-full lg:w-44 px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-500 justify-start text-left text-sm hover:bg-slate-50 transition-all',
                       !point.visitDate && 'text-slate-300',
@@ -481,9 +500,10 @@ function SortablePointRow({
               <div className="flex items-center justify-between border border-slate-200 rounded-xl px-3 py-2 bg-white hover:border-slate-300 transition-colors w-full lg:w-40">
                 <button
                   onClick={() =>
-                    onUpdate(point.id, { budget: Math.max(0, (point.budget ?? 0) - 1000) })
+                    canEdit && onUpdate(point.id, { budget: Math.max(0, (point.budget ?? 0) - 1000) })
                   }
-                  className="text-slate-400 hover:text-brand-indigo transition-colors p-0.5 flex items-center justify-center"
+                  disabled={!canEdit}
+                  className="text-slate-400 hover:text-brand-indigo transition-colors p-0.5 flex items-center justify-center disabled:opacity-40"
                   type="button"
                 >
                   <Minus size={16} />
@@ -494,20 +514,22 @@ function SortablePointRow({
                     min="0"
                     step="1000"
                     value={point.budget ?? 0}
+                    disabled={!canEdit}
                     onChange={(e) =>
                       onUpdate(point.id, { budget: Math.max(0, Number(e.target.value) || 0) })
                     }
                     onKeyDown={(e) => {
                       if (e.key === '-' || e.key === 'e') e.preventDefault();
                     }}
-                    className="w-16 bg-transparent text-center font-bold text-brand-indigo outline-none text-sm [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    className="w-16 bg-transparent text-center font-bold text-brand-indigo outline-none text-sm [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:opacity-60"
                     style={{ MozAppearance: 'textfield' }}
                   />
                   <span className="text-slate-400 font-bold text-sm">₽</span>
                 </div>
                 <button
-                  onClick={() => onUpdate(point.id, { budget: (point.budget ?? 0) + 1000 })}
-                  className="text-slate-400 hover:text-brand-indigo transition-colors p-0.5 flex items-center justify-center"
+                  onClick={() => canEdit && onUpdate(point.id, { budget: (point.budget ?? 0) + 1000 })}
+                  disabled={!canEdit}
+                  className="text-slate-400 hover:text-brand-indigo transition-colors p-0.5 flex items-center justify-center disabled:opacity-40"
                   type="button"
                 >
                   <Plus size={16} />
@@ -531,20 +553,23 @@ function SortablePointRow({
                   type="text"
                   value={addressVal}
                   title={addressVal}
+                  disabled={!canEdit}
                   onChange={(e) => handleAddressChange(e.target.value)}
                   onFocus={() => {
+                    if (!canEdit) return;
                     if (addressVal.length > 2) {
                       setShowDropdownState(true);
                       if (suggestions.length === 0) getSuggestions(addressVal);
                     }
                   }}
                   onBlur={() => {
+                    if (!canEdit) return;
                     setTimeout(() => {
                       if (!showDropdownState) onUpdate(point.id, { address: addressVal || null });
                     }, 200);
                   }}
                   placeholder="Введите адрес..."
-                  className="text-sm text-slate-500 bg-transparent border-none outline-none w-full placeholder:text-slate-300 font-bold focus:text-slate-700 cursor-text text-left"
+                  className="text-sm text-slate-500 bg-transparent border-none outline-none w-full placeholder:text-slate-300 font-bold focus:text-slate-700 cursor-text text-left disabled:cursor-default"
                 />
               </div>
             </div>
@@ -680,6 +705,7 @@ export function PlannerPage() {
   const { isAuthenticated } = useAuthStore();
   const { user } = useUserStore();
   const isOwner = !currentTrip || currentTrip.id.startsWith('guest-') || currentTrip.ownerId === user?.id;
+  const canEdit = isOwner || (currentTrip?.ownerIsActive !== false);
   const crud = usePointCrud(currentTrip?.id);
 
   useCollaborationSocket(currentTrip?.id ?? '');
@@ -1254,6 +1280,12 @@ export function PlannerPage() {
                   </div>
                 </div>
               )}
+              {!canEdit && (
+                <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-sm font-bold mb-2">
+                  <span>🔒</span>
+                  <span>Владелец деактивировал маршрут — редактирование недоступно</span>
+                </div>
+              )}
               <div
                 ref={searchContainerRef}
                 className="flex flex-col md:flex-row gap-4 w-full relative items-center z-30"
@@ -1269,21 +1301,23 @@ export function PlannerPage() {
                   <input
                     type="text"
                     value={searchInput}
+                    disabled={!canEdit}
                     onChange={(e) => handleSearchChange(e.target.value)}
                     onFocus={() => {
+                      if (!canEdit) return;
                       if (searchInput.length > 2) {
                         setShowDropdown(true);
                         if (suggestions.length === 0) geocode(searchInput);
                       }
                     }}
-                    onKeyDown={(e) => e.key === 'Enter' && handleAddByQuery()}
-                    placeholder="Поиск места..."
-                    className="w-full pl-12 pr-4 py-4 md:py-5 bg-slate-50 rounded-xl md:rounded-2xl border-none focus:ring-2 focus:ring-brand-blue/20 outline-none text-slate-800 font-bold text-base md:text-lg transition-all placeholder:text-slate-400 shadow-sm"
+                    onKeyDown={(e) => canEdit && e.key === 'Enter' && handleAddByQuery()}
+                    placeholder={canEdit ? 'Поиск места...' : 'Редактирование недоступно'}
+                    className="w-full pl-12 pr-4 py-4 md:py-5 bg-slate-50 rounded-xl md:rounded-2xl border-none focus:ring-2 focus:ring-brand-blue/20 outline-none text-slate-800 font-bold text-base md:text-lg transition-all placeholder:text-slate-400 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
                 <Button
                   onClick={handleAddByQuery}
-                  disabled={isSearching}
+                  disabled={isSearching || !canEdit}
                   variant="brand-yellow"
                   size="xl"
                   shape="responsive"
@@ -1487,9 +1521,9 @@ export function PlannerPage() {
                 focusCoords={focusCoords}
                 onPointDragEnd={handlePointDragEnd}
                 isDropdownOpen={showDropdown}
-                onMapClick={handleMapClick}
-                isAddPointMode={isAddPointMode}
-                onAddPointModeChange={setIsAddPointMode}
+                onMapClick={canEdit ? handleMapClick : undefined}
+                isAddPointMode={canEdit && isAddPointMode}
+                onAddPointModeChange={canEdit ? setIsAddPointMode : undefined}
                 routeProfile={routeProfile}
                 onRouteInfoUpdate={setRouteInfo}
                 onRouteInfoLoading={setIsRouteLoading}
@@ -1508,8 +1542,9 @@ export function PlannerPage() {
                   </span>
                   <div className="flex items-center justify-between border border-slate-200 rounded-xl px-2 py-2 bg-white hover:border-slate-300 transition-colors w-full sm:w-48">
                     <button
-                      onClick={() => handleUpdatePlannedBudget(plannedBudget - 1000)}
-                      className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center"
+                      onClick={() => isOwner && handleUpdatePlannedBudget(plannedBudget - 1000)}
+                      disabled={!isOwner}
+                      className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center disabled:opacity-40"
                       type="button"
                     >
                       <Minus size={16} />
@@ -1520,15 +1555,17 @@ export function PlannerPage() {
                         min="0"
                         step="1000"
                         value={plannedBudget}
+                        disabled={!isOwner}
                         onChange={(e) => handleUpdatePlannedBudget(Number(e.target.value) || 0)}
-                        className="w-16 md:w-20 bg-transparent text-center font-bold text-brand-indigo outline-none text-sm md:text-base [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        className="w-16 md:w-20 bg-transparent text-center font-bold text-brand-indigo outline-none text-sm md:text-base [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:opacity-60"
                         style={{ MozAppearance: 'textfield' }}
                       />
                       <span className="text-slate-400 font-bold text-sm">₽</span>
                     </div>
                     <button
-                      onClick={() => handleUpdatePlannedBudget(plannedBudget + 1000)}
-                      className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center"
+                      onClick={() => isOwner && handleUpdatePlannedBudget(plannedBudget + 1000)}
+                      disabled={!isOwner}
+                      className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center disabled:opacity-40"
                       type="button"
                     >
                       <Plus size={16} />
@@ -1564,6 +1601,7 @@ export function PlannerPage() {
                         leg={i > 0 && routeInfo?.legs ? routeInfo.legs[i - 1] : undefined}
                         isRouteLoading={isRouteLoading && affectedSegments.has(i - 1)}
                         routeProfile={routeProfile}
+                        canEdit={canEdit}
                       />
                     ))}
                   </SortableContext>
