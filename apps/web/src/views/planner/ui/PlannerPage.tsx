@@ -48,6 +48,7 @@ import { useTripStore, tripsApi, type CreateTripPayload, type Trip } from '@/ent
 import { usePointCrud } from '@/features/route-create';
 import { pointsApi } from '@/entities/route-point';
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
+import { CompareSaveModal } from '@/widgets/compare-save';
 import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point';
 import { toast } from 'sonner';
@@ -619,6 +620,20 @@ export function PlannerPage() {
   const [affectedSegments, setAffectedSegments] = useState<Set<number>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [compareModalData, setCompareModalData] = useState<{
+    isOpen: boolean;
+    metrics: {
+      originalKm: number;
+      newKm: number;
+      originalHours: number;
+      newHours: number;
+      originalRub: number;
+      newRub: number;
+    } | null;
+  }>({
+    isOpen: false,
+    metrics: null,
+  });
 
   const resolveCoords = useCallback(async (query: string) => {
     try {
@@ -1604,7 +1619,14 @@ export function PlannerPage() {
                             const result = await tripsApi.optimize(tripId, routeProfile);
                             if (result.optimizedPoints) {
                               useTripStore.getState().setPoints(result.optimizedPoints);
-                              toast.success('Маршрут оптимизирован!', { id: 'optimize-success' });
+                              if (result.metrics) {
+                                setCompareModalData({
+                                  isOpen: true,
+                                  metrics: result.metrics,
+                                });
+                              } else {
+                                toast.success('Маршрут оптимизирован!', { id: 'optimize-success' });
+                              }
                             }
                           } catch (error) {
                             console.error('Optimization error:', error);
@@ -1792,6 +1814,11 @@ export function PlannerPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <CompareSaveModal
+        isOpen={compareModalData.isOpen}
+        onClose={() => setCompareModalData((prev) => ({ ...prev, isOpen: false }))}
+        metrics={compareModalData.metrics!}
+      />
       <LoginModal
         open={modal === 'login'}
         onClose={() => setModal(null)}

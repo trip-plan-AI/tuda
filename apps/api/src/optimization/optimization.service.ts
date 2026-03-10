@@ -182,6 +182,14 @@ export class OptimizationService {
     return {
       optimizationResult,
       optimizedPoints,
+      metrics: {
+        originalKm: originalDistance,
+        newKm: newDistance,
+        originalHours: savedHours > 0 ? originalDistance / (transportMode === 'driving' ? 80 : transportMode === 'direct' ? 30 : transportMode === 'bike' ? 15 : 5) : 0,
+        newHours: savedHours > 0 ? newDistance / (transportMode === 'driving' ? 80 : transportMode === 'direct' ? 30 : transportMode === 'bike' ? 15 : 5) : 0,
+        originalRub: savedRub > 0 ? originalDistance * (transportMode === 'driving' ? (((params.consumption ?? 8) / 100 * (params.fuelPrice ?? 55)) + (params.tollFees ?? 0)) : (params.transitFarePerKm ?? 3)) : 0,
+        newRub: savedRub > 0 ? newDistance * (transportMode === 'driving' ? (((params.consumption ?? 8) / 100 * (params.fuelPrice ?? 55)) + (params.tollFees ?? 0)) : (params.transitFarePerKm ?? 3)) : 0,
+      }
     };
   }
 }
