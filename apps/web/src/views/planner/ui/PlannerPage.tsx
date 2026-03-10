@@ -741,7 +741,7 @@ export function PlannerPage() {
 
         setPoints([]);
       });
-  }, [currentTrip?.id, currentTrip?.points?.length, setPoints, setCurrentTrip]);
+  }, [currentTrip?.id, setPoints]);
 
   useEffect(() => {
     if (!_hasHydrated) return; // Wait for store to hydrate
