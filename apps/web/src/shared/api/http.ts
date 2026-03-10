@@ -32,9 +32,7 @@ function handleSessionExpired() {
 
   const alreadyHandled = sessionStorage.getItem('auth:session-expired') === '1';
   if (alreadyHandled) {
-    if (window.location.pathname !== '/') {
-      window.location.href = '/';
-    }
+    window.dispatchEvent(new Event('auth:session-expired'));
     return;
   }
 
@@ -45,10 +43,6 @@ function handleSessionExpired() {
 
   sessionStorage.setItem('auth:session-expired', '1');
   window.dispatchEvent(new Event('auth:session-expired'));
-
-  if (window.location.pathname !== '/') {
-    window.location.href = '/';
-  }
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
