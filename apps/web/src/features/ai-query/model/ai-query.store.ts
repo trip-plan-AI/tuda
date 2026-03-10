@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { api } from '@/shared/api';
 import { useTripStore } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point/model/route-point.types';
@@ -9,6 +8,24 @@ interface AiPlanResponse {
   session_id: string;
   route_plan: ChatRoutePlan;
   meta: ChatMeta;
+}
+
+interface AiSessionListItemResponse {
+  id: string;
+  trip_id: string | null;
+  created_at: string;
+  title: string;
+  messages_count: number;
+}
+
+interface AiSessionDetailsResponse {
+  id: string;
+  trip_id: string | null;
+  created_at: string;
+  messages: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+  }>;
 }
 
 interface HttpError {
@@ -27,14 +44,15 @@ interface AiQueryStore {
   activeSessionId: string | null;
   messages: ChatMessage[];
   isLoading: boolean;
+  isSessionsLoading: boolean;
   sessionId: string | null;
   lastAppliedPlanMessageId: string | null;
+  loadSessions: () => Promise<void>;
   sendQuery: (query: string, tripId?: string) => Promise<void>;
   applyPlanToCurrentTrip: (messageId: string) => void;
   createNewSession: (tripId?: string | null) => string;
-  switchSession: (sessionId: string) => void;
-  deleteSession: (sessionId: string) => void;
-  hydrateFromPersist: () => void;
+  switchSession: (sessionId: string) => Promise<void>;
+  deleteSession: (sessionId: string) => Promise<void>;
   clearChat: () => void;
 }
 
@@ -122,6 +140,44 @@ function createSession(tripId: string | null = null): ChatSession {
   };
 }
 
+function tryParseRoutePlan(content: string): ChatRoutePlan | null {
+  try {
+    const parsed = JSON.parse(content) as Partial<ChatRoutePlan>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (typeof parsed.city !== 'string' || !Array.isArray(parsed.days)) return null;
+    if (typeof parsed.total_budget_estimated !== 'number') return null;
+    return parsed as ChatRoutePlan;
+  } catch {
+    return null;
+  }
+}
+
+function mapStoredMessagesToChatMessages(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+): ChatMessage[] {
+  return messages.map((message, index) => {
+    if (message.role === 'assistant') {
+      const routePlan = tryParseRoutePlan(message.content);
+      if (routePlan) {
+        return {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `Составил маршрут по городу ${routePlan.city} на ${routePlan.days.length} дн.`,
+          routePlan,
+          timestamp: new Date().toISOString(),
+        } satisfies ChatMessage;
+      }
+    }
+
+    return {
+      id: crypto.randomUUID(),
+      role: message.role,
+      content: message.content,
+      timestamp: new Date(Date.now() + index).toISOString(),
+    } satisfies ChatMessage;
+  });
+}
+
 function syncLegacyFields(sessions: Record<string, ChatSession>, activeSessionId: string | null) {
   const activeSession = activeSessionId ? sessions[activeSessionId] : null;
 
@@ -144,15 +200,65 @@ function ensureActiveSession(state: AiQueryStore): { sessions: Record<string, Ch
   };
 }
 
-export const useAiQueryStore = create<AiQueryStore>()(
-  persist(
-    (set, get) => ({
+export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       sessions: {},
       activeSessionId: null,
       messages: [],
       isLoading: false,
+      isSessionsLoading: false,
       sessionId: null,
       lastAppliedPlanMessageId: null,
+
+      loadSessions: async () => {
+        set({ isSessionsLoading: true });
+
+        try {
+          const list = await api.get<AiSessionListItemResponse[]>('/ai/sessions');
+
+          if (list.length === 0) {
+            set((state) => {
+              const ensured = ensureActiveSession(state);
+              return {
+                sessions: ensured.sessions,
+                activeSessionId: ensured.activeSessionId,
+                isSessionsLoading: false,
+                ...syncLegacyFields(ensured.sessions, ensured.activeSessionId),
+              };
+            });
+            return;
+          }
+
+          const sessions = list.reduce<Record<string, ChatSession>>((acc, item) => {
+            const id = item.id;
+            acc[id] = {
+              id,
+              title: item.title || 'Новый чат',
+              tripId: item.trip_id,
+              sessionId: item.id,
+              messages: [],
+              lastAppliedPlanMessageId: null,
+              createdAt: item.created_at,
+              updatedAt: item.created_at,
+            };
+            return acc;
+          }, {});
+
+          const firstSessionId = list[0]?.id ?? null;
+
+          set({
+            sessions,
+            activeSessionId: firstSessionId,
+            isSessionsLoading: false,
+            ...syncLegacyFields(sessions, firstSessionId),
+          });
+
+          if (firstSessionId) {
+            await get().switchSession(firstSessionId);
+          }
+        } catch {
+          set({ isSessionsLoading: false });
+        }
+      },
 
       sendQuery: async (query, tripId) => {
         const normalized = sanitizeQuery(query);
@@ -197,7 +303,7 @@ export const useAiQueryStore = create<AiQueryStore>()(
             session_id: string | null;
           } = {
             user_query: normalized,
-            session_id: get().sessionId,
+            session_id: preRequestSession.sessionId,
           };
 
           if (tripId && isUuid(tripId)) {
@@ -225,22 +331,26 @@ export const useAiQueryStore = create<AiQueryStore>()(
               return { isLoading: false };
             }
 
+            const persistedSessionId = response.session_id;
             const nextSession: ChatSession = {
               ...activeSession,
-              sessionId: response.session_id,
+              id: persistedSessionId,
+              sessionId: persistedSessionId,
               messages: [...activeSession.messages, assistantMessage],
               updatedAt: new Date().toISOString(),
             };
 
-            const nextSessions = {
-              ...state.sessions,
-              [nextSession.id]: nextSession,
-            };
+            const nextSessions = { ...state.sessions };
+            if (activeSession.id !== persistedSessionId) {
+              delete nextSessions[activeSession.id];
+            }
+            nextSessions[persistedSessionId] = nextSession;
 
             return {
               sessions: nextSessions,
+              activeSessionId: persistedSessionId,
               isLoading: false,
-              ...syncLegacyFields(nextSessions, state.activeSessionId),
+              ...syncLegacyFields(nextSessions, persistedSessionId),
             };
           });
         } catch (rawError) {
@@ -336,19 +446,62 @@ export const useAiQueryStore = create<AiQueryStore>()(
         return session.id;
       },
 
-      switchSession: (nextSessionId) => {
-        set((state) => {
-          if (!state.sessions[nextSessionId]) return {};
+      switchSession: async (nextSessionId) => {
+        const state = get();
+        const target = state.sessions[nextSessionId];
+        if (!target) return;
 
-          return {
-            activeSessionId: nextSessionId,
-            isLoading: false,
-            ...syncLegacyFields(state.sessions, nextSessionId),
-          };
+        set({
+          activeSessionId: nextSessionId,
+          isLoading: false,
+          ...syncLegacyFields(state.sessions, nextSessionId),
         });
+
+        if (target.sessionId && target.messages.length === 0) {
+          try {
+            const details = await api.get<AiSessionDetailsResponse>(
+              `/ai/sessions/${target.sessionId}`,
+            );
+            const mappedMessages = mapStoredMessagesToChatMessages(details.messages);
+
+            set((currentState) => {
+              const freshTarget = currentState.sessions[nextSessionId];
+              if (!freshTarget) return {};
+
+              const nextSession: ChatSession = {
+                ...freshTarget,
+                messages: mappedMessages,
+                updatedAt: new Date().toISOString(),
+              };
+
+              const nextSessions = {
+                ...currentState.sessions,
+                [nextSession.id]: nextSession,
+              };
+
+              return {
+                sessions: nextSessions,
+                ...syncLegacyFields(nextSessions, currentState.activeSessionId),
+              };
+            });
+          } catch {
+            // no-op
+          }
+        }
       },
 
-      deleteSession: (targetSessionId) => {
+      deleteSession: async (targetSessionId) => {
+        const target = get().sessions[targetSessionId];
+        if (!target) return;
+
+        if (target.sessionId) {
+          try {
+            await api.del<{ ok: boolean }>(`/ai/sessions/${target.sessionId}`);
+          } catch {
+            return;
+          }
+        }
+
         set((state) => {
           if (!state.sessions[targetSessionId]) return {};
 
@@ -358,41 +511,20 @@ export const useAiQueryStore = create<AiQueryStore>()(
           const fallbackSession = createSession();
           const sessionIds = Object.keys(nextSessions);
           const nextActiveSessionId =
-            state.activeSessionId === targetSessionId ? (sessionIds[0] ?? fallbackSession.id) : state.activeSessionId;
+            state.activeSessionId === targetSessionId
+              ? (sessionIds[0] ?? fallbackSession.id)
+              : state.activeSessionId;
 
           const normalizedSessions =
-            sessionIds.length > 0 ? nextSessions : { [fallbackSession.id]: fallbackSession };
+            sessionIds.length > 0
+              ? nextSessions
+              : { [fallbackSession.id]: fallbackSession };
 
           return {
             sessions: normalizedSessions,
             activeSessionId: nextActiveSessionId,
             isLoading: false,
             ...syncLegacyFields(normalizedSessions, nextActiveSessionId),
-          };
-        });
-      },
-
-      hydrateFromPersist: () => {
-        set((state) => {
-          const sessionIds = Object.keys(state.sessions);
-
-          if (sessionIds.length === 0) {
-            return {
-              activeSessionId: null,
-              messages: [],
-              sessionId: null,
-              lastAppliedPlanMessageId: null,
-            };
-          }
-
-          const resolvedActiveSessionId =
-            state.activeSessionId && state.sessions[state.activeSessionId]
-              ? state.activeSessionId
-              : sessionIds[0]!;
-
-          return {
-            activeSessionId: resolvedActiveSessionId,
-            ...syncLegacyFields(state.sessions, resolvedActiveSessionId),
           };
         });
       },
@@ -408,6 +540,7 @@ export const useAiQueryStore = create<AiQueryStore>()(
               sessionId: null,
               lastAppliedPlanMessageId: null,
               isLoading: false,
+              isSessionsLoading: false,
             };
           }
 
@@ -431,16 +564,4 @@ export const useAiQueryStore = create<AiQueryStore>()(
           };
         });
       },
-    }),
-    {
-      name: 'ai-query-store',
-      partialize: (state) => ({
-        sessions: state.sessions,
-        activeSessionId: state.activeSessionId,
-      }),
-      onRehydrateStorage: () => (state) => {
-        state?.hydrateFromPersist();
-      },
-    },
-  ),
-);
+    }));

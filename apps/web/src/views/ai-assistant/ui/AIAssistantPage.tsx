@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { useAiQueryStore } from '@/features/ai-query';
 import { useTripStore } from '@/entities/trip';
@@ -19,8 +19,14 @@ export function AIAssistantPage() {
     createNewSession,
     switchSession,
     deleteSession,
+    loadSessions,
+    isSessionsLoading,
   } = useAiQueryStore();
   const currentTrip = useTripStore((state) => state.currentTrip);
+
+  useEffect(() => {
+    void loadSessions();
+  }, [loadSessions]);
 
   const sessionsList = useMemo(
     () =>
@@ -120,7 +126,7 @@ export function AIAssistantPage() {
 
           <AiChat
             messages={messagesWithGreeting}
-            isLoading={isLoading}
+            isLoading={isLoading || isSessionsLoading}
             onSend={handleSend}
             onApplyPlan={applyPlanToCurrentTrip}
             lastAppliedPlanMessageId={lastAppliedPlanMessageId}

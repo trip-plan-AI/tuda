@@ -5,7 +5,9 @@ import { useTripStore } from '@/entities/trip';
 
 vi.mock('@/shared/api', () => ({
   api: {
+    get: vi.fn(),
     post: vi.fn(),
+    del: vi.fn(),
   },
 }));
 
@@ -29,6 +31,7 @@ describe('useAiQueryStore', () => {
       activeSessionId: baseSessionId,
       messages: [],
       isLoading: false,
+      isSessionsLoading: false,
       sessionId: null,
       lastAppliedPlanMessageId: null,
     });
@@ -110,7 +113,7 @@ describe('useAiQueryStore', () => {
     expect(state.sessionId).toBe('s-1');
     expect(state.messages).toHaveLength(2);
     expect(state.messages[1]?.routePlan?.city).toBe('Казань');
-    expect(state.sessions[baseSessionId]?.sessionId).toBe('s-1');
+    expect(state.sessions['s-1']?.sessionId).toBe('s-1');
   });
 
   it('maps error by status', async () => {
@@ -194,7 +197,7 @@ describe('useAiQueryStore', () => {
     expect(afterCreate.activeSessionId).toBe(newId);
     expect(afterCreate.sessions[newId]?.tripId).toBe('trip-2');
 
-    afterCreate.switchSession(baseSessionId);
+    void afterCreate.switchSession(baseSessionId);
     expect(useAiQueryStore.getState().activeSessionId).toBe(baseSessionId);
   });
 });

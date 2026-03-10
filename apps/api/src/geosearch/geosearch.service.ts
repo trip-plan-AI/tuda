@@ -223,7 +223,7 @@ export class GeosearchService {
 
       if (!data || !data.address) return null;
 
-      let addr = data.address;
+      const addr = data.address;
 
       // 1. Пытаемся найти название конкретного объекта (POI)
       const poi =
