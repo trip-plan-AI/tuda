@@ -720,6 +720,11 @@ export function PlannerPage() {
       justMigratedRef.current = false;
       return;
     }
+
+    // Если точки уже есть в store (например, применены из AI-чата),
+    // не перетираем их пустым ответом с бэкенда при первом открытии Planner.
+    if ((currentTrip.points?.length ?? 0) > 0) return;
+
     pointsApi
       .getAll(currentTrip.id)
       .then(setPoints)
@@ -736,7 +741,7 @@ export function PlannerPage() {
 
         setPoints([]);
       });
-  }, [currentTrip?.id, setPoints]);
+  }, [currentTrip?.id, currentTrip?.points?.length, setPoints, setCurrentTrip]);
 
   useEffect(() => {
     if (!_hasHydrated) return; // Wait for store to hydrate
