@@ -420,23 +420,13 @@ export class GeosearchService {
   }
 
   async osrmRoute(profile: string, coords: string) {
-    const osrmUrl = process.env.OSRM_URL || 'http://localhost:5000';
+    const osrmUrl = process.env.OSRM_URL || 'https://router.project-osrm.org';
     const normalizedProfile = profile || 'driving';
 
     if (normalizedProfile !== 'driving') {
       const mode = normalizedProfile === 'bike' ? 'bike' : 'foot';
       const fallbackUrl = `https://routing.openstreetmap.de/routed-${mode}/route/v1/driving/${coords}?overview=full&geometries=geojson`;
       const res = await fetch(fallbackUrl);
-      return await res.json();
-    }
-
-    if (
-      osrmUrl !== 'http://localhost:5000' &&
-      !osrmUrl.includes('project-osrm.org')
-    ) {
-      const res = await fetch(
-        `${osrmUrl}/route/v1/${normalizedProfile}/${coords}?overview=full&geometries=geojson`,
-      );
       return await res.json();
     }
 
@@ -496,7 +486,7 @@ export class GeosearchService {
         name: 'project_osrm' as const,
         request: () =>
           fetch(
-            `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`,
+            `${osrmUrl}/route/v1/driving/${coords}?overview=full&geometries=geojson`,
           ),
       },
     ];
