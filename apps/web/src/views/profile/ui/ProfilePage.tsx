@@ -10,6 +10,7 @@ import {
   ArrowUp,
   AlertTriangle,
   CheckCircle2,
+  UserPlus,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useUserStore, usersApi } from '@/entities/user';
@@ -19,6 +20,13 @@ import { tripsApi } from '@/entities/trip';
 import { toast } from 'sonner';
 import { cn } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/button';
+import { Avatar, AvatarImage, AvatarFallback, AvatarGroup, AvatarGroupCount } from '@/shared/ui/avatar';
+import {
+  useCollaborateStore,
+  collaborateApi,
+  useCollaborationSocket,
+  InviteModal,
+} from '@/features/route-collaborate';
 
 const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
   ssr: false,
@@ -91,7 +99,7 @@ function BudgetSummary({
 export function ProfilePage() {
   const router = useRouter();
   const { user, setUser } = useUserStore();
-  const { setCurrentTrip } = useTripStore();
+  const { setCurrentTrip, currentTrip } = useTripStore();
   const { isAuthenticated } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<'routes' | 'saved'>('routes');
@@ -104,6 +112,8 @@ export function ProfilePage() {
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const { collaborators, setCollaborators } = useCollaborateStore();
 
   const progressColor = scrollProgress < 0.4 ? '#0ea5e9' : scrollProgress < 0.8 ? '#4f46e5' : '#9333ea';
   const progressTrackColor = '#e2e8f0';
@@ -168,7 +178,33 @@ export function ProfilePage() {
   }, []);
 
   const activeRoute = savedTrips.find((t) => t.isActive);
-  const activeRouteTotalBudget = activeRoute?.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
+
+  // Sync activeRoute into the trip store so WS point events (addPoint/updatePoint/removePoint)
+  // update currentTrip.points, which we then use for real-time display.
+  useEffect(() => {
+    if (activeRoute && currentTrip?.id !== activeRoute.id) {
+      setCurrentTrip(activeRoute);
+    }
+  }, [activeRoute?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Prefer currentTrip.points (kept live by WS) when viewing the active route
+  const displayedActiveRoute = activeRoute
+    ? currentTrip?.id === activeRoute.id
+      ? { ...activeRoute, points: currentTrip.points }
+      : activeRoute
+    : undefined;
+
+  const activeRouteTotalBudget = displayedActiveRoute?.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
+
+  useCollaborationSocket(activeRoute?.id ?? '');
+
+  useEffect(() => {
+    if (activeRoute?.id) {
+      collaborateApi.getAll(activeRoute.id)
+        .then(setCollaborators)
+        .catch(() => setCollaborators([]));
+    }
+  }, [activeRoute?.id, setCollaborators]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setIsDragging(true);
@@ -294,9 +330,9 @@ export function ProfilePage() {
 
         {/* Мобильный бэкграунд */}
         <div className="md:hidden absolute inset-0 bg-slate-100 flex items-start justify-center pt-4">
-          {activeRoute && activeRoute.points && activeRoute.points.length > 0 ? (
+          {displayedActiveRoute && displayedActiveRoute.points && displayedActiveRoute.points.length > 0 ? (
             <div className="w-full h-1/2 opacity-60 pointer-events-none grayscale">
-              <RouteMap points={activeRoute.points} onPointDragEnd={() => {}} />
+              <RouteMap points={displayedActiveRoute.points} draggable={false} onPointDragEnd={() => {}} />
             </div>
           ) : (
             <MapIcon size={48} className="text-slate-200 mt-10" />
@@ -372,10 +408,39 @@ export function ProfilePage() {
                   <div className="space-y-3 w-full h-full flex flex-col animate-in fade-in duration-500">
                     <div className="flex justify-between items-center px-1">
                       <h3 className="text-[10px] font-black text-brand-indigo uppercase tracking-widest">Активный маршрут</h3>
-                      <Button variant="outline" size="sm" onClick={() => handleEditRoute(activeRoute)} className="h-7 px-2 rounded-lg border-slate-200 text-slate-500 font-bold text-[9px]">
-                        <Pencil size={12} className="mr-1" />
-                        ИЗМЕНИТЬ
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        {collaborators.length > 0 && (
+                          <AvatarGroup>
+                            {collaborators.slice(0, 3).map((c) => (
+                              <Avatar key={c.userId} size="sm">
+                                {c.photo && <AvatarImage src={c.photo} alt={c.name} />}
+                                <AvatarFallback>{c.name.charAt(0).toUpperCase()}</AvatarFallback>
+                              </Avatar>
+                            ))}
+                            {collaborators.length > 3 && (
+                              <AvatarGroupCount>+{collaborators.length - 3}</AvatarGroupCount>
+                            )}
+                          </AvatarGroup>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setInviteModalOpen(true)}
+                          className="h-7 px-2 rounded-lg border-brand-sky/30 text-brand-sky font-bold text-[9px] hover:bg-brand-sky/5"
+                        >
+                          <UserPlus size={12} className="mr-1" />
+                          ПРИГЛАСИТЬ
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditRoute(activeRoute)}
+                          className="h-7 px-2 rounded-lg border-slate-200 text-slate-500 font-bold text-[9px]"
+                        >
+                          <Pencil size={12} className="mr-1" />
+                          ИЗМЕНИТЬ
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="bg-white p-3 md:p-4 rounded-2xl border border-slate-100 shadow-sm flex-1 min-h-0 flex flex-col">
@@ -392,7 +457,7 @@ export function ProfilePage() {
                       <div className="relative flex-1 min-h-[100px]">
                         <div ref={routePointsScrollRef} onScroll={handleContentScroll} className="h-full overflow-y-auto pr-1 no-scrollbar">
                           <div className="space-y-2.5 pb-2">
-                            {activeRoute.points?.map((point, idx) => (
+                            {displayedActiveRoute?.points?.map((point, idx) => (
                               <div key={point.id} className="flex items-start gap-3">
                                 <div className="w-5 h-5 rounded-full bg-brand-blue text-white font-black flex items-center justify-center text-[8px] shrink-0 mt-0.5">
                                   {idx + 1}
@@ -480,18 +545,26 @@ export function ProfilePage() {
 
         <div className="hidden md:flex flex-1 relative bg-slate-50 items-center justify-center overflow-hidden p-100 md:p-4">
           <div className="w-full h-full max-w-[96%] max-h-[96%] overflow-hidden relative rounded-2xl border border-slate-200 shadow-lg">
-            {activeRoute && activeRoute.points && activeRoute.points.length > 0 ? (
-              <RouteMap points={activeRoute.points} onPointDragEnd={() => {}} />
+            {displayedActiveRoute && displayedActiveRoute.points && displayedActiveRoute.points.length > 0 ? (
+              <RouteMap points={displayedActiveRoute.points} draggable={false} onPointDragEnd={() => {}} />
             ) : (
-              <MapIcon 
-                size={44} 
-                className="text-slate-200 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" 
+              <MapIcon
+                size={44}
+                className="text-slate-200 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
               />
             )}
           </div>
         </div>
 
       </div>
+
+      {activeRoute && (
+        <InviteModal
+          tripId={activeRoute.id}
+          open={inviteModalOpen}
+          onClose={() => setInviteModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

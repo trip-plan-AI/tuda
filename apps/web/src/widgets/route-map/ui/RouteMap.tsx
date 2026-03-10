@@ -8,6 +8,7 @@ import type { RoutePoint } from '@/entities/route-point/model/route-point.types'
 interface RouteMapProps {
   points: RoutePoint[];
   focusCoords?: { lon: number; lat: number } | null;
+  draggable?: boolean;
   onPointDragEnd: (
     pointId: string,
     newCoords: { lon: number; lat: number },
@@ -43,6 +44,7 @@ function getOsrmCacheKey(fromLon: number, fromLat: number, toLon: number, toLat:
 export function RouteMap({
   points,
   focusCoords,
+  draggable = true,
   onPointDragEnd,
   isDropdownOpen,
   onMapClick,
@@ -538,7 +540,7 @@ export function RouteMap({
       const marker = new ymaps3.YMapMarker(
         {
           coordinates: [point.lon, point.lat],
-          draggable: true,
+          draggable,
           onDragMove: (newCoords: number[]) => {
             if (!mapRef.current || pointsRef.current.length < 2) return;
 
@@ -722,7 +724,7 @@ export function RouteMap({
         });
       }
     }
-  }, [pointsKey, transportModesKey, mapReady, routeProfile, zoom, segmentsData, loadingSegmentsKey]);
+  }, [pointsKey, transportModesKey, mapReady, routeProfile, zoom, segmentsData, loadingSegmentsKey, draggable]);
 
   // Прочие эффекты (зум при клике, фит на старте)
   useEffect(() => {

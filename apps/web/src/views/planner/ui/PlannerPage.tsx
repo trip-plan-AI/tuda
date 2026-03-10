@@ -47,6 +47,8 @@ import { ru } from 'date-fns/locale';
 import { useTripStore, tripsApi, type CreateTripPayload, type Trip } from '@/entities/trip';
 import { usePointCrud } from '@/features/route-create';
 import { pointsApi } from '@/entities/route-point';
+import { useCollaborationSocket, CollaboratorsAvatarGroup } from '@/features/route-collaborate';
+import { getSocket } from '@/shared/socket/socket-client';
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
 import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point';
@@ -666,6 +668,7 @@ export function PlannerPage() {
     setCurrentTrip,
     updateCurrentTrip,
     addPoint,
+    removePoint,
     clearPlanner,
     setPoints,
     _hasHydrated,
@@ -675,6 +678,8 @@ export function PlannerPage() {
   const points = currentTrip?.points || [];
   const { isAuthenticated } = useAuthStore();
   const crud = usePointCrud(currentTrip?.id);
+
+  useCollaborationSocket(currentTrip?.id ?? '');
 
   const { isMixedRoute, mixedModes } = useMemo(() => {
     if (points.length < 2) return { isMixedRoute: false, mixedModes: [] };
@@ -856,14 +861,24 @@ export function PlannerPage() {
       _mapTitle: string,
     ) => {
       const geoData = await resolveMapCoords(newCoords);
-      crud.update(pointId, {
+      const patch = {
         lat: newCoords.lat,
         lon: newCoords.lon,
         address: geoData?.address || `${newCoords.lat.toFixed(4)}, ${newCoords.lon.toFixed(4)}`,
         title: geoData?.title || `${newCoords.lat.toFixed(4)}, ${newCoords.lon.toFixed(4)}`,
-      });
+      };
+      // REST: saves to DB + optimistic local update
+      crud.update(pointId, patch);
+      // WS: broadcast to other users in the room
+      const tripId = currentTrip?.id;
+      if (tripId && !tripId.startsWith('guest-')) {
+        const socket = getSocket();
+        if (socket.connected) {
+          socket.emit('point:move', { trip_id: tripId, point_id: pointId, ...patch });
+        }
+      }
     },
-    [crud, resolveMapCoords],
+    [crud, resolveMapCoords, currentTrip?.id],
   );
 
   const ensureTripId = useCallback(async (): Promise<string> => {
@@ -1016,11 +1031,38 @@ export function PlannerPage() {
         };
         addPoint(guestPoint as any);
       } else {
-        const created = await pointsApi.create(tripId, { ...payload, budget: 0 });
-        addPoint(created);
+        const socket = getSocket();
+        if (socket.connected) {
+          // WS-first: gateway saves to DB and broadcasts point:added back to all clients
+          socket.emit('point:add', { trip_id: tripId, ...payload, budget: 0 });
+        } else {
+          // Fallback to REST when WS is disconnected
+          const created = await pointsApi.create(tripId, { ...payload, budget: 0 });
+          addPoint(created);
+        }
       }
     },
     [ensureTripId, addPoint],
+  );
+
+  const handleRemovePoint = useCallback(
+    async (pointId: string) => {
+      const tripId = currentTrip?.id;
+      if (!tripId) return;
+      if (tripId.startsWith('guest-')) {
+        removePoint(pointId);
+        return;
+      }
+      const socket = getSocket();
+      if (socket.connected) {
+        // WS-first: gateway deletes from DB and broadcasts point:deleted back
+        socket.emit('point:delete', { trip_id: tripId, point_id: pointId });
+      } else {
+        await pointsApi.remove(tripId, pointId);
+        removePoint(pointId);
+      }
+    },
+    [currentTrip?.id, removePoint],
   );
 
   const handleAddByQuery = async () => {
@@ -1161,9 +1203,14 @@ export function PlannerPage() {
     <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
       <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-10 w-full flex-1 flex flex-col relative">
         <div className="mb-8 bg-white md:p-0 rounded-none w-full">
-          <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight mb-6 text-left">
-            Маршруты
-          </h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight text-left">
+              Маршруты
+            </h2>
+            {currentTrip?.id && !currentTrip.id.startsWith('guest-') && (
+              <CollaboratorsAvatarGroup tripId={currentTrip.id} />
+            )}
+          </div>
           <SegmentedControl
             options={[
               { label: 'Конструктор', value: 'my' },
@@ -1505,7 +1552,7 @@ export function PlannerPage() {
                         setEditingPointId={setEditingPointId}
                         setEditingTitle={setEditingTitle}
                         onUpdate={crud.update}
-                        onRemove={crud.remove}
+                        onRemove={handleRemovePoint}
                         onFocusPoint={setFocusCoords}
                         leg={i > 0 && routeInfo?.legs ? routeInfo.legs[i - 1] : undefined}
                         isRouteLoading={isRouteLoading && affectedSegments.has(i - 1)}
