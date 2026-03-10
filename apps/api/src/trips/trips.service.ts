@@ -6,39 +6,58 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import { DRIZZLE } from '../db/db.module';
 import * as schema from '../db/schema';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
+import { CollaboratorsService } from './collaborators.service';
 
 @Injectable()
 export class TripsService {
   constructor(
     @Inject(DRIZZLE)
     private db: NodePgDatabase<typeof schema>,
+    private collaboratorsService: CollaboratorsService,
   ) {}
 
-  findByOwner(userId: string) {
-    return this.db.query.trips.findMany({
+  async findAllForUser(userId: string) {
+    // 1. Own trips
+    const ownTrips = await this.db.query.trips.findMany({
       where: eq(schema.trips.ownerId, userId),
       orderBy: [desc(schema.trips.createdAt)],
-      with: {
-        points: {
-          orderBy: [schema.routePoints.order],
-        },
-      },
+      with: { points: { orderBy: [schema.routePoints.order] } },
     });
+
+    // 2. Trips where user is a collaborator
+    const collabRows = await this.db
+      .select({ tripId: schema.tripCollaborators.tripId })
+      .from(schema.tripCollaborators)
+      .where(eq(schema.tripCollaborators.userId, userId));
+
+    const collabIds = collabRows.map((r) => r.tripId);
+
+    let collabTrips: typeof ownTrips = [];
+    if (collabIds.length > 0) {
+      collabTrips = await this.db.query.trips.findMany({
+        where: inArray(schema.trips.id, collabIds),
+        with: { points: { orderBy: [schema.routePoints.order] } },
+      });
+    }
+
+    // 3. Merge, remove duplicates
+    const allIds = new Set(ownTrips.map((t) => t.id));
+    const unique = [...ownTrips];
+    for (const t of collabTrips) {
+      if (!allIds.has(t.id)) unique.push(t);
+    }
+    return unique;
   }
 
   findPredefined() {
     return this.db.query.trips.findMany({
       where: eq(schema.trips.isPredefined, true),
-      with: {
-        points: {
-          orderBy: [schema.routePoints.order],
-        },
-      },
+      with: { points: { orderBy: [schema.routePoints.order] } },
     });
   }
 
@@ -50,8 +69,32 @@ export class TripsService {
     return trip;
   }
 
+  async findOne(tripId: string) {
+    const trip = await this.db.query.trips.findFirst({
+      where: eq(schema.trips.id, tripId),
+      with: { points: { orderBy: [schema.routePoints.order] } },
+    });
+    if (!trip) throw new NotFoundException('Trip not found');
+
+    const collaborators = await this.collaboratorsService.getAll(tripId);
+
+    const ownerRow = await this.db.query.users.findFirst({
+      where: eq(schema.users.id, trip.ownerId),
+    });
+    const owner = ownerRow
+      ? {
+          id: ownerRow.id,
+          name: ownerRow.name,
+          email: ownerRow.email,
+          photo: ownerRow.photo,
+        }
+      : null;
+
+    return { ...trip, collaborators, owner };
+  }
+
   async findByIdWithAccess(id: string, userId: string) {
-    const trip = await this.findById(id);
+    const trip = await this.findOne(id);
     if (trip.ownerId !== userId) {
       const collab = await this.db.query.tripCollaborators.findFirst({
         where: and(
