@@ -8,6 +8,7 @@ import { UsersModule } from './users/users.module';
 import { CollaborationModule } from './collaboration/collaboration.module';
 import { AiModule } from './ai/ai.module';
 import { GeosearchModule } from './geosearch/geosearch.module';
+import { OptimizationModule } from './optimization/optimization.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { GeosearchModule } from './geosearch/geosearch.module';
     CollaborationModule,
     AiModule,
     GeosearchModule,
+    OptimizationModule,
   ],
 })
 export class AppModule {}
