@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Clock, Cloud, CloudSun, MapPin, Sun, Wind } from 'lucide-react';
+import { ArrowLeft, Clock, Cloud, CloudSun, MapPin, Route, Sun, Wind } from 'lucide-react';
 import { useTripStore, tripsApi } from '@/entities/trip';
 import type { Trip } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point';
@@ -46,7 +46,7 @@ function formatDuration(seconds: number) {
   const h = Math.floor((seconds % 86400) / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const parts = [];
-  if (d > 0) parts.push(`${d} дн.`);
+  if (d > 0) parts.push(`${d} д`);
   if (h > 0) parts.push(`${h} ч`);
   if (m > 0) parts.push(`${m} мин`);
   return parts.length > 0 ? parts.join(' ') : '< 1 мин';
@@ -182,7 +182,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           createdAt: new Date().toISOString(),
         });
       }
-      setPoints(newPoints);
+      setPoints(newPoints, false);
       if (routeInfo) setCachedRouteInfo(routeInfo);
       router.push('/planner?profile=driving');
     } catch (e) {
@@ -244,7 +244,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           className="flex items-center gap-2 text-slate-400 hover:text-brand-indigo font-bold text-sm transition-colors mb-10 group"
         >
           <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
-          Назад
+          Популярные
         </button>
 
         {/* Hero */}
@@ -315,7 +315,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
 
         {/* Карта с маршрутом */}
         <div className="mb-8">
-          <div className="w-full aspect-[4/5] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden border border-slate-200 shadow-inner bg-slate-50">
+          <div className="w-full aspect-[4/3] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden border border-slate-200 shadow-inner bg-slate-50">
             <RouteMap
               points={attractions}
               focusCoords={attractions.length === 0 ? focusCoords : null}

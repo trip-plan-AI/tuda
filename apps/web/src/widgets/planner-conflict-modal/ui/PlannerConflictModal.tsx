@@ -33,7 +33,7 @@ export function PlannerConflictModal({
   onSaveAndReplace,
   onGoToPlannerOnly,
 }: PlannerConflictModalProps) {
-  let title = 'У вас есть несохраненный маршрут';
+  const title = 'У вас есть несохраненный маршрут';
   let description: React.ReactNode = '';
 
   if (conflictType === 'landing_new') {

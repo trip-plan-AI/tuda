@@ -4,7 +4,7 @@ import { Mail, Github, Map } from 'lucide-react';
 
 export function Footer() {
   return (
-    <footer className="bg-black py-12 z-20 hidden md:block">
+    <footer className="bg-[#2f2f2f] py-12 z-20 hidden md:block">
       <div className="max-w-5xl mx-auto px-4 md:px-6 flex flex-col md:flex-row justify-between items-center gap-8 w-full">
         <div className="flex items-center gap-3">
           <div className="bg-white/10 text-white p-2 rounded-xl">

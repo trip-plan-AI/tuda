@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search,
   MapPin,
+  Route as RouteIcon,
   Plus,
   Minus,
   MessageSquare,
@@ -41,9 +42,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { format } from 'date-fns';
-import { startOfMonth } from 'date-fns';
-import { startOfToday } from 'date-fns';
+import { format, startOfMonth, startOfToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { useTripStore, tripsApi, type CreateTripPayload, type Trip } from '@/entities/trip';
 import { useUserStore } from '@/entities/user';
@@ -58,7 +57,6 @@ import {
 } from '@/features/route-collaborate';
 import { getSocket } from '@/shared/socket/socket-client';
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
-import { CompareSaveModal } from '@/widgets/compare-save';
 import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point';
 import { toast } from 'sonner';
@@ -105,6 +103,50 @@ interface GeoSuggestion {
   uri?: string; // ymapsbm1://geo?ll=LON,LAT&z=...
 }
 
+function filterUniqueSuggestions(results: any[]): GeoSuggestion[] {
+  const seenCoords = new Set<string>();
+  const seenNames = new Set<string>();
+  const unique: GeoSuggestion[] = [];
+
+  for (const item of results) {
+    const displayName = (item.displayName ?? '').trim();
+    if (!displayName) continue;
+
+    const uri = item.uri as string | undefined;
+    // Check various possible coordinate fields for robustness (backend tiers may vary)
+    const lat = item.lat ?? item.geometry?.point?.lat ?? item.data?.geo_lat;
+    const lon = item.lon ?? item.geometry?.point?.lon ?? item.data?.geo_lon;
+
+    if (seenNames.has(displayName.toLowerCase())) continue;
+
+    let coordsKey = '';
+    if (lat !== undefined && lon !== undefined && !isNaN(Number(lat)) && !isNaN(Number(lon))) {
+      coordsKey = `${Number(lon).toFixed(5)},${Number(lat).toFixed(5)}`;
+    } else if (uri) {
+      const match = uri.match(/[?&]ll=([^&]+)/);
+      if (match && match[1]) {
+        const rawCoords = decodeURIComponent(match[1]);
+        const [p0, p1] = rawCoords.split(',').map(Number);
+        if (p0 !== undefined && p1 !== undefined && !isNaN(p0) && !isNaN(p1)) {
+          coordsKey = `${p0.toFixed(5)},${p1.toFixed(5)}`;
+        } else {
+          coordsKey = rawCoords;
+        }
+      }
+    }
+
+    if (coordsKey) {
+      if (seenCoords.has(coordsKey)) continue;
+      seenCoords.add(coordsKey);
+    }
+
+    seenNames.add(displayName.toLowerCase());
+    unique.push({ displayName, uri });
+  }
+
+  return unique;
+}
+
 const FILTERS = ['Все', 'Активный', 'Зима', 'Экстрим'] as const;
 type Filter = (typeof FILTERS)[number];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -119,12 +161,46 @@ function formatDuration(seconds: number) {
   if (h > 0) parts.push(`${h} ч`);
   if (m > 0) parts.push(`${m} мин`);
 
-  return parts.length > 0 ? parts.join('  ') : '0 мин';
+  return parts.length > 0 ? parts.join(' ') : '0 мин';
 }
 
 function formatDistance(meters: number) {
   if (meters < 1000) return `${Math.round(meters)} м`;
   return `${(meters / 1000).toFixed(1)} км`;
+}
+
+/**
+ * Вычисляет даты для точек маршрута по цепочке.
+ * Если у точки дата пустая или раньше (дата предыдущей + время пути), ставит автоматически.
+ * Возвращает массив {id, visitDate} для точек, которые нужно обновить.
+ */
+function computeDateCascade(
+  points: RoutePoint[],
+  legs: { duration: number; distance: number }[],
+  fromIndex: number,
+): Array<{ id: string; visitDate: string }> {
+  const updates: Array<{ id: string; visitDate: string }> = [];
+  const dates = points.map((p) => p.visitDate);
+
+  for (let j = fromIndex + 1; j < points.length; j++) {
+    const prevDate = dates[j - 1];
+    if (!prevDate) break;
+
+    const leg = legs[j - 1];
+    if (!leg) break;
+
+    const minMs = new Date(prevDate).getTime() + leg.duration * 1000;
+    const currentMs = dates[j] ? new Date(dates[j]!).getTime() : null;
+
+    if (currentMs === null || currentMs < minMs) {
+      const newDate = new Date(minMs).toISOString();
+      dates[j] = newDate;
+      updates.push({ id: points[j]!.id, visitDate: newDate });
+    }
+    // Если дата уже корректна — оставляем её, но продолжаем проверку дальше по цепочке
+  }
+
+  return updates;
 }
 
 interface PointRowProps {
@@ -152,6 +228,7 @@ interface PointRowProps {
   isRouteLoading?: boolean;
   routeProfile?: 'driving' | 'foot' | 'bike' | 'direct';
   canEdit?: boolean;
+  userLocation?: { lat: number; lon: number };
 }
 
 function SortablePointRow({
@@ -168,6 +245,7 @@ function SortablePointRow({
   isRouteLoading,
   routeProfile,
   canEdit = true,
+  userLocation,
 }: PointRowProps) {
   const [addressVal, setAddressVal] = useState(point.address ?? '');
   const [suggestions, setSuggestions] = useState<GeoSuggestion[]>([]);
@@ -209,14 +287,12 @@ function SortablePointRow({
     }
     setIsSearching(true);
     try {
-      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
+      const locSuffix = userLocation ? `&lat=${userLocation.lat}&lon=${userLocation.lon}` : '';
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}${locSuffix}`;
       const res = await fetch(url);
       const data = await res.json();
 
-      const found: GeoSuggestion[] = (data.results ?? []).map((item: any) => ({
-        displayName: item.displayName ?? '',
-        uri: item.uri as string | undefined,
-      }));
+      const found = filterUniqueSuggestions(data.results ?? []);
       setSuggestions(found);
       setShowDropdownState(true);
     } catch {
@@ -280,19 +356,11 @@ function SortablePointRow({
       {index > 0 && (leg || isRouteLoading) && (
         <div
           className={cn(
-            'flex items-center gap-3 self-center px-4 py-2 bg-white border border-slate-100 rounded-full shadow-sm animate-in fade-in slide-in-from-top-1 -mb-1 relative z-10 w-full sm:max-w-lg md:max-w-2xl lg:max-w-4xl justify-center flex-nowrap overflow-x-auto transition-all',
-            isDragging && 'pointer-events-none',
+            'flex flex-wrap items-center gap-1.5 md:gap-3 self-center px-2.5 md:px-4 py-2 bg-white border border-slate-100 rounded-2xl md:rounded-full shadow-sm animate-in fade-in slide-in-from-top-1 my-2 relative z-10 w-full max-w-[300px] sm:max-w-[340px] md:max-w-[420px] justify-center transition-all',
+            isDragging && 'invisible',
           )}
         >
-          {isDragging ? (
-            <div className="flex items-center justify-center gap-3 min-h-10">
-              <div className="w-24 h-4 bg-slate-200 rounded-full animate-pulse" />
-              <div className="w-1 h-1 rounded-full bg-slate-200" />
-              <div className="w-20 h-4 bg-slate-200 rounded-full animate-pulse" />
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-1.5 pr-4">
+          <div className="flex items-center gap-1 md:gap-1.5 shrink-0">
                 <button
                   onClick={() => canEdit && onUpdate(point.id, { transportMode: 'driving' })}
                   disabled={!canEdit}
@@ -350,15 +418,15 @@ function SortablePointRow({
                   <span className="text-sm md:text-base leading-none">📏</span>
                 </button>
               </div>
-              <div className="w-1 h-1 rounded-full bg-slate-200" />
-              <div className="relative flex items-center gap-1.5 pl-4 overflow-hidden">
+              <div className="w-px h-4 bg-slate-100 md:w-1 md:h-1 md:rounded-full md:bg-slate-200" />
+              <div className="relative flex flex-wrap items-center gap-1.5 md:pl-2">
                 {isRouteLoading && (
                   <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10 animate-in fade-in duration-200">
                     <div className="w-4 h-4 border border-brand-indigo border-t-transparent rounded-full animate-spin" />
                   </div>
                 )}
                 {leg && (
-                  <div className={cn('flex items-center gap-1.5', isRouteLoading && 'opacity-40')}>
+                  <div className={cn('flex flex-wrap items-center gap-x-3 gap-y-1', isRouteLoading && 'opacity-40')}>
                     {(point.transportMode || 'driving') !== 'direct' && (
                       <>
                         <div className="flex items-center gap-1.5 whitespace-nowrap">
@@ -367,20 +435,19 @@ function SortablePointRow({
                             {formatDuration(leg.duration)}
                           </span>
                         </div>
-                        <div className="w-0.5 h-4 rounded-full bg-slate-200" />
+                        <div className="w-px h-3 bg-slate-200" />
                       </>
                     )}
                     <div className="flex items-center gap-1.5 whitespace-nowrap">
-                      <MapPin size={12} className="text-slate-400 shrink-0" />
+                      <RouteIcon size={12} className="text-emerald-500 shrink-0" />
                       <span className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-tight">
                         {formatDistance(leg.distance)}
                       </span>
                     </div>
                   </div>
                 )}
+
               </div>
-            </>
-          )}
         </div>
       )}
 
@@ -402,6 +469,12 @@ function SortablePointRow({
             />
           </button>
         )}
+        <button
+          onClick={() => onRemove(point.id)}
+          className="absolute top-3 right-3 w-7 h-7 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all active:scale-95 z-10"
+        >
+          <X size={14} strokeWidth={2.5} />
+        </button>
 
         <div className="flex items-center lg:items-start gap-2 lg:pt-1">
           <button
@@ -639,6 +712,7 @@ export function PlannerPage() {
   // - applyTripId: какой маршрут нужно открыть из AI.
   // - draftMessageId: индикатор, что пришла новая AI-версия.
   // Если сломать этот контракт, Planner перестанет подхватывать маршруты из URL-параметров.
+  const { geoDenied, setGeoDenied } = useUserStore();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { openOrCreateSessionFromTrip } = useAiQueryStore();
@@ -655,6 +729,9 @@ export function PlannerPage() {
   // Потребность: чтобы не срабатывали повторные toasts/загрузки при re-render и router.replace.
   // Если убрать: возможны бесконечные петли обновления страницы.
   const handledApplyTripIdRef = useRef<string | null>(null);
+  const userLocationRef = useRef<{ lat: number; lon: number } | null>(null);
+  const prevLegsCountRef = useRef(0);
+  const prevLegsDurationsRef = useRef<string>('');
 
   const [isActiveRoute, setIsActiveRoute] = useState(false);
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
@@ -671,6 +748,32 @@ export function PlannerPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [modal, setModal] = useState<'login' | 'register' | null>(null);
   const [isAddPointMode, setIsAddPointMode] = useState(false);
+  const [showOptimizationResults, setShowOptimizationResults] = useState(true);
+  const addPointStartCountRef = useRef(0);
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.geolocation && !geoDenied) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          userLocationRef.current = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        },
+        (err) => {
+          if (err.code === err.PERMISSION_DENIED) {
+            setGeoDenied(true);
+          }
+          console.warn('Geolocation error:', err.message);
+        },
+        { timeout: 5000 },
+      );
+    }
+  }, [geoDenied, setGeoDenied]);
+
+  const handleAddPointModeChange = useCallback((active: boolean) => {
+    if (active) {
+      addPointStartCountRef.current = useTripStore.getState().currentTrip?.points?.length ?? 0;
+    }
+    setIsAddPointMode(active);
+  }, []);
 
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [collaboratorsModalOpen, setCollaboratorsModalOpen] = useState(false);
@@ -680,72 +783,6 @@ export function PlannerPage() {
   const [routeProfile, setRouteProfile] = useState<'driving' | 'foot' | 'bike' | 'direct'>(
     (profileParam as any) || 'driving',
   );
-
-  const [routeInfo, setRouteInfo] = useState<{
-    duration: number;
-    distance: number;
-    legs: { duration: number; distance: number }[];
-  } | null>(() => useTripStore.getState().cachedRouteInfo ?? null);
-  const [isRouteLoading, setIsRouteLoading] = useState(false);
-  const [affectedSegments, setAffectedSegments] = useState<Set<number>>(new Set());
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [isOptimizing, setIsOptimizing] = useState(false);
-  const [compareModalData, setCompareModalData] = useState<{
-    isOpen: boolean;
-    metrics: {
-      originalKm: number;
-      newKm: number;
-      originalHours: number;
-      newHours: number;
-      originalRub: number;
-      newRub: number;
-    } | null;
-  }>({
-    isOpen: false,
-    metrics: null,
-  });
-
-  const resolveCoords = useCallback(async (query: string) => {
-    try {
-      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
-      const res = await fetch(url);
-      if (!res.ok) return null;
-      const data = await res.json();
-      const results = data.results ?? [];
-
-      if (results.length > 0) {
-        const first = results[0];
-        const match = first.uri?.match(/[?&]ll=([^&]+)/);
-        if (match) {
-          const [lonStr, latStr] = decodeURIComponent(match[1]).split(',');
-          const lon = Number(lonStr);
-          const lat = Number(latStr);
-          if (Number.isFinite(lon) && Number.isFinite(lat)) {
-            return { lon, lat, address: first.displayName || query };
-          }
-        }
-      }
-    } catch (e) {
-      console.error('[Geosearch] Geocoding failed:', e);
-    }
-    return null;
-  }, []);
-
-  const resolveMapCoords = useCallback(async (coords: { lon: number; lat: number }) => {
-    try {
-      const url = `${env.apiUrl}/geosearch/reverse?lat=${coords.lat}&lon=${coords.lon}`;
-      const res = await fetch(url);
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (!data) return null;
-      const address = data.displayName || `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`;
-      const title = data.title || address;
-      return { address, title };
-    } catch (error) {
-      console.error('[Geosearch] Exception during reverse geocoding:', error);
-      return null;
-    }
-  }, []);
 
   const {
     currentTrip,
@@ -758,7 +795,16 @@ export function PlannerPage() {
     _hasHydrated,
     isDirty,
     setSaved,
+    optimizationResults,
+    setOptimizationResults,
+    previousPoints,
+    setPreviousPoints,
+    lastOptimizedPoints,
+    setLastOptimizedPoints,
+    lastOptimizedProfile,
+    setLastOptimizedProfile,
   } = useTripStore();
+
   const points = currentTrip?.points || [];
   const { isAuthenticated } = useAuthStore();
   const { user } = useUserStore();
@@ -767,6 +813,16 @@ export function PlannerPage() {
   // Коллаборатор может редактировать только если владелец активировал маршрут (ownerIsActive)
   const canEdit = isOwner || !!currentTrip?.ownerIsActive;
   const crud = usePointCrud(currentTrip?.id);
+
+  const [routeInfo, setRouteInfo] = useState<{
+    duration: number;
+    distance: number;
+    legs: { duration: number; distance: number }[];
+  } | null>(() => useTripStore.getState().cachedRouteInfo ?? null);
+  const [isRouteLoading, setIsRouteLoading] = useState(false);
+  const [affectedSegments, setAffectedSegments] = useState<Set<number>>(new Set());
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [isOptimizing, setIsOptimizing] = useState(false);
 
   useCollaborationSocket(currentTrip?.id ?? '');
 
@@ -852,6 +908,52 @@ export function PlannerPage() {
     }),
   );
 
+  // Обёртка над crud.update: при смене visitDate каскадно пересчитывает даты вперёд
+  const handlePointUpdate = useCallback(
+    async (id: string, patch: Parameters<typeof crud.update>[1]) => {
+      const fullPatch = { ...patch };
+      if ('title' in patch && patch.title) {
+        (fullPatch as any).isTitleCustom = true;
+      }
+      await crud.update(id, fullPatch);
+      if ('visitDate' in patch && patch.visitDate && routeInfo?.legs) {
+        const pts = useTripStore.getState().currentTrip?.points ?? [];
+        const fromIndex = pts.findIndex((p) => p.id === id);
+        if (fromIndex >= 0) {
+          const cascadeUpdates = computeDateCascade(pts, routeInfo.legs, fromIndex);
+          for (const u of cascadeUpdates) {
+            await crud.update(u.id, { visitDate: u.visitDate });
+          }
+        }
+      }
+    },
+    [crud, routeInfo],
+  );
+
+  // Когда появляется новый сегмент или меняется duration сегмента (смена режима передвижения),
+  // каскадно проставляем даты от первой датированной точки
+  useEffect(() => {
+    const legs = routeInfo?.legs;
+    const legsCount = legs?.length ?? 0;
+    const legsDurationsKey = legs ? legs.map((l) => l.duration).join(',') : '';
+
+    const legsCountChanged = legsCount > prevLegsCountRef.current;
+    const legsDurationsChanged = legsDurationsKey !== prevLegsDurationsRef.current;
+
+    if ((legsCountChanged || legsDurationsChanged) && legs && points.length > 1) {
+      prevLegsCountRef.current = legsCount;
+      prevLegsDurationsRef.current = legsDurationsKey;
+      const firstDatedIdx = points.findIndex((p) => p.visitDate);
+      if (firstDatedIdx >= 0) {
+        const cascadeUpdates = computeDateCascade(points, legs, firstDatedIdx);
+        cascadeUpdates.forEach((u) => crud.update(u.id, { visitDate: u.visitDate }));
+      }
+    } else {
+      prevLegsCountRef.current = legsCount;
+      prevLegsDurationsRef.current = legsDurationsKey;
+    }
+  }, [routeInfo]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     useTripStore.getState().setCachedRouteInfo(null);
   }, []);
@@ -882,7 +984,7 @@ export function PlannerPage() {
 
     pointsApi
       .getAll(currentTrip.id)
-      .then(setPoints)
+      .then((pts) => setPoints(pts, false))
       .catch((e) => {
         console.error('Failed to load points:', e);
 
@@ -894,7 +996,7 @@ export function PlannerPage() {
           return;
         }
 
-        setPoints([]);
+        setPoints([], false);
       });
   }, [currentTrip?.id, setPoints]);
 
@@ -1159,10 +1261,9 @@ export function PlannerPage() {
 
       justMigratedRef.current = true;
       setCurrentTrip(trip);
-      setPoints(createdPoints);
+      setPoints(createdPoints, false);
       return trip.id;
     }
-
     if (!isAuthenticated) {
       const guestTrip: Trip = {
         id: `guest-${Date.now()}`,
@@ -1224,13 +1325,12 @@ export function PlannerPage() {
     }
     setIsSearching(true);
     try {
-      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
+      const loc = userLocationRef.current;
+      const locSuffix = loc ? `&lat=${loc.lat}&lon=${loc.lon}` : '';
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}${locSuffix}`;
       const res = await fetch(url);
       const data = await res.json();
-      const found: GeoSuggestion[] = (data.results ?? []).map((item: any) => ({
-        displayName: item.displayName ?? '',
-        uri: item.uri as string | undefined,
-      }));
+      const found = filterUniqueSuggestions(data.results ?? []);
       setSuggestions(found);
       setShowDropdown(true);
     } catch {
@@ -1283,8 +1383,9 @@ export function PlannerPage() {
           addPoint(created);
         }
       }
+      await crud.add({ ...payload, budget: 0 });
     },
-    [ensureTripId, addPoint],
+    [crud],
   );
 
   const handleRemovePoint = useCallback(
@@ -1322,6 +1423,7 @@ export function PlannerPage() {
       setSearchInput('');
       setShowDropdown(false);
       setSuggestions([]);
+      setFocusCoords({ lon: coords.lon, lat: coords.lat });
     } finally {
       setIsSearching(false);
     }
@@ -1335,7 +1437,29 @@ export function PlannerPage() {
         return;
       }
       try {
+        const isExistingRealTrip = !!currentTrip?.id && UUID_RE.test(currentTrip.id);
         const tripId = await ensureTripId();
+
+        if (isExistingRealTrip) {
+          const backendPoints = await pointsApi.getAll(tripId);
+          await Promise.all(backendPoints.map((p) => pointsApi.remove(tripId, p.id)));
+          await Promise.all(
+            points.map((p, i) =>
+              pointsApi.create(tripId, {
+                title: p.title,
+                lat: p.lat,
+                lon: p.lon,
+                budget: p.budget ?? 0,
+                visitDate: p.visitDate ?? undefined,
+                imageUrl: p.imageUrl ?? undefined,
+                order: i,
+                address: p.address ?? undefined,
+                transportMode: p.transportMode,
+              }),
+            ),
+          );
+        }
+
         const autoTitle =
           points.length > 1
             ? `${points[0]!.title} — ${points[points.length - 1]!.title}`
@@ -1381,6 +1505,10 @@ export function PlannerPage() {
     toast.info('Конструктор очищен', { id: 'planner-status' });
   };
 
+  const handleEditWithAi = () => {
+    router.push('/ai-assistant');
+  };
+
   const handleSelectSuggestion = async (s: GeoSuggestion) => {
     setShowDropdown(false);
     setSearchInput('');
@@ -1406,6 +1534,7 @@ export function PlannerPage() {
         lon: coords.lon,
         address: s.displayName,
       });
+      setFocusCoords({ lon: coords.lon, lat: coords.lat });
     } catch (e) {
       console.error('Не удалось добавить точку:', e);
     } finally {
@@ -1425,6 +1554,16 @@ export function PlannerPage() {
           address: geoData?.address || `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`,
         };
         await addPoint_(payload);
+
+        // Автоотключение режима добавления точки:
+        // - если точек не было → ждём 2 → отключаем
+        // - если хотя бы 1 была → ждём 1 → отключаем
+        const startCount = addPointStartCountRef.current;
+        const needed = startCount === 0 ? 2 : 1;
+        const newCount = useTripStore.getState().currentTrip?.points?.length ?? 0;
+        if (newCount >= startCount + needed) {
+          setIsAddPointMode(false);
+        }
       } catch (e) {
         console.error('Не удалось добавить точку с карты:', e);
       } finally {
@@ -1534,11 +1673,10 @@ export function PlannerPage() {
     handledApplyTripIdRef.current = currentKey;
     void applyIncomingTrip(incomingTripId);
   }, [applyIncomingTrip, searchParams]);
-
   return (
     <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
-      <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-10 w-full flex-1 flex flex-col relative">
-        <div className="mb-8 bg-white md:p-0 rounded-none w-full">
+      <div className="w-full mx-auto px-4 md:px-8 py-6 md:py-10 flex-1 flex flex-col relative">
+        <div className="mb-8 bg-white md:p-0 rounded-none w-full max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight text-left">
               Маршруты
@@ -1586,13 +1724,16 @@ export function PlannerPage() {
               { label: 'Популярные', value: 'popular' },
             ]}
             value={activeTab}
-            onChange={(val) => setActiveTab(val as 'my' | 'popular')}
+            onChange={(val) => {
+              setActiveTab(val as 'my' | 'popular');
+              router.push(`/planner?tab=${val}`);
+            }}
           />
         </div>
 
         {activeTab === 'my' ? (
-          <div className="animate-in fade-in duration-500">
-            <div className="mb-10 w-full">
+          <div className="animate-in fade-in duration-500 w-full relative">
+            <div className="mb-10 w-full max-w-7xl mx-auto">
               {isBudgetExceeded && showBudgetWarning && (
                 <div className="fixed right-4 bottom-20 md:bottom-6 z-40 animate-in slide-in-from-right-4 duration-300">
                   <div className="relative group flex items-start gap-2 rounded-2xl border border-red-200 bg-white/95 backdrop-blur px-3 py-2 shadow-lg max-w-[300px]">
@@ -1694,11 +1835,11 @@ export function PlannerPage() {
                         onClick={() => {}}
                         className="flex items-center gap-3 w-full text-left px-5 py-5 bg-slate-50 hover:bg-slate-100 transition-colors group mt-2 border-t border-slate-100"
                       >
-                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-600 via-violet-500 to-indigo-400 text-white flex items-center justify-center shadow-lg shadow-purple-500/20 group-hover:scale-105 transition-transform duration-300">
+                        <div className="w-12 h-12 rounded-2xl bg-brand-purple text-white flex items-center justify-center shadow-lg shadow-brand-purple/20 group-hover:scale-105 transition-transform duration-300">
                           <MessageSquare size={22} />
                         </div>
                         <div className="flex flex-col">
-                          <span className="font-black text-brand-indigo uppercase tracking-wider text-xs">
+                          <span className="font-black text-brand-purple uppercase tracking-wider text-xs">
                             Найти с AI
                           </span>
                           <span className="text-slate-500 text-sm font-medium">
@@ -1707,7 +1848,7 @@ export function PlannerPage() {
                         </div>
                         <ArrowRight
                           size={18}
-                          className="ml-auto text-brand-indigo transition-transform group-hover:translate-x-1"
+                          className="ml-auto text-brand-purple transition-transform group-hover:translate-x-1"
                         />
                       </button>
                     </div>
@@ -1716,17 +1857,46 @@ export function PlannerPage() {
               </div>
             </div>
 
-            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 mb-6 w-full">
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 mb-6 w-full max-w-7xl mx-auto">
               <div className="grid grid-cols-2 sm:flex sm:flex-row items-stretch bg-slate-100 p-1.5 rounded-[1.25rem] shadow-inner shrink-0 h-auto lg:h-16 gap-1 sm:gap-0">
                 {isMixedRoute ? (
                   <div className="col-span-2 sm:col-span-1 flex items-center justify-between px-4 sm:px-6 py-3.5 bg-white shadow-sm rounded-[1rem] flex-1 text-sm font-bold text-slate-700">
                     <div className="flex items-center gap-2">
-                      <span>Смешанный маршрут</span>
-                      <div className="flex gap-1 ml-2 text-base">
-                        {mixedModes.includes('driving') && <span>🚗</span>}
-                        {mixedModes.includes('foot') && <span>🚶</span>}
-                        {mixedModes.includes('bike') && <span>🚲</span>}
-                        {mixedModes.includes('direct') && <span>📏</span>}
+                      <span className="hidden sm:inline">Смешанный маршрут</span>
+                      <span className="sm:hidden text-xs text-slate-400">Смешанный</span>
+                      <div className="flex gap-1.5 ml-1 md:ml-2">
+                        {mixedModes.includes('driving') && (
+                          <div
+                            className="w-7 h-7 rounded-lg bg-[#eaf5fd] flex items-center justify-center shadow-xs"
+                            title="Авто"
+                          >
+                            <span className="text-sm">🚗</span>
+                          </div>
+                        )}
+                        {mixedModes.includes('foot') && (
+                          <div
+                            className="w-7 h-7 rounded-lg bg-brand-amber/10 flex items-center justify-center shadow-xs"
+                            title="Пешком"
+                          >
+                            <span className="text-sm">🚶</span>
+                          </div>
+                        )}
+                        {mixedModes.includes('bike') && (
+                          <div
+                            className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center shadow-xs"
+                            title="Вело"
+                          >
+                            <span className="text-sm">🚲</span>
+                          </div>
+                        )}
+                        {mixedModes.includes('direct') && (
+                          <div
+                            className="w-7 h-7 rounded-lg bg-brand-purple/10 flex items-center justify-center shadow-xs"
+                            title="Прямой"
+                          >
+                            <span className="text-sm">📏</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <button
@@ -1753,10 +1923,10 @@ export function PlannerPage() {
                       }}
                       disabled={points.length < 2}
                       className={cn(
-                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-bold transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default',
+                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-black transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default border border-transparent',
                         routeProfile === 'driving'
-                          ? 'bg-white text-brand-blue shadow-sm'
-                          : 'text-slate-500 enabled:hover:text-slate-700',
+                          ? 'bg-white text-brand-blue shadow-sm border-slate-100'
+                          : 'text-slate-500 hover:text-brand-blue hover:bg-white/50',
                       )}
                     >
                       <span className="leading-none align-middle -translate-y-px mr-2">🚗</span>{' '}
@@ -1772,10 +1942,10 @@ export function PlannerPage() {
                       }}
                       disabled={points.length < 2}
                       className={cn(
-                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-bold transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default',
+                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-black transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default border border-transparent',
                         routeProfile === 'foot'
-                          ? 'bg-white text-brand-amber shadow-sm'
-                          : 'text-slate-500 enabled:hover:text-slate-700',
+                          ? 'bg-white text-brand-amber shadow-sm border-slate-100'
+                          : 'text-slate-500 hover:text-brand-amber hover:bg-white/50',
                       )}
                     >
                       <span className="leading-none align-middle -translate-y-px mr-2">🚶</span>{' '}
@@ -1791,10 +1961,10 @@ export function PlannerPage() {
                       }}
                       disabled={points.length < 2}
                       className={cn(
-                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-bold transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default',
+                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-black transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default border border-transparent',
                         routeProfile === 'bike'
-                          ? 'bg-white text-emerald-500 shadow-sm'
-                          : 'text-slate-500 enabled:hover:text-slate-700',
+                          ? 'bg-white text-emerald-500 shadow-sm border-slate-100'
+                          : 'text-slate-500 hover:text-emerald-500 hover:bg-white/50',
                       )}
                     >
                       <span className="leading-none align-middle -translate-y-px mr-2">🚲</span>{' '}
@@ -1810,10 +1980,10 @@ export function PlannerPage() {
                       }}
                       disabled={points.length < 2}
                       className={cn(
-                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-bold transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default',
+                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-black transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default border border-transparent',
                         routeProfile === 'direct'
-                          ? 'bg-white text-brand-purple shadow-sm'
-                          : 'text-slate-500 enabled:hover:text-slate-700',
+                          ? 'bg-white text-brand-purple shadow-sm border-slate-100'
+                          : 'text-slate-500 hover:text-brand-purple hover:bg-white/50',
                       )}
                     >
                       <span className="leading-none align-middle -translate-y-px mr-2">📏</span>{' '}
@@ -1844,7 +2014,7 @@ export function PlannerPage() {
                     )}
                     {routeInfo && (
                       <div className="flex items-center gap-2">
-                        <MapPin size={18} className="text-brand-indigo" />
+                        <RouteIcon size={18} className="text-emerald-500" />
                         <span className="text-sm font-black text-slate-700 leading-none">
                           {formatDistance(routeInfo.distance)}
                         </span>
@@ -1855,7 +2025,7 @@ export function PlannerPage() {
               )}
             </div>
 
-            <div className="w-full aspect-[4/5] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden relative z-0 border border-slate-200 shadow-inner bg-slate-50 group">
+            <div className="w-full max-w-7xl mx-auto aspect-[4/3] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden relative z-0 border border-slate-200 shadow-inner bg-slate-50 group">
               <RouteMap
                 key={`route-map-${currentTrip?.id ?? 'none'}-${lastMapRenderAt}`}
                 points={points}
@@ -1865,12 +2035,28 @@ export function PlannerPage() {
                 isDropdownOpen={showDropdown || inviteModalOpen || collaboratorsModalOpen}
                 onMapClick={canEdit ? handleMapClick : undefined}
                 isAddPointMode={canEdit && isAddPointMode}
-                onAddPointModeChange={canEdit ? setIsAddPointMode : undefined}
+                onAddPointModeChange={canEdit ? handleAddPointModeChange : undefined}
                 routeProfile={routeProfile}
                 onRouteInfoUpdate={setRouteInfo}
                 onRouteInfoLoading={setIsRouteLoading}
                 onAffectedSegmentsChange={setAffectedSegments}
               />
+              <button
+                title={
+                  isAddPointMode ? 'Выйти из режима добавления' : 'Добавить точку кликом на карту'
+                }
+                className={cn(
+                  'absolute left-3 top-3 md:top-16 z-10',
+                  'w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center',
+                  'shadow-lg transition-all active:scale-95 border-2',
+                  isAddPointMode
+                    ? 'bg-brand-sky text-white border-brand-sky'
+                    : 'bg-white text-slate-600 border-transparent hover:border-brand-sky/30',
+                )}
+                onClick={() => handleAddPointModeChange(!isAddPointMode)}
+              >
+                <MapPin size={22} />
+              </button>
             </div>
 
             <div className="mb-10 mt-10 w-full bg-white rounded-[2rem] p-6 md:p-8 border border-slate-100 shadow-xl shadow-slate-200/20">
@@ -1916,291 +2102,396 @@ export function PlannerPage() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3">
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragStart={handleDragStart}
-                  onDragEnd={handleDragEnd}
-                  onDragCancel={handleDragCancel}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
+                <Button
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      setModal('login');
+                      return;
+                    }
+                    if (points.length > 0 && isDirty) {
+                      setShowClearConfirm(true);
+                    } else {
+                      handleConfirmClear(false);
+                    }
+                  }}
+                  disabled={points.length === 0}
+                  variant="brand-blue"
+                  className="w-full font-black text-[10px] md:text-xs tracking-widest uppercase py-6 rounded-2xl h-auto shadow-lg shadow-brand-blue/10"
                 >
-                  <SortableContext
-                    items={points.map((p) => p.id)}
-                    strategy={verticalListSortingStrategy}
+                  НОВЫЙ
+                </Button>
+
+                <Button
+                  onClick={handleEditWithAi}
+                  disabled={points.length === 0}
+                  variant="brand-purple"
+                  className="w-full font-black text-[10px] md:text-xs tracking-widest uppercase py-6 rounded-2xl h-auto shadow-lg shadow-brand-purple/10"
+                >
+                  РЕДАКТИРОВАТЬ С AI
+                </Button>
+
+                <Button
+                  onClick={async () => {
+                    if (!isAuthenticated) {
+                      setModal('login');
+                      return;
+                    }
+                    try {
+                      setIsOptimizing(true);
+                      const tripId = await ensureTripId();
+                      const latestPoints = useTripStore.getState().currentTrip?.points || points;
+                      const result = await tripsApi.optimize(tripId, routeProfile, latestPoints);
+                      if (result?.optimizedPoints) {
+                        const pointsChanged = !points.every(
+                          (p, i) =>
+                            result.optimizedPoints?.[i] && p.id === result.optimizedPoints[i].id,
+                        );
+                        if (pointsChanged) {
+                          setPreviousPoints([...points]);
+                          useTripStore.getState().setPoints(result.optimizedPoints);
+                          setLastOptimizedPoints(result.optimizedPoints);
+                          setLastOptimizedProfile(routeProfile);
+                          setOptimizationResults({
+                            status: 'success',
+                            metrics: result.metrics || null,
+                          });
+                          setShowOptimizationResults(true);
+                        } else {
+                          setLastOptimizedPoints([...points]);
+                          setLastOptimizedProfile(routeProfile);
+                          setOptimizationResults({ status: 'optimal', metrics: null });
+                          setShowOptimizationResults(true);
+                        }
+                      }
+                    } catch (error) {
+                      console.error('Optimization error:', error);
+                      toast.error('Ошибка оптимизации');
+                    } finally {
+                      setIsOptimizing(false);
+                    }
+                  }}
+                  disabled={points.length < 3 || isOptimizing}
+                  variant="brand-yellow"
+                  className="w-full font-black text-[10px] md:text-xs tracking-widest uppercase py-6 rounded-2xl h-auto shadow-lg shadow-brand-yellow/10"
+                >
+                  {isOptimizing ? 'ОПТИМИЗАЦИЯ...' : 'ОПТИМИЗИРОВАТЬ'}
+                </Button>
+
+                <Button
+                  onClick={async () => {
+                    if (!isAuthenticated) {
+                      setModal('login');
+                      return;
+                    }
+                    const success = await saveCurrentTrip();
+                    if (success) {
+                      toast.success('Маршрут сохранен');
+                    }
+                  }}
+                  disabled={!isDirty || points.length === 0}
+                  variant="brand-indigo"
+                  className="w-full font-black text-[10px] md:text-xs tracking-widest uppercase py-6 rounded-2xl h-auto shadow-lg shadow-brand-indigo/10"
+                >
+                  СОХРАНИТЬ
+                </Button>
+              </div>
+
+              {optimizationResults.status !== 'idle' && showOptimizationResults && (
+                <div className="mt-8 p-0 bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/20 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500 relative group/opt">
+                  <button
+                    onClick={() => setShowOptimizationResults(false)}
+                    className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all z-10"
+                    title="Закрыть"
                   >
-                    {points.map((point, i) => (
-                      <SortablePointRow
-                        key={point.id}
-                        point={point}
-                        index={i}
-                        editingPointId={editingPointId}
-                        editingTitle={editingTitle}
-                        setEditingPointId={setEditingPointId}
-                        setEditingTitle={setEditingTitle}
-                        onUpdate={handlePointUpdate}
-                        onRemove={handleRemovePoint}
-                        onFocusPoint={setFocusCoords}
-                        leg={i > 0 && routeInfo?.legs ? routeInfo.legs[i - 1] : undefined}
-                        isRouteLoading={isRouteLoading && affectedSegments.has(i - 1)}
-                        routeProfile={routeProfile}
-                        canEdit={canEdit}
-                      />
-                    ))}
-                  </SortableContext>
-                  <DragOverlay adjustScale={false}>
-                    {activeId ? (
-                      <div className="w-full pointer-events-none opacity-90 scale-102 shadow-2xl rounded-2xl">
-                        {(() => {
-                          const activePoint = points.find((p) => p.id === activeId);
-                          const idx = points.findIndex((p) => p.id === activeId);
-                          if (!activePoint) return null;
-                          return (
-                            <div className="flex flex-row items-center lg:items-start justify-start gap-3 md:gap-4 bg-white p-4 rounded-2xl border-2 border-brand-blue shadow-xl">
-                              <div className="flex items-center lg:items-start gap-2 lg:pt-1">
-                                <GripVertical size={16} className="text-brand-blue" />
-                                <div className="w-5 h-5 md:w-6 md:h-6 shrink-0 rounded-full bg-brand-blue text-white font-bold hidden lg:flex items-center justify-center text-[10px]">
-                                  {idx + 1}
-                                </div>
-                              </div>
-                              <div className="flex-1 flex flex-col items-start gap-2 min-w-0 pr-10 w-full">
-                                <div className="flex items-center gap-2 w-full">
-                                  <span className="font-bold text-slate-700 text-sm md:text-base truncate">
-                                    {activePoint.title}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl w-full">
-                                  <MapPin size={14} className="text-slate-400 shrink-0" />
-                                  <span className="text-xs text-slate-500 font-bold truncate">
-                                    {activePoint.address || 'Адрес не указан'}
-                                  </span>
-                                </div>
+                    <X size={16} />
+                  </button>
+
+                  {optimizationResults.status === 'optimal' ||
+                  (optimizationResults.status === 'success' &&
+                    routeProfile !== lastOptimizedProfile) ? (
+                    <div className="p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 bg-slate-50/50">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center shrink-0">
+                          <MapPin size={22} className="text-emerald-500" />
+                        </div>
+                        <div>
+                          <h4 className="text-brand-indigo font-black uppercase tracking-widest text-sm md:text-base mb-1">
+                            Маршрут оптимален
+                          </h4>
+                          <p className="text-slate-400 text-xs md:text-sm font-bold uppercase tracking-wider">
+                            {routeProfile !== lastOptimizedProfile
+                              ? `Порядок точек идеален для режима «${routeProfile === 'driving' ? 'Авто' : routeProfile === 'foot' ? 'Пешком' : routeProfile === 'bike' ? 'Вело' : 'Прямой'}»`
+                              : 'Текущий порядок точек — самый эффективный'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="px-6 py-3 bg-emerald-50 rounded-xl border border-emerald-100 flex items-center gap-3">
+                        <span className="text-xs font-black text-emerald-600 uppercase tracking-widest">
+                          Готово
+                        </span>
+                      </div>
+                    </div>
+                  ) : optimizationResults.metrics ? (
+                    <div className="p-0">
+                      <div className="p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 bg-slate-50/50">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-emerald-500 rounded-2xl shadow-lg shadow-emerald-500/20 flex items-center justify-center shrink-0">
+                            <RouteIcon size={22} className="text-white" />
+                          </div>
+                          <div>
+                            <h4 className="text-brand-indigo font-black uppercase tracking-widest text-sm md:text-base mb-1">
+                              Маршрут оптимизирован
+                            </h4>
+                            <p className="text-emerald-500 text-xs md:text-sm font-black uppercase tracking-wider flex items-center gap-2">
+                              <span>✨</span> Порядок точек изменен для экономии
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (previousPoints) {
+                              useTripStore.getState().setPoints(previousPoints);
+                              setPreviousPoints(null);
+                              setOptimizationResults({ status: 'idle', metrics: null });
+                              toast.info('Оптимизация отменена');
+                            }
+                          }}
+                          className="rounded-xl border-slate-200 text-slate-500 hover:bg-slate-100 font-bold text-xs uppercase"
+                        >
+                          Отменить
+                        </Button>
+                      </div>
+
+                      <div className="p-6 md:p-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center gap-2 text-slate-400">
+                            <RouteIcon size={14} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">
+                              Расстояние
+                            </span>
+                          </div>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-2xl font-black text-brand-indigo">
+                              {optimizationResults.metrics.newKm.toFixed(1)}
+                            </span>
+                            <span className="text-sm font-bold text-slate-400 uppercase">км</span>
+                            {optimizationResults.metrics.originalKm -
+                              optimizationResults.metrics.newKm >
+                              0.1 && (
+                              <span className="ml-auto text-xs font-black text-emerald-500 bg-emerald-50 px-2 py-1 rounded-lg">
+                                -
+                                {(
+                                  optimizationResults.metrics.originalKm -
+                                  optimizationResults.metrics.newKm
+                                ).toFixed(1)}{' '}
+                                км
+                              </span>
+                            )}
+                          </div>
+                          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-brand-blue rounded-full transition-all duration-1000"
+                              style={{
+                                width: `${Math.min(100, (optimizationResults.metrics.newKm / optimizationResults.metrics.originalKm) * 100)}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center gap-2 text-slate-400">
+                            <Clock size={14} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">
+                              Время в пути
+                            </span>
+                          </div>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-2xl font-black text-brand-indigo">
+                              {formatDuration(optimizationResults.metrics.newHours * 3600)}
+                            </span>
+                            {optimizationResults.metrics.originalHours -
+                              optimizationResults.metrics.newHours >
+                              0.01 && (
+                              <span className="ml-auto text-xs font-black text-emerald-500 bg-emerald-50 px-2 py-1 rounded-lg">
+                                -
+                                {formatDuration(
+                                  (optimizationResults.metrics.originalHours -
+                                    optimizationResults.metrics.newHours) *
+                                    3600,
+                                )}
+                              </span>
+                            )}
+                          </div>
+                          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-brand-purple rounded-full transition-all duration-1000"
+                              style={{
+                                width: `${Math.min(100, (optimizationResults.metrics.newHours / optimizationResults.metrics.originalHours) * 100)}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center gap-2 text-slate-400">
+                            <span className="text-base">
+                              {optimizationResults.metrics.isFuel ? '⛽' : '🎫'}
+                            </span>
+                            <span className="text-[10px] font-black uppercase tracking-widest">
+                              {optimizationResults.metrics.isFuel
+                                ? 'Расходы на топливо'
+                                : 'Расходы на проезд'}
+                            </span>
+                          </div>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-2xl font-black text-brand-indigo">
+                              {Math.round(optimizationResults.metrics.newRub).toLocaleString(
+                                'ru-RU',
+                              )}
+                            </span>
+                            <span className="text-sm font-bold text-slate-400 uppercase">₽</span>
+                            {optimizationResults.metrics.originalRub -
+                              optimizationResults.metrics.newRub >
+                              1 && (
+                              <span className="ml-auto text-xs font-black text-emerald-500 bg-emerald-50 px-2 py-1 rounded-lg">
+                                -
+                                {Math.round(
+                                  optimizationResults.metrics.originalRub -
+                                    optimizationResults.metrics.newRub,
+                                ).toLocaleString('ru-RU')}{' '}
+                                ₽
+                              </span>
+                            )}
+                          </div>
+                          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-brand-yellow rounded-full transition-all duration-1000"
+                              style={{
+                                width: `${Math.min(100, (optimizationResults.metrics.newRub / optimizationResults.metrics.originalRub) * 100)}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            <div className="relative max-w-7xl mx-auto w-full">
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onDragCancel={handleDragCancel}
+              >
+                <SortableContext
+                  items={points.map((p) => p.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {points.map((point, i) => (
+                    <SortablePointRow
+                      key={point.id}
+                      point={point}
+                      index={i}
+                      editingPointId={editingPointId}
+                      editingTitle={editingTitle}
+                      setEditingPointId={setEditingPointId}
+                      setEditingTitle={setEditingTitle}
+                      onUpdate={handlePointUpdate}
+                      onRemove={handleRemovePoint}
+                      onFocusPoint={setFocusCoords}
+                      leg={i > 0 && routeInfo?.legs ? routeInfo.legs[i - 1] : undefined}
+                      isRouteLoading={isRouteLoading && affectedSegments.has(i - 1)}
+                      routeProfile={routeProfile}
+                      canEdit={canEdit}
+                      userLocation={userLocationRef.current ?? undefined}
+                    />
+                  ))}
+                </SortableContext>
+                <DragOverlay adjustScale={false}>
+                  {activeId ? (
+                    <div className="w-full pointer-events-none opacity-90 scale-102 shadow-2xl rounded-2xl">
+                      {(() => {
+                        const activePoint = points.find((p) => p.id === activeId);
+                        const idx = points.findIndex((p) => p.id === activeId);
+                        if (!activePoint) return null;
+                        return (
+                          <div className="flex flex-row items-center lg:items-start justify-start gap-3 md:gap-4 bg-white p-4 rounded-2xl border-2 border-brand-blue shadow-xl">
+                            <div className="flex items-center lg:items-start gap-2 lg:pt-1">
+                              <GripVertical size={16} className="text-brand-blue" />
+                              <div className="w-5 h-5 md:w-6 md:h-6 shrink-0 rounded-full bg-brand-blue text-white font-bold hidden lg:flex items-center justify-center text-[10px] shadow-sm">
+                                {idx + 1}
                               </div>
                             </div>
-                          );
-                        })()}
-                      </div>
-                    ) : null}
-                  </DragOverlay>
-                </DndContext>
-                {points.length === 0 && (
-                  <p className="text-center text-slate-400 text-sm py-4">
-                    Пока нет добавленных мест
+                            <div className="flex-1 flex flex-col items-start gap-2 min-w-0 pr-10 w-full">
+                              <div className="flex items-center gap-2 w-full">
+                                <span className="font-bold text-slate-700 text-sm md:text-base truncate">
+                                  {activePoint.title}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl w-full">
+                                <MapPin size={14} className="text-slate-400 shrink-0" />
+                                <span className="text-xs text-slate-500 font-bold truncate">
+                                  {activePoint.address || 'Адрес не указан'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
+              {points.length === 0 && (
+                <p className="text-center text-slate-400 text-sm py-12">
+                  Пока нет добавленных мест
+                </p>
+              )}
+            </div>
+
+            <div className="mb-10 px-8 py-6 bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/20 flex items-center justify-between max-w-7xl mx-auto mt-10">
+              <h4 className="text-xs md:text-sm font-black text-slate-400 uppercase tracking-widest">
+                ИТОГО ПО ТОЧКАМ
+              </h4>
+              <div className="flex flex-col items-end">
+                <div
+                  className={cn(
+                    'text-2xl md:text-3xl font-black tabular-nums transition-colors',
+                    plannedBudget > 0 && totalBudget > plannedBudget
+                      ? 'text-red-500'
+                      : 'text-brand-indigo',
+                  )}
+                >
+                  {totalBudget.toLocaleString('ru-RU')} ₽
+                </div>
+                {isBudgetExceeded && (
+                  <p className="text-[10px] font-bold text-red-400 uppercase mt-1">
+                    Превышение на {(totalBudget - plannedBudget).toLocaleString()} ₽
                   </p>
                 )}
-                <div className="mt-6 pt-4 border-t border-slate-200/60 flex flex-col gap-6">
-                  <div className="flex items-center justify-between px-2">
-                    <span className="font-black text-slate-400 uppercase tracking-widest text-xs md:text-sm">
-                      Итого по точкам
-                    </span>
-                    <span
-                      className={`font-black text-xl md:text-3xl drop-shadow-[0_1px_1px_rgba(0,0,0,0.05)] ${
-                        plannedBudget > 0 && totalBudget > plannedBudget
-                          ? 'text-red-500'
-                          : plannedBudget > 0 && totalBudget <= plannedBudget
-                            ? 'text-emerald-500'
-                            : 'text-brand-yellow'
-                      }`}
-                    >
-                      {totalBudget.toLocaleString('ru-RU')} ₽
-                    </span>
-                  </div>
-                  <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-start lg:justify-between bg-slate-50/50 p-4 rounded-2xl border border-slate-100 w-full">
-                    <Button
-                      onClick={() => {
-                        if (!isAuthenticated) {
-                          setModal('register');
-                          return;
-                        }
-                        if (points.length > 0 && isDirty) {
-                          setShowClearConfirm(true);
-                        } else {
-                          handleConfirmClear(false);
-                        }
-                      }}
-                      disabled={points.length < 2}
-                      variant="ghost"
-                      shape="xl"
-                      className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto bg-white border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-all shadow-sm active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      НОВЫЙ МАРШРУТ
-                    </Button>
-                    <div className="flex flex-col lg:flex-row gap-3 w-full lg:w-auto">
-                      <Button
-                        onClick={async () => {
-                          if (!isAuthenticated) {
-                            setModal('register');
-                            return;
-                          }
-                          try {
-                            setIsOptimizing(true);
-                            const tripId = await ensureTripId();
-                            let result = await tripsApi.optimize(tripId, routeProfile);
-
-                            const backendMessage =
-                              typeof result?.message === 'string' ? result.message : '';
-                            const hasEnoughLocalPoints = points.length >= 2;
-
-                            // Если локально точек достаточно, но бэкенд пишет, что их мало,
-                            // значит точки были только в store и не успели сохраниться в БД.
-                            // Синхронизируем точки в БД и повторяем оптимизацию один раз.
-                            if (
-                              !result?.optimizedPoints &&
-                              hasEnoughLocalPoints &&
-                              backendMessage.includes('Not enough points to optimize')
-                            ) {
-                              const serverPoints = await pointsApi.getAll(tripId);
-                              await Promise.all(
-                                serverPoints.map((p) => pointsApi.remove(tripId, p.id)),
-                              );
-
-                              const recreatedPoints = await Promise.all(
-                                points.map((p, index) =>
-                                  pointsApi.create(tripId, {
-                                    title: p.title,
-                                    lat: p.lat,
-                                    lon: p.lon,
-                                    budget: p.budget ?? 0,
-                                    visitDate: p.visitDate ?? undefined,
-                                    imageUrl: p.imageUrl ?? undefined,
-                                    order: index,
-                                    address: p.address ?? undefined,
-                                    transportMode: p.transportMode,
-                                  }),
-                                ),
-                              );
-
-                              useTripStore.getState().setPoints(recreatedPoints);
-                              result = await tripsApi.optimize(tripId, routeProfile);
-                            }
-
-                            if (result?.optimizedPoints) {
-                              useTripStore.getState().setPoints(result.optimizedPoints);
-                              if (result.metrics) {
-                                setCompareModalData({
-                                  isOpen: true,
-                                  metrics: result.metrics,
-                                });
-                              } else {
-                                toast.success('Маршрут оптимизирован!', { id: 'optimize-success' });
-                              }
-                            } else {
-                              const nextBackendMessage =
-                                typeof result?.message === 'string' ? result.message : '';
-                              const userMessage = nextBackendMessage.includes(
-                                'Not enough points to optimize',
-                              )
-                                ? 'Недостаточно точек в сохранённом маршруте. Сначала сохраните точки, затем повторите оптимизацию.'
-                                : 'Оптимизация не внесла изменений в маршрут.';
-
-                              toast.info(userMessage, {
-                                id: 'optimize-info',
-                              });
-                            }
-                          } catch (error) {
-                            console.error('Optimization error:', error);
-                            toast.error('Ошибка оптимизации', { id: 'optimize-error' });
-                          } finally {
-                            setIsOptimizing(false);
-                          }
-                        }}
-                        disabled={points.length < 2 || isOptimizing}
-                        variant="brand-yellow"
-                        shape="xl"
-                        className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
-                      >
-                        {isOptimizing ? 'ОПТИМИЗАЦИЯ...' : 'ОПТИМИЗИРОВАТЬ МАРШРУТ'}
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          // TRI-104: "Редактировать с AI" = сохранить текущий маршрут,
-                          // найти/создать связанный чат и перейти в AI с sessionId.
-                          // MERGE-NOTE: не переводить в прямой переход без saveCurrentTrip/openOrCreateSessionFromTrip,
-                          // иначе ломается инвариант one-to-one chat<->trip.
-                          if (!isAuthenticated) {
-                            setModal('register');
-                            return;
-                          }
-                          void (async () => {
-                            try {
-                              const tripId = await ensureTripId();
-                              const saved = await saveCurrentTrip();
-                              if (!saved) return;
-
-                              const sessionId = await openOrCreateSessionFromTrip(tripId);
-                              if (!sessionId) {
-                                toast.error('Не удалось открыть AI-чат для маршрута');
-                                return;
-                              }
-
-                              toast.success('Маршрут сохранен. Переходим в AI-чат');
-                              router.push(
-                                `/ai-assistant?sessionId=${encodeURIComponent(sessionId)}`,
-                              );
-                            } catch {
-                              toast.error('Не удалось подготовить маршрут для AI');
-                            }
-                          })();
-                        }}
-                        disabled={points.length === 0}
-                        variant="brand-purple"
-                        shape="xl"
-                        className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
-                      >
-                        РЕДАКТИРОВАТЬ С AI
-                      </Button>
-                      <Button
-                        onClick={async () => {
-                          if (!isAuthenticated) {
-                            setModal('register');
-                            return;
-                          }
-                          const tripId = await ensureTripId();
-                          const autoTitle =
-                            points.length > 1
-                              ? `${points[0]!.title} — ${points[points.length - 1]!.title}`
-                              : points.length === 1
-                                ? points[0]!.title
-                                : 'Мой маршрут';
-                          const updated = await tripsApi.update(
-                            tripId,
-                            isOwner
-                              ? {
-                                  title: autoTitle,
-                                  budget: currentTrip?.budget ?? 0,
-                                  isActive: isActiveRoute,
-                                }
-                              : { isActive: isActiveRoute },
-                          );
-                          updateCurrentTrip(updated);
-                          setSaved();
-                          toast.success('Маршрут сохранён', { id: 'save-route' });
-                        }}
-                        disabled={points.length === 0}
-                        variant="brand-indigo"
-                        shape="xl"
-                        className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
-                      >
-                        СОХРАНИТЬ МАРШРУТ
-                      </Button>
-                    </div>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
         ) : (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto w-full">
             <div className="w-full mb-10">
               <div className="relative group mb-8">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-blue transition-colors">
-                  <MapPin size={20} />
+                  <Search size={20} />
                 </div>
                 <input
                   type="text"
                   value={popularSearch}
                   onChange={(e) => setPopularSearch(e.target.value)}
                   placeholder="Куда"
-                  className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-xl md:rounded-2xl border-none focus:ring-2 focus:ring-brand-blue/20 outline-none text-slate-800 font-bold text-base md:text-lg transition-all placeholder:text-slate-400"
+                  className="w-full pl-12 pr-4 py-4 md:py-5 bg-slate-50 rounded-xl md:rounded-2xl border-none focus:ring-2 focus:ring-brand-blue/20 outline-none text-slate-800 font-bold text-base md:text-lg transition-all placeholder:text-slate-400 shadow-sm"
                 />
               </div>
               <div className="relative -mx-4 px-4 md:mx-0 md:px-0">
@@ -2242,7 +2533,7 @@ export function PlannerPage() {
                       className="group block w-full cursor-pointer"
                       href={`/tours/${trip.id}`}
                     >
-                      <div className="relative aspect-4/5 md:aspect-16/10 rounded-[3rem] overflow-hidden mb-6 shadow-2xl">
+                      <div className="relative aspect-4/3 md:aspect-16/10 rounded-[3rem] overflow-hidden mb-6 shadow-2xl">
                         <img
                           src={trip.img ?? ''}
                           className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 will-change-transform"
@@ -2313,12 +2604,6 @@ export function PlannerPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <CompareSaveModal
-        isOpen={compareModalData.isOpen}
-        onClose={() => setCompareModalData((prev) => ({ ...prev, isOpen: false }))}
-        metrics={compareModalData.metrics!}
-      />
       <LoginModal
         open={modal === 'login'}
         onClose={() => setModal(null)}
@@ -2348,3 +2633,5 @@ export function PlannerPage() {
     </div>
   );
 }
+
+export default PlannerPage;
