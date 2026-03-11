@@ -18,6 +18,7 @@ export interface UpdateTripPayload {
 
 export const tripsApi = {
   getAll: () => api.get<Trip[]>('/trips'),
+  getOne: (id: string) => api.get<Trip>(`/trips/${id}`),
   getPredefined: () => api.get<Trip[]>('/trips/predefined'),
   create: (payload: CreateTripPayload) => api.post<Trip>('/trips', payload),
   update: (id: string, payload: UpdateTripPayload) => api.patch<Trip>(`/trips/${id}`, payload),

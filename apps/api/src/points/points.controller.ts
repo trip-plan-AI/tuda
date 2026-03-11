@@ -41,7 +41,7 @@ export class PointsController {
     @Body() dto: CreatePointDto,
   ) {
     const trip = await this.tripsService.findByIdWithAccess(tripId, user.id);
-    if (trip.ownerId !== user.id && !trip.isActive) {
+    if (trip.ownerId !== user.id && !trip.ownerIsActive) {
       throw new ForbiddenException('Route editing is disabled by the owner');
     }
     return this.pointsService.create(tripId, dto);
@@ -54,7 +54,7 @@ export class PointsController {
     @Body() dto: ReorderPointsDto,
   ) {
     const trip = await this.tripsService.findByIdWithAccess(tripId, user.id);
-    if (trip.ownerId !== user.id && !trip.isActive) {
+    if (trip.ownerId !== user.id && !trip.ownerIsActive) {
       throw new ForbiddenException('Route editing is disabled by the owner');
     }
     return this.pointsService.reorder(tripId, dto);
@@ -68,7 +68,7 @@ export class PointsController {
     @Body() dto: UpdatePointDto,
   ) {
     const trip = await this.tripsService.findByIdWithAccess(tripId, user.id);
-    if (trip.ownerId !== user.id && !trip.isActive) {
+    if (trip.ownerId !== user.id && !trip.ownerIsActive) {
       throw new ForbiddenException('Route editing is disabled by the owner');
     }
     return this.pointsService.update(id, tripId, dto);
@@ -81,7 +81,7 @@ export class PointsController {
     @CurrentUser() user: { id: string },
   ) {
     const trip = await this.tripsService.findByIdWithAccess(tripId, user.id);
-    if (trip.ownerId !== user.id && !trip.isActive) {
+    if (trip.ownerId !== user.id && !trip.ownerIsActive) {
       throw new ForbiddenException('Route editing is disabled by the owner');
     }
     return this.pointsService.remove(id, tripId);
