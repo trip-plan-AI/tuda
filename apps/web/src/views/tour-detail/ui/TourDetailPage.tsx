@@ -61,8 +61,6 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
   const router = useRouter();
   const { currentTrip, setCurrentTrip, setPoints, clearPlanner, isDirty, setCachedRouteInfo } =
     useTripStore();
-  const { currentTrip, setCurrentTrip, setPoints, clearPlanner, isDirty, setCachedRouteInfo } =
-    useTripStore();
   const points = currentTrip?.points || [];
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
   const [isOpening, setIsOpening] = useState(false);
@@ -204,18 +202,6 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     routeInfo,
     setCachedRouteInfo,
   ]);
-  }, [
-    tour,
-    focusCoords,
-    attractions,
-    geocodeCity,
-    clearPlanner,
-    setCurrentTrip,
-    setPoints,
-    router,
-    routeInfo,
-    setCachedRouteInfo,
-  ]);
 
   const handleOpenRoute = useCallback(() => {
     // Если в Planner УЖЕ есть какой-то непустой маршрут
@@ -297,37 +283,35 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           )}
         </div>
 
-            {/* Суммарный route info */}
-            {(routeInfo || isRouteLoading) && (
-              <div className="flex items-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 relative overflow-hidden transition-all duration-300 min-h-[48px] sm:ml-auto">
-                {isRouteLoading && (
-                  <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10">
-                    <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
-                  </div>
-                )}
-                <div className={cn('flex items-center gap-6', isRouteLoading && 'opacity-40')}>
-                  {routeInfo && (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <Clock size={16} className="text-brand-sky" />
-                        <span className="text-sm font-black text-slate-700 leading-none">
-                          {formatDuration(routeInfo.duration)}
-                        </span>
-                      </div>
-                      <div className="w-px h-6 bg-brand-indigo/10" />
-                      <div className="flex items-center gap-2">
-                        <MapPin size={16} className="text-brand-indigo" />
-                        <span className="text-sm font-black text-slate-700 leading-none">
-                          {formatDistance(routeInfo.distance)}
-                        </span>
-                      </div>
-                    </>
-                  )}
-                </div>
+        {/* Суммарный route info */}
+        {(routeInfo || isRouteLoading) && (
+          <div className="mb-8 flex items-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 relative overflow-hidden transition-all duration-300 min-h-[48px]">
+            {isRouteLoading && (
+              <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10">
+                <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
               </div>
             )}
+            <div className={cn('flex items-center gap-6', isRouteLoading && 'opacity-40')}>
+              {routeInfo && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Clock size={16} className="text-brand-sky" />
+                    <span className="text-sm font-black text-slate-700 leading-none">
+                      {formatDuration(routeInfo.duration)}
+                    </span>
+                  </div>
+                  <div className="w-px h-6 bg-brand-indigo/10" />
+                  <div className="flex items-center gap-2">
+                    <MapPin size={16} className="text-brand-indigo" />
+                    <span className="text-sm font-black text-slate-700 leading-none">
+                      {formatDistance(routeInfo.distance)}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Карта с маршрутом */}
         <div className="mb-8">

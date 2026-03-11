@@ -33,85 +33,84 @@ export function PlannerConflictModal({
   onSaveAndReplace,
   onGoToPlannerOnly,
 }: PlannerConflictModalProps) {
-  let title = 'Внимание';
+  let title = 'У вас есть несохраненный маршрут';
   let description: React.ReactNode = '';
 
   if (conflictType === 'landing_new') {
     description = (
       <>
-        В конструкторе уже открыт маршрут{' '}
-        <span className="font-extrabold text-brand-indigo">«{currentRouteTitle}»</span>.
-        <br />
-        При создании нового маршрута текущий будет заменен. Выберите действие:
+        В конструкторе открыт маршрут{' '}
+        <span className="font-semibold text-brand-indigo">«{currentRouteTitle}»</span>. Он будет
+        потерян при создании нового.
       </>
     );
   } else if (conflictType === 'different_route') {
     description = (
       <>
-        Сейчас в Planner открыт маршрут{' '}
-        <span className="font-extrabold text-brand-indigo">«{currentRouteTitle}»</span>.
-        <br />
-        Если продолжить, он будет заменён выбранным маршрутом. Выберите действие:
+        Сейчас в конструкторе открыт маршрут{' '}
+        <span className="font-semibold text-brand-indigo">«{currentRouteTitle}»</span>. Если
+        продолжить, он будет заменён.
       </>
     );
   } else if (conflictType === 'same_route') {
     description = (
       <>
-        В планировщике сейчас открыта старая версия этого же маршрута.
-        <br />
-        Если вы продолжите, все текущие точки на карте будут безвозвратно заменены на новую версию.
+        В конструкторе открыта другая версия этого маршрута. Если продолжить, текущие точки на карте
+        будут заменены.
       </>
     );
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl border-none shadow-2xl rounded-[2.5rem] p-10 overflow-hidden z-[100]">
-        <DialogHeader className="gap-4">
-          <DialogTitle className="text-xl font-black text-brand-indigo uppercase tracking-widest leading-tight">
+      <DialogContent className="sm:max-w-xl border-none shadow-2xl rounded-3xl p-8 overflow-hidden z-[100] gap-8">
+        <DialogHeader className="gap-2">
+          <DialogTitle className="text-2xl font-semibold text-slate-900 leading-tight">
             {title}
           </DialogTitle>
-          <DialogDescription className="text-slate-500 font-bold text-lg leading-snug">
+          <DialogDescription className="text-slate-600 text-base leading-relaxed">
             {description}
           </DialogDescription>
         </DialogHeader>
 
-        <DialogFooter className="flex-col gap-3 mt-8 sm:flex-col">
+        <div className="flex flex-col gap-3 w-full">
           <Button
             type="button"
-            variant="ghost"
-            className="w-full font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50 h-12 rounded-xl"
-            onClick={onCancel}
+            className="w-full font-medium h-12 rounded-xl bg-brand-indigo text-white hover:bg-brand-indigo/90 shadow-md transition-all active:scale-[0.98]"
+            onClick={onSaveAndReplace}
           >
-            Отмена
+            Сохранить текущий и применить новый
           </Button>
 
           <Button
             type="button"
             variant="outline"
-            className="w-full font-bold h-12 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50"
+            className="w-full font-medium h-12 rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-all active:scale-[0.98]"
             onClick={onGoToPlannerOnly}
           >
-            Перейти в планнер (посмотреть старый)
+            Перейти в планнер (посмотреть текущий)
           </Button>
 
-          <Button
-            type="button"
-            className="w-full font-bold h-12 rounded-xl bg-amber-500 text-white hover:bg-amber-600 shadow-lg shadow-amber-500/20"
-            onClick={onSaveAndReplace}
-          >
-            Сохранить старый и заменить
-          </Button>
+          <div className="grid grid-cols-2 gap-3 mt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 h-12 rounded-xl transition-all"
+              onClick={onCancel}
+            >
+              Отмена
+            </Button>
 
-          <Button
-            type="button"
-            variant="brand-indigo"
-            className="w-full font-black uppercase tracking-widest h-12 rounded-xl shadow-lg shadow-brand-indigo/20 bg-rose-600 hover:bg-rose-700"
-            onClick={onReplaceWithoutSave}
-          >
-            Заменить без сохранения
-          </Button>
-        </DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full font-medium h-12 rounded-xl text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-all"
+              onClick={onReplaceWithoutSave}
+            >
+              Заменить без сохранения
+            </Button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
