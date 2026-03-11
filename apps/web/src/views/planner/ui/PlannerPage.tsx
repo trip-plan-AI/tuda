@@ -1029,7 +1029,7 @@ export function PlannerPage() {
   useEffect(() => {
     if (!currentTrip?.id || currentTrip.id.startsWith('guest-') || !isAuthenticated) return;
     tripsApi.getOne(currentTrip.id).then((fresh) => {
-      setCurrentTrip({ ...currentTrip, ownerIsActive: fresh.ownerIsActive, isActive: fresh.isActive });
+      updateCurrentTrip({ ownerIsActive: fresh.ownerIsActive, isActive: fresh.isActive });
     }).catch(() => {});
   }, [currentTrip?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1404,18 +1404,32 @@ export function PlannerPage() {
         const socket = getSocket();
         if (socket.connected) {
           // WS-first: gateway saves to DB and broadcasts point:added back to all clients.
-          // In this case, we don't call addPoint locally because crud.add below will do it.
           socket.emit('point:add', { trip_id: tripId, ...payload, budget: 0 });
         } else {
           // Fallback to REST when WS is disconnected.
-          // Note: pointsApi.create just saves to DB, doesn't update store.
           await pointsApi.create(tripId, { ...payload, budget: 0 });
         }
       }
-      // This is the single place where we add point to local store for both guest and real trips.
-      await crud.add({ ...payload, budget: 0 });
+
+      // We add point to local store for both guest and real trips using the current tripId.
+      // We manually construct the point to ensure it has the correct tripId even if 'crud' is stale.
+      const localPoint = {
+        ...payload,
+        id: `point-${Date.now()}`,
+        tripId,
+        order: useTripStore.getState().currentTrip?.points?.length ?? 0,
+        budget: 0,
+        visitDate: null,
+        imageUrl: null,
+        address: payload.address ?? null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      
+      addPoint(localPoint as any);
+      // We don't use 'crud.add' here to avoid stale closure issues and potential double addition.
     },
-    [crud, ensureTripId],
+    [addPoint, ensureTripId],
   );
 
   const handleRemovePoint = useCallback(
