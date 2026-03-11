@@ -120,7 +120,6 @@ export function LandingPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const debounceFromRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceToRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sendAiQuery = useAiQueryStore((state) => state.sendQuery);
   const createNewSession = useAiQueryStore((state) => state.createNewSession);
   const { currentTrip, setCurrentTrip, addPoint, clearPlanner } = useTripStore();
   const points = currentTrip?.points || [];
@@ -405,7 +404,7 @@ export function LandingPage() {
     if (searchMode === 'ai') {
       if (searchQuery.trim()) {
         createNewSession();
-        void sendAiQuery(searchQuery);
+        sessionStorage.setItem('ai:pending-query', searchQuery.trim());
       }
       router.push('/ai-assistant');
       return;
@@ -522,14 +521,14 @@ export function LandingPage() {
                         <Mic size={24} />
                       </button>
                     </div>
-                    <Link
-                      href="/ai-assistant"
-                      onClick={() => {
-                        if (searchQuery.trim()) {
-                          createNewSession();
-                          void sendAiQuery(searchQuery);
-                        }
-                      }}
+                      <Link
+                        href="/ai-assistant"
+                        onClick={() => {
+                          if (searchQuery.trim()) {
+                            createNewSession();
+                            sessionStorage.setItem('ai:pending-query', searchQuery.trim());
+                          }
+                        }}
                       className="w-14 h-14 md:w-16 md:h-16 lg:w-20 lg:h-20 bg-brand-yellow text-white rounded-full flex items-center justify-center shadow-xl hover:scale-105 active:scale-95 shrink-0 transition-none"
                     >
                       <ArrowRight size={28} className="rotate-0 transition-none text-white" />
@@ -800,7 +799,7 @@ export function LandingPage() {
                     key={idx}
                     onClick={() => {
                       createNewSession();
-                      void sendAiQuery(filter.label);
+                      sessionStorage.setItem('ai:pending-query', filter.label);
                       router.push('/ai-assistant');
                     }}
                     className="px-5 py-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full text-white text-xs md:text-sm font-bold hover:bg-white/20 transition-none"

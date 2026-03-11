@@ -70,6 +70,17 @@ export function AIAssistantPage() {
 
   const activeSession = activeSessionId ? sessions[activeSessionId] : null;
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isSessionsLoading) return;
+
+    const pendingQuery = sessionStorage.getItem('ai:pending-query');
+    if (!pendingQuery) return;
+
+    sessionStorage.removeItem('ai:pending-query');
+    void sendQuery(pendingQuery, activeSession?.tripId ?? undefined);
+  }, [isSessionsLoading, sendQuery, activeSession?.tripId]);
+
   const handleSend = async (query: string) => {
     // Важно: запрос должен идти в контексте активного чата, а не текущего trip из Planner.
     // Иначе новый чат "прилипает" к открытому в Planner маршруту, скрывает кнопку применения
