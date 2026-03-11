@@ -16,6 +16,7 @@ import dynamic from 'next/dynamic';
 import { useUserStore, usersApi } from '@/entities/user';
 import { useTripStore, type Trip } from '@/entities/trip';
 import { useAuthStore } from '@/features/auth';
+import { pointsApi } from '@/entities/route-point';
 import { tripsApi } from '@/entities/trip';
 import { toast } from 'sonner';
 import { cn } from '@/shared/lib/utils';
@@ -137,7 +138,7 @@ function BudgetSummary({
 export function ProfilePage() {
   const router = useRouter();
   const { user, setUser } = useUserStore();
-  const { setCurrentTrip, currentTrip } = useTripStore();
+  const { setCurrentTrip, currentTrip, updateCurrentTrip, setPoints, addPoint, removePoint } = useTripStore();
   const { isAuthenticated } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<'routes' | 'saved'>('routes');
@@ -271,6 +272,65 @@ export function ProfilePage() {
       socket.off('trip:shared');
     };
   }, []);
+
+  useEffect(() => {
+    const socket = getSocket();
+    if (!currentTrip?.id) return;
+
+    const onPointReorder = ({ trip_id, pointIds }: { trip_id: string; pointIds: string[] }) => {
+      if (trip_id !== currentTrip.id) return;
+      const currentPoints = useTripStore.getState().currentTrip?.points || [];
+      const pointMap = new Map(currentPoints.map((p) => [p.id, p]));
+      const newPoints: any[] = [];
+      for (const id of pointIds) {
+        const p = pointMap.get(id);
+        if (p) newPoints.push(p);
+      }
+      if (newPoints.length === currentPoints.length) {
+        setPoints(newPoints);
+      } else {
+        pointsApi.getAll(trip_id).then(setPoints).catch(console.error);
+      }
+    };
+
+    const onPointUpdate = ({ trip_id, point_id, ...patch }: { trip_id: string; point_id: string } & any) => {
+      if (trip_id !== currentTrip.id) return;
+      const currentPoints = useTripStore.getState().currentTrip?.points || [];
+      setPoints(currentPoints.map((p) => (p.id === point_id ? { ...p, ...patch } : p)));
+    };
+
+    const onPointAdd = ({ trip_id, ...point }: { trip_id: string } & any) => {
+      if (trip_id !== currentTrip.id) return;
+      addPoint(point);
+    };
+
+    const onPointDelete = ({ trip_id, point_id }: { trip_id: string; point_id: string }) => {
+      if (trip_id !== currentTrip.id) return;
+      removePoint(point_id);
+    };
+
+    const onTripUpdate = ({ trip_id, ...patch }: { trip_id: string } & any) => {
+      if (trip_id !== currentTrip.id) return;
+      updateCurrentTrip(patch);
+      setSavedTrips((prev) => prev.map((t) => (t.id === trip_id ? { ...t, ...patch } : t)));
+    };
+
+    socket.on('point:reorder', onPointReorder);
+    socket.on('point:update', onPointUpdate);
+    socket.on('point:move', onPointUpdate);
+    socket.on('point:add', onPointAdd);
+    socket.on('point:delete', onPointDelete);
+    socket.on('trip:update', onTripUpdate);
+
+    return () => {
+      socket.off('point:reorder', onPointReorder);
+      socket.off('point:update', onPointUpdate);
+      socket.off('point:move', onPointUpdate);
+      socket.off('point:add', onPointAdd);
+      socket.off('point:delete', onPointDelete);
+      socket.off('trip:update', onTripUpdate);
+    };
+  }, [currentTrip?.id, setPoints, updateCurrentTrip, addPoint, removePoint]);
 
   useEffect(() => {
     if (activeRoute?.id) {
