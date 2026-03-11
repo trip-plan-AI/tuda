@@ -341,84 +341,89 @@ function SortablePointRow({
           )}
         >
           <div className="flex items-center gap-1 md:gap-1.5 shrink-0">
-                <button
-                  onClick={() => onUpdate(point.id, { transportMode: 'driving' })}
-                  className={cn(
-                    'p-1.5 rounded-xl transition-all hover:scale-110',
-                    (point.transportMode || 'driving') === 'driving'
-                      ? 'bg-[#eaf5fd] shadow-sm'
-                      : 'grayscale opacity-50 hover:grayscale-0 hover:opacity-100',
-                  )}
-                  title="На авто"
-                >
-                  <span className="text-sm md:text-base leading-none">🚗</span>
-                </button>
-                <button
-                  onClick={() => onUpdate(point.id, { transportMode: 'foot' })}
-                  className={cn(
-                    'p-1.5 rounded-xl transition-all hover:scale-110',
-                    point.transportMode === 'foot'
-                      ? 'bg-brand-amber/10 shadow-sm'
-                      : 'grayscale opacity-50 hover:grayscale-0 hover:opacity-100',
-                  )}
-                  title="Пешком"
-                >
-                  <span className="text-sm md:text-base leading-none">🚶</span>
-                </button>
-                <button
-                  onClick={() => onUpdate(point.id, { transportMode: 'bike' })}
-                  className={cn(
-                    'p-1.5 rounded-xl transition-all hover:scale-110',
-                    point.transportMode === 'bike'
-                      ? 'bg-emerald-50 shadow-sm'
-                      : 'grayscale opacity-50 hover:grayscale-0 hover:opacity-100',
-                  )}
-                  title="На велосипеде"
-                >
-                  <span className="text-sm md:text-base leading-none">🚲</span>
-                </button>
-                <button
-                  onClick={() => onUpdate(point.id, { transportMode: 'direct' })}
-                  className={cn(
-                    'p-1.5 rounded-xl transition-all hover:scale-110',
-                    point.transportMode === 'direct'
-                      ? 'bg-brand-purple/10 shadow-sm'
-                      : 'grayscale opacity-50 hover:grayscale-0 hover:opacity-100',
-                  )}
-                  title="Прямая линия"
-                >
-                  <span className="text-sm md:text-base leading-none">📏</span>
-                </button>
+            <button
+              onClick={() => onUpdate(point.id, { transportMode: 'driving' })}
+              className={cn(
+                'p-1.5 rounded-xl transition-all hover:scale-110',
+                (point.transportMode || 'driving') === 'driving'
+                  ? 'bg-[#eaf5fd] shadow-sm'
+                  : 'grayscale opacity-50 hover:grayscale-0 hover:opacity-100',
+              )}
+              title="На авто"
+            >
+              <span className="text-sm md:text-base leading-none">🚗</span>
+            </button>
+            <button
+              onClick={() => onUpdate(point.id, { transportMode: 'foot' })}
+              className={cn(
+                'p-1.5 rounded-xl transition-all hover:scale-110',
+                point.transportMode === 'foot'
+                  ? 'bg-brand-amber/10 shadow-sm'
+                  : 'grayscale opacity-50 hover:grayscale-0 hover:opacity-100',
+              )}
+              title="Пешком"
+            >
+              <span className="text-sm md:text-base leading-none">🚶</span>
+            </button>
+            <button
+              onClick={() => onUpdate(point.id, { transportMode: 'bike' })}
+              className={cn(
+                'p-1.5 rounded-xl transition-all hover:scale-110',
+                point.transportMode === 'bike'
+                  ? 'bg-emerald-50 shadow-sm'
+                  : 'grayscale opacity-50 hover:grayscale-0 hover:opacity-100',
+              )}
+              title="На велосипеде"
+            >
+              <span className="text-sm md:text-base leading-none">🚲</span>
+            </button>
+            <button
+              onClick={() => onUpdate(point.id, { transportMode: 'direct' })}
+              className={cn(
+                'p-1.5 rounded-xl transition-all hover:scale-110',
+                point.transportMode === 'direct'
+                  ? 'bg-brand-purple/10 shadow-sm'
+                  : 'grayscale opacity-50 hover:grayscale-0 hover:opacity-100',
+              )}
+              title="Прямая линия"
+            >
+              <span className="text-sm md:text-base leading-none">📏</span>
+            </button>
+          </div>
+          <div className="w-px h-4 bg-slate-100 md:w-1 md:h-1 md:rounded-full md:bg-slate-200" />
+          <div className="relative flex flex-wrap items-center gap-1.5 md:pl-2">
+            {isRouteLoading && (
+              <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10 animate-in fade-in duration-200">
+                <div className="w-4 h-4 border border-brand-indigo border-t-transparent rounded-full animate-spin" />
               </div>
-              <div className="w-px h-4 bg-slate-100 md:w-1 md:h-1 md:rounded-full md:bg-slate-200" />
-              <div className="relative flex flex-wrap items-center gap-1.5 md:pl-2">
-                {isRouteLoading && (
-                  <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10 animate-in fade-in duration-200">
-                    <div className="w-4 h-4 border border-brand-indigo border-t-transparent rounded-full animate-spin" />
-                  </div>
+            )}
+            {leg && (
+              <div
+                className={cn(
+                  'flex flex-wrap items-center gap-x-3 gap-y-1',
+                  isRouteLoading && 'opacity-40',
                 )}
-                {leg && (
-                  <div className={cn('flex flex-wrap items-center gap-x-3 gap-y-1', isRouteLoading && 'opacity-40')}>
-                    {(point.transportMode || 'driving') !== 'direct' && (
-                      <>
-                        <div className="flex items-center gap-1.5 whitespace-nowrap">
-                          <Clock size={12} className="text-brand-blue shrink-0" />
-                          <span className="text-[10px] md:text-xs font-black text-slate-700 uppercase tracking-tight">
-                            {formatDuration(leg.duration)}
-                          </span>
-                        </div>
-                        <div className="w-px h-3 bg-slate-200" />
-                      </>
-                    )}
+              >
+                {(point.transportMode || 'driving') !== 'direct' && (
+                  <>
                     <div className="flex items-center gap-1.5 whitespace-nowrap">
-                      <RouteIcon size={12} className="text-emerald-500 shrink-0" />
-                      <span className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-tight">
-                        {formatDistance(leg.distance)}
+                      <Clock size={12} className="text-brand-blue shrink-0" />
+                      <span className="text-[10px] md:text-xs font-black text-slate-700 uppercase tracking-tight">
+                        {formatDuration(leg.duration)}
                       </span>
                     </div>
-                  </div>
+                    <div className="w-px h-3 bg-slate-200" />
+                  </>
                 )}
+                <div className="flex items-center gap-1.5 whitespace-nowrap">
+                  <RouteIcon size={12} className="text-emerald-500 shrink-0" />
+                  <span className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-tight">
+                    {formatDistance(leg.distance)}
+                  </span>
+                </div>
               </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1382,6 +1387,12 @@ export function PlannerPage() {
     updateCurrentTrip({ budget: newBudget });
     if (currentTrip && !currentTrip.id.startsWith('guest-')) {
       await tripsApi.update(currentTrip.id, { budget: newBudget });
+      import('@/shared/socket/socket-client').then(({ getSocket }) => {
+        getSocket().emit('trip:update', {
+          trip_id: currentTrip.id,
+          budget: newBudget,
+        });
+      });
     }
   };
 
@@ -1754,13 +1765,21 @@ export function PlannerPage() {
                             result.optimizedPoints?.[i] && p.id === result.optimizedPoints[i].id,
                         );
                         const hasRealImprovement =
-                          result.metrics &&
-                          result.metrics.newKm < result.metrics.originalKm - 0.05;
+                          result.metrics && result.metrics.newKm < result.metrics.originalKm - 0.05;
                         if (pointsChanged && hasRealImprovement) {
                           setPreviousPoints([...points]);
                           useTripStore.getState().setPoints(result.optimizedPoints);
                           setLastOptimizedPoints(result.optimizedPoints);
                           setLastOptimizedProfile(routeProfile);
+
+                          // Broadcast reordered points to other collaborators
+                          import('@/shared/socket/socket-client').then(({ getSocket }) => {
+                            getSocket().emit('point:reorder', {
+                              trip_id: tripId,
+                              pointIds: result.optimizedPoints.map((p: RoutePoint) => p.id),
+                            });
+                          });
+
                           setOptimizationResults({
                             status: 'success',
                             metrics: result.metrics || null,

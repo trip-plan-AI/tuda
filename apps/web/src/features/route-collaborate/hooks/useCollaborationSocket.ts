@@ -29,6 +29,13 @@ export function useCollaborationSocket(tripId: string) {
 
     // Real-time point sync (changes from other users)
     socket.on('point:added', ({ point }: { point: any }) => addPoint(point));
+    socket.on('point:reorder', ({ pointIds }: { pointIds: string[] }) => {
+      try {
+        useTripStore.getState().reorderPoints(pointIds);
+      } catch (e) {
+        console.error('Failed to sync point reorder from socket:', e);
+      }
+    });
     socket.on(
       'point:moved',
       ({ point_id, coords }: { point_id: string; coords: { lat: number; lon: number } }) => {
@@ -45,6 +52,15 @@ export function useCollaborationSocket(tripId: string) {
       },
     );
 
+    socket.on('trip:update', (patch: Record<string, unknown>) => {
+      try {
+        const { trip_id, ...data } = patch;
+        useTripStore.getState().updateCurrentTrip(data);
+      } catch (e) {
+        console.error('Failed to sync trip update from socket:', e);
+      }
+    });
+
     return () => {
       socket.emit('leave:trip', { trip_id: tripId });
       socket.off('presence:update');
@@ -54,6 +70,8 @@ export function useCollaborationSocket(tripId: string) {
       socket.off('point:moved');
       socket.off('point:deleted');
       socket.off('point:updated');
+      socket.off('point:reorder');
+      socket.off('trip:update');
     };
   }, [tripId]);
 }
