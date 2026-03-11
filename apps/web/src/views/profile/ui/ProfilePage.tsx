@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   User as UserIcon,
-  Check,
   Pencil,
   Map as MapIcon,
   ArrowUp,
@@ -104,6 +103,14 @@ export function ProfilePage() {
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const progressColor = scrollProgress < 0.4 ? '#0ea5e9' : scrollProgress < 0.8 ? '#4f46e5' : '#9333ea';
   const progressTrackColor = '#e2e8f0';
@@ -219,8 +226,10 @@ export function ProfilePage() {
       const newIsActive = !trip.isActive;
       setSavedTrips(savedTrips.map((t) => ({ ...t, isActive: t.id === routeId ? newIsActive : false })));
       await tripsApi.update(routeId, { isActive: newIsActive });
-      toast.success(newIsActive ? 'Маршрут активирован' : 'Маршрут деактивирован');
-    } catch { toast.error('Ошибка при обновлении статуса'); }
+      toast.success(newIsActive ? 'Маршрут активирован' : 'Маршрут деактивирован', { id: 'route-activation' });
+    } catch {
+      toast.error('Ошибка при обновлении статуса', { id: 'route-activation-error' });
+    }
   };
 
   const handleEditRoute = (trip: Trip) => {
@@ -265,19 +274,26 @@ export function ProfilePage() {
                     onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
                     className="text-lg md:text-xl font-black text-brand-indigo border-b-2 border-brand-blue outline-none bg-transparent min-w-[150px]"
                   />
-                  <button onClick={handleSaveName} className="p-1.5 bg-emerald-500 text-white rounded-lg shadow-lg active:scale-90 transition-transform">
-                    <Check size={16} />
+                  <button
+                    onClick={handleSaveName}
+                    className="p-2 hover:scale-110 active:scale-90 transition-all flex items-center justify-center"
+                    aria-label="Сохранить имя"
+                  >
+                    <span className="text-xl leading-none">💾</span>
                   </button>
                 </div>
               ) : (
                 <>
                   <h2 className="text-lg md:text-xl font-black text-brand-indigo">{user?.name}</h2>
                   <button
-                    onClick={() => { setTempName(user?.name || ''); setIsEditingName(true); }}
-                    className="p-1.5 bg-slate-50 text-slate-400 hover:text-brand-blue hover:bg-slate-100 rounded-lg transition-all active:scale-90"
+                    onClick={() => {
+                      setTempName(user?.name || '');
+                      setIsEditingName(true);
+                    }}
+                    className="p-1 hover:scale-110 active:scale-90 transition-all flex items-center justify-center"
                     aria-label="Редактировать имя"
                   >
-                    <Pencil size={14} />
+                    <span className="text-sm leading-none">✏️</span>
                   </button>
                 </>
               )}
@@ -294,9 +310,9 @@ export function ProfilePage() {
 
         {/* Мобильный бэкграунд */}
         <div className="md:hidden absolute inset-0 bg-slate-100 flex items-start justify-center pt-4">
-          {activeRoute && activeRoute.points && activeRoute.points.length > 0 ? (
+          {isMobile && activeRoute && activeRoute.points && activeRoute.points.length > 0 ? (
             <div className="w-full h-1/2 opacity-60 pointer-events-none grayscale">
-              <RouteMap points={activeRoute.points} onPointDragEnd={() => {}} />
+              <RouteMap key={`bg-${activeRoute.id}-${activeTab}`} points={activeRoute.points} onPointDragEnd={() => {}} />
             </div>
           ) : (
             <MapIcon size={48} className="text-slate-200 mt-10" />
@@ -369,7 +385,7 @@ export function ProfilePage() {
             <div className="h-full overflow-y-auto p-3 md:p-4 flex flex-col no-scrollbar">
               {activeTab === 'routes' ? (
                 activeRoute ? (
-                  <div className="space-y-3 w-full h-full flex flex-col animate-in fade-in duration-500">
+                  <div className="space-y-3 w-full h-full flex flex-col">
                     <div className="flex justify-between items-center px-1">
                       <h3 className="text-[10px] font-black text-brand-indigo uppercase tracking-widest">Активный маршрут</h3>
                       <Button variant="outline" size="sm" onClick={() => handleEditRoute(activeRoute)} className="h-7 px-2 rounded-lg border-slate-200 text-slate-500 font-bold text-[9px]">
@@ -413,6 +429,13 @@ export function ProfilePage() {
                         <BudgetSummary plannedBudget={activeRoute.budget} totalBudget={activeRouteTotalBudget} />
                       </div>
                     </div>
+
+                    {/* Превью карты (только мобилка) */}
+                    {isMobile && (
+                      <div className="w-full aspect-[16/9] md:hidden rounded-2xl overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100 mt-3">
+                        <RouteMap key={`card-${activeRoute.id}-${activeTab}`} points={activeRoute.points || []} onPointDragEnd={() => {}} />
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-6">
@@ -429,7 +452,7 @@ export function ProfilePage() {
                 </div>
               ) : savedTrips.length > 0 ? (
                 <div ref={savedListScrollRef} onScroll={handleContentScroll} className="h-full overflow-y-auto pr-1 no-scrollbar">
-                  <div className="space-y-3 w-full animate-in fade-in duration-500 pb-2">
+                  <div className="space-y-3 w-full pb-2">
                     {savedTrips.map((route) => {
                       const routeTotalBudget = route.points?.reduce((sum, p) => sum + (p.budget || 0), 0) || 0;
                       return (
@@ -478,10 +501,10 @@ export function ProfilePage() {
         </div>
 
 
-        <div className="hidden md:flex flex-1 relative bg-slate-50 items-center justify-center overflow-hidden p-100 md:p-4">
+        <div className="hidden md:flex flex-1 relative bg-slate-50 items-center justify-center overflow-hidden p-4">
           <div className="w-full h-full max-w-[96%] max-h-[96%] overflow-hidden relative rounded-2xl border border-slate-200 shadow-lg">
-            {activeRoute && activeRoute.points && activeRoute.points.length > 0 ? (
-              <RouteMap points={activeRoute.points} onPointDragEnd={() => {}} />
+            {!isMobile && activeRoute && activeRoute.points && activeRoute.points.length > 0 ? (
+              <RouteMap key={`desktop-${activeRoute.id}-${activeTab}`} points={activeRoute.points} onPointDragEnd={() => {}} />
             ) : (
               <MapIcon 
                 size={44} 

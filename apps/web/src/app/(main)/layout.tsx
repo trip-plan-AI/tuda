@@ -9,9 +9,9 @@ import { Footer } from '@/widgets/footer';
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLanding = pathname === '/';
-  
+  const isProfile = pathname.startsWith('/profile');
+
 return (
-    // 1. Добавили `flex flex-col`, чтобы Header, Контент и Footer аккуратно делили высоту экрана
     <div className="bg-white min-h-[112vh] w-full flex flex-col" style={{zoom: 0}}>
       {isLanding ? (
         <>
@@ -35,7 +35,7 @@ return (
         <>
           <Header />
           <div className="flex flex-1 w-full pt-0">
-            <div className="flex w-full">
+            <div className={`flex w-full${isProfile ? '' : ' max-w-276 mx-auto'}`}>
               <Sidebar />
               <main className="flex-1 flex flex-col relative w-full min-w-0 bg-white">
                 {children}

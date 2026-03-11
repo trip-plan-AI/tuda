@@ -761,7 +761,21 @@ export function PlannerPage() {
             setIsActiveRoute(target.isActive);
           }
         } else {
-          void ensureTripId();
+          const emptyTrip: Trip = {
+            id: `guest-${Date.now()}`,
+            ownerId: 'guest',
+            title: 'Мой маршрут',
+            description: null,
+            budget: 0,
+            startDate: null,
+            endDate: null,
+            isActive: false,
+            isPredefined: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            points: [],
+          };
+          setCurrentTrip(emptyTrip);
         }
       })
       .catch(console.error);
@@ -1649,7 +1663,7 @@ export function PlannerPage() {
                             return;
                           }
                         }}
-                        disabled={isAuthenticated && points.length === 0}
+                        disabled={points.length === 0}
                         variant="brand-purple"
                         shape="xl"
                         className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
@@ -1678,7 +1692,7 @@ export function PlannerPage() {
                           setSaved();
                           toast.success('Маршрут сохранён', { id: 'save-route' });
                         }}
-                        disabled={isAuthenticated && points.length === 0}
+                        disabled={points.length === 0}
                         variant="brand-indigo"
                         shape="xl"
                         className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
