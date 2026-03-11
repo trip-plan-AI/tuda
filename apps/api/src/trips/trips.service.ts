@@ -88,6 +88,14 @@ export class TripsService {
     const trip = await this.findById(id);
     if (trip.ownerId !== userId)
       throw new ForbiddenException('Only owner can update');
+
+    if (dto.isActive === true) {
+      await this.db
+        .update(schema.trips)
+        .set({ isActive: false })
+        .where(eq(schema.trips.ownerId, userId));
+    }
+
     const [updated] = await this.db
       .update(schema.trips)
       .set({ ...dto, updatedAt: new Date() })
