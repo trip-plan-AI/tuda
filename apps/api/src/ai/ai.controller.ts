@@ -306,7 +306,14 @@ ${JSON.stringify(points)}
       points.map((point) => ({ title: point.title, address: point.address })),
     );
 
-    const dateMap = new Map<string, Array<(typeof enriched)[number]>>();
+    const dateMap = new Map<
+      string,
+      Array<
+        (typeof enriched)[number] & {
+          budget: number;
+        }
+      >
+    >();
     if (points.length === 0) {
       dateMap.set(new Date().toISOString(), []);
     } else {
@@ -317,7 +324,12 @@ ${JSON.stringify(points)}
           enriched.find((item) => item.title === point.title)?.description ??
           `Интересное место: ${point.title}.`;
 
-        bucket.push({ title: point.title, address: point.address, description });
+        bucket.push({
+          title: point.title,
+          address: point.address,
+          description,
+          budget: typeof point.budget === 'number' ? point.budget : 0,
+        });
         dateMap.set(date, bucket);
       });
     }
@@ -325,7 +337,7 @@ ${JSON.stringify(points)}
     const days = Array.from(dateMap.entries()).map(([date, dayPoints], index) => ({
       day_number: index + 1,
       date,
-      day_budget_estimated: 0,
+      day_budget_estimated: dayPoints.reduce((sum, point) => sum + (point.budget || 0), 0),
       day_start_time: '10:00',
       day_end_time: '20:00',
       points: dayPoints.map((point, pointIndex) => ({
@@ -334,7 +346,7 @@ ${JSON.stringify(points)}
         arrival_time: '10:00',
         departure_time: '12:00',
         visit_duration_min: 90,
-        estimated_cost: 0,
+        estimated_cost: point.budget || 0,
         poi: {
           id: `${index + 1}-${pointIndex + 1}`,
           name: point.title,
@@ -348,7 +360,9 @@ ${JSON.stringify(points)}
 
     const routePlan: RoutePlan = {
       city: trip.title,
-      total_budget_estimated: trip.budget ?? 0,
+      total_budget_estimated:
+        trip.budget ??
+        days.reduce((sum, day) => sum + (day.day_budget_estimated || 0), 0),
       days,
       notes: `Бюджет: ${trip.budget ?? 'неограничен'}`,
     };
