@@ -584,6 +584,10 @@ const weatherIcons = [Cloud, Sun, CloudSun, Wind];
 
 export function PlannerPage() {
   // TRI-104: Planner выступает конечной точкой синхронизации для маршрутов из AI-чата.
+  // MERGE-NOTE (SYNC CONTRACT):
+  // - applyTripId: какой маршрут нужно открыть из AI.
+  // - draftMessageId: индикатор, что пришла новая AI-версия (даже если tripId тот же).
+  // Удаление любого из этих сигналов ломает предупреждающую модалку при возврате из чата.
   const router = useRouter();
   const searchParams = useSearchParams();
   const { openOrCreateSessionFromTrip } = useAiQueryStore();
@@ -596,11 +600,15 @@ export function PlannerPage() {
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const justMigratedRef = useRef(false);
+  // TRI-104: idempotency-guard для обработки applyTripId.
+  // Нужен, чтобы не срабатывали повторные toasts/замены при re-render и router.replace.
   const handledApplyTripIdRef = useRef<string | null>(null);
 
   const [isActiveRoute, setIsActiveRoute] = useState(false);
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
   const [showBudgetWarning, setShowBudgetWarning] = useState(true);
+  // TRI-104: принудительный remount карты после подмены маршрута из AI.
+  // Иначе часть слоёв/полилиний может остаться от предыдущего trip.
   const [lastMapRenderAt, setLastMapRenderAt] = useState<number>(Date.now());
 
   const [editingPointId, setEditingPointId] = useState<string | null>(null);
@@ -609,6 +617,8 @@ export function PlannerPage() {
   const [popularSearch, setPopularSearch] = useState('');
   const [predefinedTrips, setPredefinedTrips] = useState<Trip[]>([]);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  // TRI-104: state модалки конфликтов при переходе AI -> Planner.
+  // Если убрать эти состояния, вернётся silent-replace сценарий без явного решения пользователя.
   const [showApplyConfirm, setShowApplyConfirm] = useState(false);
   const [applyModalType, setApplyModalType] = useState<'same' | 'different'>('different');
   const [pendingApplyTripId, setPendingApplyTripId] = useState<string | null>(null);
@@ -1246,11 +1256,16 @@ export function PlannerPage() {
       const targetPoints = await pointsApi.getAll(tripId);
       setCurrentTrip({ ...target, points: targetPoints });
       setSaved();
+      // TRI-104: ремоунт карты после обновления trip/points.
+      // Если убрать, UI может показывать визуальные артефакты старого маршрута.
       setLastMapRenderAt(Date.now());
       handledApplyTripIdRef.current = tripId;
 
       const params = new URLSearchParams(searchParams.toString());
+      // TRI-104: очищаем applyTripId после успешного применения.
+      // Если убрать delete/replace, effect будет ловить applyTripId повторно и зациклит toasts/modal.
       params.delete('applyTripId');
+      params.delete('draftMessageId');
       const nextQuery = params.toString();
       router.replace(nextQuery ? `/planner?${nextQuery}` : '/planner');
 
@@ -1265,6 +1280,8 @@ export function PlannerPage() {
     // перед заменой показываем модалку выбора действия.
     const incomingTripId = searchParams.get('applyTripId');
     const draftMessageId = searchParams.get('draftMessageId');
+    // TRI-104: skip-conditions для безопасной идемпотентной обработки.
+    // Если ослабить условия ниже, модалка/применение будут срабатывать лишний раз.
     if (!incomingTripId || incomingTripId.startsWith('guest-')) return;
     if (handledApplyTripIdRef.current === incomingTripId) return;
 
@@ -1276,6 +1293,7 @@ export function PlannerPage() {
     if (currentTrip.id === incomingTripId) {
       // Для одного и того же маршрута считаем переход из чата потенциально новой версией,
       // если пришёл draftMessageId или есть несохранённые локальные правки.
+      // MERGE-NOTE: draftMessageId критичен для кейса "same trip, new AI draft".
       if (Boolean(draftMessageId) || isDirty) {
         setPendingApplyTripId(incomingTripId);
         setApplyModalType('same');
@@ -2019,6 +2037,9 @@ export function PlannerPage() {
       </Dialog>
 
       <Dialog open={showApplyConfirm} onOpenChange={setShowApplyConfirm}>
+        {/* TRI-104: модалка явного решения пользователя при входящем AI-draft.
+            Функция: предотвращает неосознанную замену текущего маршрута.
+            Если убрать модалку, пользователь снова получит silent replace без контроля. */}
         <DialogContent className="sm:max-w-xl rounded-[2rem] border-none shadow-2xl p-8 md:p-10">
           <DialogHeader className="gap-3">
             <DialogTitle className="text-2xl font-black text-brand-indigo tracking-tight">
@@ -2057,6 +2078,8 @@ export function PlannerPage() {
               onClick={() => {
                 void (async () => {
                   if (!pendingApplyTripId) return;
+                  // TRI-104: "Заменить" = загрузить маршрут из AI и закрыть модалку.
+                  // Если убрать applyIncomingTrip, кнопка станет визуальной и ничего не изменит.
                   await applyIncomingTrip(pendingApplyTripId);
                   setShowApplyConfirm(false);
                   setPendingApplyTripId(null);
@@ -2069,6 +2092,8 @@ export function PlannerPage() {
               variant="outline"
               className="w-full h-14 text-base font-bold text-slate-500 hover:bg-slate-50 hover:text-slate-700 border-2 border-slate-200 rounded-xl"
               onClick={() => {
+                // TRI-104: "Отмена" = оставить текущий маршрут без изменений.
+                // Если убрать reset pendingApplyTripId, возможно повторное срабатывание при следующем рендере.
                 setShowApplyConfirm(false);
                 setPendingApplyTripId(null);
                 toast.info('Применение маршрута из AI-чата отменено');

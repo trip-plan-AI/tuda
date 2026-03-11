@@ -100,6 +100,10 @@ export const useTripStore = create<TripStore>()(
     }),
     {
       name: 'trip-planner-storage',
+      // TRI-104: сохраняем isDirty в localStorage, чтобы Planner после перехода из AI
+      // корректно понимал, есть ли несохранённые локальные изменения в открытом маршруте.
+      // MERGE-NOTE: если убрать isDirty из persist, модалка при applyTripId может
+      // не показаться после возврата из AI-чата, и пользователь потеряет контекст решения.
       partialize: (state) => ({ currentTrip: state.currentTrip, isDirty: state.isDirty }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

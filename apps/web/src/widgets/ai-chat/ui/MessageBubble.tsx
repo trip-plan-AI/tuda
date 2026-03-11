@@ -22,6 +22,11 @@ export function MessageBubble({
   // TRI-104: bubble знает контекст связки chat<->trip и меняет CTA:
   // "Применить план" только для первого создания trip из чата.
   // Для уже связанного trip — только переход в Planner.
+  // MERGE-NOTE (CONFLICT-SAFE):
+  // 1) Не возвращайте кнопку "Обновить маршрут" для hasLinkedTrip.
+  // 2) Для linked-trip обязательно передавайте draftMessageId в query,
+  //    иначе Planner не поймёт, что пришла новая версия из чата,
+  //    и модалка замены может не сработать.
   // MERGE-NOTE: если переносите кнопки из bubble в другой компонент, сохраните эту развилку,
   // иначе сломается UX-логика one-to-one связи.
   const isAssistant = message.role === 'assistant';
@@ -144,6 +149,11 @@ export function MessageBubble({
                 {(wasApplied || hasLinkedTrip) && (
                   <Link
                     href={
+                      // TRI-104 / DRAFT-HANDOFF:
+                      // Задача: передать в Planner факт, что переход идёт из конкретной AI-версии.
+                      // Функция: draftMessageId триггерит сравнение/предупреждение в PlannerPage.
+                      // Если убрать draftMessageId, переход на тот же tripId может выглядеть как
+                      // "ничего нового", и пользователь не увидит предупреждение о замене.
                       appliedTripId
                         ? `/planner?applyTripId=${encodeURIComponent(appliedTripId)}&draftMessageId=${encodeURIComponent(message.id)}`
                         : '/planner'

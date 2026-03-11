@@ -429,9 +429,13 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
   },
 
   applyPlanToCurrentTrip: (messageId) => {
-    // TRI-104: единая точка sync AI -> Planner.
-    // Новое правило: из чата разрешено только ПЕРВОЕ применение (создание/первичная привязка trip).
-    // Если trip уже привязан, повторное применение в БД не выполняем — пользователь идет в Planner.
+    // TRI-104 / UX-SAFE-APPLY:
+    // Задача: запретить «тихое» обновление маршрута из AI-чата после первичного применения.
+    // Функция: этот метод разрешает запись в БД только один раз (когда session.tripId ещё не привязан).
+    // Если убрать правило ниже, кнопка из чата снова начнёт перезаписывать маршрут в БД без
+    // явного подтверждения в Planner, что ломает продуктовый сценарий и повышает риск потери правок.
+    // MERGE-NOTE: при конфликтах всегда сохраняйте инвариант:
+    // "first apply in chat -> create/link trip", "next applies -> open Planner for explicit decision".
     const { activeSessionId, sessions } = get();
     const activeSession = activeSessionId ? sessions[activeSessionId] : null;
     const message = activeSession?.messages.find((item) => item.id === messageId);
@@ -439,6 +443,12 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     if (!activeSession?.sessionId || !message?.routePlan) return Promise.resolve(null);
 
     if (activeSession.tripId) {
+      // TRI-104 / LINKED-CHAT-DRAFT:
+      // Задача: для уже связанного чата помечать выбранную AI-версию как актуальную,
+      // но НЕ отправлять update в БД.
+      // Функция: обновляем lastAppliedPlanMessageId локально, чтобы UI показал переход в Planner.
+      // Если убрать этот блок, пользователь не увидит корректный CTA/состояние "версия выбрана",
+      // а логика перехода по draftMessageId станет непредсказуемой при слияниях.
       set((state) => {
         if (!state.activeSessionId) return {};
         const targetSession = state.sessions[state.activeSessionId];
@@ -470,10 +480,11 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         route_plan: message.routePlan,
       })
       .then(async (result) => {
-        // TRI-104 FIX:
-        // Не перетираем текущий Planner-store на странице AI.
-        // Иначе теряется dirty-state текущего маршрута и Planner не показывает
-        // модалку сохранения при переходе с applyTripId.
+        // TRI-104 / NO-CROSS-STORE-MUTATION:
+        // Задача: развязать состояние страницы AI и локальное состояние Planner.
+        // Функция: после apply обновляем только AI session store, не трогаем useTripStore.
+        // Если вернуть прямую мутацию Planner-store отсюда, исчезнет корректный dirty-контекст
+        // при возврате в Planner и снова появятся race-condition между страницами.
 
         set((state) => {
           if (!state.activeSessionId) return {};
