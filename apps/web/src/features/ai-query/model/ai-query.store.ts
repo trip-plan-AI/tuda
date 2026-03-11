@@ -28,15 +28,53 @@ interface AiSessionDetailsResponse {
   }>;
 }
 
+interface ApplySessionPlanResponse {
+  trip_id: string;
+  mode: 'created' | 'updated';
+}
+
+interface SessionFromTripResponse {
+  session_id: string;
+  trip_id: string;
+}
+
+interface CreateSessionResponse {
+  session_id: string;
+  trip_id: string | null;
+  created_at: string;
+}
+
 interface HttpError {
   status?: number;
   message?: string;
+  code?: string;
+  session_id?: string;
+}
+
+function getPendingHandoffTargetSessionId(): string | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: защитить handoff Landing -> AI от потери targetSessionId во время загрузки списка сессий.
+    // 3) Если убрать: loadSessions может активировать другой чат, и первый запрос/скелетон будут не в том окне.
+    // 4) Возможен конфликт с ветками, где handoff хранится не в sessionStorage, а в router state/query params.
+    const raw = window.sessionStorage.getItem('ai:pending-handoff');
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { targetSessionId?: unknown };
+    if (typeof parsed.targetSessionId !== 'string' || parsed.targetSessionId.length === 0)
+      return null;
+
+    return parsed.targetSessionId;
+  } catch {
+    return null;
+  }
 }
 
 function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value,
-  );
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 interface AiQueryStore {
@@ -49,7 +87,12 @@ interface AiQueryStore {
   lastAppliedPlanMessageId: string | null;
   loadSessions: () => Promise<void>;
   sendQuery: (query: string, tripId?: string) => Promise<void>;
-  applyPlanToCurrentTrip: (messageId: string) => void;
+  // TRI-104: применяет AI-план в Planner-trip и возвращает tripId для навигации/подсветки UI.
+  // MERGE-NOTE: контракт используется в AIAssistantPage и MessageBubble, не менять тип без синхронных правок UI.
+  applyPlanToCurrentTrip: (messageId: string) => Promise<string | null>;
+  // TRI-104: ищет или создаёт AI-сессию для tripId при входе из Planner по кнопке "Редактировать с AI".
+  // MERGE-NOTE: при изменении backend response обновите эту сигнатуру и маппинг ниже.
+  openOrCreateSessionFromTrip: (tripId: string) => Promise<string | null>;
   createNewSession: (tripId?: string | null) => string;
   switchSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
@@ -82,6 +125,8 @@ function sanitizeQuery(query: string) {
 
 function mapErrorToUserMessage(error: HttpError) {
   if (error.status === 401) return 'Сессия истекла. Выполните вход повторно.';
+  if (error.code === 'NEED_CITY')
+    return 'Понял идею. Уточните, пожалуйста, город, для которого построить маршрут.';
   if (error.status === 422)
     return 'Не удалось построить маршрут по запросу. Уточните город и предпочтения.';
   if (error.status === 429) return 'Слишком много запросов. Подождите немного и повторите.';
@@ -132,6 +177,9 @@ function createSession(tripId: string | null = null): ChatSession {
     id: crypto.randomUUID(),
     title: 'Новый чат',
     tripId,
+    // Инвариант TRI-106:
+    // sessionId === null допустим только для локального пустого чата
+    // до первой отправки user_query на backend.
     sessionId: null,
     messages: [],
     lastAppliedPlanMessageId: null,
@@ -188,7 +236,10 @@ function syncLegacyFields(sessions: Record<string, ChatSession>, activeSessionId
   };
 }
 
-function ensureActiveSession(state: AiQueryStore): { sessions: Record<string, ChatSession>; activeSessionId: string } {
+function ensureActiveSession(state: AiQueryStore): {
+  sessions: Record<string, ChatSession>;
+  activeSessionId: string;
+} {
   if (state.activeSessionId && state.sessions[state.activeSessionId]) {
     return { sessions: state.sessions, activeSessionId: state.activeSessionId };
   }
@@ -201,228 +252,346 @@ function ensureActiveSession(state: AiQueryStore): { sessions: Record<string, Ch
 }
 
 export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
-      sessions: {},
-      activeSessionId: null,
-      messages: [],
-      isLoading: false,
-      isSessionsLoading: false,
-      sessionId: null,
-      lastAppliedPlanMessageId: null,
+  sessions: {},
+  activeSessionId: null,
+  messages: [],
+  isLoading: false,
+  isSessionsLoading: false,
+  sessionId: null,
+  lastAppliedPlanMessageId: null,
 
-      loadSessions: async () => {
-        set({ isSessionsLoading: true });
+  loadSessions: async () => {
+    set({ isSessionsLoading: true });
 
-        try {
-          const list = await api.get<AiSessionListItemResponse[]>('/ai/sessions');
+    try {
+      const list = await api.get<AiSessionListItemResponse[]>('/ai/sessions');
 
-          if (list.length === 0) {
-            set((state) => {
-              const ensured = ensureActiveSession(state);
-              return {
-                sessions: ensured.sessions,
-                activeSessionId: ensured.activeSessionId,
-                isSessionsLoading: false,
-                ...syncLegacyFields(ensured.sessions, ensured.activeSessionId),
-              };
-            });
-            return;
+      if (list.length === 0) {
+        set((state) => {
+          const ensured = ensureActiveSession(state);
+          return {
+            sessions: ensured.sessions,
+            activeSessionId: ensured.activeSessionId,
+            isSessionsLoading: false,
+            ...syncLegacyFields(ensured.sessions, ensured.activeSessionId),
+          };
+        });
+        return;
+      }
+
+      const remoteSessions = list.reduce<Record<string, ChatSession>>((acc, item) => {
+        const id = item.id;
+        acc[id] = {
+          id,
+          title: item.title || 'Новый чат',
+          tripId: item.trip_id,
+          sessionId: item.id,
+          messages: [],
+          lastAppliedPlanMessageId: null,
+          createdAt: item.created_at,
+          updatedAt: item.created_at,
+        };
+        return acc;
+      }, {});
+
+      let nextActiveSessionId: string | null = null;
+
+      set((state) => {
+        const localTransientSessions = Object.values(state.sessions).reduce<
+          Record<string, ChatSession>
+        >((acc, session) => {
+          // Сохраняем локальные черновики (sessionId=null)
+          // и оптимистично-промоутнутые серверные сессии,
+          // которые еще не успели попасть в ответ /ai/sessions.
+          const shouldKeepLocal =
+            session.sessionId === null ||
+            (session.sessionId !== null && !remoteSessions[session.sessionId]);
+
+          if (shouldKeepLocal) {
+            acc[session.id] = session;
           }
+          return acc;
+        }, {});
 
-          const remoteSessions = list.reduce<Record<string, ChatSession>>((acc, item) => {
-            const id = item.id;
-            acc[id] = {
-              id,
-              title: item.title || 'Новый чат',
-              tripId: item.trip_id,
-              sessionId: item.id,
-              messages: [],
-              lastAppliedPlanMessageId: null,
-              createdAt: item.created_at,
-              updatedAt: item.created_at,
-            };
-            return acc;
-          }, {});
-
-          let nextActiveSessionId: string | null = null;
-
-          set((state) => {
-            const localTransientSessions = Object.values(state.sessions).reduce<Record<string, ChatSession>>(
-              (acc, session) => {
-                if (session.sessionId === null) {
-                  acc[session.id] = session;
-                }
-                return acc;
-              },
-              {},
-            );
-
-            const mergedSessions = {
-              ...remoteSessions,
-              ...localTransientSessions,
-            };
-
-            nextActiveSessionId =
-              state.activeSessionId && mergedSessions[state.activeSessionId]
-                ? state.activeSessionId
-                : (list[0]?.id ?? null);
-
-            return {
-              sessions: mergedSessions,
-              activeSessionId: nextActiveSessionId,
-              isSessionsLoading: false,
-              ...syncLegacyFields(mergedSessions, nextActiveSessionId),
-            };
-          });
-
-          if (nextActiveSessionId && remoteSessions[nextActiveSessionId]) {
-            await get().switchSession(nextActiveSessionId);
-          }
-        } catch {
-          set({ isSessionsLoading: false });
-        }
-      },
-
-      sendQuery: async (query, tripId) => {
-        const normalized = sanitizeQuery(query);
-        if (!normalized || get().isLoading) return;
-
-        const ensured = ensureActiveSession(get());
-        const activeId = ensured.activeSessionId;
-        const currentSession = ensured.sessions[activeId] ?? createSession(tripId ?? null);
-        const requestId = crypto.randomUUID();
-
-        const userMessage: ChatMessage = {
-          id: requestId,
-          role: 'user',
-          content: normalized,
-          timestamp: new Date().toISOString(),
+        const mergedSessions = {
+          ...remoteSessions,
+          ...localTransientSessions,
         };
 
-        const preRequestSession: ChatSession = {
-          ...currentSession,
-          tripId: tripId ?? currentSession.tripId,
-          title: currentSession.messages.length === 0 ? normalized.slice(0, 60) : currentSession.title,
-          messages: [...currentSession.messages, userMessage],
+        // TRI-106 / MERGE-GUARD
+        // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+        // 2) Потребность: при наличии pending-handoff удержать activeSessionId на целевом локальном чате,
+        //    чтобы UI (первое user-message + loader) рендерился в правильной сессии.
+        // 3) Если убрать: воспроизводится race-condition — список сессий перехватывает фокус на другой чат.
+        // 4) Возможен конфликт с веткой feature/TRI-104-ai-planner-interaction,
+        //    где activeSessionId может приоритетно вычисляться от currentTrip/trip-session.
+        const pendingHandoffTargetSessionId = getPendingHandoffTargetSessionId();
+
+        nextActiveSessionId =
+          (pendingHandoffTargetSessionId && mergedSessions[pendingHandoffTargetSessionId]
+            ? pendingHandoffTargetSessionId
+            : null) ??
+          (state.activeSessionId && mergedSessions[state.activeSessionId]
+            ? state.activeSessionId
+            : (list[0]?.id ?? null));
+
+        return {
+          sessions: mergedSessions,
+          activeSessionId: nextActiveSessionId,
+          isSessionsLoading: false,
+          ...syncLegacyFields(mergedSessions, nextActiveSessionId),
+        };
+      });
+
+      if (nextActiveSessionId && remoteSessions[nextActiveSessionId]) {
+        await get().switchSession(nextActiveSessionId);
+      }
+    } catch {
+      set({ isSessionsLoading: false });
+    }
+  },
+
+  sendQuery: async (query, tripId) => {
+    const normalized = sanitizeQuery(query);
+    if (!normalized || get().isLoading) return;
+
+    const ensured = ensureActiveSession(get());
+    const activeId = ensured.activeSessionId;
+    const currentSession = ensured.sessions[activeId] ?? createSession(tripId ?? null);
+    const requestId = crypto.randomUUID();
+    let ensuredSessionId = currentSession.sessionId;
+
+    const userMessage: ChatMessage = {
+      id: requestId,
+      role: 'user',
+      content: normalized,
+      timestamp: new Date().toISOString(),
+    };
+
+    const preRequestSession: ChatSession = {
+      ...currentSession,
+      tripId: tripId ?? currentSession.tripId,
+      title: currentSession.messages.length === 0 ? normalized.slice(0, 60) : currentSession.title,
+      messages: [...currentSession.messages, userMessage],
+      updatedAt: new Date().toISOString(),
+    };
+
+    const preRequestSessions = {
+      ...ensured.sessions,
+      [activeId]: preRequestSession,
+    };
+
+    set(() => ({
+      sessions: preRequestSessions,
+      activeSessionId: activeId,
+      isLoading: true,
+      ...syncLegacyFields(preRequestSessions, activeId),
+    }));
+
+    try {
+      ensuredSessionId = preRequestSession.sessionId;
+
+      if (!ensuredSessionId) {
+        // TRI-106 / MERGE-GUARD
+        // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+        // 2) Потребность: серверная сессия должна быть создана до /ai/plan, чтобы даже первый запрос
+        //    (включая NEED_CITY) был связан с постоянным session_id.
+        // 3) Если убрать: first-turn запросы снова пойдут с session_id=null и могут склеиваться между чатами.
+        // 4) Возможен конфликт с веткой feature/TRI-104-ai-planner-interaction,
+        //    если в ней ожидается старый flow с ленивым созданием сессии внутри /ai/plan.
+        const created = await api.post<CreateSessionResponse>('/ai/sessions', {
+          trip_id: tripId && isUuid(tripId) ? tripId : undefined,
+        });
+
+        ensuredSessionId = created.session_id;
+
+        set((state) => {
+          const latestActive = state.sessions[activeId];
+          if (!latestActive) return state;
+
+          const promotedSession: ChatSession = {
+            ...latestActive,
+            id: ensuredSessionId as string,
+            sessionId: ensuredSessionId as string,
+            tripId: created.trip_id,
+            updatedAt: new Date().toISOString(),
+          };
+
+          const nextSessions = { ...state.sessions };
+          if (activeId !== promotedSession.id) {
+            delete nextSessions[activeId];
+          }
+          nextSessions[promotedSession.id] = promotedSession;
+
+          return {
+            sessions: nextSessions,
+            activeSessionId: promotedSession.id,
+            ...syncLegacyFields(nextSessions, promotedSession.id),
+          };
+        });
+      }
+
+      const payload: {
+        user_query: string;
+        trip_id?: string;
+        session_id: string | null;
+      } = {
+        user_query: normalized,
+        session_id: ensuredSessionId,
+      };
+
+      if (tripId && isUuid(tripId)) {
+        payload.trip_id = tripId;
+      }
+
+      const response = await api.post<AiPlanResponse>('/ai/plan', {
+        ...payload,
+      });
+
+      const assistantMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content:
+          `Составил маршрут по городу ${response.route_plan.city} ` +
+          `на ${response.route_plan.days.length} дн.${fallbackHint(response.meta)}`,
+        routePlan: response.route_plan,
+        meta: response.meta,
+        timestamp: new Date().toISOString(),
+      };
+
+      set((state) => {
+        const sessionKey = ensuredSessionId ?? activeId;
+        const activeSession = state.sessions[sessionKey] ?? null;
+        if (!activeSession) {
+          return { isLoading: false };
+        }
+
+        const persistedSessionId = response.session_id;
+        const nextSession: ChatSession = {
+          ...activeSession,
+          id: persistedSessionId,
+          sessionId: persistedSessionId,
+          messages: [...activeSession.messages, assistantMessage],
           updatedAt: new Date().toISOString(),
         };
 
-        const preRequestSessions = {
-          ...ensured.sessions,
-          [activeId]: preRequestSession,
+        const nextSessions = { ...state.sessions };
+        if (activeSession.id !== persistedSessionId) {
+          delete nextSessions[activeSession.id];
+        }
+        nextSessions[persistedSessionId] = nextSession;
+
+        return {
+          sessions: nextSessions,
+          activeSessionId: persistedSessionId,
+          isLoading: false,
+          ...syncLegacyFields(nextSessions, persistedSessionId),
+        };
+      });
+    } catch (rawError) {
+      const error = rawError as HttpError;
+
+      set((state) => {
+        const sessionKey = ensuredSessionId ?? activeId;
+        const activeSession = state.sessions[sessionKey] ?? null;
+        if (!activeSession) {
+          return { isLoading: false };
+        }
+
+        const serverSessionId =
+          error.code === 'NEED_CITY' && typeof error.session_id === 'string'
+            ? error.session_id
+            : null;
+
+        const errorMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: mapErrorToUserMessage(error),
+          timestamp: new Date().toISOString(),
+          isError: true,
         };
 
-        set(() => ({
-          sessions: preRequestSessions,
-          activeSessionId: activeId,
-          isLoading: true,
-          ...syncLegacyFields(preRequestSessions, activeId),
-        }));
+        const nextSession: ChatSession = {
+          ...activeSession,
+          id: serverSessionId ?? activeSession.id,
+          sessionId: serverSessionId ?? activeSession.sessionId,
+          messages: [...activeSession.messages, errorMessage],
+          updatedAt: new Date().toISOString(),
+        };
 
-        try {
-          const payload: {
-            user_query: string;
-            trip_id?: string;
-            session_id: string | null;
-          } = {
-            user_query: normalized,
-            session_id: preRequestSession.sessionId,
-          };
-
-          if (tripId && isUuid(tripId)) {
-            payload.trip_id = tripId;
-          }
-
-          const response = await api.post<AiPlanResponse>('/ai/plan', {
-            ...payload,
-          });
-
-          const assistantMessage: ChatMessage = {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            content:
-              `Составил маршрут по городу ${response.route_plan.city} ` +
-              `на ${response.route_plan.days.length} дн.${fallbackHint(response.meta)}`,
-            routePlan: response.route_plan,
-            meta: response.meta,
-            timestamp: new Date().toISOString(),
-          };
-
-          set((state) => {
-            const activeSession = state.sessions[activeId] ?? null;
-            if (!activeSession) {
-              return { isLoading: false };
-            }
-
-            const persistedSessionId = response.session_id;
-            const nextSession: ChatSession = {
-              ...activeSession,
-              id: persistedSessionId,
-              sessionId: persistedSessionId,
-              messages: [...activeSession.messages, assistantMessage],
-              updatedAt: new Date().toISOString(),
-            };
-
-            const nextSessions = { ...state.sessions };
-            if (activeSession.id !== persistedSessionId) {
-              delete nextSessions[activeSession.id];
-            }
-            nextSessions[persistedSessionId] = nextSession;
-
-            return {
-              sessions: nextSessions,
-              activeSessionId: persistedSessionId,
-              isLoading: false,
-              ...syncLegacyFields(nextSessions, persistedSessionId),
-            };
-          });
-        } catch (rawError) {
-          const error = rawError as HttpError;
-
-          set((state) => {
-            const activeSession = state.sessions[activeId] ?? null;
-            if (!activeSession) {
-              return { isLoading: false };
-            }
-
-            const errorMessage: ChatMessage = {
-              id: crypto.randomUUID(),
-              role: 'assistant',
-              content: mapErrorToUserMessage(error),
-              timestamp: new Date().toISOString(),
-              isError: true,
-            };
-
-            const nextSession: ChatSession = {
-              ...activeSession,
-              messages: [...activeSession.messages, errorMessage],
-              updatedAt: new Date().toISOString(),
-            };
-
-            const nextSessions = {
-              ...state.sessions,
-              [nextSession.id]: nextSession,
-            };
-
-            return {
-              sessions: nextSessions,
-              activeSessionId: activeId,
-              isLoading: false,
-              ...syncLegacyFields(nextSessions, activeId),
-            };
-          });
+        const nextSessions = { ...state.sessions };
+        if (activeSession.id !== nextSession.id) {
+          delete nextSessions[activeSession.id];
         }
-      },
+        nextSessions[nextSession.id] = nextSession;
 
-      applyPlanToCurrentTrip: (messageId) => {
-        const { activeSessionId, sessions } = get();
-        const activeSession = activeSessionId ? sessions[activeSessionId] : null;
-        const message = activeSession?.messages.find((item) => item.id === messageId);
-        const currentTrip = useTripStore.getState().currentTrip;
+        return {
+          sessions: nextSessions,
+          activeSessionId: nextSession.id,
+          isLoading: false,
+          ...syncLegacyFields(nextSessions, nextSession.id),
+        };
+      });
+    }
+  },
 
-        if (!message?.routePlan || !currentTrip) return;
+  applyPlanToCurrentTrip: (messageId) => {
+    // TRI-104 / UX-SAFE-APPLY:
+    // Задача: запретить «тихое» обновление маршрута из AI-чата после первичного применения.
+    // Функция: этот метод разрешает запись в БД только один раз (когда session.tripId ещё не привязан).
+    // Если убрать правило ниже, кнопка из чата снова начнёт перезаписывать маршрут в БД без
+    // явного подтверждения в Planner, что ломает продуктовый сценарий и повышает риск потери правок.
+    // MERGE-NOTE: при конфликтах всегда сохраняйте инвариант:
+    // "first apply in chat -> create/link trip", "next applies -> open Planner for explicit decision".
+    const { activeSessionId, sessions } = get();
+    const activeSession = activeSessionId ? sessions[activeSessionId] : null;
+    const message = activeSession?.messages.find((item) => item.id === messageId);
 
-        const points = toRoutePoints(message.routePlan, currentTrip.id);
-        useTripStore.getState().setPoints(points);
+    if (!activeSession?.sessionId || !message?.routePlan) return Promise.resolve(null);
+
+    if (activeSession.tripId) {
+      // TRI-104 / LINKED-CHAT-DRAFT:
+      // Задача: для уже связанного чата помечать выбранную AI-версию как актуальную,
+      // но НЕ отправлять update в БД.
+      // Функция: обновляем lastAppliedPlanMessageId локально, чтобы UI показал переход в Planner.
+      // Если убрать этот блок, пользователь не увидит корректный CTA/состояние "версия выбрана",
+      // а логика перехода по draftMessageId станет непредсказуемой при слияниях.
+      set((state) => {
+        if (!state.activeSessionId) return {};
+        const targetSession = state.sessions[state.activeSessionId];
+        if (!targetSession) return {};
+
+        const nextSession: ChatSession = {
+          ...targetSession,
+          lastAppliedPlanMessageId: messageId,
+          updatedAt: new Date().toISOString(),
+        };
+
+        const nextSessions = {
+          ...state.sessions,
+          [nextSession.id]: nextSession,
+        };
+
+        return {
+          sessions: nextSessions,
+          ...syncLegacyFields(nextSessions, state.activeSessionId),
+        };
+      });
+
+      return Promise.resolve(activeSession.tripId);
+    }
+
+    return api
+      .post<ApplySessionPlanResponse>(`/ai/sessions/${activeSession.sessionId}/apply`, {
+        message_id: messageId,
+        route_plan: message.routePlan,
+      })
+      .then(async (result) => {
+        // TRI-104 / NO-CROSS-STORE-MUTATION:
+        // Задача: развязать состояние страницы AI и локальное состояние Planner.
+        // Функция: после apply обновляем только AI session store, не трогаем useTripStore.
+        // Если вернуть прямую мутацию Planner-store отсюда, исчезнет корректный dirty-контекст
+        // при возврате в Planner и снова появятся race-condition между страницами.
 
         set((state) => {
           if (!state.activeSessionId) return {};
@@ -433,7 +602,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           const nextSession: ChatSession = {
             ...targetSession,
             lastAppliedPlanMessageId: messageId,
-            tripId: currentTrip.id,
+            tripId: result.trip_id,
             updatedAt: new Date().toISOString(),
           };
 
@@ -447,144 +616,193 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
             ...syncLegacyFields(nextSessions, state.activeSessionId),
           };
         });
-      },
 
-      createNewSession: (tripId = null) => {
-        const session = createSession(tripId);
+        return result.trip_id;
+      })
+      .catch(() => null);
+  },
 
-        set((state) => {
-          const nextSessions = {
-            ...state.sessions,
-            [session.id]: session,
-          };
+  openOrCreateSessionFromTrip: async (tripId) => {
+    // TRI-104: единая точка sync Planner -> AI.
+    // Назначение: загрузить готовый контекст маршрута в чат перед переходом на /ai-assistant.
+    // MERGE-NOTE: парсинг сообщений должен оставаться совместимым с backend createSessionFromTrip.
+    if (!tripId || !isUuid(tripId)) return null;
 
-          return {
-            sessions: nextSessions,
-            activeSessionId: session.id,
-            isLoading: false,
-            ...syncLegacyFields(nextSessions, session.id),
-          };
-        });
+    try {
+      const response = await api.post<SessionFromTripResponse>(
+        `/ai/sessions/from-trip/${tripId}`,
+        {},
+      );
+      const sessionDetails = await api.get<AiSessionDetailsResponse>(
+        `/ai/sessions/${response.session_id}`,
+      );
+      const mappedMessages = mapStoredMessagesToChatMessages(sessionDetails.messages);
 
-        return session.id;
-      },
+      set((state) => {
+        const baseSession = state.sessions[response.session_id] ?? {
+          id: response.session_id,
+          title: state.sessions[state.activeSessionId ?? '']?.title ?? 'Маршрут',
+          tripId: response.trip_id,
+          sessionId: response.session_id,
+          messages: [],
+          lastAppliedPlanMessageId: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
 
-      switchSession: async (nextSessionId) => {
-        const state = get();
-        const target = state.sessions[nextSessionId];
-        if (!target) return;
+        const nextSessions = {
+          ...state.sessions,
+          [response.session_id]: {
+            ...baseSession,
+            tripId: response.trip_id,
+            sessionId: response.session_id,
+            messages: mappedMessages,
+            updatedAt: new Date().toISOString(),
+          },
+        };
 
-        set({
-          activeSessionId: nextSessionId,
-          isLoading: false,
-          ...syncLegacyFields(state.sessions, nextSessionId),
-        });
+        return {
+          sessions: nextSessions,
+          activeSessionId: response.session_id,
+          ...syncLegacyFields(nextSessions, response.session_id),
+        };
+      });
 
-        if (target.sessionId && target.messages.length === 0) {
-          try {
-            const details = await api.get<AiSessionDetailsResponse>(
-              `/ai/sessions/${target.sessionId}`,
-            );
-            const mappedMessages = mapStoredMessagesToChatMessages(details.messages);
+      return response.session_id;
+    } catch {
+      return null;
+    }
+  },
 
-            set((currentState) => {
-              const freshTarget = currentState.sessions[nextSessionId];
-              if (!freshTarget) return {};
+  createNewSession: (tripId = null) => {
+    const session = createSession(tripId);
 
-              const nextSession: ChatSession = {
-                ...freshTarget,
-                messages: mappedMessages,
-                updatedAt: new Date().toISOString(),
-              };
+    set((state) => {
+      const nextSessions = {
+        ...state.sessions,
+        [session.id]: session,
+      };
 
-              const nextSessions = {
-                ...currentState.sessions,
-                [nextSession.id]: nextSession,
-              };
+      return {
+        sessions: nextSessions,
+        activeSessionId: session.id,
+        isLoading: false,
+        ...syncLegacyFields(nextSessions, session.id),
+      };
+    });
 
-              return {
-                sessions: nextSessions,
-                ...syncLegacyFields(nextSessions, currentState.activeSessionId),
-              };
-            });
-          } catch {
-            // no-op
-          }
-        }
-      },
+    return session.id;
+  },
 
-      deleteSession: async (targetSessionId) => {
-        const target = get().sessions[targetSessionId];
-        if (!target) return;
+  switchSession: async (nextSessionId) => {
+    const state = get();
+    const target = state.sessions[nextSessionId];
+    if (!target) return;
 
-        if (target.sessionId) {
-          try {
-            await api.del<{ ok: boolean }>(`/ai/sessions/${target.sessionId}`);
-          } catch {
-            return;
-          }
-        }
+    set({
+      activeSessionId: nextSessionId,
+      isLoading: false,
+      ...syncLegacyFields(state.sessions, nextSessionId),
+    });
 
-        set((state) => {
-          if (!state.sessions[targetSessionId]) return {};
+    if (target.sessionId && target.messages.length === 0) {
+      try {
+        const details = await api.get<AiSessionDetailsResponse>(`/ai/sessions/${target.sessionId}`);
+        const mappedMessages = mapStoredMessagesToChatMessages(details.messages);
 
-          const nextSessions = { ...state.sessions };
-          delete nextSessions[targetSessionId];
+        set((currentState) => {
+          const freshTarget = currentState.sessions[nextSessionId];
+          if (!freshTarget) return {};
 
-          const fallbackSession = createSession();
-          const sessionIds = Object.keys(nextSessions);
-          const nextActiveSessionId =
-            state.activeSessionId === targetSessionId
-              ? (sessionIds[0] ?? fallbackSession.id)
-              : state.activeSessionId;
-
-          const normalizedSessions =
-            sessionIds.length > 0
-              ? nextSessions
-              : { [fallbackSession.id]: fallbackSession };
-
-          return {
-            sessions: normalizedSessions,
-            activeSessionId: nextActiveSessionId,
-            isLoading: false,
-            ...syncLegacyFields(normalizedSessions, nextActiveSessionId),
-          };
-        });
-      },
-
-      clearChat: () => {
-        set((state) => {
-          const activeSession = state.activeSessionId ? state.sessions[state.activeSessionId] : null;
-          if (!activeSession) {
-            return {
-              sessions: {},
-              activeSessionId: null,
-              messages: [],
-              sessionId: null,
-              lastAppliedPlanMessageId: null,
-              isLoading: false,
-              isSessionsLoading: false,
-            };
-          }
-
-          const clearedSession: ChatSession = {
-            ...activeSession,
-            sessionId: null,
-            messages: [],
-            lastAppliedPlanMessageId: null,
+          const nextSession: ChatSession = {
+            ...freshTarget,
+            messages: mappedMessages,
             updatedAt: new Date().toISOString(),
           };
 
           const nextSessions = {
-            ...state.sessions,
-            [clearedSession.id]: clearedSession,
+            ...currentState.sessions,
+            [nextSession.id]: nextSession,
           };
 
           return {
             sessions: nextSessions,
-            isLoading: false,
-            ...syncLegacyFields(nextSessions, state.activeSessionId),
+            ...syncLegacyFields(nextSessions, currentState.activeSessionId),
           };
         });
-      },
-    }));
+      } catch {
+        // no-op
+      }
+    }
+  },
+
+  deleteSession: async (targetSessionId) => {
+    const target = get().sessions[targetSessionId];
+    if (!target) return;
+
+    if (target.sessionId) {
+      try {
+        await api.del<{ ok: boolean }>(`/ai/sessions/${target.sessionId}`);
+      } catch {
+        return;
+      }
+    }
+
+    set((state) => {
+      if (!state.sessions[targetSessionId]) return {};
+
+      const nextSessions = { ...state.sessions };
+      delete nextSessions[targetSessionId];
+
+      const fallbackSession = createSession();
+      const sessionIds = Object.keys(nextSessions);
+      const nextActiveSessionId =
+        state.activeSessionId === targetSessionId
+          ? (sessionIds[0] ?? fallbackSession.id)
+          : state.activeSessionId;
+
+      const normalizedSessions =
+        sessionIds.length > 0 ? nextSessions : { [fallbackSession.id]: fallbackSession };
+
+      return {
+        sessions: normalizedSessions,
+        activeSessionId: nextActiveSessionId,
+        isLoading: false,
+        ...syncLegacyFields(normalizedSessions, nextActiveSessionId),
+      };
+    });
+  },
+
+  clearChat: () => {
+    set((state) => {
+      const activeSession = state.activeSessionId ? state.sessions[state.activeSessionId] : null;
+      if (!activeSession) {
+        return {
+          sessions: {},
+          activeSessionId: null,
+          messages: [],
+          sessionId: null,
+          lastAppliedPlanMessageId: null,
+          isLoading: false,
+          isSessionsLoading: false,
+        };
+      }
+
+      // Для соблюдения инварианта не обнуляем sessionId у существующей серверной сессии.
+      // Вместо этого создаем новый локальный пустой чат и делаем его активным.
+      const freshLocalSession = createSession(activeSession.tripId);
+
+      const nextSessions = {
+        ...state.sessions,
+        [freshLocalSession.id]: freshLocalSession,
+      };
+
+      return {
+        sessions: nextSessions,
+        isLoading: false,
+        activeSessionId: freshLocalSession.id,
+        ...syncLegacyFields(nextSessions, freshLocalSession.id),
+      };
+    });
+  },
+}));

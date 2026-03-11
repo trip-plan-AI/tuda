@@ -66,13 +66,32 @@ export class OrchestratorService {
     query: string,
     history: SessionMessage[],
   ): Promise<ParsedIntent> {
+    const normalizedQuery = query.trim();
+
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: ранний guard для первого "недоописанного" запроса,
+    //    чтобы не строить маршрут из случайного контекста и сразу просить город.
+    // 3) Если убрать: LLM может догадаться город по шуму/истории и вернуть нерелевантный маршрут.
+    // 4) Возможен конфликт с ветками, где правила pre-LLM валидации intent вынесены в отдельный сервис.
+    if (this.isNeedCityClarification(normalizedQuery, history)) {
+      this.logger.warn(
+        `[IntentClarification] NEED_CITY due to underspecified first query: "${normalizedQuery}"`,
+      );
+      throw new UnprocessableEntityException({
+        code: 'NEED_CITY',
+        message:
+          'Недостаточно данных для построения маршрута. Укажите, пожалуйста, город.',
+      });
+    }
+
     const messages: ChatCompletionMessageParam[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       ...history.slice(-8).map((message) => ({
         role: message.role,
         content: message.content,
       })),
-      { role: 'user', content: query },
+      { role: 'user', content: normalizedQuery },
     ];
 
     this.logger.log(
@@ -86,12 +105,57 @@ export class OrchestratorService {
     );
 
     if (!intent.city) {
-      throw new UnprocessableEntityException(
-        'Could not parse city from request',
+      // TRI-106 / MERGE-GUARD
+      // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+      // 2) Потребность: даже после LLM парсинга enforce контракт NEED_CITY,
+      //    чтобы frontend обрабатывал отсутствие города единообразно.
+      // 3) Если убрать: часть сценариев уйдет в generic 422 и сломает UX уточнения города.
+      // 4) Возможен конфликт с ветками, где normalizeIntent гарантирует city и считает этот блок недостижимым.
+      this.logger.warn(
+        `[IntentClarification] NEED_CITY due to parse result without city. Query: "${normalizedQuery}"`,
       );
+      throw new UnprocessableEntityException({
+        code: 'NEED_CITY',
+        message:
+          'Недостаточно данных для построения маршрута. Укажите, пожалуйста, город.',
+      });
     }
 
     return intent;
+  }
+
+  private isNeedCityClarification(
+    query: string,
+    history: SessionMessage[],
+  ): boolean {
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: не блокировать валидные однословные города (например, "Казань"),
+    //    но отсеивать шум на первом сообщении без city.
+    // 3) Если убрать: снова появятся ложные NEED_CITY для городов ИЛИ ложные маршруты для шумовых токенов.
+    // 4) Возможен конфликт с ветками, где city-детектор использует словарь гео-сущностей/NER.
+    const userHistoryCount = history.filter(
+      (item) => item.role === 'user' && item.content.trim().length > 0,
+    ).length;
+    if (userHistoryCount > 0) return false;
+
+    const words = query
+      .split(/\s+/)
+      .map((word) => word.trim())
+      .filter(Boolean);
+
+    if (words.length === 0) return true;
+
+    // Однословный запрос может быть валидным городом (например, "Казань"),
+    // поэтому уточнение города запрашиваем только для явного шума.
+    if (words.length === 1) {
+      const token = words[0]?.toLowerCase() ?? '';
+      const hasLetters = /[a-zа-яё]/i.test(token);
+      const looksLikeNoise = /[^a-zа-яё-]/i.test(token);
+      return !hasLetters || looksLikeNoise;
+    }
+
+    return false;
   }
 
   private async callWithTimeout(
