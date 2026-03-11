@@ -583,11 +583,12 @@ function SortablePointRow({
 const weatherIcons = [Cloud, Sun, CloudSun, Wind];
 
 export function PlannerPage() {
-  // TRI-104: Planner выступает конечной точкой синхронизации для маршрутов из AI-чата.
+  // feature/TRI-104-ai-planner-interaction: Planner выступает конечной точкой синхронизации для маршрутов из AI-чата.
+  // Потребность: бесшовное применение маршрутов, созданных в AI.
   // MERGE-NOTE (SYNC CONTRACT):
   // - applyTripId: какой маршрут нужно открыть из AI.
-  // - draftMessageId: индикатор, что пришла новая AI-версия (даже если tripId тот же).
-  // Удаление любого из этих сигналов ломает предупреждающую модалку при возврате из чата.
+  // - draftMessageId: индикатор, что пришла новая AI-версия.
+  // Если сломать этот контракт, Planner перестанет подхватывать маршруты из URL-параметров.
   const router = useRouter();
   const searchParams = useSearchParams();
   const { openOrCreateSessionFromTrip } = useAiQueryStore();
@@ -600,8 +601,9 @@ export function PlannerPage() {
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const justMigratedRef = useRef(false);
-  // TRI-104: idempotency-guard для обработки applyTripId.
-  // Нужен, чтобы не срабатывали повторные toasts/замены при re-render и router.replace.
+  // feature/TRI-104-ai-planner-interaction: idempotency-guard для обработки applyTripId.
+  // Потребность: чтобы не срабатывали повторные toasts/загрузки при re-render и router.replace.
+  // Если убрать: возможны бесконечные петли обновления страницы.
   const handledApplyTripIdRef = useRef<string | null>(null);
 
   const [isActiveRoute, setIsActiveRoute] = useState(false);
@@ -1241,8 +1243,10 @@ export function PlannerPage() {
 
   const applyIncomingTrip = useCallback(
     async (tripId: string) => {
-      // TRI-104: централизованное применение tripId из query-параметра applyTripId.
-      // MERGE-NOTE: если меняется модель загрузки trip/points, правьте здесь и в effect ниже одновременно.
+      // feature/TRI-104-ai-planner-interaction: централизованное применение tripId из query-параметра applyTripId.
+      // Потребность: загрузить маршрут в UI без перезагрузки страницы (тихое применение)
+      // Если убрать: маршруты из AI чата не будут переноситься в Planner.
+      // Возможен конфликт с ветками, изменяющими логику pointsApi/tripsApi (если меняется модель загрузки trip/points, правьте здесь и в effect ниже одновременно).
       const all = await tripsApi.getAll();
       const target = all.find((trip) => trip.id === tripId);
       if (!target) return;
@@ -1250,14 +1254,15 @@ export function PlannerPage() {
       const targetPoints = await pointsApi.getAll(tripId);
       setCurrentTrip({ ...target, points: targetPoints });
       setSaved();
-      // TRI-104: ремоунт карты после обновления trip/points.
-      // Если убрать, UI может показывать визуальные артефакты старого маршрута.
+      // feature/TRI-104-ai-planner-interaction: ремоунт карты после обновления trip/points.
+      // Потребность: очистить кэш слоев карты.
+      // Если убрать: UI может показывать визуальные артефакты старого маршрута при навигации из чата.
       setLastMapRenderAt(Date.now());
-      handledApplyTripIdRef.current = tripId;
 
       const params = new URLSearchParams(searchParams.toString());
-      // TRI-104: очищаем applyTripId после успешного применения.
-      // Если убрать delete/replace, effect будет ловить applyTripId повторно и зациклит toasts/modal.
+      // feature/TRI-104-ai-planner-interaction: очищаем applyTripId после успешного применения.
+      // Потребность: защититься от повторного вызова (зацикливания) эффекта при дальнейших ре-рендерах.
+      // Если убрать: effect будет ловить applyTripId повторно и зациклит toasts/загрузки.
       params.delete('applyTripId');
       params.delete('draftMessageId');
       const nextQuery = params.toString();
@@ -1269,31 +1274,26 @@ export function PlannerPage() {
   );
 
   useEffect(() => {
-    // TRI-104: обработка перехода AI -> Planner.
-    // По продуктовой логике: если открыт старый/другой маршрут с локальными правками,
-    // перед заменой показываем модалку выбора действия.
+    // feature/TRI-104-ai-planner-interaction: IDEMPOTENCY GUARD
+    // Потребность: исключить зацикливание подгрузки маршрута при ре-рендерах.
+    // Если убрать этот guard, Planner будет бесконечно загружать маршрут по кругу.
     const incomingTripId = searchParams.get('applyTripId');
     const draftMessageId = searchParams.get('draftMessageId');
-    // TRI-104: skip-conditions для безопасной идемпотентной обработки.
-    // Если ослабить условия ниже, модалка/применение будут срабатывать лишний раз.
-    if (!incomingTripId || incomingTripId.startsWith('guest-')) return;
-    if (handledApplyTripIdRef.current === incomingTripId) return;
-
-    if (!currentTrip) {
-      void applyIncomingTrip(incomingTripId);
+    
+    if (!incomingTripId || incomingTripId.startsWith('guest-')) {
+      handledApplyTripIdRef.current = null; // reset if cleared
       return;
     }
 
-    if (currentTrip.id === incomingTripId) {
-      // Для одного и того же маршрута считаем переход из чата потенциально новой версией,
-      // если пришёл draftMessageId или есть несохранённые локальные правки.
-      // MERGE-NOTE: draftMessageId критичен для кейса "same trip, new AI draft".
-      void applyIncomingTrip(incomingTripId);
-      return;
+    const currentKey = `${incomingTripId}-${draftMessageId || 'nodraft'}`;
+
+    if (handledApplyTripIdRef.current === currentKey) {
+      return; // уже обработали этот ID в рамках сессии
     }
 
+    handledApplyTripIdRef.current = currentKey;
     void applyIncomingTrip(incomingTripId);
-  }, [applyIncomingTrip, currentTrip, searchParams]);
+  }, [applyIncomingTrip, searchParams]);
 
   return (
     <div className="bg-white min-h-screen w-full max-w-full flex flex-col">

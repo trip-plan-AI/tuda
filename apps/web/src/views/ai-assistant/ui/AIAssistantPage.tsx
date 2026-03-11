@@ -1,5 +1,10 @@
 'use client';
 
+// feature/TRI-104-ai-planner-interaction
+// В этом файле добавлена логика перехвата конфликтов маршрутов до перехода в Planner.
+// Потребность: унифицировать UX модалок предупреждений о перезаписи маршрутов (сохранение старого/открытие нового).
+// Если убрать этот код: пользователь будет "молча" терять старый маршрут в Planner при открытии нового из чата.
+
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Trash2 } from 'lucide-react';
@@ -79,9 +84,12 @@ export function AIAssistantPage() {
   };
 
   useEffect(() => {
-    // TRI-104: при открытом trip в Planner заранее поднимаем связанный чат,
-    // чтобы пользователь попадал в нужный контекст без ручного выбора.
-    // MERGE-NOTE: при изменении логики active trip/session сохранить приоритет tripId -> session.tripId.
+    // feature/TRI-104-ai-planner-interaction: автоинициализация чата.
+    // Потребность: при открытом trip в Planner заранее поднимаем связанный чат (или создаем новый),
+    // чтобы пользователь попадал в нужный контекст AI-чата без ручного выбора.
+    // Если убрать этот код: при переходе в чат из Planner будет открыт последний активный чат,
+    // не связанный с текущим маршрутом, что нарушит контекст UX.
+    // Возможен конфликт: при изменении логики active trip/session (сохранить приоритет tripId -> session.tripId).
     const tripId = currentTrip?.id;
     if (!tripId || tripId.startsWith('guest-')) return;
 
@@ -96,14 +104,15 @@ export function AIAssistantPage() {
   };
 
   const handleOpenPlanner = (tripIdOverride?: string | null, messageId?: string) => {
-    // TRI-104: переход в Planner с applyTripId, чтобы PlannerPage могла корректно
-    // обработать конфликты несохранённых изменений (same/different route modal).
-    // MERGE-NOTE: query-параметр applyTripId используется в PlannerPage useEffect.
+    // feature/TRI-104-ai-planner-interaction: переход в Planner через applyTripId.
+    // Потребность: передать целевой маршрут в PlannerPage для корректной синхронизации состояния.
+    // Если убрать: Planner не поймёт, какой маршрут нужно открыть из AI-чата.
+    // Возможен конфликт: query-параметр applyTripId связан с обработкой в PlannerPage useEffect.
     const targetTripId = tripIdOverride ?? activeSession?.tripId ?? currentTrip?.id ?? null;
 
-    // TRI-104 UX guard:
-    // если в Planner уже открыт другой маршрут, показываем модалку подтверждения
-    // ещё в AI-чате, до навигации в Planner.
+    // feature/TRI-104-ai-planner-interaction: UX guard от потери текущего маршрута Planner.
+    // Потребность: до навигации в Planner предупредить пользователя и дать выбор (сохранить/заменить/отменить).
+    // Если убрать: пользователь может потерять несохранённый маршрут в Planner при переходе из AI-чата.
     const openedPlannerTripId = currentTrip?.id ?? null;
     if (targetTripId && openedPlannerTripId) {
       if (openedPlannerTripId !== targetTripId) {
@@ -236,6 +245,9 @@ export function AIAssistantPage() {
             </Button>
           </div>
 
+          {/* feature/TRI-104-ai-planner-interaction: единый компонент модалки конфликтов (добавлен вместо разрозненных Dialog)
+              Закрывает потребность в унифицированном дизайне и 4-х вариантах действий.
+              Возможен конфликт с ветками, где правили модалки напрямую в PlannerPage. */}
           <PlannerConflictModal
             open={showPlannerConflictModal}
             onOpenChange={setShowPlannerConflictModal}
