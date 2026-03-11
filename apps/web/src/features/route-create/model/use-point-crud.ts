@@ -7,7 +7,7 @@ import type { CreatePointPayload, UpdatePointPayload } from '@/entities/route-po
 import { getSocket } from '@/shared/socket/socket-client'
 
 export function usePointCrud(tripId: string | undefined) {
-  const { setPoints, addPoint, updatePoint, removePoint, reorderPoints } = useTripStore()
+  const { setPoints, setCurrentTrip, addPoint, updatePoint, removePoint, reorderPoints } = useTripStore()
   const loadedTripId = useRef<string | null>(null)
 
   // Загружаем точки при смене tripId
@@ -20,8 +20,26 @@ export function usePointCrud(tripId: string | undefined) {
       return
     }
 
-    pointsApi.getAll(tripId).then(setPoints).catch(console.error)
-  }, [tripId, setPoints])
+    const snapshotTrip = useTripStore.getState().currentTrip
+    // Если точки уже положили в store (например, из AI-чата),
+    // не перетираем их первым запросом к API.
+    if (snapshotTrip?.id === tripId && (snapshotTrip.points?.length ?? 0) > 0) {
+      return
+    }
+
+    pointsApi
+      .getAll(tripId)
+      .then(setPoints)
+      .catch((e) => {
+        const message = e instanceof Error ? e.message : ''
+        if (message.includes('Access denied') || message.includes('403')) {
+          setCurrentTrip(null as any)
+          return
+        }
+
+        console.error(e)
+      })
+  }, [tripId, setPoints, setCurrentTrip])
 
   const add = useCallback(
     async (payload: CreatePointPayload) => {

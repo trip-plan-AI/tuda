@@ -21,7 +21,10 @@ export class GeosearchController {
   }
 
   @Get('route')
-  async route(@Query('profile') profile: string, @Query('coords') coords: string): Promise<any> {
+  async route(
+    @Query('profile') profile: string,
+    @Query('coords') coords: string,
+  ): Promise<any> {
     return this.geosearchService.osrmRoute(profile || 'driving', coords);
   }
 }

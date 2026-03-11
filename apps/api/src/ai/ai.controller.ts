@@ -1,18 +1,18 @@
 import {
   Body,
   Controller,
-  Inject,
+  Delete,
+  Get,
+  NotFoundException,
+  Param,
   Logger,
   Post,
   UnprocessableEntityException,
   UseGuards,
 } from '@nestjs/common';
-import { and, eq, isNull } from 'drizzle-orm';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { DRIZZLE } from '../db/db.module';
-import * as schema from '../db/schema';
+import { AiSessionsService } from './ai-sessions.service';
 import { AiPlanRequestDto } from './dto/ai-plan-request.dto';
 import { InputSanitizerPipe } from './pipes/input-sanitizer.pipe';
 import { OrchestratorService } from './pipeline/orchestrator.service';
@@ -27,25 +27,72 @@ export class AiController {
   private readonly logger = new Logger('AI_PIPELINE');
 
   constructor(
-    @Inject(DRIZZLE)
-    private readonly db: NodePgDatabase<typeof schema>,
+    private readonly aiSessionsService: AiSessionsService,
     private readonly orchestratorService: OrchestratorService,
     private readonly providerSearchService: ProviderSearchService,
     private readonly semanticFilterService: SemanticFilterService,
     private readonly schedulerService: SchedulerService,
   ) {}
 
+  @Get('sessions')
+  async listSessions(@CurrentUser() user: { id: string }) {
+    return this.aiSessionsService.listByUser(user.id);
+  }
+
+  @Get('sessions/:id')
+  async getSession(
+    @Param('id') sessionId: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    const session = await this.aiSessionsService.getByIdForUser(
+      sessionId,
+      user.id,
+    );
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
+    return {
+      id: session.id,
+      trip_id: session.tripId,
+      created_at: session.createdAt,
+      messages: session.messages,
+    };
+  }
+
+  @Delete('sessions/:id')
+  async deleteSession(
+    @Param('id') sessionId: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    const deleted = await this.aiSessionsService.deleteByIdForUser(
+      sessionId,
+      user.id,
+    );
+
+    if (!deleted) {
+      throw new NotFoundException('Session not found');
+    }
+
+    return { ok: true };
+  }
+
   @Post('plan')
   async plan(
     @Body(InputSanitizerPipe) dto: AiPlanRequestDto,
     @CurrentUser() user: { id: string },
   ) {
-    const session = await this.getOrCreateSession(dto.trip_id, user.id);
+    const session = await this.aiSessionsService.getOrCreateForPlan({
+      tripId: dto.trip_id,
+      userId: user.id,
+      sessionId: dto.session_id,
+    });
     const history = session.messages;
+    const llmContext = history.slice(-10);
     const orchestratorStart = Date.now();
     const intent = await this.orchestratorService.parseIntent(
       dto.user_query,
-      history,
+      llmContext,
     );
     const orchestratorDuration = Date.now() - orchestratorStart;
 
@@ -73,9 +120,9 @@ export class AiController {
       ...history,
       { role: 'user' as const, content: dto.user_query },
       { role: 'assistant' as const, content: JSON.stringify(routePlan) },
-    ].slice(-10);
+    ];
 
-    await this.saveSession(session.id, newMessages);
+    await this.aiSessionsService.saveMessages(session.id, newMessages);
 
     if (!intent.city) {
       throw new UnprocessableEntityException(
@@ -106,64 +153,5 @@ export class AiController {
         fallbacks_triggered: fallbacks,
       },
     };
-  }
-
-  private async getOrCreateSession(tripId: string | undefined, userId: string) {
-    const existing = await this.db.query.aiSessions.findFirst({
-      where: tripId
-        ? and(
-            eq(schema.aiSessions.userId, userId),
-            eq(schema.aiSessions.tripId, tripId),
-          )
-        : and(
-            eq(schema.aiSessions.userId, userId),
-            isNull(schema.aiSessions.tripId),
-          ),
-    });
-
-    if (existing) {
-      return {
-        id: existing.id,
-        messages: this.normalizeMessages(existing.messages),
-      };
-    }
-
-    const [created] = await this.db
-      .insert(schema.aiSessions)
-      .values({
-        userId,
-        tripId: tripId ?? null,
-        messages: [],
-      })
-      .returning();
-
-    return {
-      id: created.id,
-      messages: [] as SessionMessage[],
-    };
-  }
-
-  private async saveSession(sessionId: string, messages: SessionMessage[]) {
-    await this.db
-      .update(schema.aiSessions)
-      .set({ messages })
-      .where(eq(schema.aiSessions.id, sessionId));
-  }
-
-  private normalizeMessages(raw: unknown): SessionMessage[] {
-    if (!Array.isArray(raw)) return [];
-
-    return raw
-      .filter(
-        (item): item is SessionMessage =>
-          !!item &&
-          typeof item === 'object' &&
-          'role' in item &&
-          'content' in item &&
-          ((item as { role?: unknown }).role === 'user' ||
-            (item as { role?: unknown }).role === 'assistant') &&
-          typeof (item as { content?: unknown }).content === 'string',
-      )
-      .slice(-10);
   }
 }

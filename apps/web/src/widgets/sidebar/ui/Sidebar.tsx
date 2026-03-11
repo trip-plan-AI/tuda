@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { MapPin, MessageSquare, User, Home } from 'lucide-react';
 
 import { cn } from '@/shared/lib/utils';
@@ -19,7 +19,6 @@ type Modal = 'login' | 'register' | null;
 
 export function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
   const { isAuthenticated } = useAuthStore();
   const [modal, setModal] = useState<Modal>(null);
   const isLanding = pathname === '/';
@@ -36,14 +35,14 @@ export function Sidebar() {
       <aside
         className={cn(
           'hidden md:flex sticky top-16 h-[calc(100vh-64px)] backdrop-blur-md flex-col items-center py-8 gap-4 shrink-0 z-40',
-          'overflow-hidden',
+          'overflow-hidden border-r border-slate-200',
           'transition-[width,opacity,transform] duration-700 ease-[cubic-bezier(0.4,0,0.2,1)]',
           isLanding
             ? 'w-0 opacity-0 -translate-x-6 pointer-events-none'
             : 'w-20 opacity-100 translate-x-0',
         )}
       >
-        <div className="flex-1 flex flex-col gap-4 items-center mt-0 min-w-[5rem]">
+        <div className="flex-1 flex flex-col gap-4 items-center mt-0 min-w-[5rem] pr-2">
           {NAV.map(({ href, icon: Icon, label }) => {
             const isActive = pathname === href;
             return (

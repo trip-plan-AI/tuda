@@ -8,4 +8,8 @@ export class AiPlanRequestDto {
   @IsOptional()
   @IsUUID()
   trip_id?: string;
+
+  @IsOptional()
+  @IsUUID()
+  session_id?: string;
 }

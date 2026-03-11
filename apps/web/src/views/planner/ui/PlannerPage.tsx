@@ -58,6 +58,7 @@ import {
 } from '@/features/route-collaborate';
 import { getSocket } from '@/shared/socket/socket-client';
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
+import { CompareSaveModal } from '@/widgets/compare-save';
 import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point';
 import { toast } from 'sonner';
@@ -672,6 +673,21 @@ export function PlannerPage() {
   const [isRouteLoading, setIsRouteLoading] = useState(false);
   const [affectedSegments, setAffectedSegments] = useState<Set<number>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [compareModalData, setCompareModalData] = useState<{
+    isOpen: boolean;
+    metrics: {
+      originalKm: number;
+      newKm: number;
+      originalHours: number;
+      newHours: number;
+      originalRub: number;
+      newRub: number;
+    } | null;
+  }>({
+    isOpen: false,
+    metrics: null,
+  });
 
   const resolveCoords = useCallback(async (query: string) => {
     try {
@@ -834,11 +850,25 @@ export function PlannerPage() {
       justMigratedRef.current = false;
       return;
     }
+
+    // Если точки уже есть в store (например, применены из AI-чата),
+    // не перетираем их пустым ответом с бэкенда при первом открытии Planner.
+    if ((currentTrip.points?.length ?? 0) > 0) return;
+
     pointsApi
       .getAll(currentTrip.id)
       .then(setPoints)
       .catch((e) => {
         console.error('Failed to load points:', e);
+
+        const message = e instanceof Error ? e.message : '';
+        // Если в localStorage остался чужой/устаревший tripId, сбрасываем его,
+        // чтобы ниже сработала загрузка доступных поездок текущего пользователя.
+        if (message.includes('Access denied') || message.includes('403')) {
+          setCurrentTrip(null as unknown as Trip);
+          return;
+        }
+
         setPoints([]);
       });
   }, [currentTrip?.id, setPoints]);
@@ -875,7 +905,21 @@ export function PlannerPage() {
             setIsActiveRoute(target.isActive);
           }
         } else {
-          void ensureTripId();
+          const emptyTrip: Trip = {
+            id: `guest-${Date.now()}`,
+            ownerId: 'guest',
+            title: 'Мой маршрут',
+            description: null,
+            budget: 0,
+            startDate: null,
+            endDate: null,
+            isActive: false,
+            isPredefined: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            points: [],
+          };
+          setCurrentTrip(emptyTrip);
         }
       })
       .catch(console.error);
@@ -1867,13 +1911,94 @@ export function PlannerPage() {
                     </Button>
                     <div className="flex flex-col lg:flex-row gap-3 w-full lg:w-auto">
                       <Button
+                        onClick={async () => {
+                          if (!isAuthenticated) {
+                            setModal('register');
+                            return;
+                          }
+                          try {
+                            setIsOptimizing(true);
+                            const tripId = await ensureTripId();
+                            let result = await tripsApi.optimize(tripId, routeProfile);
+
+                            const backendMessage =
+                              typeof result?.message === 'string' ? result.message : '';
+                            const hasEnoughLocalPoints = points.length >= 2;
+
+                            // Если локально точек достаточно, но бэкенд пишет, что их мало,
+                            // значит точки были только в store и не успели сохраниться в БД.
+                            // Синхронизируем точки в БД и повторяем оптимизацию один раз.
+                            if (
+                              !result?.optimizedPoints &&
+                              hasEnoughLocalPoints &&
+                              backendMessage.includes('Not enough points to optimize')
+                            ) {
+                              const serverPoints = await pointsApi.getAll(tripId);
+                              await Promise.all(serverPoints.map((p) => pointsApi.remove(tripId, p.id)));
+
+                              const recreatedPoints = await Promise.all(
+                                points.map((p, index) =>
+                                  pointsApi.create(tripId, {
+                                    title: p.title,
+                                    lat: p.lat,
+                                    lon: p.lon,
+                                    budget: p.budget ?? 0,
+                                    visitDate: p.visitDate ?? undefined,
+                                    imageUrl: p.imageUrl ?? undefined,
+                                    order: index,
+                                    address: p.address ?? undefined,
+                                    transportMode: p.transportMode,
+                                  }),
+                                ),
+                              );
+
+                              useTripStore.getState().setPoints(recreatedPoints);
+                              result = await tripsApi.optimize(tripId, routeProfile);
+                            }
+
+                            if (result?.optimizedPoints) {
+                              useTripStore.getState().setPoints(result.optimizedPoints);
+                              if (result.metrics) {
+                                setCompareModalData({
+                                  isOpen: true,
+                                  metrics: result.metrics,
+                                });
+                              } else {
+                                toast.success('Маршрут оптимизирован!', { id: 'optimize-success' });
+                              }
+                            } else {
+                              const nextBackendMessage =
+                                typeof result?.message === 'string' ? result.message : '';
+                              const userMessage = nextBackendMessage.includes('Not enough points to optimize')
+                                ? 'Недостаточно точек в сохранённом маршруте. Сначала сохраните точки, затем повторите оптимизацию.'
+                                : 'Оптимизация не внесла изменений в маршрут.';
+
+                              toast.info(userMessage, {
+                                id: 'optimize-info',
+                              });
+                            }
+                          } catch (error) {
+                            console.error('Optimization error:', error);
+                            toast.error('Ошибка оптимизации', { id: 'optimize-error' });
+                          } finally {
+                            setIsOptimizing(false);
+                          }
+                        }}
+                        disabled={points.length < 2 || isOptimizing}
+                        variant="brand-yellow"
+                        shape="xl"
+                        className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
+                      >
+                        {isOptimizing ? 'ОПТИМИЗАЦИЯ...' : 'ОПТИМИЗИРОВАТЬ МАРШРУТ'}
+                      </Button>
+                      <Button
                         onClick={() => {
                           if (!isAuthenticated) {
                             setModal('register');
                             return;
                           }
                         }}
-                        disabled={isAuthenticated && points.length === 0}
+                        disabled={points.length === 0}
                         variant="brand-purple"
                         shape="xl"
                         className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
@@ -1907,7 +2032,7 @@ export function PlannerPage() {
                           setSaved();
                           toast.success('Маршрут сохранён', { id: 'save-route' });
                         }}
-                        disabled={isAuthenticated && points.length === 0}
+                        disabled={points.length === 0}
                         variant="brand-indigo"
                         shape="xl"
                         className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
@@ -2045,6 +2170,11 @@ export function PlannerPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <CompareSaveModal
+        isOpen={compareModalData.isOpen}
+        onClose={() => setCompareModalData((prev) => ({ ...prev, isOpen: false }))}
+        metrics={compareModalData.metrics!}
+      />
       <LoginModal
         open={modal === 'login'}
         onClose={() => setModal(null)}

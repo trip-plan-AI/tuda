@@ -1,3 +1,6 @@
+import { useAuthStore } from '@/features/auth/model/auth.store';
+import { useUserStore } from '@/entities/user';
+
 function resolveApiBase(): string {
   const configured = process.env.NEXT_PUBLIC_API_URL;
 
@@ -22,6 +25,26 @@ function resolveApiBase(): string {
 
 const BASE = resolveApiBase();
 
+function handleSessionExpired() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const alreadyHandled = sessionStorage.getItem('auth:session-expired') === '1';
+  if (alreadyHandled) {
+    window.dispatchEvent(new Event('auth:session-expired'));
+    return;
+  }
+
+  localStorage.removeItem('accessToken');
+  document.cookie = 'token=; path=/; max-age=0';
+  useUserStore.getState().clearUser();
+  useAuthStore.setState({ isAuthenticated: false, accessToken: null });
+
+  sessionStorage.setItem('auth:session-expired', '1');
+  window.dispatchEvent(new Event('auth:session-expired'));
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
   const res = await fetch(BASE + path, {
@@ -34,13 +57,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
 
   if (res.status === 401) {
-    localStorage.removeItem('accessToken');
-    document.cookie = 'token=; path=/; max-age=0';
-
-    if (typeof window !== 'undefined' && window.location.pathname !== '/') {
-      window.location.href = '/';
-    }
-
+    handleSessionExpired();
     throw new Error('Unauthorized');
   }
 

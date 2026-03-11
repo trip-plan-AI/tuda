@@ -7,7 +7,15 @@ import { ArrowLeft, Clock, Cloud, CloudSun, MapPin, Sun, Wind } from 'lucide-rea
 import { useTripStore, tripsApi } from '@/entities/trip';
 import type { Trip } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point';
-import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/shared/ui';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/shared/ui';
 import { cn } from '@/shared/lib/utils';
 import { env } from '@/shared/config/env';
 
@@ -50,7 +58,8 @@ function formatDistance(meters: number) {
 
 export function TourDetailPage({ tourId }: TourDetailPageProps) {
   const router = useRouter();
-  const { currentTrip, setCurrentTrip, setPoints, clearPlanner, isDirty, setCachedRouteInfo } = useTripStore();
+  const { currentTrip, setCurrentTrip, setPoints, clearPlanner, isDirty, setCachedRouteInfo } =
+    useTripStore();
   const points = currentTrip?.points || [];
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
   const [isOpening, setIsOpening] = useState(false);
@@ -180,7 +189,18 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     } finally {
       setIsOpening(false);
     }
-  }, [tour, focusCoords, attractions, geocodeCity, clearPlanner, setCurrentTrip, setPoints, router, routeInfo, setCachedRouteInfo]);
+  }, [
+    tour,
+    focusCoords,
+    attractions,
+    geocodeCity,
+    clearPlanner,
+    setCurrentTrip,
+    setPoints,
+    router,
+    routeInfo,
+    setCachedRouteInfo,
+  ]);
 
   const handleOpenRoute = useCallback(() => {
     if (points && points.length > 0 && isDirty) {
@@ -214,10 +234,9 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
   return (
     <div className="bg-white min-h-screen">
       <div className="max-w-5xl mx-auto px-4 md:px-6 py-8 md:py-12">
-
         {/* Назад */}
         <button
-          onClick={() => router.back()}
+          onClick={() => router.push('/planner?tab=popular')}
           className="flex items-center gap-2 text-slate-400 hover:text-brand-indigo font-bold text-sm transition-colors mb-10 group"
         >
           <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
@@ -248,34 +267,21 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
             {tour.description}
           </p>
 
-          {tour.budget != null && (
-            <div className="mt-6 inline-flex items-center gap-2 bg-brand-yellow/10 rounded-2xl px-5 py-3">
-              <span className="text-slate-500 font-bold text-sm uppercase tracking-widest">Стоимость:</span>
-              <span className="text-brand-yellow font-black text-xl">
-                {tour.budget.toLocaleString('ru-RU')} ₽
-              </span>
-            </div>
-          )}
-        </div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-8">
+            {tour.budget != null && (
+              <div className="inline-flex items-center gap-2 bg-brand-yellow/10 rounded-2xl px-5 py-3">
+                <span className="text-slate-500 font-bold text-sm uppercase tracking-widest">
+                  Стоимость:
+                </span>
+                <span className="text-brand-yellow font-black text-xl">
+                  {tour.budget.toLocaleString('ru-RU')} ₽
+                </span>
+              </div>
+            )}
 
-        {/* Карта с маршрутом */}
-        <div className="mb-6">
-          <div className="w-full aspect-[4/5] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden border border-slate-200 shadow-inner bg-slate-50">
-            <RouteMap
-              points={attractions}
-              focusCoords={attractions.length === 0 ? focusCoords : null}
-              onPointDragEnd={() => undefined}
-              isDropdownOpen={false}
-              routeProfile="driving"
-              onRouteInfoUpdate={setRouteInfo}
-              onRouteInfoLoading={setIsRouteLoading}
-            />
-          </div>
-
-          {/* Суммарный route info — как в планере */}
-          {(routeInfo || isRouteLoading) && (
-            <div className="mt-4 flex justify-center">
-              <div className="flex items-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 relative overflow-hidden transition-all duration-300 min-h-[48px]">
+            {/* Суммарный route info */}
+            {(routeInfo || isRouteLoading) && (
+              <div className="flex items-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 relative overflow-hidden transition-all duration-300 min-h-[48px] sm:ml-auto">
                 {isRouteLoading && (
                   <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10">
                     <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
@@ -301,8 +307,24 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
                   )}
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        </div>
+
+        {/* Карта с маршрутом */}
+        <div className="mb-8">
+          <div className="w-full aspect-[4/5] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden border border-slate-200 shadow-inner bg-slate-50">
+            <RouteMap
+              points={attractions}
+              focusCoords={attractions.length === 0 ? focusCoords : null}
+              onPointDragEnd={() => undefined}
+              isDropdownOpen={false}
+              routeProfile="driving"
+              onRouteInfoUpdate={setRouteInfo}
+              onRouteInfoLoading={setIsRouteLoading}
+              readonly={true}
+            />
+          </div>
         </div>
 
         {/* Кнопка в конструктор */}
@@ -377,7 +399,8 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
               Внимание
             </DialogTitle>
             <DialogDescription className="text-slate-500 font-bold text-lg leading-snug">
-              В конструкторе уже есть непустой маршрут. При открытии нового маршрута старый будет очищен. Продолжить?
+              В конструкторе уже есть непустой маршрут. При открытии нового маршрута старый будет
+              очищен. Продолжить?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex-col sm:flex-row gap-3 mt-8">

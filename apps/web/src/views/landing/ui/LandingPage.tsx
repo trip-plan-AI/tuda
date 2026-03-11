@@ -86,6 +86,12 @@ const FAQ_CARDS = [
 
 const weatherIcons = [Cloud, Sun, CloudSun, Wind];
 
+const fallbackImages = [
+  '/assets/images/photo-1524850011238-e3d235c7d4c9.avif',
+  '/assets/images/photo-1460925895917-afdab827c52f.avif',
+  '/assets/images/photo-1503220317375-aaad61436b1b.avif',
+];
+
 export function LandingPage() {
   const router = useRouter();
   const [modal, setModal] = useState<Modal>(null);
@@ -114,6 +120,7 @@ export function LandingPage() {
   const debounceFromRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceToRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendAiQuery = useAiQueryStore((state) => state.sendQuery);
+  const createNewSession = useAiQueryStore((state) => state.createNewSession);
   const { currentTrip, setCurrentTrip, addPoint, clearPlanner } = useTripStore();
   const points = currentTrip?.points || [];
   const { isAuthenticated } = useAuthStore();
@@ -396,6 +403,7 @@ export function LandingPage() {
   const handleSearch = () => {
     if (searchMode === 'ai') {
       if (searchQuery.trim()) {
+        createNewSession();
         void sendAiQuery(searchQuery);
       }
       router.push('/ai-assistant');
@@ -517,6 +525,7 @@ export function LandingPage() {
                       href="/ai-assistant"
                       onClick={() => {
                         if (searchQuery.trim()) {
+                          createNewSession();
                           void sendAiQuery(searchQuery);
                         }
                       }}
@@ -789,6 +798,7 @@ export function LandingPage() {
                   <button
                     key={idx}
                     onClick={() => {
+                      createNewSession();
                       void sendAiQuery(filter.label);
                       router.push('/ai-assistant');
                     }}
