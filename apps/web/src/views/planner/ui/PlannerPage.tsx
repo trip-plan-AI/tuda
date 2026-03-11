@@ -775,6 +775,68 @@ export function PlannerPage() {
     setIsAddPointMode(active);
   }, []);
 
+  const resolveCoords = useCallback(
+    async (query: string): Promise<{ lat: number; lon: number; address: string } | null> => {
+      try {
+        const loc = userLocationRef.current;
+        const locSuffix = loc ? `&lat=${loc.lat}&lon=${loc.lon}` : '';
+        const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}${locSuffix}`;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const data = await res.json();
+        const first = data.results?.[0];
+        if (!first) return null;
+
+        let lat = first.lat ?? first.geometry?.point?.lat ?? first.data?.geo_lat;
+        let lon = first.lon ?? first.geometry?.point?.lon ?? first.data?.geo_lon;
+
+        if ((lat === undefined || lon === undefined) && first.uri) {
+          const match = first.uri.match(/[?&]ll=([^&]+)/);
+          if (match && match[1]) {
+            const [parsedLon, parsedLat] = decodeURIComponent(match[1]).split(',').map(Number);
+            if (Number.isFinite(parsedLat) && Number.isFinite(parsedLon)) {
+              lat = parsedLat;
+              lon = parsedLon;
+            }
+          }
+        }
+
+        if (lat !== undefined && lon !== undefined) {
+          return { lat: Number(lat), lon: Number(lon), address: first.displayName };
+        }
+        return null;
+      } catch (e) {
+        console.error('[Geosearch] resolveCoords failed:', e);
+        return null;
+      }
+    },
+    [],
+  );
+
+  const resolveMapCoords = useCallback(
+    async (coords: {
+      lat: number;
+      lon: number;
+    }): Promise<{ title: string; address: string } | null> => {
+      try {
+        const url = `${env.apiUrl}/geosearch/reverse?lat=${coords.lat}&lon=${coords.lon}`;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data) return null;
+
+        return {
+          title: data.title || data.displayName.split(/[.,;]/)[0]?.trim() || data.displayName,
+          address: data.displayName,
+        };
+      } catch (e) {
+        console.error('[Geosearch] resolveMapCoords failed:', e);
+        return null;
+      }
+    },
+    [],
+  );
+
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [collaboratorsModalOpen, setCollaboratorsModalOpen] = useState(false);
   const { collaborators, setCollaborators } = useCollaborateStore();
@@ -1077,31 +1139,6 @@ export function PlannerPage() {
     setRouteProfile(common);
   }, [isMixedRoute, points.map((p) => p.transportMode).join(',')]);
 
-  const handlePointUpdate = useCallback(
-    (
-      id: string,
-      patch: {
-        title?: string;
-        budget?: number;
-        visitDate?: string | undefined;
-        address?: string | null;
-        lat?: number;
-        lon?: number;
-        transportMode?: 'driving' | 'foot' | 'bike' | 'direct';
-      },
-    ) => {
-      crud.update(id, patch);
-      const tripId = currentTrip?.id;
-      if (tripId && !tripId.startsWith('guest-')) {
-        const socket = getSocket();
-        if (socket.connected) {
-          socket.emit('point:update', { trip_id: tripId, point_id: id, ...patch });
-        }
-      }
-    },
-    [crud, currentTrip?.id],
-  );
-
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
   };
@@ -1205,12 +1242,17 @@ export function PlannerPage() {
       _mapTitle: string,
     ) => {
       const geoData = await resolveMapCoords(newCoords);
-      const patch = {
+      const point = points.find((p) => p.id === pointId);
+      const patch: any = {
         lat: newCoords.lat,
         lon: newCoords.lon,
         address: geoData?.address || `${newCoords.lat.toFixed(4)}, ${newCoords.lon.toFixed(4)}`,
-        title: geoData?.title || `${newCoords.lat.toFixed(4)}, ${newCoords.lon.toFixed(4)}`,
       };
+
+      if (!point?.isTitleCustom) {
+        patch.title = geoData?.title || `${newCoords.lat.toFixed(4)}, ${newCoords.lon.toFixed(4)}`;
+      }
+
       // REST: saves to DB + optimistic local update
       crud.update(pointId, patch);
       // WS: broadcast to other users in the room
@@ -1222,7 +1264,7 @@ export function PlannerPage() {
         }
       }
     },
-    [crud, resolveMapCoords, currentTrip?.id],
+    [crud, resolveMapCoords, currentTrip?.id, points],
   );
 
   const ensureTripId = useCallback(async (): Promise<string> => {
@@ -1358,34 +1400,22 @@ export function PlannerPage() {
   const addPoint_ = useCallback(
     async (payload: { title: string; lat: number; lon: number; address?: string }) => {
       const tripId = await ensureTripId();
-      if (tripId.startsWith('guest-')) {
-        const guestPoint = {
-          ...payload,
-          id: `point-${Date.now()}`,
-          tripId,
-          order: 0,
-          budget: 0,
-          visitDate: null,
-          imageUrl: null,
-          address: payload.address ?? null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        addPoint(guestPoint as any);
-      } else {
+      if (!tripId.startsWith('guest-')) {
         const socket = getSocket();
         if (socket.connected) {
-          // WS-first: gateway saves to DB and broadcasts point:added back to all clients
+          // WS-first: gateway saves to DB and broadcasts point:added back to all clients.
+          // In this case, we don't call addPoint locally because crud.add below will do it.
           socket.emit('point:add', { trip_id: tripId, ...payload, budget: 0 });
         } else {
-          // Fallback to REST when WS is disconnected
-          const created = await pointsApi.create(tripId, { ...payload, budget: 0 });
-          addPoint(created);
+          // Fallback to REST when WS is disconnected.
+          // Note: pointsApi.create just saves to DB, doesn't update store.
+          await pointsApi.create(tripId, { ...payload, budget: 0 });
         }
       }
+      // This is the single place where we add point to local store for both guest and real trips.
       await crud.add({ ...payload, budget: 0 });
     },
-    [crud],
+    [crud, ensureTripId],
   );
 
   const handleRemovePoint = useCallback(
@@ -1560,7 +1590,10 @@ export function PlannerPage() {
         // - если хотя бы 1 была → ждём 1 → отключаем
         const startCount = addPointStartCountRef.current;
         const needed = startCount === 0 ? 2 : 1;
-        const newCount = useTripStore.getState().currentTrip?.points?.length ?? 0;
+        // Use getState to get the most recent point count after addPoint_ finishes its sync part.
+        const currentPoints = useTripStore.getState().currentTrip?.points ?? [];
+        const newCount = currentPoints.length;
+        
         if (newCount >= startCount + needed) {
           setIsAddPointMode(false);
         }
@@ -2059,50 +2092,8 @@ export function PlannerPage() {
               </button>
             </div>
 
-            <div className="mb-10 mt-10 w-full bg-white rounded-[2rem] p-6 md:p-8 border border-slate-100 shadow-xl shadow-slate-200/20">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12 pb-8 border-b border-slate-50">
-                <h3 className="text-xl md:text-2xl font-black text-brand-indigo uppercase tracking-widest">
-                  Бюджет маршрута
-                </h3>
-                <div className="flex items-center gap-3">
-                  <span className="font-black text-brand-indigo uppercase tracking-widest text-xs md:text-sm flex items-center gap-1.5">
-                    <span className="text-base">💳</span> Планируемый:
-                  </span>
-                  <div className="flex items-center justify-between border border-slate-200 rounded-xl px-2 py-2 bg-white hover:border-slate-300 transition-colors w-full sm:w-48">
-                    <button
-                      onClick={() => canEdit && handleUpdatePlannedBudget(plannedBudget - 1000)}
-                      disabled={!canEdit}
-                      className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center disabled:opacity-40"
-                      type="button"
-                    >
-                      <Minus size={16} />
-                    </button>
-                    <div className="flex items-center justify-center flex-1 min-w-0">
-                      <input
-                        type="number"
-                        min="0"
-                        step="1000"
-                        value={plannedBudget}
-                        disabled={!canEdit}
-                        onChange={(e) => handleUpdatePlannedBudget(Number(e.target.value) || 0)}
-                        className="w-16 md:w-20 bg-transparent text-center font-bold text-brand-indigo outline-none text-sm md:text-base [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:opacity-60"
-                        style={{ MozAppearance: 'textfield' }}
-                      />
-                      <span className="text-slate-400 font-bold text-sm">₽</span>
-                    </div>
-                    <button
-                      onClick={() => canEdit && handleUpdatePlannedBudget(plannedBudget + 1000)}
-                      disabled={!canEdit}
-                      className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center disabled:opacity-40"
-                      type="button"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
+            <div className="max-w-7xl mx-auto w-full mt-8">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <Button
                   onClick={() => {
                     if (!isAuthenticated) {
@@ -2382,6 +2373,50 @@ export function PlannerPage() {
               )}
             </div>
 
+            <div className="mb-10 mt-6 w-full bg-white rounded-[2rem] p-6 md:p-8 border border-slate-100 shadow-xl shadow-slate-200/20">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-4 border-b border-slate-50">
+                <h3 className="text-xl md:text-2xl font-black text-brand-indigo uppercase tracking-widest">
+                  Бюджет маршрута
+                </h3>
+                <div className="flex items-center gap-3">
+                  <span className="font-black text-brand-indigo uppercase tracking-widest text-xs md:text-sm flex items-center gap-1.5">
+                    <span className="text-base">💳</span> Планируемый:
+                  </span>
+                  <div className="flex items-center justify-between border border-slate-200 rounded-xl px-2 py-2 bg-white hover:border-slate-300 transition-colors w-full sm:w-48">
+                    <button
+                      onClick={() => canEdit && handleUpdatePlannedBudget(plannedBudget - 1000)}
+                      disabled={!canEdit}
+                      className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center disabled:opacity-40"
+                      type="button"
+                    >
+                      <Minus size={16} />
+                    </button>
+                    <div className="flex items-center justify-center flex-1 min-w-0">
+                      <input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        value={plannedBudget}
+                        disabled={!canEdit}
+                        onChange={(e) => handleUpdatePlannedBudget(Number(e.target.value) || 0)}
+                        className="w-16 md:w-20 bg-transparent text-center font-bold text-brand-indigo outline-none text-sm md:text-base [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:opacity-60"
+                        style={{ MozAppearance: 'textfield' }}
+                      />
+                      <span className="text-slate-400 font-bold text-sm">₽</span>
+                    </div>
+                    <button
+                      onClick={() => canEdit && handleUpdatePlannedBudget(plannedBudget + 1000)}
+                      disabled={!canEdit}
+                      className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center disabled:opacity-40"
+                      type="button"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="relative max-w-7xl mx-auto w-full">
               <DndContext
                 sensors={sensors}
@@ -2620,7 +2655,6 @@ export function PlannerPage() {
             tripId={currentTrip.id}
             open={inviteModalOpen}
             onClose={() => setInviteModalOpen(false)}
-            zIndex={50}
           />
           <CollaboratorsModal
             tripId={currentTrip.id}

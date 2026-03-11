@@ -152,7 +152,8 @@ export function RouteMap({
 
   // Управление кнопкой добавления точек
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
     if (!onAddPointModeChange || readonly) {
       if (addPointBtnRef.current) {
         addPointBtnRef.current.remove();
@@ -183,7 +184,7 @@ export function RouteMap({
       });
       btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="#4d4d4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3" fill="none" stroke="#4d4d4d" stroke-width="1.5"/></svg>`;
       btn.addEventListener('click', () => onAddPointModeChange?.(!isAddPointModeRef.current));
-      containerRef.current.appendChild(btn);
+      container.appendChild(btn);
       addPointBtnRef.current = btn;
     }
 
@@ -195,11 +196,12 @@ export function RouteMap({
         addPointBtnRef.current.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="#4d4d4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3" fill="none" stroke="#4d4d4d" stroke-width="1.5"/></svg>`;
       }
     }
-  }, [isAddPointMode, onAddPointModeChange]);
+  }, [isAddPointMode, onAddPointModeChange, readonly]);
 
   // Управление cursor indicator при добавлении точек
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
 
     // Курсор-индикатор нужен только на устройствах с мышью
     const isTouchOnly = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
@@ -255,20 +257,20 @@ export function RouteMap({
       onAddPointModeChangeRef.current?.(false);
     };
 
-    if (isAddPointMode && containerRef.current) {
+    if (isAddPointMode && container) {
       // Слушаем mousemove только над контейнером карты, не глобально
-      containerRef.current.addEventListener('mousemove', handleMouseMove);
-      containerRef.current.addEventListener('mouseleave', handleMouseLeave);
-      containerRef.current.addEventListener('mouseenter', handleMouseEnter);
-      containerRef.current.addEventListener('contextmenu', handleContextMenu);
+      container.addEventListener('mousemove', handleMouseMove);
+      container.addEventListener('mouseleave', handleMouseLeave);
+      container.addEventListener('mouseenter', handleMouseEnter);
+      container.addEventListener('contextmenu', handleContextMenu);
     }
 
     return () => {
-      if (containerRef.current) {
-        containerRef.current.removeEventListener('mousemove', handleMouseMove);
-        containerRef.current.removeEventListener('mouseleave', handleMouseLeave);
-        containerRef.current.removeEventListener('mouseenter', handleMouseEnter);
-        containerRef.current.removeEventListener('contextmenu', handleContextMenu);
+      if (container) {
+        container.removeEventListener('mousemove', handleMouseMove);
+        container.removeEventListener('mouseleave', handleMouseLeave);
+        container.removeEventListener('mouseenter', handleMouseEnter);
+        container.removeEventListener('contextmenu', handleContextMenu);
       }
     };
   }, [isAddPointMode]);
@@ -298,22 +300,22 @@ export function RouteMap({
 
     loadYandexMaps(env.yandexMapsKey)
       .then(async () => {
-        if (cancelled || mapRef.current || !containerRef.current) return;
+        if (cancelled || mapRef.current || !container) return;
         const { YMapZoomControl } = await import('@yandex/ymaps3-default-ui-theme');
         if (cancelled) return;
 
-        if (containerRef.current.childElementCount > 0) {
-          containerRef.current.innerHTML = '';
+        if (container.childElementCount > 0) {
+          container.innerHTML = '';
         }
 
         // Очищаем старые инстансы перед созданием нового если лимит превышен
         cleanupOldInstances();
 
-        mapRef.current = new ymaps3.YMap(containerRef.current, {
+        mapRef.current = new ymaps3.YMap(container, {
           location: { center: [37.618423, 55.751244], zoom: 12 },
         });
-        _mapRegistry.set(containerRef.current, mapRef.current);
-        _activeInstances.push({ container: containerRef.current, instance: mapRef.current, timestamp: Date.now() });
+        _mapRegistry.set(container, mapRef.current);
+        _activeInstances.push({ container, instance: mapRef.current, timestamp: Date.now() });
 
         mapRef.current.addChild(new ymaps3.YMapDefaultSchemeLayer({}));
         mapRef.current.addChild(new ymaps3.YMapDefaultFeaturesLayer({}));
@@ -323,24 +325,13 @@ export function RouteMap({
         mapRef.current.addChild(controls);
         controlsRef.current = controls;
 
-        const listener = new ymaps3.YMapListener({
-          onUpdate: (update: any) => {
-            if (update.location?.zoom !== undefined) setZoom(update.location.zoom);
-          },
-          onClick: (_object: any, event: any) => {
-            if (!isAddPointModeRef.current) return;
-            const coords = event?.coordinates;
-            if (coords) onMapClickRef.current?.({ lon: coords[0], lat: coords[1] });
-          },
-        });
-        mapRef.current.addChild(listener);
         setMapReady(true);
       })
       .catch(console.warn);
 
     return () => {
       cancelled = true;
-      const c = containerRef.current ?? container;
+      const c = container;
       // Откладываем destroy — если это Fast Refresh remount, следующий mount
       // отменит таймер и переиспользует инстанс без создания нового WebGL-контекста.
       // Сокращаем до 100мс для более быстрой очистки при навигации.
@@ -361,6 +352,34 @@ export function RouteMap({
       mapRef.current = null;
     };
   }, []);
+
+  // Управление слушателем событий карты
+  useEffect(() => {
+    if (!mapRef.current || !mapReady) return;
+
+    const listener = new ymaps3.YMapListener({
+      onUpdate: (update: any) => {
+        if (update.location?.zoom !== undefined) setZoom(update.location.zoom);
+      },
+      onClick: (_object: any, event: any) => {
+        if (!isAddPointModeRef.current) return;
+        const coords = event?.coordinates;
+        if (coords) onMapClickRef.current?.({ lon: coords[0], lat: coords[1] });
+      },
+    });
+
+    mapRef.current.addChild(listener);
+    const m = mapRef.current;
+    return () => {
+      if (m) {
+        try {
+          m.removeChild(listener);
+        } catch (e) {
+          console.warn('[RouteMap] removeChild listener failed:', e);
+        }
+      }
+    };
+  }, [mapReady]);
 
   // Эффект запроса маршрутов для затронутых сегментов
   useEffect(() => {
@@ -820,6 +839,19 @@ export function RouteMap({
         });
       }
     }
+
+    return () => {
+      if (mapRef.current) {
+        objectsRef.current.forEach((obj) => {
+          try {
+            mapRef.current.removeChild(obj);
+          } catch (e) {
+            console.warn('[RouteMap] Cleanup removeChild failed:', e);
+          }
+        });
+        objectsRef.current = [];
+      }
+    };
   }, [pointsKey, transportModesKey, mapReady, routeProfile, zoom, segmentsData, loadingSegmentsKey, draggable]);
 
   // Прочие эффекты (зум при клике, фит на старте)
