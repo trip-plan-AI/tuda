@@ -10,6 +10,7 @@ export interface RoutePoint {
   imageUrl: string | null
   address: string | null
   order: number
+  isTitleCustom?: boolean
   transportMode?: 'driving' | 'foot' | 'bike' | 'direct'
   createdAt: string
 }

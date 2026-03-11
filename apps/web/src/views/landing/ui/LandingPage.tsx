@@ -57,6 +57,52 @@ interface GeoSuggestion {
   uri?: string;
 }
 
+function filterUniqueSuggestions(results: any[]): GeoSuggestion[] {
+  const seenCoords = new Set<string>();
+  const seenNames = new Set<string>();
+  const unique: GeoSuggestion[] = [];
+
+  for (const item of results) {
+    const displayName = (item.displayName ?? '').trim();
+    if (!displayName) continue;
+
+    const uri = item.uri as string | undefined;
+    // Check various possible coordinate fields for robustness (backend tiers may vary)
+    const lat = item.lat ?? item.geometry?.point?.lat ?? item.data?.geo_lat;
+    const lon = item.lon ?? item.geometry?.point?.lon ?? item.data?.geo_lon;
+
+    if (seenNames.has(displayName.toLowerCase())) continue;
+
+    let coordsKey = '';
+    if (lat !== undefined && lon !== undefined && !isNaN(Number(lat)) && !isNaN(Number(lon))) {
+      coordsKey = `${Number(lon).toFixed(5)},${Number(lat).toFixed(5)}`;
+    } else if (uri) {
+      const match = uri.match(/[?&]ll=([^&]+)/);
+      if (match && match[1]) {
+        const rawCoords = decodeURIComponent(match[1]);
+        const rawParts = rawCoords.split(',');
+        const p0 = Number(rawParts[0]);
+        const p1 = Number(rawParts[1]);
+        if (rawParts.length === 2 && !isNaN(p0) && !isNaN(p1)) {
+          coordsKey = `${p0.toFixed(5)},${p1.toFixed(5)}`;
+        } else {
+          coordsKey = rawCoords;
+        }
+      }
+    }
+
+    if (coordsKey) {
+      if (seenCoords.has(coordsKey)) continue;
+      seenCoords.add(coordsKey);
+    }
+
+    seenNames.add(displayName.toLowerCase());
+    unique.push({ displayName, uri });
+  }
+
+  return unique;
+}
+
 const QUICK_FILTERS = [
   { icon: '👍', label: 'Очень хвалят' },
   { icon: '🌊', label: 'Хочу на море' },
@@ -210,7 +256,7 @@ export function LandingPage() {
 
       const data = await res.json();
       const results = data.results ?? [];
-      setter(results);
+      setter(filterUniqueSuggestions(results));
     } catch (e) {
       console.error('Failed to fetch suggestions:', e);
       setter([]);
@@ -438,7 +484,7 @@ export function LandingPage() {
     <>
       <div className="relative flex flex-col min-h-full bg-white">
         {/* 1. CINEMATIC HERO SECTION (Layla Style) */}
-        <div className="relative h-auto md:h-[112vh] flex flex-col items-center justify-start md:justify-center overflow-hidden py-8 md:py-0">
+        <div className="relative h-auto md:h-[112vh] flex flex-col items-center justify-start md:justify-center overflow-hidden pt-24 pb-8 md:py-0">
           {/* Background Layer */}
           <div className="absolute inset-0 z-0">
             <div
@@ -512,7 +558,7 @@ export function LandingPage() {
               <div className="bg-white/10 backdrop-blur-3xl p-1.5 md:p-2.5 rounded-[2.5rem] md:rounded-[4rem] border border-white/20 shadow-2xl shadow-black/20 transition-none">
                 {searchMode === 'ai' ? (
                   <div className="bg-white rounded-[2.2rem] md:rounded-[3.5rem] flex items-center p-1 md:p-2 pr-2 md:pr-4 focus-within:ring-4 focus-within:ring-brand-blue/10 transition-none">
-                    <div className="flex-1 relative group">
+                    <div className="flex-1 relative group flex items-center">
                       <textarea
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -524,7 +570,7 @@ export function LandingPage() {
                         }}
                         placeholder="Например: Сочи за 45 000 руб на 5 дней"
                         rows={inputRows}
-                        className="w-full py-3 md:py-4 lg:py-6 !pl-10 md:!pl-12 lg:!pl-14 pr-12 md:pr-14 bg-transparent outline-none text-slate-800 font-bold text-[clamp(0.875rem,1.5vw,1.25rem)] placeholder:text-slate-400 placeholder:font-normal resize-none overflow-hidden leading-snug md:leading-normal transition-none"
+                        className="w-full py-2 md:py-4 lg:py-6 !px-6 md:!pl-12 md:!pr-14 lg:!pl-14 bg-transparent outline-none text-slate-800 font-bold text-[clamp(0.875rem,1.5vw,1.25rem)] placeholder:text-slate-400 placeholder:font-normal resize-none overflow-hidden leading-snug md:leading-normal transition-none"
                       />
                       <button
                         type="button"
@@ -856,31 +902,31 @@ export function LandingPage() {
 
         {/* 2. MAIN CONTENT (Smooth transition from hero) */}
         <div className="relative z-20 bg-white">
-          <div className="max-w-5xl mx-auto px-4 md:px-6 py-24 w-full">
-            <div className="flex flex-col md:flex-row justify-center items-center gap-8 md:gap-16 text-center mb-32">
+          <div className="max-w-5xl mx-auto px-4 md:px-6 py-12 md:py-24 w-full">
+            <div className="flex flex-col sm:flex-row justify-center items-center gap-6 sm:gap-8 md:gap-16 text-center mb-16 md:mb-32">
               <div className="flex flex-col items-center">
-                <h3 className="text-4xl md:text-5xl font-black text-brand-indigo tracking-tighter">
+                <h3 className="text-xl sm:text-3xl md:text-5xl font-black text-brand-indigo tracking-tighter">
                   AI
                 </h3>
-                <p className="text-xs text-slate-400 uppercase font-bold tracking-widest mt-2">
+                <p className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-widest mt-1 sm:mt-2">
                   Генерация за секунды
                 </p>
               </div>
-              <div className="w-px h-12 bg-slate-200 hidden md:block"></div>
+              <div className="w-px h-8 sm:h-12 bg-slate-200 hidden sm:block"></div>
               <div className="flex flex-col items-center">
-                <h3 className="text-4xl md:text-5xl font-black text-emerald-500 tracking-tighter">
+                <h3 className="text-xl sm:text-3xl md:text-5xl font-black text-emerald-500 tracking-tighter">
                   100%
                 </h3>
-                <p className="text-xs text-slate-400 uppercase font-bold tracking-widest mt-2">
+                <p className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-widest mt-1 sm:mt-2">
                   Редактируемый маршрут
                 </p>
               </div>
-              <div className="w-px h-12 bg-slate-200 hidden md:block"></div>
+              <div className="w-px h-8 sm:h-12 bg-slate-200 hidden sm:block"></div>
               <div className="flex flex-col items-center">
-                <h3 className="text-4xl md:text-5xl font-black text-brand-yellow tracking-tighter">
+                <h3 className="text-xl sm:text-3xl md:text-5xl font-black text-brand-yellow tracking-tighter">
                   24/7
                 </h3>
-                <p className="text-xs text-slate-400 uppercase font-bold tracking-widest mt-2">
+                <p className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-widest mt-1 sm:mt-2">
                   В любое время
                 </p>
               </div>
@@ -904,7 +950,7 @@ export function LandingPage() {
                       href={`/tours/${trip.id}`}
                       className="group block w-full cursor-pointer"
                     >
-                      <div className="relative aspect-[4/5] md:aspect-[16/10] rounded-[3rem] overflow-hidden mb-8 shadow-2xl isolation-auto">
+                      <div className="relative aspect-[4/3] md:aspect-[16/10] rounded-[3rem] overflow-hidden mb-8 shadow-2xl isolation-auto">
                         <img
                           src={trip.img}
                           className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 rounded-[3rem] will-change-transform"

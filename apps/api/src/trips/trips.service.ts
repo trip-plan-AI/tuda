@@ -6,39 +6,70 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import { DRIZZLE } from '../db/db.module';
 import * as schema from '../db/schema';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
+import { CollaboratorsService } from './collaborators.service';
 
 @Injectable()
 export class TripsService {
   constructor(
     @Inject(DRIZZLE)
     private db: NodePgDatabase<typeof schema>,
+    private collaboratorsService: CollaboratorsService,
   ) {}
 
-  findByOwner(userId: string) {
-    return this.db.query.trips.findMany({
+  async findAllForUser(userId: string) {
+    // 1. Own trips — isActive from trips table
+    const ownTrips = await this.db.query.trips.findMany({
       where: eq(schema.trips.ownerId, userId),
       orderBy: [desc(schema.trips.createdAt)],
-      with: {
-        points: {
-          orderBy: [schema.routePoints.order],
-        },
-      },
+      with: { points: { orderBy: [schema.routePoints.order] } },
     });
+
+    // 2. Trips where user is a collaborator — isActive from tripCollaborators
+    const collabRows = await this.db
+      .select({
+        tripId: schema.tripCollaborators.tripId,
+        isActive: schema.tripCollaborators.isActive,
+      })
+      .from(schema.tripCollaborators)
+      .where(eq(schema.tripCollaborators.userId, userId));
+
+    const collabIds = collabRows.map((r) => r.tripId);
+    const collabActiveMap = new Map(
+      collabRows.map((r) => [r.tripId, r.isActive]),
+    );
+
+    let collabTrips: ((typeof ownTrips)[0] & {
+      isActive: boolean;
+      ownerIsActive: boolean;
+    })[] = [];
+    if (collabIds.length > 0) {
+      const trips = await this.db.query.trips.findMany({
+        where: inArray(schema.trips.id, collabIds),
+        with: { points: { orderBy: [schema.routePoints.order] } },
+      });
+      // Override isActive with the per-user value from tripCollaborators
+      // ownerIsActive = global trips.isActive (the owner's activation state)
+      collabTrips = trips.map((t) => ({
+        ...t,
+        ownerIsActive: t.isActive,
+        isActive: collabActiveMap.get(t.id) ?? false,
+      }));
+    }
+
+    // 3. Merge, skip own trips already in the list
+    const ownIds = new Set(ownTrips.map((t) => t.id));
+    return [...ownTrips, ...collabTrips.filter((t) => !ownIds.has(t.id))];
   }
 
   findPredefined() {
     return this.db.query.trips.findMany({
       where: eq(schema.trips.isPredefined, true),
-      with: {
-        points: {
-          orderBy: [schema.routePoints.order],
-        },
-      },
+      with: { points: { orderBy: [schema.routePoints.order] } },
     });
   }
 
@@ -50,8 +81,32 @@ export class TripsService {
     return trip;
   }
 
+  async findOne(tripId: string) {
+    const trip = await this.db.query.trips.findFirst({
+      where: eq(schema.trips.id, tripId),
+      with: { points: { orderBy: [schema.routePoints.order] } },
+    });
+    if (!trip) throw new NotFoundException('Trip not found');
+
+    const collaborators = await this.collaboratorsService.getAll(tripId);
+
+    const ownerRow = await this.db.query.users.findFirst({
+      where: eq(schema.users.id, trip.ownerId),
+    });
+    const owner = ownerRow
+      ? {
+          id: ownerRow.id,
+          name: ownerRow.name,
+          email: ownerRow.email,
+          photo: ownerRow.photo,
+        }
+      : null;
+
+    return { ...trip, collaborators, owner };
+  }
+
   async findByIdWithAccess(id: string, userId: string) {
-    const trip = await this.findById(id);
+    const trip = await this.findOne(id);
     if (trip.ownerId !== userId) {
       const collab = await this.db.query.tripCollaborators.findFirst({
         where: and(
@@ -60,8 +115,13 @@ export class TripsService {
         ),
       });
       if (!collab) throw new ForbiddenException('Access denied');
+      return {
+        ...trip,
+        isActive: collab.isActive,
+        ownerIsActive: trip.isActive,
+      };
     }
-    return trip;
+    return { ...trip, ownerIsActive: trip.isActive };
   }
 
   async create(userId: string, dto: CreateTripDto) {
@@ -86,14 +146,86 @@ export class TripsService {
 
   async update(id: string, userId: string, dto: UpdateTripDto) {
     const trip = await this.findById(id);
-    if (trip.ownerId !== userId)
-      throw new ForbiddenException('Only owner can update');
+    const isOwner = trip.ownerId === userId;
 
-    if (dto.isActive === true) {
-      await this.db
-        .update(schema.trips)
-        .set({ isActive: false })
-        .where(eq(schema.trips.ownerId, userId));
+    if (!isOwner) {
+      // Verify collaborator access
+      const collab = await this.db.query.tripCollaborators.findFirst({
+        where: and(
+          eq(schema.tripCollaborators.tripId, id),
+          eq(schema.tripCollaborators.userId, userId),
+        ),
+      });
+      if (!collab) throw new ForbiddenException('Access denied');
+
+      // Collaborators can only change isActive and budget — extra fields are silently ignored
+      const { isActive, budget } = dto;
+
+      if (budget !== undefined) {
+        await this.db
+          .update(schema.trips)
+          .set({ budget, updatedAt: new Date() })
+          .where(eq(schema.trips.id, id));
+      }
+
+      if (isActive !== undefined) {
+        if (isActive) {
+          // Deactivate all trips this user owns
+          await this.db
+            .update(schema.trips)
+            .set({ isActive: false, updatedAt: new Date() })
+            .where(eq(schema.trips.ownerId, userId));
+          // Deactivate all other collab memberships for this user
+          await this.db
+            .update(schema.tripCollaborators)
+            .set({ isActive: false })
+            .where(eq(schema.tripCollaborators.userId, userId));
+          // Activate this trip for this collaborator
+          await this.db
+            .update(schema.tripCollaborators)
+            .set({ isActive: true })
+            .where(
+              and(
+                eq(schema.tripCollaborators.tripId, id),
+                eq(schema.tripCollaborators.userId, userId),
+              ),
+            );
+        } else {
+          // Deactivate only for this collaborator
+          await this.db
+            .update(schema.tripCollaborators)
+            .set({ isActive: false })
+            .where(
+              and(
+                eq(schema.tripCollaborators.tripId, id),
+                eq(schema.tripCollaborators.userId, userId),
+              ),
+            );
+        }
+      }
+      return this.findByIdWithAccess(id, userId);
+    }
+
+    // Owner update
+    if (dto.isActive !== undefined) {
+      if (dto.isActive) {
+        // Deactivate all other owner trips
+        await this.db
+          .update(schema.trips)
+          .set({ isActive: false, updatedAt: new Date() })
+          .where(eq(schema.trips.ownerId, userId));
+        // Deactivate all collab memberships for this user
+        await this.db
+          .update(schema.tripCollaborators)
+          .set({ isActive: false })
+          .where(eq(schema.tripCollaborators.userId, userId));
+      } else {
+        // Owner deactivating: force deactivate for ALL collaborators in this trip
+        await this.db
+          .update(schema.tripCollaborators)
+          .set({ isActive: false })
+          .where(eq(schema.tripCollaborators.tripId, id));
+      }
     }
 
     const [updated] = await this.db

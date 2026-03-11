@@ -15,7 +15,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/shared/ui';
 import { cn } from '@/shared/lib/utils';
@@ -175,7 +174,7 @@ export function Header() {
                     className={cn(
                       'h-10 w-10 rounded-full p-0 border transition-all shadow-sm focus-visible:ring-0',
                       isHome
-                        ? 'bg-black/40 border-white/10 text-white hover:bg-black/60 hover:text-white'
+                        ? 'hidden md:flex bg-black/40 border-white/10 text-white hover:bg-black/60 hover:text-white'
                         : 'bg-slate-50 border-slate-100 text-slate-500 hover:text-brand-indigo hover:bg-slate-100 focus-visible:border-slate-100',
                     )}
                   >
@@ -183,10 +182,13 @@ export function Header() {
                       <AvatarImage src={user?.photo ?? ''} />
                       <AvatarFallback
                         className={cn(
-                          isHome ? 'bg-grey/21 text-white' : 'bg-slate-50 text-slate-500',
+                          'font-black text-sm tracking-wide',
+                          isHome ? 'bg-grey/21 text-white' : 'bg-slate-100 text-brand-indigo',
                         )}
                       >
-                        <User size={28} strokeWidth={3} />
+                        {user?.name
+                          ? user.name.trim().slice(0, 2).toUpperCase()
+                          : <User size={28} strokeWidth={3} />}
                       </AvatarFallback>
                     </Avatar>
                   </Button>
@@ -236,7 +238,7 @@ export function Header() {
                             key={href}
                             asChild
                             noDefaultStyles
-                            className="p-0! focus:bg-transparent! outline-none"
+                            className="p-0! outline-none"
                           >
                             <Link
                               href={href}
@@ -259,7 +261,7 @@ export function Header() {
                                       : iconIdle,
                                 )}
                               >
-                                <Icon size={16} stroke={isActive ? '#fff' : 'currentColor'} />
+                                <Icon size={16} stroke={isActive || isHome ? '#fff' : 'currentColor'} />
                               </div>
                               {label}
                             </Link>
@@ -291,7 +293,7 @@ export function Header() {
                             isHome ? 'bg-red-500/20 text-red-400' : 'bg-red-50 text-red-400',
                           )}
                         >
-                          <LogOut size={16} />
+                          <LogOut size={16} stroke={isHome ? '#fff' : 'currentColor'} />
                         </div>
                         Выйти
                       </button>

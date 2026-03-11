@@ -23,12 +23,31 @@ interface TripStore {
   addTrip: (t: Trip) => void;
   updateCurrentTrip: (data: Partial<Trip>) => void;
   // Helpers for nested points management
-  setPoints: (ps: RoutePoint[]) => void;
+  setPoints: (ps: RoutePoint[], isDirty?: boolean) => void;
   addPoint: (p: RoutePoint) => void;
   updatePoint: (id: string, data: Partial<RoutePoint>) => void;
   removePoint: (id: string) => void;
   reorderPoints: (orderedIds: string[]) => void;
   clearPlanner: () => void;
+  optimizationResults: {
+    status: 'idle' | 'success' | 'optimal';
+    metrics: {
+      originalKm: number;
+      newKm: number;
+      originalHours: number;
+      newHours: number;
+      originalRub: number;
+      newRub: number;
+      isFuel?: boolean;
+    } | null;
+  };
+  setOptimizationResults: (results: TripStore['optimizationResults']) => void;
+  previousPoints: RoutePoint[] | null;
+  setPreviousPoints: (points: RoutePoint[] | null) => void;
+  lastOptimizedPoints: RoutePoint[] | null;
+  setLastOptimizedPoints: (points: RoutePoint[] | null) => void;
+  lastOptimizedProfile: string | null;
+  setLastOptimizedProfile: (profile: string | null) => void;
 }
 
 export const useTripStore = create<TripStore>()(
@@ -50,16 +69,19 @@ export const useTripStore = create<TripStore>()(
           if (!s.currentTrip) return s;
           return { currentTrip: { ...s.currentTrip, ...data }, isDirty: true };
         }),
-      setPoints: (points) =>
+      setPoints: (points, isDirty = true) =>
         set((s) => {
           if (!s.currentTrip) return s;
-          return { currentTrip: { ...s.currentTrip, points }, isDirty: false };
+          return { currentTrip: { ...s.currentTrip, points }, isDirty };
         }),
       addPoint: (p) =>
         set((s) => {
           if (!s.currentTrip) return s;
           return {
-            currentTrip: { ...s.currentTrip, points: [...s.currentTrip.points, p] },
+            currentTrip: {
+              ...s.currentTrip,
+              points: [...s.currentTrip.points, p],
+            },
             isDirty: true,
           };
         }),
@@ -69,7 +91,9 @@ export const useTripStore = create<TripStore>()(
           return {
             currentTrip: {
               ...s.currentTrip,
-              points: s.currentTrip.points.map((p) => (p.id === id ? { ...p, ...data } : p)),
+              points: s.currentTrip.points.map((p) =>
+                p.id === id ? { ...p, ...data } : p,
+              ),
             },
             isDirty: true,
           };
@@ -94,17 +118,44 @@ export const useTripStore = create<TripStore>()(
               return p ? { ...p, order: i } : null;
             })
             .filter(Boolean) as RoutePoint[];
-          return { currentTrip: { ...s.currentTrip, points: newPoints }, isDirty: true };
+          return {
+            currentTrip: { ...s.currentTrip, points: newPoints },
+            isDirty: true,
+          };
         }),
-      clearPlanner: () => set({ currentTrip: null, isDirty: false }),
+      clearPlanner: () =>
+        set({
+          currentTrip: null,
+          isDirty: false,
+          optimizationResults: { status: 'idle', metrics: null },
+          previousPoints: null,
+          lastOptimizedPoints: null,
+          lastOptimizedProfile: null,
+        }),
+      optimizationResults: { status: 'idle', metrics: null },
+      setOptimizationResults: (optimizationResults) =>
+        set({ optimizationResults }),
+      previousPoints: null,
+      setPreviousPoints: (previousPoints) => set({ previousPoints }),
+      lastOptimizedPoints: null,
+      setLastOptimizedPoints: (lastOptimizedPoints) =>
+        set({ lastOptimizedPoints }),
+      lastOptimizedProfile: null,
+      setLastOptimizedProfile: (lastOptimizedProfile) =>
+        set({ lastOptimizedProfile }),
     }),
     {
       name: 'trip-planner-storage',
       // TRI-104: сохраняем isDirty в localStorage, чтобы Planner после перехода из AI
       // корректно понимал, есть ли несохранённые локальные изменения в открытом маршруте.
-      // MERGE-NOTE: если убрать isDirty из persist, модалка при applyTripId может
-      // не показаться после возврата из AI-чата, и пользователь потеряет контекст решения.
-      partialize: (state) => ({ currentTrip: state.currentTrip, isDirty: state.isDirty }),
+      partialize: (state) => ({
+        currentTrip: state.currentTrip,
+        isDirty: state.isDirty,
+        optimizationResults: state.optimizationResults,
+        previousPoints: state.previousPoints,
+        lastOptimizedPoints: state.lastOptimizedPoints,
+        lastOptimizedProfile: state.lastOptimizedProfile,
+      }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
       },
