@@ -752,18 +752,32 @@ export function PlannerPage() {
       updateCurrentTrip(patch);
     };
 
+    const onPointAdd = ({ trip_id, ...point }: { trip_id: string } & any) => {
+      if (trip_id !== currentTrip?.id) return;
+      addPoint(point);
+    };
+
+    const onPointDelete = ({ trip_id, point_id }: { trip_id: string; point_id: string }) => {
+      if (trip_id !== currentTrip?.id) return;
+      removePoint(point_id);
+    };
+
     socket.on('point:reorder', onPointReorder);
     socket.on('point:update', onPointUpdate);
     socket.on('point:move', onPointUpdate);
     socket.on('trip:update', onTripUpdate);
+    socket.on('point:add', onPointAdd);
+    socket.on('point:delete', onPointDelete);
 
     return () => {
       socket.off('point:reorder', onPointReorder);
       socket.off('point:update', onPointUpdate);
       socket.off('point:move', onPointUpdate);
       socket.off('trip:update', onTripUpdate);
+      socket.off('point:add', onPointAdd);
+      socket.off('point:delete', onPointDelete);
     };
-  }, [currentTrip?.id, setPoints, updateCurrentTrip]);
+  }, [currentTrip?.id, setPoints, updateCurrentTrip, addPoint, removePoint]);
 
   const { isMixedRoute, mixedModes } = useMemo(() => {
     if (points.length < 2) return { isMixedRoute: false, mixedModes: [] };
@@ -1492,7 +1506,7 @@ export function PlannerPage() {
                     </div>
                     <button
                       onClick={() => {
-                        points.forEach((p) => crud.update(p.id, { transportMode: routeProfile }));
+                        points.forEach((p) => handlePointUpdate(p.id, { transportMode: routeProfile }));
                       }}
                       className="ml-4 w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center hover:bg-red-100 hover:text-red-500 transition-colors"
                       title="Сбросить на единый профиль"
@@ -1507,7 +1521,7 @@ export function PlannerPage() {
                         setRouteProfile('driving');
                         points.forEach((p) => {
                           if (p.transportMode !== 'driving')
-                            crud.update(p.id, { transportMode: 'driving' });
+                            handlePointUpdate(p.id, { transportMode: 'driving' });
                         });
                       }}
                       disabled={points.length < 2}
@@ -1526,7 +1540,7 @@ export function PlannerPage() {
                         setRouteProfile('foot');
                         points.forEach((p) => {
                           if (p.transportMode !== 'foot')
-                            crud.update(p.id, { transportMode: 'foot' });
+                            handlePointUpdate(p.id, { transportMode: 'foot' });
                         });
                       }}
                       disabled={points.length < 2}
@@ -1545,7 +1559,7 @@ export function PlannerPage() {
                         setRouteProfile('bike');
                         points.forEach((p) => {
                           if (p.transportMode !== 'bike')
-                            crud.update(p.id, { transportMode: 'bike' });
+                            handlePointUpdate(p.id, { transportMode: 'bike' });
                         });
                       }}
                       disabled={points.length < 2}
@@ -1564,7 +1578,7 @@ export function PlannerPage() {
                         setRouteProfile('direct');
                         points.forEach((p) => {
                           if (p.transportMode !== 'direct')
-                            crud.update(p.id, { transportMode: 'direct' });
+                            handlePointUpdate(p.id, { transportMode: 'direct' });
                         });
                       }}
                       disabled={points.length < 2}
