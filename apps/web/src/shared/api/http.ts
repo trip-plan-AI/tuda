@@ -5,6 +5,7 @@ interface ApiRequestError {
   status: number;
   message: string;
   code?: string;
+  session_id?: string;
 }
 
 function resolveApiBase(): string {
@@ -73,6 +74,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       status: res.status,
       message: err.message ?? `HTTP ${res.status}`,
       code: typeof err.code === 'string' ? err.code : undefined,
+      session_id: typeof err.session_id === 'string' ? err.session_id : undefined,
     };
     throw apiError;
   }
