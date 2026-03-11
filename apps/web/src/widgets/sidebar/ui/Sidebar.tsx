@@ -34,7 +34,7 @@ export function Sidebar() {
     <>
       <aside
         className={cn(
-          'hidden md:flex sticky top-16 h-[calc(100vh-64px)] backdrop-blur-md flex-col items-center py-8 gap-4 shrink-0 z-40',
+          'hidden md:flex sticky top-16 backdrop-blur-md flex-col items-center py-8 gap-4 shrink-0 z-40',
           'overflow-hidden border-r border-slate-200',
           'transition-[width,opacity,transform] duration-700 ease-[cubic-bezier(0.4,0,0.2,1)]',
           isLanding

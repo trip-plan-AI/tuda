@@ -11,6 +11,8 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { CollaborationService } from './collaboration.service';
 import { PointsService } from '../points/points.service';
+import { TripsService } from '../trips/trips.service';
+import { ForbiddenException } from '@nestjs/common';
 import { CreatePointDto } from '../points/dto/create-point.dto';
 
 interface SocketData {
@@ -36,7 +38,16 @@ export class CollaborationGateway
     private collabService: CollaborationService,
     private jwtService: JwtService,
     private pointsService: PointsService,
+    private tripsService: TripsService,
   ) {}
+
+  async checkAccess(userId: string, tripId: string) {
+    const trip = await this.tripsService.findByIdWithAccess(tripId, userId);
+    if (trip.ownerId !== userId && !trip.ownerIsActive) {
+      throw new ForbiddenException('Route editing is disabled by the owner');
+    }
+    return trip;
+  }
 
   handleConnection(client: TypedSocket) {
     try {
@@ -46,9 +57,16 @@ export class CollaborationGateway
       );
       client.data.userId = payload.sub;
       client.data.email = payload.email;
+      // Personal room so we can push notifications directly to this user
+      client.join(`user_${payload.sub}`);
     } catch {
       client.disconnect();
     }
+  }
+
+  /** Notify a specific user that they were added to a trip */
+  notifyTripShared(userId: string, trip: any) {
+    this.server.to(`user_${userId}`).emit('trip:shared', trip);
   }
 
   handleDisconnect(client: TypedSocket) {
@@ -71,7 +89,9 @@ export class CollaborationGateway
       color: this.collabService.getUserColor(client.data.userId),
     });
 
-    client.to(room).emit('presence:join', presenceData);
+    this.server.to(room).emit('presence:update', {
+      onlineUserIds: this.collabService.getOnlineUsers(data.trip_id),
+    });
   }
 
   @SubscribeMessage('leave:trip')
@@ -80,8 +100,8 @@ export class CollaborationGateway
     @MessageBody() data: { trip_id: string },
   ) {
     const room = `trip_${data.trip_id}`;
-    void client.leave(room);
-    client.to(room).emit('presence:leave', { user_id: client.data.userId });
+    client.leave(room);
+    this.collabService.removePresence(client.id, this.server);
   }
 
   @SubscribeMessage('point:add')
@@ -89,6 +109,7 @@ export class CollaborationGateway
     @ConnectedSocket() _client: TypedSocket,
     @MessageBody() data: CreatePointDto & { trip_id: string },
   ) {
+    await this.checkAccess(_client.data.userId, data.trip_id);
     const { trip_id, ...dto } = data;
     const point = await this.pointsService.create(trip_id, dto);
     this.server.to(`trip_${trip_id}`).emit('point:added', { point });
@@ -100,6 +121,7 @@ export class CollaborationGateway
     @MessageBody()
     data: { trip_id: string; point_id: string; lat: number; lon: number },
   ) {
+    await this.checkAccess(_client.data.userId, data.trip_id);
     await this.pointsService.update(data.point_id, data.trip_id, {
       lat: data.lat,
       lon: data.lon,
@@ -115,10 +137,47 @@ export class CollaborationGateway
     @ConnectedSocket() _client: TypedSocket,
     @MessageBody() data: { trip_id: string; point_id: string },
   ) {
+    await this.checkAccess(_client.data.userId, data.trip_id);
     await this.pointsService.remove(data.point_id, data.trip_id);
     this.server
       .to(`trip_${data.trip_id}`)
       .emit('point:deleted', { point_id: data.point_id });
+  }
+
+  @SubscribeMessage('point:update')
+  async handlePointUpdate(
+    @ConnectedSocket() client: TypedSocket,
+    @MessageBody()
+    data: { trip_id: string; point_id: string } & Record<string, unknown>,
+  ) {
+    await this.checkAccess(client.data.userId, data.trip_id);
+    const { trip_id, ...rest } = data;
+    // DB already saved via HTTP PATCH — just broadcast to other collaborators
+    client.to(`trip_${trip_id}`).emit('point:updated', rest);
+  }
+
+  @SubscribeMessage('point:reorder')
+  async handlePointReorder(
+    @ConnectedSocket() client: TypedSocket,
+    @MessageBody() data: { trip_id: string; pointIds: string[] },
+  ) {
+    await this.checkAccess(client.data.userId, data.trip_id);
+    // DB already saved via HTTP PATCH — just broadcast new order to other collaborators
+    client.to(`trip_${data.trip_id}`).emit('point:reorder', {
+      trip_id: data.trip_id,
+      pointIds: data.pointIds,
+    });
+  }
+
+  @SubscribeMessage('trip:update')
+  async handleTripUpdate(
+    @ConnectedSocket() client: TypedSocket,
+    @MessageBody() data: { trip_id: string } & Record<string, unknown>,
+  ) {
+    await this.checkAccess(client.data.userId, data.trip_id);
+    const { trip_id, ...patch } = data;
+    // DB already saved via HTTP PATCH — just broadcast to other collaborators
+    client.to(`trip_${trip_id}`).emit('trip:update', { trip_id, ...patch });
   }
 
   @SubscribeMessage('cursor:move')

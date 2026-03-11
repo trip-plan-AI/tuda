@@ -7,6 +7,7 @@ export interface Trip {
   budget: number | null
   ownerId: string
   isActive: boolean
+  ownerIsActive?: boolean
   isPredefined: boolean
   img?: string | null
   tags?: string[] | null

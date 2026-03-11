@@ -3,14 +3,14 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Map, MessageSquare, User } from 'lucide-react'
+import { Home, MapPin, MessageSquare, User } from 'lucide-react'
 
 import { cn } from '@/shared/lib/utils'
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth'
 
 const NAV = [
   { href: '/', icon: Home, label: 'Главная' },
-  { href: '/planner', icon: Map, label: 'Маршруты' },
+  { href: '/planner', icon: MapPin, label: 'Маршруты' },
   { href: '/ai-assistant', icon: MessageSquare, label: 'AI' },
   { href: '/profile', icon: User, label: 'Профиль' },
 ]
@@ -45,8 +45,8 @@ export function BottomNav() {
             href={href}
             onClick={(e) => handleNavClick(href, e)}
             className={cn(
-              'flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl text-slate-400 hover:text-slate-600 transition-colors',
-              pathname === href && 'bg-brand-sky/10 text-brand-sky font-bold',
+              'flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl text-brand-indigo hover:text-brand-indigo/70 transition-colors',
+              pathname === href && 'bg-brand-indigo/10 text-brand-indigo font-bold',
             )}
           >
             <Icon size={20} />

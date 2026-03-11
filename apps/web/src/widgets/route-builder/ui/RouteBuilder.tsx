@@ -22,9 +22,10 @@ interface RouteBuilderProps {
   onDelete: (id: string) => Promise<void>
   onAdd: (payload: CreatePointPayload) => Promise<unknown>
   onReorder: (orderedIds: string[]) => Promise<void>
+  onUpdate?: (id: string, payload: import('@/entities/route-point').UpdatePointPayload) => Promise<void>
 }
 
-export function RouteBuilder({ points, onDelete, onAdd, onReorder }: RouteBuilderProps) {
+export function RouteBuilder({ points, onDelete, onAdd, onReorder, onUpdate }: RouteBuilderProps) {
   const [showForm, setShowForm] = useState(false)
   const totalBudget = points.reduce((sum, p) => sum + (p.budget ?? 0), 0)
 
@@ -91,6 +92,7 @@ export function RouteBuilder({ points, onDelete, onAdd, onReorder }: RouteBuilde
                   point={point}
                   index={index}
                   onDelete={onDelete}
+                  onUpdate={onUpdate}
                 />
               ))}
             </SortableContext>
