@@ -138,7 +138,8 @@ function BudgetSummary({
 export function ProfilePage() {
   const router = useRouter();
   const { user, setUser } = useUserStore();
-  const { setCurrentTrip, currentTrip, updateCurrentTrip, setPoints, addPoint, removePoint } = useTripStore();
+  const { setCurrentTrip, currentTrip, updateCurrentTrip, setPoints, addPoint, removePoint } =
+    useTripStore();
   const { isAuthenticated } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<'routes' | 'saved'>('routes');
@@ -293,7 +294,11 @@ export function ProfilePage() {
       }
     };
 
-    const onPointUpdate = ({ trip_id, point_id, ...patch }: { trip_id: string; point_id: string } & any) => {
+    const onPointUpdate = ({
+      trip_id,
+      point_id,
+      ...patch
+    }: { trip_id: string; point_id: string } & any) => {
       if (trip_id !== currentTrip.id) return;
       const currentPoints = useTripStore.getState().currentTrip?.points || [];
       setPoints(currentPoints.map((p) => (p.id === point_id ? { ...p, ...patch } : p)));
@@ -396,6 +401,10 @@ export function ProfilePage() {
         savedTrips.map((t) => ({ ...t, isActive: t.id === routeId ? newIsActive : false })),
       );
       await tripsApi.update(routeId, { isActive: newIsActive });
+      const socket = getSocket();
+      if (socket.connected) {
+        socket.emit('trip:update', { trip_id: routeId, isActive: newIsActive });
+      }
       toast.success(newIsActive ? 'Маршрут активирован' : 'Маршрут деактивирован');
     } catch {
       toast.error('Ошибка при обновлении статуса');

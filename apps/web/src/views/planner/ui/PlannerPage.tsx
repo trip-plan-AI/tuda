@@ -714,7 +714,7 @@ export function PlannerPage() {
   const { user } = useUserStore();
   const isOwner =
     !currentTrip || currentTrip.id.startsWith('guest-') || currentTrip.ownerId === user?.id;
-  const canEdit = isOwner || !!currentTrip?.ownerIsActive;
+  const canEdit = isOwner || !!currentTrip?.isActive;
   const crud = usePointCrud(currentTrip?.id);
 
   useCollaborationSocket(currentTrip?.id ?? '', currentTrip?.isActive ?? false);
@@ -804,7 +804,7 @@ export function PlannerPage() {
   // Sync isActiveRoute with the loaded trip's actual active state
   useEffect(() => {
     setIsActiveRoute(currentTrip?.isActive ?? false);
-  }, [currentTrip?.id]);
+  }, [currentTrip?.id, currentTrip?.isActive]);
 
   useEffect(() => {
     if (!currentTrip?.id || currentTrip.id.startsWith('guest-')) return;
