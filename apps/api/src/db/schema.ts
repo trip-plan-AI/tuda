@@ -9,6 +9,8 @@ import {
   doublePrecision,
   timestamp,
   primaryKey,
+  real,
+  index,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -123,10 +125,34 @@ export const optimizationResults = pgTable('optimization_results', {
   savedKm: doublePrecision('saved_km').notNull().default(0),
   savedRub: doublePrecision('saved_rub').notNull().default(0),
   savedHours: doublePrecision('saved_hours').notNull().default(0),
-  transportMode: transportModeEnum('transport_mode').notNull().default('driving'),
+  transportMode: transportModeEnum('transport_mode')
+    .notNull()
+    .default('driving'),
   params: jsonb('params'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
+
+// popular_destinations — Tier 0 геосёрч (топ-города/курорты/аэропорты)
+export const popularDestinations = pgTable('popular_destinations', {
+  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+  // Название на русском (primary для поиска)
+  nameRu: text('name_ru').notNull(),
+  // Дополнительные имена через запятую (en, транслитерация, IATA)
+  aliases: text('aliases'),
+  // Тип: city | resort | airport | region | country
+  type: text('type').notNull().default('city'),
+  // Страна (RU, TR, TH, AE, ...)
+  countryCode: text('country_code').notNull(),
+  // Полный адрес для отображения
+  displayName: text('display_name').notNull(),
+  lon: real('lon').notNull(),
+  lat: real('lat').notNull(),
+  // Вес для сортировки (выше = популярнее)
+  popularity: real('popularity').notNull().default(1.0),
+}, (t) => [
+  index('popular_destinations_name_ru_idx').on(t.nameRu),
+  index('popular_destinations_country_idx').on(t.countryCode),
+]);
 
 // ai_sessions
 export const aiSessions = pgTable('ai_sessions', {

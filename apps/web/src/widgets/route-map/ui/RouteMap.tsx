@@ -29,6 +29,7 @@ interface RouteMapProps {
   ) => void;
   onRouteInfoLoading?: (loading: boolean) => void;
   onAffectedSegmentsChange?: (indices: Set<number>) => void;
+  readonly?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -54,6 +55,7 @@ export function RouteMap({
   onRouteInfoUpdate,
   onRouteInfoLoading,
   onAffectedSegmentsChange,
+  readonly = false,
 }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -120,7 +122,7 @@ export function RouteMap({
   // Управление кнопкой добавления точек
   useEffect(() => {
     if (!containerRef.current) return;
-    if (!onAddPointModeChange) {
+    if (!onAddPointModeChange || readonly) {
       if (addPointBtnRef.current) {
         addPointBtnRef.current.remove();
         addPointBtnRef.current = null;
@@ -300,7 +302,7 @@ export function RouteMap({
             oldPoint.lon !== newPoint.lon ||
             oldPoint.lat !== newPoint.lat;
 
-        const transportModeChanged = (oldPoint?.transportMode || routeProfile) !== (newPoint?.transportMode || routeProfile);
+        const transportModeChanged = (oldPoint?.transportMode || prevRouteProfileRef.current) !== (newPoint?.transportMode || routeProfile);
 
         if (coordsChanged || transportModeChanged) {
           // Сегмент i-1 (входящий в точку i) затронут если изменились координаты или transportMode
@@ -540,9 +542,9 @@ export function RouteMap({
       const marker = new ymaps3.YMapMarker(
         {
           coordinates: [point.lon, point.lat],
-          draggable,
+          draggable: !readonly,
           onDragMove: (newCoords: number[]) => {
-            if (!mapRef.current || pointsRef.current.length < 2) return;
+            if (readonly || !mapRef.current || pointsRef.current.length < 2) return;
 
             draggedPointIndexRef.current = index;
 

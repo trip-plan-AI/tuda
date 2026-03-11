@@ -4,13 +4,13 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   User as UserIcon,
-  Check,
   Pencil,
   Map as MapIcon,
   ArrowUp,
   AlertTriangle,
   CheckCircle2,
   UserPlus,
+  Check,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useUserStore, usersApi } from '@/entities/user';
@@ -155,6 +155,14 @@ export function ProfilePage() {
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [collaboratorsModalOpen, setCollaboratorsModalOpen] = useState(false);
   const { collaborators, setCollaborators } = useCollaborateStore();
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const progressColor =
     scrollProgress < 0.4 ? '#0ea5e9' : scrollProgress < 0.8 ? '#4f46e5' : '#9333ea';
@@ -213,6 +221,15 @@ export function ProfilePage() {
     const hasStoredToken =
       typeof window !== 'undefined' && Boolean(window.localStorage.getItem('accessToken'));
     if (!isAuthenticated && !hasStoredToken) {
+      const isSessionExpiredFlow =
+        typeof window !== 'undefined' &&
+        window.sessionStorage.getItem('auth:session-expired') === '1';
+
+      if (isSessionExpiredFlow) {
+        setIsLoadingTrips(false);
+        return;
+      }
+
       router.push('/');
       return;
     }
@@ -405,9 +422,9 @@ export function ProfilePage() {
       if (socket.connected) {
         socket.emit('trip:update', { trip_id: routeId, isActive: newIsActive });
       }
-      toast.success(newIsActive ? 'Маршрут активирован' : 'Маршрут деактивирован');
+      toast.success(newIsActive ? 'Маршрут активирован' : 'Маршрут деактивирован', { id: 'route-activation' });
     } catch {
-      toast.error('Ошибка при обновлении статуса');
+      toast.error('Ошибка при обновлении статуса', { id: 'route-activation-error' });
     }
   };
 
@@ -462,6 +479,7 @@ export function ProfilePage() {
                   <button
                     onClick={handleSaveName}
                     className="p-1.5 bg-emerald-500 text-white rounded-lg shadow-lg active:scale-90 transition-transform"
+                    aria-label="Сохранить имя"
                   >
                     <Check size={16} />
                   </button>
@@ -477,7 +495,7 @@ export function ProfilePage() {
                     className="p-1.5 bg-slate-50 text-slate-400 hover:text-brand-blue hover:bg-slate-100 rounded-lg transition-all active:scale-90"
                     aria-label="Редактировать имя"
                   >
-                    <Pencil size={14} />
+                    <span className="text-sm leading-none">✏️</span>
                   </button>
                 </>
               )}
@@ -499,8 +517,9 @@ export function ProfilePage() {
           displayedActiveRoute.points.length > 0 ? (
             <div className="w-full h-1/2 opacity-60 pointer-events-none grayscale">
               <RouteMap
+                key={`bg-${displayedActiveRoute.id}-${activeTab}`}
                 points={displayedActiveRoute.points}
-                draggable={false}
+                readonly
                 onPointDragEnd={() => {}}
               />
             </div>
@@ -589,7 +608,7 @@ export function ProfilePage() {
             <div className="h-full overflow-y-auto p-3 md:p-4 flex flex-col no-scrollbar">
               {activeTab === 'routes' ? (
                 activeRoute ? (
-                  <div className="space-y-3 w-full h-full flex flex-col animate-in fade-in duration-500">
+                  <div className="space-y-3 w-full h-full flex flex-col">
                     <div className="flex justify-between items-center px-1">
                       <h3 className="text-[10px] font-black text-brand-indigo uppercase tracking-widest">
                         Активный маршрут
@@ -687,6 +706,13 @@ export function ProfilePage() {
                         />
                       </div>
                     </div>
+
+                    {/* Превью карты (только мобилка) */}
+                    {isMobile && (
+                      <div className="w-full aspect-[16/9] md:hidden rounded-2xl overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100 mt-3">
+                        <RouteMap key={`card-${activeRoute.id}-${activeTab}`} points={activeRoute.points || []} onPointDragEnd={() => {}} />
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-6">
@@ -780,14 +806,15 @@ export function ProfilePage() {
           </div>
         </div>
 
-        <div className="hidden md:flex flex-1 relative bg-slate-50 items-center justify-center overflow-hidden p-100 md:p-4">
+        <div className="hidden md:flex flex-1 relative bg-slate-50 items-center justify-center overflow-hidden p-4">
           <div className="w-full h-full max-w-[96%] max-h-[96%] overflow-hidden relative rounded-2xl border border-slate-200 shadow-lg">
             {displayedActiveRoute &&
             displayedActiveRoute.points &&
             displayedActiveRoute.points.length > 0 ? (
               <RouteMap
+                key={`desktop-${displayedActiveRoute.id}-${activeTab}`}
                 points={displayedActiveRoute.points}
-                draggable={false}
+                readonly
                 onPointDragEnd={() => {}}
               />
             ) : (

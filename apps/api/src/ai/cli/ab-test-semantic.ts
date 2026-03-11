@@ -1,6 +1,10 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
 import { config } from 'dotenv';
 import path from 'path';
-import fs from 'fs';
 
 // Загружаем ENV из корня проекта (путь к travel-planner/.env относительно запущенного файла)
 config({ path: path.resolve(__dirname, '../../../../../.env') });
@@ -24,8 +28,29 @@ type PoiItem = {
   description?: string; // для результата
 };
 
+interface TestIntent {
+  preferences_text: string;
+  party_type: 'family' | 'couple' | 'solo' | 'group';
+  budget_total?: number;
+}
+
+interface TestCase {
+  name: string;
+  intent: TestIntent;
+  pois: PoiItem[];
+}
+
+interface ModelSelectedItem {
+  id: string;
+  description: string;
+}
+
+interface ModelResponse {
+  selected: ModelSelectedItem[];
+}
+
 // 3 тестовых набора
-const TEST_CASES = [
+const TEST_CASES: TestCase[] = [
   {
     name: 'Сценарий 1: Семья с детьми, парки и развлечения',
     intent: {
@@ -156,7 +181,7 @@ const TEST_CASES = [
   },
 ];
 
-function buildPrompt(pois: PoiItem[], intent: any): string {
+function buildPrompt(pois: PoiItem[], intent: TestIntent): string {
   return `Выбери от 3 до 5 самых подходящих мест для посещения.
 Предпочтения: ${intent.preferences_text}
 Тип группы: ${intent.party_type}
@@ -184,7 +209,7 @@ ${JSON.stringify(
 }`;
 }
 
-async function askYandexGPT(prompt: string) {
+async function askYandexGPT(prompt: string): Promise<ModelResponse> {
   const response = await fetch(
     'https://llm.api.cloud.yandex.net/foundationModels/v1/completion',
     {
@@ -207,10 +232,10 @@ async function askYandexGPT(prompt: string) {
     );
   const data = await response.json();
   const text = data.result?.alternatives?.[0]?.message?.text ?? '{}';
-  return JSON.parse(text.replace(/```json\n?|\n?```/g, ''));
+  return JSON.parse(text.replace(/```json\n?|\n?```/g, '')) as ModelResponse;
 }
 
-async function askOpenRouter(prompt: string) {
+async function askOpenRouter(prompt: string): Promise<ModelResponse> {
   const response = await fetch(
     'https://openrouter.ai/api/v1/chat/completions',
     {
@@ -240,7 +265,7 @@ async function askOpenRouter(prompt: string) {
     );
   const data = await response.json();
   const text = data.choices[0]?.message?.content ?? '{}';
-  return JSON.parse(text.replace(/```json\n?|\n?```/g, ''));
+  return JSON.parse(text.replace(/```json\n?|\n?```/g, '')) as ModelResponse;
 }
 
 async function runTests() {
@@ -261,12 +286,13 @@ async function runTests() {
       const yandexTime = Date.now() - yandexStart;
       console.log(`✅ YandexGPT ответил за ${yandexTime}ms:`);
 
-      yandexRes.selected.forEach((item: any) => {
+      yandexRes.selected.forEach((item) => {
         const poi = t.pois[Number(item.id) - 1];
         console.log(`  - [${poi.name}] (${poi.category}): ${item.description}`);
       });
-    } catch (e: any) {
-      console.error(`❌ YandexGPT Error: ${e.message}`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      console.error(`❌ YandexGPT Error: ${message}`);
     }
 
     console.log('\n-------------------------------------------\n');
@@ -278,18 +304,19 @@ async function runTests() {
       const openRouterTime = Date.now() - openRouterStart;
       console.log(`✅ GPT-4o-mini ответил за ${openRouterTime}ms:`);
 
-      openRouterRes.selected.forEach((item: any) => {
+      openRouterRes.selected.forEach((item) => {
         const poi = t.pois[Number(item.id) - 1];
         console.log(
           `  - [${poi?.name || 'Unknown'}] (${poi?.category || 'unknown'}): ${item.description}`,
         );
       });
-    } catch (e: any) {
-      console.error(`❌ GPT-4o-mini Error: ${e.message}`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      console.error(`❌ GPT-4o-mini Error: ${message}`);
     }
 
     console.log('\n\n');
   }
 }
 
-runTests().catch(console.error);
+void runTests().catch(console.error);
