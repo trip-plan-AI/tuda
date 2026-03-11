@@ -70,11 +70,39 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+    const responseObj =
+      err && typeof err.response === 'object' && err.response !== null
+        ? (err.response as Record<string, unknown>)
+        : null;
+    const nested =
+      err && typeof err.message === 'object' && err.message !== null
+        ? (err.message as Record<string, unknown>)
+        : responseObj && typeof responseObj.message === 'object'
+          ? (responseObj.message as Record<string, unknown>)
+          : null;
+
+    const resolvedMessage =
+      typeof err.message === 'string'
+        ? err.message
+        : typeof nested?.message === 'string'
+          ? nested.message
+          : `HTTP ${res.status}`;
+
     const apiError: ApiRequestError = {
       status: res.status,
-      message: err.message ?? `HTTP ${res.status}`,
-      code: typeof err.code === 'string' ? err.code : undefined,
-      session_id: typeof err.session_id === 'string' ? err.session_id : undefined,
+      message: resolvedMessage,
+      code:
+        typeof err.code === 'string'
+          ? err.code
+          : typeof nested?.code === 'string'
+            ? nested.code
+            : undefined,
+      session_id:
+        typeof err.session_id === 'string'
+          ? err.session_id
+          : typeof nested?.session_id === 'string'
+            ? nested.session_id
+            : undefined,
     };
     throw apiError;
   }
