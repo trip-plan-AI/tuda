@@ -88,6 +88,7 @@ export function RouteMap({
   onAffectedSegmentsChange,
   readonly = false,
 }: RouteMapProps) {
+  console.log('[RouteMap] Render. isAddPointMode:', isAddPointMode, 'hasOnMapClick:', !!onMapClick, 'points:', points.length);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const objectsRef = useRef<any[]>([]);
@@ -263,16 +264,20 @@ export function RouteMap({
       container.addEventListener('mouseleave', handleMouseLeave);
       container.addEventListener('mouseenter', handleMouseEnter);
       container.addEventListener('contextmenu', handleContextMenu);
-    }
-
-    return () => {
-      if (container) {
+      
+      const debugClick = (e: MouseEvent) => {
+        console.log('[RouteMap] DOM click on container. isAddPointMode:', isAddPointModeRef.current, 'target:', e.target);
+      };
+      container.addEventListener('click', debugClick, true); // Use capture phase
+      
+      return () => {
         container.removeEventListener('mousemove', handleMouseMove);
         container.removeEventListener('mouseleave', handleMouseLeave);
         container.removeEventListener('mouseenter', handleMouseEnter);
         container.removeEventListener('contextmenu', handleContextMenu);
-      }
-    };
+        container.removeEventListener('click', debugClick, true);
+      };
+    }
   }, [isAddPointMode]);
 
   // Инициализация карты
@@ -362,9 +367,23 @@ export function RouteMap({
         if (update.location?.zoom !== undefined) setZoom(update.location.zoom);
       },
       onClick: (_object: any, event: any) => {
+        console.log('[RouteMap] Map click event:', { 
+          isAddPointMode: isAddPointModeRef.current,
+          hasOnMapClick: !!onMapClickRef.current,
+          _object: !!_object,
+          event: !!event
+        });
+        
         if (!isAddPointModeRef.current) return;
-        const coords = event?.coordinates;
-        if (coords) onMapClickRef.current?.({ lon: coords[0], lat: coords[1] });
+        
+        // If we click on an object (like a marker), we might not want to add a point right there.
+        // But for v3, click on map background often has _object = null.
+        const coords = event?.coordinates || _object?.coordinates;
+        console.log('[RouteMap] Extracted coordinates:', coords);
+        
+        if (coords) {
+          onMapClickRef.current?.({ lon: coords[0], lat: coords[1] });
+        }
       },
     });
 

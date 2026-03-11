@@ -174,7 +174,7 @@ export function Header() {
                     className={cn(
                       'h-10 w-10 rounded-full p-0 border transition-all shadow-sm focus-visible:ring-0',
                       isHome
-                        ? 'bg-black/40 border-white/10 text-white hover:bg-black/60 hover:text-white'
+                        ? 'hidden md:flex bg-black/40 border-white/10 text-white hover:bg-black/60 hover:text-white'
                         : 'bg-slate-50 border-slate-100 text-slate-500 hover:text-brand-indigo hover:bg-slate-100 focus-visible:border-slate-100',
                     )}
                   >

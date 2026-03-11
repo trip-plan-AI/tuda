@@ -16,7 +16,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/shared/ui';
-import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 import { cn } from '@/shared/lib/utils';
 import { env } from '@/shared/config/env';
 
@@ -204,15 +203,12 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
   ]);
 
   const handleOpenRoute = useCallback(() => {
-    // Если в Planner УЖЕ есть какой-то непустой маршрут
-    // (даже если он сохранён или гостевой), то при открытии тура он затрётся.
-    // Поэтому всегда показываем модалку, если есть points.
-    if (points && points.length > 0) {
+    if (points && points.length > 0 && isDirty) {
       setShowConfirmOverwrite(true);
     } else {
       doOpenRoute();
     }
-  }, [points, doOpenRoute]);
+  }, [points, doOpenRoute, isDirty]);
 
   const confirmOverwrite = () => {
     setShowConfirmOverwrite(false);
@@ -271,47 +267,51 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
             {tour.description}
           </p>
 
-          {tour.budget != null && (
-            <div className="mt-6 inline-flex items-center gap-2 bg-brand-yellow/10 rounded-2xl px-5 py-3">
-              <span className="text-slate-500 font-bold text-sm uppercase tracking-widest">
-                Стоимость:
-              </span>
-              <span className="text-brand-yellow font-black text-xl">
-                {tour.budget.toLocaleString('ru-RU')} ₽
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Суммарный route info */}
-        {(routeInfo || isRouteLoading) && (
-          <div className="mb-8 flex items-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 relative overflow-hidden transition-all duration-300 min-h-[48px]">
-            {isRouteLoading && (
-              <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10">
-                <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-8">
+            {tour.budget != null && (
+              <div className="inline-flex items-center gap-2 bg-brand-yellow/10 rounded-2xl px-5 py-3 shrink-0 whitespace-nowrap">
+                <span className="text-slate-500 font-bold text-sm uppercase tracking-widest">
+                  Стоимость:
+                </span>
+                <span className="text-brand-yellow font-black text-xl">
+                  {tour.budget.toLocaleString('ru-RU')} ₽
+                </span>
               </div>
             )}
-            <div className={cn('flex items-center gap-6', isRouteLoading && 'opacity-40')}>
-              {routeInfo && (
-                <>
-                  <div className="flex items-center gap-2">
-                    <Clock size={16} className="text-brand-sky" />
-                    <span className="text-sm font-black text-slate-700 leading-none">
-                      {formatDuration(routeInfo.duration)}
-                    </span>
-                  </div>
-                  <div className="w-px h-6 bg-brand-indigo/10" />
-                  <div className="flex items-center gap-2">
-                    <MapPin size={16} className="text-brand-indigo" />
-                    <span className="text-sm font-black text-slate-700 leading-none">
-                      {formatDistance(routeInfo.distance)}
-                    </span>
-                  </div>
-                </>
+
+            {/* Суммарный route info */}
+            <div className="flex items-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 relative overflow-hidden transition-all duration-300 min-h-[48px] w-full sm:w-auto lg:min-w-[24rem] lg:w-fit h-auto sm:ml-auto">
+              {isRouteLoading && (
+                <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10 animate-in fade-in duration-200">
+                  <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
+                </div>
               )}
+              <div className={cn('flex items-center gap-6 w-full justify-center shrink-0', isRouteLoading && 'opacity-40')}>
+                {routeInfo ? (
+                  <>
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      <Clock size={16} className="text-brand-blue" />
+                      <span className="text-sm font-black text-slate-700 leading-none">
+                        {formatDuration(routeInfo.duration)}
+                      </span>
+                    </div>
+                    <div className="w-px h-6 bg-brand-indigo/10 shrink-0" />
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      <Route size={16} className="text-emerald-500" />
+                      <span className="text-sm font-black text-slate-700 leading-none">
+                        {formatDistance(routeInfo.distance)}
+                      </span>
+                    </div>
+                  </>
+                ) : !isRouteLoading && (
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">
+                    Расчёт маршрута...
+                  </span>
+                )}
+              </div>
             </div>
           </div>
-        )}
+        </div>
 
         {/* Карта с маршрутом */}
         <div className="mb-8">
@@ -394,34 +394,35 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
         )}
       </div>
 
-      <PlannerConflictModal
-        open={showConfirmOverwrite}
-        onOpenChange={setShowConfirmOverwrite}
-        conflictType="landing_new"
-        currentRouteTitle={currentTrip?.title || 'без названия'}
-        onCancel={() => setShowConfirmOverwrite(false)}
-        onReplaceWithoutSave={() => {
-          setShowConfirmOverwrite(false);
-          confirmOverwrite();
-        }}
-        onSaveAndReplace={async () => {
-          setShowConfirmOverwrite(false);
-          if (currentTrip && !currentTrip.id.startsWith('guest-')) {
-            await tripsApi.update(currentTrip.id, {
-              title: currentTrip.title,
-              description: currentTrip.description ?? undefined,
-              budget: currentTrip.budget ?? undefined,
-            });
-
-            // Если нужно сохранить точки, используем store или отдельный вызов
-          }
-          confirmOverwrite();
-        }}
-        onGoToPlannerOnly={() => {
-          setShowConfirmOverwrite(false);
-          router.push('/planner');
-        }}
-      />
+      <Dialog open={showConfirmOverwrite} onOpenChange={setShowConfirmOverwrite}>
+        <DialogContent className="sm:max-w-md border-none shadow-2xl rounded-[2.5rem] p-10 overflow-hidden">
+          <DialogHeader className="gap-4">
+            <DialogTitle className="text-xl font-black text-brand-indigo uppercase tracking-widest leading-tight">
+              Внимание
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 font-bold text-lg leading-snug">
+              В конструкторе уже есть непустой маршрут. При открытии нового маршрута старый будет
+              очищен. Продолжить?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row gap-3 mt-8">
+            <Button
+              variant="ghost"
+              className="flex-1 font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50 h-12 rounded-xl"
+              onClick={() => setShowConfirmOverwrite(false)}
+            >
+              ОТМЕНА
+            </Button>
+            <Button
+              variant="brand-indigo"
+              className="flex-1 font-black uppercase tracking-widest h-12 rounded-xl shadow-lg shadow-brand-indigo/20"
+              onClick={confirmOverwrite}
+            >
+              ПРОДОЛЖИТЬ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

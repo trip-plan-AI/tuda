@@ -19,7 +19,7 @@ async function run() {
   
   console.log('Optimizing trip', trip.id, 'with points:', trip.points.length);
   try {
-    const res = await optService.optimizeTrip(trip.id, {}, trip.userId);
+    const res = await optService.optimizeTrip(trip.id, {}, trip.ownerId);
     console.log('Success:', res.metrics);
   } catch (err) {
     console.error('Error:', err);
