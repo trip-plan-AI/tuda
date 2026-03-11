@@ -752,7 +752,7 @@ export function PlannerPage() {
   const canEdit = isOwner || !!currentTrip?.ownerIsActive;
   const crud = usePointCrud(currentTrip?.id);
 
-  useCollaborationSocket(currentTrip?.id ?? '', currentTrip?.isActive || !!currentTrip?.ownerIsActive);
+  useCollaborationSocket(currentTrip?.id ?? '');
 
   useEffect(() => {
     const socket = getSocket();
@@ -788,7 +788,7 @@ export function PlannerPage() {
 
     const onTripUpdate = ({ trip_id, ...patch }: { trip_id: string } & any) => {
       if (trip_id !== currentTrip?.id) return;
-      updateCurrentTrip(patch);
+      updateCurrentTrip({ ...patch, ...(patch.isActive !== undefined ? { ownerIsActive: patch.isActive } : {}) });
     };
 
     const onPointAdd = ({ trip_id, ...point }: { trip_id: string } & any) => {
@@ -802,7 +802,7 @@ export function PlannerPage() {
     };
 
     socket.on('point:reorder', onPointReorder);
-    socket.on('point:update', onPointUpdate);
+    socket.on('point:updated', onPointUpdate);
     socket.on('point:move', onPointUpdate);
     socket.on('trip:update', onTripUpdate);
     socket.on('point:add', onPointAdd);
@@ -810,7 +810,7 @@ export function PlannerPage() {
 
     return () => {
       socket.off('point:reorder', onPointReorder);
-      socket.off('point:update', onPointUpdate);
+      socket.off('point:updated', onPointUpdate);
       socket.off('point:move', onPointUpdate);
       socket.off('trip:update', onTripUpdate);
       socket.off('point:add', onPointAdd);
