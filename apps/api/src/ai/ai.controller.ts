@@ -23,6 +23,7 @@ import { SchedulerService } from './pipeline/scheduler.service';
 import { SemanticFilterService } from './pipeline/semantic-filter.service';
 import type { SessionMessage } from './types/pipeline.types';
 import type { RoutePlan } from './types/pipeline.types';
+import type { ParsedIntent } from './types/pipeline.types';
 import { TripsService } from '../trips/trips.service';
 import { PointsService } from '../points/points.service';
 
@@ -204,6 +205,24 @@ ${JSON.stringify(points)}
     return { ok: true };
   }
 
+  @Post('sessions')
+  async createSession(
+    @Body() dto: { trip_id?: string },
+    @CurrentUser() user: { id: string },
+  ) {
+    const session = await this.aiSessionsService.getOrCreateForPlan({
+      tripId: dto.trip_id,
+      userId: user.id,
+      sessionId: undefined,
+    });
+
+    return {
+      session_id: session.id,
+      trip_id: session.tripId,
+      created_at: session.createdAt,
+    };
+  }
+
   @Post('plan')
   async plan(
     @Body(InputSanitizerPipe) dto: AiPlanRequestDto,
@@ -218,7 +237,7 @@ ${JSON.stringify(points)}
     const llmContext = history.slice(-10);
     const orchestratorStart = Date.now();
 
-    let intent;
+    let intent: ParsedIntent;
     try {
       intent = await this.orchestratorService.parseIntent(
         dto.user_query,

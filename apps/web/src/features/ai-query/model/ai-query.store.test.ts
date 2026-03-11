@@ -60,6 +60,12 @@ describe('useAiQueryStore', () => {
   it('sends sanitized query and stores assistant response', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({
       session_id: 's-1',
+      trip_id: null,
+      created_at: new Date().toISOString(),
+    });
+
+    vi.mocked(api.post).mockResolvedValueOnce({
+      session_id: 's-1',
       route_plan: {
         city: 'Казань',
         total_budget_estimated: 2000,
@@ -104,9 +110,13 @@ describe('useAiQueryStore', () => {
 
     await useAiQueryStore.getState().sendQuery('  2   дня\nв Казани  ', 'trip-1');
 
-    expect(api.post).toHaveBeenCalledWith('/ai/plan', {
+    expect(api.post).toHaveBeenNthCalledWith(1, '/ai/sessions', {
+      trip_id: undefined,
+    });
+
+    expect(api.post).toHaveBeenNthCalledWith(2, '/ai/plan', {
       user_query: '2 дня в Казани',
-      session_id: null,
+      session_id: 's-1',
     });
 
     const state = useAiQueryStore.getState();
@@ -117,6 +127,11 @@ describe('useAiQueryStore', () => {
   });
 
   it('maps error by status', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      session_id: 's-err',
+      trip_id: null,
+      created_at: new Date().toISOString(),
+    });
     vi.mocked(api.post).mockRejectedValueOnce({ status: 429, message: 'too many' });
 
     await useAiQueryStore.getState().sendQuery('test', 'trip-1');
@@ -127,6 +142,11 @@ describe('useAiQueryStore', () => {
   });
 
   it('maps NEED_CITY error to clarification question', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      session_id: 's-need-city',
+      trip_id: null,
+      created_at: new Date().toISOString(),
+    });
     vi.mocked(api.post).mockRejectedValueOnce({
       status: 422,
       code: 'NEED_CITY',
@@ -141,6 +161,12 @@ describe('useAiQueryStore', () => {
   });
 
   it('binds local chat to server session id on NEED_CITY error', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      session_id: '3d95f381-6ce5-4d11-8fcc-d55f4ce4de66',
+      trip_id: null,
+      created_at: new Date().toISOString(),
+    });
+
     vi.mocked(api.post).mockRejectedValueOnce({
       status: 422,
       code: 'NEED_CITY',
@@ -335,5 +361,29 @@ describe('useAiQueryStore', () => {
     const stateAfterCreate = useAiQueryStore.getState();
     expect(stateAfterCreate.sessions[localId]?.sessionId).toBeNull();
     expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('creates backend chat before /ai/plan for first message', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      session_id: 'server-first',
+      trip_id: null,
+      created_at: new Date().toISOString(),
+    });
+    vi.mocked(api.post).mockRejectedValueOnce({
+      status: 422,
+      code: 'NEED_CITY',
+      session_id: 'server-first',
+      message: 'Недостаточно данных для построения маршрута. Укажите, пожалуйста, город.',
+    });
+
+    await useAiQueryStore.getState().sendQuery('небанальный');
+
+    expect(api.post).toHaveBeenNthCalledWith(1, '/ai/sessions', {
+      trip_id: undefined,
+    });
+    expect(api.post).toHaveBeenNthCalledWith(2, '/ai/plan', {
+      user_query: 'небанальный',
+      session_id: 'server-first',
+    });
   });
 });

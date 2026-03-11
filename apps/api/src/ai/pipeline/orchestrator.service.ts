@@ -125,7 +125,18 @@ export class OrchestratorService {
       .map((word) => word.trim())
       .filter(Boolean);
 
-    return words.length <= 1;
+    if (words.length === 0) return true;
+
+    // Однословный запрос может быть валидным городом (например, "Казань"),
+    // поэтому уточнение города запрашиваем только для явного шума.
+    if (words.length === 1) {
+      const token = words[0]?.toLowerCase() ?? '';
+      const hasLetters = /[a-zа-яё]/i.test(token);
+      const looksLikeNoise = /[^a-zа-яё-]/i.test(token);
+      return !hasLetters || looksLikeNoise;
+    }
+
+    return false;
   }
 
   private async callWithTimeout(

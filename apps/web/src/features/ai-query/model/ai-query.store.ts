@@ -38,6 +38,12 @@ interface SessionFromTripResponse {
   trip_id: string;
 }
 
+interface CreateSessionResponse {
+  session_id: string;
+  trip_id: string | null;
+  created_at: string;
+}
+
 interface HttpError {
   status?: number;
   message?: string;
@@ -312,6 +318,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     const activeId = ensured.activeSessionId;
     const currentSession = ensured.sessions[activeId] ?? createSession(tripId ?? null);
     const requestId = crypto.randomUUID();
+    let ensuredSessionId = currentSession.sessionId;
 
     const userMessage: ChatMessage = {
       id: requestId,
@@ -341,13 +348,48 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     }));
 
     try {
+      ensuredSessionId = preRequestSession.sessionId;
+
+      if (!ensuredSessionId) {
+        const created = await api.post<CreateSessionResponse>('/ai/sessions', {
+          trip_id: tripId && isUuid(tripId) ? tripId : undefined,
+        });
+
+        ensuredSessionId = created.session_id;
+
+        set((state) => {
+          const latestActive = state.sessions[activeId];
+          if (!latestActive) return state;
+
+          const promotedSession: ChatSession = {
+            ...latestActive,
+            id: ensuredSessionId as string,
+            sessionId: ensuredSessionId as string,
+            tripId: created.trip_id,
+            updatedAt: new Date().toISOString(),
+          };
+
+          const nextSessions = { ...state.sessions };
+          if (activeId !== promotedSession.id) {
+            delete nextSessions[activeId];
+          }
+          nextSessions[promotedSession.id] = promotedSession;
+
+          return {
+            sessions: nextSessions,
+            activeSessionId: promotedSession.id,
+            ...syncLegacyFields(nextSessions, promotedSession.id),
+          };
+        });
+      }
+
       const payload: {
         user_query: string;
         trip_id?: string;
         session_id: string | null;
       } = {
         user_query: normalized,
-        session_id: preRequestSession.sessionId,
+        session_id: ensuredSessionId,
       };
 
       if (tripId && isUuid(tripId)) {
@@ -370,7 +412,8 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       };
 
       set((state) => {
-        const activeSession = state.sessions[activeId] ?? null;
+        const sessionKey = ensuredSessionId ?? activeId;
+        const activeSession = state.sessions[sessionKey] ?? null;
         if (!activeSession) {
           return { isLoading: false };
         }
@@ -401,7 +444,8 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       const error = rawError as HttpError;
 
       set((state) => {
-        const activeSession = state.sessions[activeId] ?? null;
+        const sessionKey = ensuredSessionId ?? activeId;
+        const activeSession = state.sessions[sessionKey] ?? null;
         if (!activeSession) {
           return { isLoading: false };
         }
