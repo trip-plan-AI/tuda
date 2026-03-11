@@ -20,7 +20,8 @@ export function MessageBubble({
   appliedTripId = null,
 }: MessageBubbleProps) {
   // TRI-104: bubble знает контекст связки chat<->trip и меняет CTA:
-  // "Применить план" (первый раз) / "Обновить маршрут" (если trip уже привязан).
+  // "Применить план" только для первого создания trip из чата.
+  // Для уже связанного trip — только переход в Planner.
   // MERGE-NOTE: если переносите кнопки из bubble в другой компонент, сохраните эту развилку,
   // иначе сломается UX-логика one-to-one связи.
   const isAssistant = message.role === 'assistant';
@@ -125,26 +126,28 @@ export function MessageBubble({
 
             {onApplyPlan && (
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onApplyPlan(message.id)}
-                  className={[
-                    'rounded-lg px-3 py-2 text-xs font-semibold transition',
-                    wasApplied
-                      ? 'cursor-default bg-emerald-100 text-emerald-700'
-                      : 'bg-brand-sky text-white hover:bg-brand-sky/90',
-                  ].join(' ')}
-                >
-                  {wasApplied
-                    ? '✓ План применен'
-                    : hasLinkedTrip
-                      ? 'Обновить маршрут'
-                      : 'Применить план в маршрут'}
-                </button>
+                {!hasLinkedTrip && (
+                  <button
+                    type="button"
+                    onClick={() => onApplyPlan(message.id)}
+                    className={[
+                      'rounded-lg px-3 py-2 text-xs font-semibold transition',
+                      wasApplied
+                        ? 'cursor-default bg-emerald-100 text-emerald-700'
+                        : 'bg-brand-sky text-white hover:bg-brand-sky/90',
+                    ].join(' ')}
+                  >
+                    {wasApplied ? '✓ План применен' : 'Применить план в маршрут'}
+                  </button>
+                )}
 
-                {wasApplied && (
+                {(wasApplied || hasLinkedTrip) && (
                   <Link
-                    href={appliedTripId ? `/planner?applyTripId=${encodeURIComponent(appliedTripId)}` : '/planner'}
+                    href={
+                      appliedTripId
+                        ? `/planner?applyTripId=${encodeURIComponent(appliedTripId)}&draftMessageId=${encodeURIComponent(message.id)}`
+                        : '/planner'
+                    }
                     className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-brand-indigo hover:text-brand-indigo"
                   >
                     Открыть Planner 🗺️

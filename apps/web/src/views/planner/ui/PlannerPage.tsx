@@ -330,7 +330,7 @@ function SortablePointRow({
                   </div>
                 )}
                 {leg && (
-                  <div className={cn("flex items-center gap-1.5", isRouteLoading && "opacity-40")}>
+                  <div className={cn('flex items-center gap-1.5', isRouteLoading && 'opacity-40')}>
                     {(point.transportMode || 'driving') !== 'direct' && (
                       <>
                         <div className="flex items-center gap-1.5 whitespace-nowrap">
@@ -584,8 +584,6 @@ const weatherIcons = [Cloud, Sun, CloudSun, Wind];
 
 export function PlannerPage() {
   // TRI-104: Planner выступает конечной точкой синхронизации для маршрутов из AI-чата.
-  // MERGE-NOTE: state below (showApplyConfirm/applyModalType/pendingApplyTripId) участвует
-  // в конфликт-резолвинге при переходе из /ai-assistant, не удалять без замены эквивалентным механизмом.
   const router = useRouter();
   const searchParams = useSearchParams();
   const { openOrCreateSessionFromTrip } = useAiQueryStore();
@@ -598,10 +596,12 @@ export function PlannerPage() {
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const justMigratedRef = useRef(false);
+  const handledApplyTripIdRef = useRef<string | null>(null);
 
   const [isActiveRoute, setIsActiveRoute] = useState(false);
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
   const [showBudgetWarning, setShowBudgetWarning] = useState(true);
+  const [lastMapRenderAt, setLastMapRenderAt] = useState<number>(Date.now());
 
   const [editingPointId, setEditingPointId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -866,7 +866,10 @@ export function PlannerPage() {
       if (newIndex < newOrder.length - 1) affectedIndices.add(newIndex); // сегмент после новой позиции
 
       // Собираем обновления для затронутых точек
-      const pointsToUpdate: Array<{ id: string; transportMode: 'driving' | 'foot' | 'bike' | 'direct' }> = [];
+      const pointsToUpdate: Array<{
+        id: string;
+        transportMode: 'driving' | 'foot' | 'bike' | 'direct';
+      }> = [];
       updatedOrder.forEach((p, i) => {
         if (i > 0 && affectedIndices.has(i - 1)) {
           // Точка i определяет сегмент (i-1)→i, и этот сегмент был затронут
@@ -1199,8 +1202,8 @@ export function PlannerPage() {
 
   const saveCurrentTrip = useCallback(async () => {
     // TRI-104: выделенный helper сохранения перед переходом в AI или перед заменой маршрута.
-    // MERGE-NOTE: все новые точки входа, где возможно потерять несохранённые изменения,
-    // должны использовать этот helper, иначе поведение модалок будет расходиться.
+    // MERGE-NOTE: все новые точки входа должны использовать этот helper,
+    // чтобы заголовок/бюджет маршрута были консистентны перед переходом в AI.
     if (!isAuthenticated) {
       setModal('register');
       return false;
@@ -1243,48 +1246,58 @@ export function PlannerPage() {
       const targetPoints = await pointsApi.getAll(tripId);
       setCurrentTrip({ ...target, points: targetPoints });
       setSaved();
+      setLastMapRenderAt(Date.now());
+      handledApplyTripIdRef.current = tripId;
+
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('applyTripId');
+      const nextQuery = params.toString();
+      router.replace(nextQuery ? `/planner?${nextQuery}` : '/planner');
+
       toast.success('Маршрут из AI чата открыт в Planner');
     },
-    [setCurrentTrip, setSaved],
+    [router, searchParams, setCurrentTrip, setSaved],
   );
 
   useEffect(() => {
-    // TRI-104: обработка перехода AI -> Planner с защитой от потери несохранённых правок.
-    // Сценарии: same trip + dirty, different trip + dirty, safe replace без dirty.
-    // MERGE-NOTE: effect завязан на query applyTripId из AIAssistantPage/MessageBubble.
+    // TRI-104: обработка перехода AI -> Planner.
+    // По продуктовой логике: если открыт старый/другой маршрут с локальными правками,
+    // перед заменой показываем модалку выбора действия.
     const incomingTripId = searchParams.get('applyTripId');
+    const draftMessageId = searchParams.get('draftMessageId');
     if (!incomingTripId || incomingTripId.startsWith('guest-')) return;
-    if (pendingApplyTripId === incomingTripId) return;
+    if (handledApplyTripIdRef.current === incomingTripId) return;
 
-    if (!currentTrip || currentTrip.id === incomingTripId) {
-      if (currentTrip?.id === incomingTripId && isDirty) {
+    if (!currentTrip) {
+      void applyIncomingTrip(incomingTripId);
+      return;
+    }
+
+    if (currentTrip.id === incomingTripId) {
+      // Для одного и того же маршрута считаем переход из чата потенциально новой версией,
+      // если пришёл draftMessageId или есть несохранённые локальные правки.
+      if (Boolean(draftMessageId) || isDirty) {
         setPendingApplyTripId(incomingTripId);
         setApplyModalType('same');
         setPendingApplyTripTitle(currentTrip.title || 'текущий маршрут');
         setShowApplyConfirm(true);
-      } else {
-        void applyIncomingTrip(incomingTripId);
+        return;
       }
+
+      void applyIncomingTrip(incomingTripId);
       return;
     }
 
-    setPendingApplyTripId(incomingTripId);
-    setPendingApplyTripTitle(currentTrip.title || 'текущий маршрут');
-
     if (isDirty) {
+      setPendingApplyTripId(incomingTripId);
       setApplyModalType('different');
+      setPendingApplyTripTitle(currentTrip.title || 'текущий маршрут');
       setShowApplyConfirm(true);
       return;
     }
 
     void applyIncomingTrip(incomingTripId);
-  }, [
-    applyIncomingTrip,
-    currentTrip,
-    isDirty,
-    pendingApplyTripId,
-    searchParams,
-  ]);
+  }, [applyIncomingTrip, currentTrip, isDirty, searchParams]);
 
   return (
     <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
@@ -1531,7 +1544,7 @@ export function PlannerPage() {
                       <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
                     </div>
                   )}
-                  <div className={cn("flex items-center gap-6", isRouteLoading && "opacity-40")}>
+                  <div className={cn('flex items-center gap-6', isRouteLoading && 'opacity-40')}>
                     {routeInfo && routeProfile !== 'direct' && (
                       <>
                         <div className="flex items-center gap-2">
@@ -1558,6 +1571,7 @@ export function PlannerPage() {
 
             <div className="w-full aspect-[4/5] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden relative z-0 border border-slate-200 shadow-inner bg-slate-50 group">
               <RouteMap
+                key={`route-map-${currentTrip?.id ?? 'none'}-${lastMapRenderAt}`}
                 points={points}
                 focusCoords={focusCoords}
                 onPointDragEnd={handlePointDragEnd}
@@ -1744,7 +1758,9 @@ export function PlannerPage() {
                               backendMessage.includes('Not enough points to optimize')
                             ) {
                               const serverPoints = await pointsApi.getAll(tripId);
-                              await Promise.all(serverPoints.map((p) => pointsApi.remove(tripId, p.id)));
+                              await Promise.all(
+                                serverPoints.map((p) => pointsApi.remove(tripId, p.id)),
+                              );
 
                               const recreatedPoints = await Promise.all(
                                 points.map((p, index) =>
@@ -1779,7 +1795,9 @@ export function PlannerPage() {
                             } else {
                               const nextBackendMessage =
                                 typeof result?.message === 'string' ? result.message : '';
-                              const userMessage = nextBackendMessage.includes('Not enough points to optimize')
+                              const userMessage = nextBackendMessage.includes(
+                                'Not enough points to optimize',
+                              )
                                 ? 'Недостаточно точек в сохранённом маршруте. Сначала сохраните точки, затем повторите оптимизацию.'
                                 : 'Оптимизация не внесла изменений в маршрут.';
 
@@ -1824,7 +1842,9 @@ export function PlannerPage() {
                               }
 
                               toast.success('Маршрут сохранен. Переходим в AI-чат');
-                              router.push(`/ai-assistant?sessionId=${encodeURIComponent(sessionId)}`);
+                              router.push(
+                                `/ai-assistant?sessionId=${encodeURIComponent(sessionId)}`,
+                              );
                             } catch {
                               toast.error('Не удалось подготовить маршрут для AI');
                             }
@@ -1943,7 +1963,9 @@ export function PlannerPage() {
                             {trip.title}
                           </h3>
                           <div className="bg-brand-yellow text-white px-6 py-2.5 rounded-full text-sm font-black uppercase tracking-widest inline-block shadow-xl">
-                            {trip.budget ? `${trip.budget.toLocaleString('ru-RU')} ₽` : 'По запросу'}
+                            {trip.budget
+                              ? `${trip.budget.toLocaleString('ru-RU')} ₽`
+                              : 'По запросу'}
                           </div>
                         </div>
                       </div>
@@ -1997,44 +2019,41 @@ export function PlannerPage() {
       </Dialog>
 
       <Dialog open={showApplyConfirm} onOpenChange={setShowApplyConfirm}>
-        {/* TRI-104: conflict modal для входящего applyTripId из AI-чата.
-            MERGE-NOTE: три действия (save/replace/cancel) обязательны по PRD и UX-сценарию. */}
-        <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl p-8">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-black text-brand-indigo">
-              {applyModalType === 'same' ? 'Есть несохраненные изменения' : 'Сохранить текущий маршрут?'}
-            </DialogTitle>
-            <DialogDescription className="text-slate-600 text-sm">
+        <DialogContent className="sm:max-w-xl rounded-[2rem] border-none shadow-2xl p-8 md:p-10">
+          <DialogHeader className="gap-3">
+            <DialogTitle className="text-2xl font-black text-brand-indigo tracking-tight">
               {applyModalType === 'same'
-                ? 'В планировщике открыта старая версия этого маршрута с несохраненными изменениями. Если применить план из AI-чата, текущие правки будут заменены.'
-                : `Сейчас открыт маршрут «${pendingApplyTripTitle}» с несохраненными изменениями. Если открыть маршрут из AI-чата, текущие правки будут потеряны.`}
+                ? 'Внимание: перезапись маршрута'
+                : 'Внимание: потеря текущего маршрута'}
+            </DialogTitle>
+            <DialogDescription className="text-slate-600 text-base leading-relaxed">
+              {applyModalType === 'same' ? (
+                <>
+                  В планировщике сейчас открыта{' '}
+                  <span className="font-bold text-slate-800">старая версия</span> этого же маршрута.{' '}
+                  Если вы продолжите, все текущие точки на карте{' '}
+                  <span className="font-bold text-rose-600 underline decoration-rose-200 decoration-2 underline-offset-4">
+                    будут безвозвратно заменены
+                  </span>{' '}
+                  на новую версию из AI-чата.
+                </>
+              ) : (
+                <>
+                  Сейчас у вас открыт маршрут{' '}
+                  <span className="font-bold text-slate-800">«{pendingApplyTripTitle}»</span>. Если
+                  вы откроете новый план из чата, текущий маршрут{' '}
+                  <span className="font-bold text-rose-600 underline decoration-rose-200 decoration-2 underline-offset-4">
+                    будет закрыт без сохранения
+                  </span>{' '}
+                  последних изменений.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="flex-col sm:flex-row gap-2 mt-4">
+          <DialogFooter className="flex flex-col gap-3 mt-8 sm:flex-col sm:justify-center">
             <Button
               variant="brand-indigo"
-              className="flex-1"
-              onClick={() => {
-                void (async () => {
-                  if (!pendingApplyTripId) return;
-                  try {
-                    const saved = await saveCurrentTrip();
-                    if (!saved) return;
-                    await applyIncomingTrip(pendingApplyTripId);
-                  } finally {
-                    setShowApplyConfirm(false);
-                    setPendingApplyTripId(null);
-                  }
-                })();
-              }}
-            >
-              {applyModalType === 'same'
-                ? 'Сохранить текущие и обновить'
-                : `Сохранить «${pendingApplyTripTitle}» и открыть новый`}
-            </Button>
-            <Button
-              variant="ghost"
-              className="flex-1 text-rose-600 hover:text-rose-700"
+              className="w-full h-14 text-base font-black uppercase tracking-widest bg-rose-500 hover:bg-rose-600 text-white shadow-lg shadow-rose-500/20 border-none"
               onClick={() => {
                 void (async () => {
                   if (!pendingApplyTripId) return;
@@ -2044,24 +2063,23 @@ export function PlannerPage() {
                 })();
               }}
             >
-              {applyModalType === 'same'
-                ? 'Заменить план (без сохранения)'
-                : 'Открыть новый (без сохранения старого)'}
+              ДА, ЗАМЕНИТЬ МАРШРУТ
             </Button>
             <Button
               variant="outline"
-              className="flex-1"
+              className="w-full h-14 text-base font-bold text-slate-500 hover:bg-slate-50 hover:text-slate-700 border-2 border-slate-200 rounded-xl"
               onClick={() => {
                 setShowApplyConfirm(false);
                 setPendingApplyTripId(null);
                 toast.info('Применение маршрута из AI-чата отменено');
               }}
             >
-              Отмена
+              ОТМЕНА
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
       <CompareSaveModal
         isOpen={compareModalData.isOpen}
         onClose={() => setCompareModalData((prev) => ({ ...prev, isOpen: false }))}
