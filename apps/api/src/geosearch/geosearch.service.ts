@@ -44,6 +44,66 @@ const NOMINATIM_GEO_EXCLUDED = new Set([
   'amenity', 'building', 'shop', 'office', 'craft',
 ]);
 
+/**
+ * Нормализует для нечёткого сравнения:
+ * ё→е (часто не ставят точки), э→е (иностранные названия: Лэнд→Ленд, Питерлэнд→Питерленд)
+ */
+function yo(s: string): string {
+  return s.replace(/[ёэ]/g, 'е').replace(/[ЁЭ]/g, 'Е');
+}
+
+/**
+ * Расстояние Левенштейна между двумя строками.
+ * Early-exit если разница длин > maxDist — ускоряет фильтрацию.
+ */
+function levenshtein(a: string, b: string, maxDist: number): number {
+  if (Math.abs(a.length - b.length) > maxDist) return 99;
+  if (a === b) return 0;
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  const curr = new Array<number>(b.length + 1);
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      curr[j] =
+        a[i - 1] === b[j - 1]
+          ? (prev[j - 1] ?? 0)
+          : 1 + Math.min(prev[j] ?? 99, curr[j - 1] ?? 99, prev[j - 1] ?? 99);
+    }
+    prev.splice(0, prev.length, ...curr);
+  }
+  return prev[b.length] ?? 99;
+}
+
+/**
+ * Проверяет вхождение слова в текст с учётом опечаток:
+ * - точное includes (быстрый путь)
+ * - для слов ≥ 4 символов: Левенштейн ≤ 1 (строго — чтобы не было ложных срабатываний)
+ */
+function fuzzyIncludes(text: string, word: string): boolean {
+  if (text.includes(word)) return true;
+  if (word.length < 4) return false;
+  const tokens = text
+    .split(/[\s,«»"'.;()/\\-]+/)
+    .filter(t => Math.abs(t.length - word.length) <= 1);
+  return tokens.some(t => levenshtein(t, word, 1) <= 1);
+}
+
+/**
+ * Приводит адрес к формату "Улица, дом, город".
+ * Nominatim иногда возвращает "8 к1, Купчинская улица, ..." — переставляем.
+ */
+function normalizeAddress(displayName: string): string {
+  const [first, second, ...rest] = displayName.split(',').map(p => p.trim());
+  if (!first || !second) return displayName;
+
+  // Если первый сегмент — это номер дома (начинается с цифры),
+  // а второй — улица (содержит буквы) — переставляем
+  if (/^\d/.test(first) && /[а-яА-Яa-zA-Z]/.test(second)) {
+    return [`${second}, ${first}`, ...rest].join(', ');
+  }
+  return displayName;
+}
+
 @Injectable()
 export class GeosearchService {
   constructor(
@@ -75,14 +135,14 @@ export class GeosearchService {
     return process.env.DADATA_API_KEY;
   }
 
-  async suggest(query: string) {
+  async suggest(query: string, userLat?: number, userLon?: number) {
     const normalized = query.trim();
     if (normalized.length < 2) return [];
 
     // Tier 1: Redis cache (TTL 7 дней)
     const cacheKey = `geo:suggest:${normalized.toLowerCase()}`;
     const cached = await this.redis.get(cacheKey);
-    if (cached) return JSON.parse(cached);
+    if (cached) return this.applyProximity(JSON.parse(cached), userLat, userLon);
 
     // Tier 0 (DB) + Tier 2: DaData (RU) + Nominatim WW параллельно, timeout 800ms
     const [tier0Res, dadataRes, nominatimWwRes] = await Promise.allSettled([
@@ -97,45 +157,78 @@ export class GeosearchService {
     const dadataItems = dadataRes.status === 'fulfilled' ? (dadataRes.value ?? []) : [];
     const nominatimWwItems = nominatimWwRes.status === 'fulfilled' ? (nominatimWwRes.value ?? []) : [];
 
-    // Merge + dedup по координатам (±0.01° ≈ 1км)
-    const seen = new Set<string>();
-    const merged = [...tier0Items, ...dadataItems, ...nominatimWwItems].filter(item => {
+    // Score сначала — чтобы dedup оставлял наиболее релевантный результат в ячейке
+    const allScored = [...tier0Items, ...dadataItems, ...nominatimWwItems]
+      .map(item => {
+        // Tier0 items имеют score из DB; если он невалидный (NaN/null) — пересчитываем
+        if ('score' in item && typeof (item as any).score === 'number' && isFinite((item as any).score)) {
+          return item as any;
+        }
+        return { ...item, score: this.scoreResult(item.displayName, normalized) };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    // Dedup pass 1: координаты (0.02° ≈ 2км) — highest-scored в ячейке
+    const seenCoords = new Set<string>();
+    const coordDeduped = allScored.filter(item => {
       const match = item.uri.match(/ll=([^&]+)/);
       if (!match) return true;
       const [lon, lat] = match[1].split(',').map(Number);
       if (isNaN(lon) || isNaN(lat)) return true;
-      const key = `${lon.toFixed(2)},${lat.toFixed(2)}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
+      const key = `${Math.round(lon * 50)},${Math.round(lat * 50)}`;
+      if (seenCoords.has(key)) return false;
+      seenCoords.add(key);
       return true;
     });
 
-    // Score + sort
-    const scored = merged
-      .map(item => {
-        if ('score' in item) return item as any;
-        return { ...item, score: this.scoreResult(item.displayName, normalized) };
-      })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 10);
+    // Dedup pass 2: имя (первый сегмент до запятой) — убирает сегменты одной улицы
+    // на границе координатных ячеек (напр. два фрагмента "Купчинской улицы" в СПб)
+    const seenName = new Set<string>();
+    const scored = coordDeduped.filter(item => {
+      const firstName = yo(item.displayName.split(',')[0].trim().toLowerCase());
+      if (!firstName) return true;
+      if (seenName.has(firstName)) return false;
+      seenName.add(firstName);
+      return true;
+    }).slice(0, 10);
 
     if (scored.length > 0 && scored[0].score >= 2) {
       await this.redis.set(cacheKey, JSON.stringify(scored), 60 * 60 * 24 * 7);
-      return scored;
+      return this.applyProximity(scored, userLat, userLon);
     }
 
     // Tier 3: Photon → Yandex (если Tier 2 ничего не нашёл или score слабый)
     const photonResults = await this.getPhotonSuggestions(normalized);
     if (photonResults && photonResults.length > 0) {
       await this.redis.set(cacheKey, JSON.stringify(photonResults), 60 * 60 * 24 * 7);
-      return photonResults;
+      return this.applyProximity(photonResults, userLat, userLon);
     }
 
     const yandexResults = await this.getYandexSuggestions(normalized);
     if (yandexResults && yandexResults.length > 0) {
       await this.redis.set(cacheKey, JSON.stringify(yandexResults), 60 * 60 * 24 * 7);
     }
-    return yandexResults;
+    return this.applyProximity(yandexResults ?? [], userLat, userLon);
+  }
+
+  private applyProximity(
+    results: any[],
+    userLat?: number,
+    userLon?: number,
+  ): any[] {
+    if (userLat === undefined || userLon === undefined) return results;
+    return results
+      .map(item => {
+        const match = (item.uri as string | undefined)?.match(/ll=([^&]+)/);
+        if (!match) return item;
+        const [lon, lat] = match[1].split(',').map(Number);
+        if (isNaN(lon) || isNaN(lat)) return item;
+        // Евклидово расстояние в градусах; decay ≈ 5° ~ 500км
+        const distDeg = Math.sqrt((lon - userLon) ** 2 + (lat - userLat) ** 2);
+        const proximityBonus = 2.0 * Math.exp(-distDeg / 5);
+        return { ...item, score: item.score + proximityBonus };
+      })
+      .sort((a, b) => b.score - a.score);
   }
 
   private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
@@ -146,14 +239,33 @@ export class GeosearchService {
   }
 
   private scoreResult(displayName: string, query: string): number {
-    const dn = displayName.toLowerCase();
-    const words = query.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+    const dn = yo(displayName.toLowerCase());
+    // Числа (номера домов "8", "12а") не фильтруем по длине — они специфичны
+    const words = yo(query.toLowerCase()).split(/\s+/).filter(w => w.length >= 3 || /^\d+[а-яa-z]?$/.test(w));
 
     let textScore = 0;
     for (const w of words) {
-      if (dn.startsWith(w)) textScore = Math.max(textScore, 3.0);
-      else if (new RegExp(`\\b${w}\\b`).test(dn)) textScore = Math.max(textScore, 2.5);
-      else if (dn.includes(w)) textScore = Math.max(textScore, 1.5);
+      if (dn.startsWith(w)) textScore += 3.0;
+      else if (new RegExp(`\\b${w}\\b`).test(dn)) textScore += 2.5;
+      else if (dn.includes(w)) textScore += 1.5;
+      else if (fuzzyIncludes(dn, w)) textScore += 1.0; // опечатка 1-2 символа
+      // слово не найдено — вклад 0 (неявно штрафует частичные совпадения)
+    }
+
+    // Бонус за совпадение номера дома: если в запросе есть число и оно есть в результате
+    // рядом с маркерами дома (д., дом, , 8, / 8) или в начале строки — точный адрес
+    const houseNums = words.filter(w => /^\d+[а-яa-z]?$/.test(w));
+    let houseBonus = 0;
+    for (const num of houseNums) {
+      const strictRe = new RegExp(`(д\\.?\\s*|дом\\s*|,\\s*|/\\s*)${num}(\\s|,|к\\s*\\d|$)`);
+      const startRe = new RegExp(`^${num}(\\s|,|к\\s*\\d)`); // "8 к1, улица..." (Nominatim)
+      if (strictRe.test(dn) || startRe.test(dn)) {
+        houseBonus = 2.5; // точный адрес — сильный буст
+        break;
+      } else if (new RegExp(`\\b${num}\\b`).test(dn)) {
+        // число есть как отдельный токен, но не как явный номер дома — слабый буст
+        houseBonus = Math.max(houseBonus, 0.5);
+      }
     }
 
     // type_bonus по ключевым словам
@@ -165,7 +277,7 @@ export class GeosearchService {
     else if (/\b(улица|ул\.|проспект|пр-т|переулок|шоссе|street|avenue|road)\b/i.test(dn)) typeBonus = -0.5;
     else if (/\b(сельское поселение|муниципальный округ|городской округ)\b/i.test(dn)) typeBonus = 0.5;
 
-    return textScore * 2 + typeBonus;
+    return textScore * 2 + houseBonus + typeBonus;
   }
 
   private async getDaDataSuggestions(
@@ -194,19 +306,23 @@ export class GeosearchService {
         ? data.suggestions
         : [];
 
-      const matchWords = q.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+      const matchWords = yo(q.toLowerCase()).split(/\s+/).filter(w => w.length >= 3);
       return suggestions
         .filter((item: any) => {
           if (!item.data.geo_lon || !item.data.geo_lat) return false;
           // Проверяем только географические поля (city, settlement, region, street)
           // чтобы не матчить названия бизнесов ("ресторан Токио в Москве")
           const d = item.data;
-          // Только city/settlement/region — не street, чтобы "париж" не матчил "Парижской Коммуны"
+          // city/settlement/region/area — fuzzy includes (опечатки в названии города)
           const geoFields = [
             d.city, d.settlement, d.region, d.area,
-          ].filter(Boolean).map((f: string) => f.toLowerCase());
+          ].filter(Boolean).map((f: string) => yo(f.toLowerCase()));
+          // street — fuzzy совпадение (DaData сам делает fuzzy, мы не должны его блокировать)
+          // "париж" не матчит "Парижской Коммуны": lev("парижской", "париж") = 4 > 1 → false ✓
+          const streetField = d.street ? yo(d.street.toLowerCase()) : '';
           return matchWords.length === 0 || matchWords.some(w =>
-            geoFields.some((field: string) => field.includes(w)),
+            geoFields.some((field: string) => fuzzyIncludes(field, w)) ||
+            (streetField && fuzzyIncludes(streetField, w)),
           );
         })
         .map((item: any) => ({
@@ -256,7 +372,7 @@ export class GeosearchService {
       const data = await res.json();
       if (!data || !data.features) return null;
 
-      const matchWords = q.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+      const matchWords = yo(q.toLowerCase()).split(/\s+/).filter(w => w.length >= 3);
       return data.features
         .map((f: any) => {
           const p = f.properties;
@@ -268,8 +384,8 @@ export class GeosearchService {
           };
         })
         .filter((item: { displayName: string }) => {
-          const dn = item.displayName.toLowerCase();
-          return matchWords.length === 0 || matchWords.some(w => dn.includes(w));
+          const dn = yo(item.displayName.toLowerCase());
+          return matchWords.length === 0 || matchWords.every(w => fuzzyIncludes(dn, w));
         });
     } catch {
       return null;
@@ -531,8 +647,59 @@ export class GeosearchService {
     if (normalizedProfile !== 'driving') {
       const mode = normalizedProfile === 'bike' ? 'bike' : 'foot';
       const fallbackUrl = `https://routing.openstreetmap.de/routed-${mode}/route/v1/driving/${coords}?overview=full&geometries=geojson`;
-      const res = await fetch(fallbackUrl);
-      return await res.json();
+      
+      try {
+        const res = await fetch(fallbackUrl);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.code === 'Ok') {
+            await this.redis.set(routeCacheKey, JSON.stringify(data), 60 * 60 * 24 * 30);
+            return data;
+          }
+        }
+        console.warn(`[GeosearchService] OSRM ${mode} routing failed with status ${res.status}, falling back to direct line`);
+      } catch (err) {
+        console.error(`[GeosearchService] OSRM ${mode} routing error:`, err);
+      }
+
+      // Fallback: Direct line (Haversine-based simplified route)
+      const pts = this.parseCoords(coords);
+      let totalDist = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p1 = pts[i];
+        const p2 = pts[i+1];
+        if (p1 && p2) {
+          const R = 6371e3; // meters
+          const φ1 = p1.lat * Math.PI/180;
+          const φ2 = p2.lat * Math.PI/180;
+          const Δφ = (p2.lat-p1.lat) * Math.PI/180;
+          const Δλ = (p2.lon-p1.lon) * Math.PI/180;
+          const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                    Math.cos(φ1) * Math.cos(φ2) *
+                    Math.sin(Δλ/2) * Math.sin(Δλ/2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          totalDist += R * c;
+        }
+      }
+
+      const speed = normalizedProfile === 'bike' ? 15 / 3.6 : 5 / 3.6; // m/s
+      const duration = totalDist / speed;
+
+      const directRoute = {
+        code: 'Ok',
+        routes: [{
+          geometry: {
+            type: 'LineString',
+            coordinates: pts.map(p => [p.lon, p.lat])
+          },
+          distance: totalDist,
+          duration: duration
+        }]
+      };
+      
+      // Cache the fallback for a shorter period (1 hour) to retry OSRM later
+      await this.redis.set(routeCacheKey, JSON.stringify(directRoute), 60 * 60);
+      return directRoute;
     }
 
     const points = this.parseCoords(coords);
@@ -801,15 +968,15 @@ export class GeosearchService {
       const data = await res.json();
       if (!Array.isArray(data)) return [];
 
-      const matchWords = q.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+      const matchWords = yo(q.toLowerCase()).split(/\s+/).filter(w => w.length >= 3);
       return data
         .filter((item: NominatimItem) => {
           if (excludeAmenity && NOMINATIM_GEO_EXCLUDED.has(item.class)) return false;
-          const dn = item.display_name.toLowerCase();
-          return matchWords.length === 0 || matchWords.some(w => dn.includes(w));
+          const dn = yo(item.display_name.toLowerCase());
+          return matchWords.length === 0 || matchWords.every(w => fuzzyIncludes(dn, w));
         })
         .map((item: NominatimItem) => ({
-          displayName: item.display_name,
+          displayName: normalizeAddress(item.display_name),
           uri: `ymapsbm1://geo?ll=${item.lon},${item.lat}&z=12`,
         }));
     } catch {

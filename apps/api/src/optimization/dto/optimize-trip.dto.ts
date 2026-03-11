@@ -1,32 +1,47 @@
+import { IsString, IsOptional, IsEnum, IsObject, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
-import { IsEnum, IsNumber, IsObject, IsOptional, ValidateNested } from 'class-validator';
 
-export class OptimizationParamsDto {
-  @IsNumber()
-  @IsOptional()
-  consumption?: number;
+class PointDto {
+  @IsString()
+  id: string;
 
-  @IsNumber()
-  @IsOptional()
-  fuelPrice?: number;
+  @IsString()
+  title: string;
 
-  @IsNumber()
   @IsOptional()
-  tollFees?: number;
+  @IsString()
+  address?: string;
 
-  @IsNumber()
   @IsOptional()
-  transitFarePerKm?: number;
+  lat: number;
+
+  @IsOptional()
+  lon: number;
+
+  @IsOptional()
+  budget?: number;
+
+  @IsOptional()
+  transportMode?: 'driving' | 'foot' | 'bike' | 'direct';
 }
 
 export class OptimizeTripDto {
-  @IsEnum(['driving', 'foot', 'bike', 'direct'])
   @IsOptional()
+  @IsEnum(['driving', 'foot', 'bike', 'direct'])
   transportMode?: 'driving' | 'foot' | 'bike' | 'direct';
 
-  @IsObject()
   @IsOptional()
-  @ValidateNested()
-  @Type(() => OptimizationParamsDto)
-  params?: OptimizationParamsDto;
+  @IsObject()
+  params?: {
+    consumption?: number;
+    fuelPrice?: number;
+    tollFees?: number;
+    transitFarePerKm?: number;
+  };
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PointDto)
+  points?: PointDto[];
 }
