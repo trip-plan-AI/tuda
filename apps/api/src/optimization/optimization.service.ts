@@ -49,6 +49,12 @@ async function getOsrmDistanceMatrix(
     }
 
     const res = await fetch(fetchUrl);
+    if (!res.ok) {
+      console.warn(
+        `[OptimizationService] OSRM matrix failed with status: ${res.status}`,
+      );
+      return null;
+    }
     const data = await res.json();
     if (data.code === 'Ok' && data.distances) {
       return data.distances as number[][]; // values are in meters
@@ -68,18 +74,30 @@ export class OptimizationService {
 
   async optimizeTrip(tripId: string, dto: OptimizeTripDto, userId: string) {
     try {
-      const trip = await this.db.query.trips.findFirst({
-        where: eq(schema.trips.id, tripId),
-      });
+      const UUID_RE =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const isRealTrip = UUID_RE.test(tripId);
 
-      if (!trip) {
-        throw new NotFoundException('Trip not found');
+      if (isRealTrip) {
+        const trip = await this.db.query.trips.findFirst({
+          where: eq(schema.trips.id, tripId),
+        });
+
+        if (!trip) {
+          throw new NotFoundException('Trip not found');
+        }
       }
 
-      const points = await this.db.query.routePoints.findMany({
-        where: eq(schema.routePoints.tripId, tripId),
-        orderBy: (points, { asc }) => [asc(points.order)],
-      });
+      // Use points from DTO (UI current state) or from DB (stored state)
+      let points: any[] = [];
+      if (dto.points && dto.points.length > 0) {
+        points = dto.points;
+      } else if (isRealTrip) {
+        points = await this.db.query.routePoints.findMany({
+          where: eq(schema.routePoints.tripId, tripId),
+          orderBy: (points, { asc }) => [asc(points.order)],
+        });
+      }
 
       if (points.length < 2) {
         return { message: 'Not enough points to optimize' };
@@ -88,8 +106,27 @@ export class OptimizationService {
       const transportMode = dto.transportMode || 'driving';
       const params = dto.params || {};
 
+      // Filter points that don't have valid coordinates to prevent NaN
+      const validPoints = points.filter(
+        (p) =>
+          typeof p.lat === 'number' &&
+          typeof p.lon === 'number' &&
+          !isNaN(p.lat) &&
+          !isNaN(p.lon),
+      );
+
+      if (validPoints.length < 2) {
+        return {
+          message: 'Not enough points with valid coordinates to optimize',
+          optimizedPoints: points,
+        };
+      }
+
       // Try to get actual road distances from OSRM to improve TSP accuracy
-      const distanceMatrix = await getOsrmDistanceMatrix(points, transportMode);
+      const distanceMatrix = await getOsrmDistanceMatrix(
+        validPoints,
+        transportMode,
+      );
 
       const getDistance = (p1Idx: number, p2Idx: number) => {
         if (
@@ -100,10 +137,10 @@ export class OptimizationService {
           return distanceMatrix[p1Idx][p2Idx] / 1000; // convert meters to km
         }
         return haversineDistance(
-          points[p1Idx].lat,
-          points[p1Idx].lon,
-          points[p2Idx].lat,
-          points[p2Idx].lon,
+          validPoints[p1Idx].lat,
+          validPoints[p1Idx].lon,
+          validPoints[p2Idx].lat,
+          validPoints[p2Idx].lon,
         );
       };
 
@@ -126,13 +163,13 @@ export class OptimizationService {
       };
 
       let originalDistance = 0;
-      for (let i = 0; i < points.length - 1; i++) {
+      for (let i = 0; i < validPoints.length - 1; i++) {
         originalDistance += getDistance(i, i + 1);
       }
 
       // Algorithm: Nearest-Neighbor
       const unvisitedIndices = Array.from(
-        { length: points.length },
+        { length: validPoints.length },
         (_, i) => i,
       );
       const optimizedIndices: number[] = [];
@@ -149,13 +186,14 @@ export class OptimizationService {
         for (let i = 0; i < unvisitedIndices.length; i++) {
           const candidateIdx = unvisitedIndices[i];
           const w = getWeight(lastIdx, candidateIdx);
-          if (w < minWeight) {
+          if (!isNaN(w) && w < minWeight) {
             minWeight = w;
             nearestUnvisitedListIdx = i;
           }
         }
 
         if (nearestUnvisitedListIdx === -1) {
+          // Fallback: just take the next one if weights are broken
           nearestUnvisitedListIdx = 0;
         }
 
@@ -163,106 +201,98 @@ export class OptimizationService {
         unvisitedIndices.splice(nearestUnvisitedListIdx, 1);
       }
 
-      const optimizedPoints = optimizedIndices.map((idx) => points[idx]);
+      const optimizedPoints = optimizedIndices.map((idx) => validPoints[idx]);
+
+      // Re-add points that didn't have coordinates to the end
+      const invalidPoints = points.filter((p) => !validPoints.includes(p));
+      const finalOptimizedPoints = [...optimizedPoints, ...invalidPoints];
 
       let newDistance = 0;
       for (let i = 0; i < optimizedIndices.length - 1; i++) {
-        newDistance += getDistance(
-          optimizedIndices[i],
-          optimizedIndices[i + 1],
-        );
+        newDistance += getDistance(optimizedIndices[i], optimizedIndices[i + 1]);
       }
 
       const savedKm = originalDistance - newDistance;
-      let savedRub = 0;
-      let savedHours = 0;
 
-      if (savedKm > 0) {
+      const getMetricsForDistance = (km: number) => {
+        let hours = 0;
+        let rub = 0;
+        let isFuel = false;
+
         if (transportMode === 'driving') {
           const consumption = params.consumption ?? 8;
           const fuelPrice = params.fuelPrice ?? 55;
-          savedRub = ((savedKm * consumption) / 100) * fuelPrice;
-          savedHours = savedKm / 80; // 80 km/h average
+          rub =
+            km * (consumption / 100) * fuelPrice + km * (params.tollFees ?? 0);
+          hours = km / 80;
+          isFuel = true;
         } else if (transportMode === 'direct') {
           const transitFarePerKm = params.transitFarePerKm ?? 3;
-          savedRub = savedKm * transitFarePerKm;
-          savedHours = savedKm / 30; // 30 km/h transit average
+          rub = km * transitFarePerKm;
+          hours = km / 30;
         } else if (transportMode === 'bike') {
-          savedHours = savedKm / 15;
+          hours = km / 15;
         } else {
-          // foot
-          savedHours = savedKm / 5;
+          hours = km / 5;
         }
+        return { hours, rub, isFuel };
+      };
+
+      const originalMetrics = getMetricsForDistance(originalDistance);
+      const newMetrics = getMetricsForDistance(newDistance);
+
+      const savedHours = originalMetrics.hours - newMetrics.hours;
+      const savedRub = originalMetrics.rub - newMetrics.rub;
+
+      let optimizationResult: any = null;
+
+      if (isRealTrip) {
+        const updatePromises = finalOptimizedPoints
+          .filter((p) => typeof p.id === 'string' && UUID_RE.test(p.id))
+          .map((p, index) => {
+            return this.db
+              .update(schema.routePoints)
+              .set({ order: index })
+              .where(eq(schema.routePoints.id, p.id));
+          });
+
+        if (updatePromises.length > 0) {
+          await Promise.all(updatePromises);
+        }
+
+        const validOriginalIds = points
+          .filter((p) => typeof p.id === 'string' && UUID_RE.test(p.id))
+          .map((p) => p.id);
+        const validOptimizedIds = finalOptimizedPoints
+          .filter((p) => typeof p.id === 'string' && UUID_RE.test(p.id))
+          .map((p) => p.id);
+
+        [optimizationResult] = await this.db
+          .insert(schema.optimizationResults)
+          .values({
+            tripId,
+            originalOrder: validOriginalIds,
+            optimizedOrder: validOptimizedIds,
+            savedKm: savedKm > 0 ? savedKm : 0,
+            savedRub: savedRub > 0 ? savedRub : 0,
+            savedHours: savedHours > 0 ? savedHours : 0,
+            transportMode,
+            params,
+          })
+          .returning();
       }
-
-      const updatePromises = optimizedPoints.map((p, index) => {
-        return this.db
-          .update(schema.routePoints)
-          .set({ order: index })
-          .where(eq(schema.routePoints.id, p.id));
-      });
-      await Promise.all(updatePromises);
-
-      const [optimizationResult] = await this.db
-        .insert(schema.optimizationResults)
-        .values({
-          tripId,
-          originalOrder: points.map((p) => p.id),
-          optimizedOrder: optimizedPoints.map((p) => p.id),
-          savedKm: savedKm > 0 ? savedKm : 0,
-          savedRub: savedRub > 0 ? savedRub : 0,
-          savedHours: savedHours > 0 ? savedHours : 0,
-          transportMode,
-          params,
-        })
-        .returning();
 
       return {
         optimizationResult,
-        optimizedPoints,
+        optimizedPoints: finalOptimizedPoints,
         metrics: {
           originalKm: originalDistance,
           newKm: newDistance,
-          originalHours:
-            savedHours > 0
-              ? originalDistance /
-                (transportMode === 'driving'
-                  ? 80
-                  : transportMode === 'direct'
-                    ? 30
-                    : transportMode === 'bike'
-                      ? 15
-                      : 5)
-              : 0,
-          newHours:
-            savedHours > 0
-              ? newDistance /
-                (transportMode === 'driving'
-                  ? 80
-                  : transportMode === 'direct'
-                    ? 30
-                    : transportMode === 'bike'
-                      ? 15
-                      : 5)
-              : 0,
-          originalRub:
-            savedRub > 0
-              ? originalDistance *
-                (transportMode === 'driving'
-                  ? ((params.consumption ?? 8) / 100) *
-                      (params.fuelPrice ?? 55) +
-                    (params.tollFees ?? 0)
-                  : (params.transitFarePerKm ?? 3))
-              : 0,
-          newRub:
-            savedRub > 0
-              ? newDistance *
-                (transportMode === 'driving'
-                  ? ((params.consumption ?? 8) / 100) *
-                      (params.fuelPrice ?? 55) +
-                    (params.tollFees ?? 0)
-                  : (params.transitFarePerKm ?? 3))
-              : 0,
+          originalHours: originalMetrics.hours,
+          newHours: newMetrics.hours,
+          originalRub: originalMetrics.rub,
+          newRub: newMetrics.rub,
+          isFuel: originalMetrics.isFuel,
         },
       };
     } catch (e) {
