@@ -67,6 +67,10 @@ export const useTripStore = create<TripStore>()(
       updateCurrentTrip: (data) =>
         set((s) => {
           if (!s.currentTrip) return s;
+          const hasChanges = Object.keys(data).some(
+            (key) => (s.currentTrip as any)[key] !== (data as any)[key],
+          );
+          if (!hasChanges) return s;
           return { currentTrip: { ...s.currentTrip, ...data }, isDirty: true };
         }),
       setPoints: (points, isDirty = true) =>
@@ -91,9 +95,7 @@ export const useTripStore = create<TripStore>()(
           return {
             currentTrip: {
               ...s.currentTrip,
-              points: s.currentTrip.points.map((p) =>
-                p.id === id ? { ...p, ...data } : p,
-              ),
+              points: s.currentTrip.points.map((p) => (p.id === id ? { ...p, ...data } : p)),
             },
             isDirty: true,
           };
@@ -112,12 +114,19 @@ export const useTripStore = create<TripStore>()(
       reorderPoints: (orderedIds) =>
         set((s) => {
           if (!s.currentTrip) return s;
+          const currentPoints = s.currentTrip.points || [];
           const newPoints = orderedIds
             .map((id, i) => {
-              const p = s.currentTrip!.points.find((p) => p.id === id);
+              const p = currentPoints.find((p) => p.id === id);
               return p ? { ...p, order: i } : null;
             })
             .filter(Boolean) as RoutePoint[];
+
+          if (newPoints.length === currentPoints.length) {
+            const isSameOrder = newPoints.every((p, i) => p.id === currentPoints[i]?.id);
+            if (isSameOrder) return s;
+          }
+
           return {
             currentTrip: { ...s.currentTrip, points: newPoints },
             isDirty: true,
@@ -133,16 +142,13 @@ export const useTripStore = create<TripStore>()(
           lastOptimizedProfile: null,
         }),
       optimizationResults: { status: 'idle', metrics: null },
-      setOptimizationResults: (optimizationResults) =>
-        set({ optimizationResults }),
+      setOptimizationResults: (optimizationResults) => set({ optimizationResults }),
       previousPoints: null,
       setPreviousPoints: (previousPoints) => set({ previousPoints }),
       lastOptimizedPoints: null,
-      setLastOptimizedPoints: (lastOptimizedPoints) =>
-        set({ lastOptimizedPoints }),
+      setLastOptimizedPoints: (lastOptimizedPoints) => set({ lastOptimizedPoints }),
       lastOptimizedProfile: null,
-      setLastOptimizedProfile: (lastOptimizedProfile) =>
-        set({ lastOptimizedProfile }),
+      setLastOptimizedProfile: (lastOptimizedProfile) => set({ lastOptimizedProfile }),
     }),
     {
       name: 'trip-planner-storage',
