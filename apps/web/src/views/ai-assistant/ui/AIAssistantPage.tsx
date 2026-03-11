@@ -1,18 +1,24 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Trash2 } from 'lucide-react';
 import { useAiQueryStore } from '@/features/ai-query';
 import { useTripStore } from '@/entities/trip';
 import { AiChat } from '@/widgets/ai-chat';
 import { Button } from '@/shared/ui/button';
+import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
+import type { PlannerConflictType } from '@/widgets/planner-conflict-modal';
 import { toast } from 'sonner';
+import { tripsApi } from '@/entities/trip';
 
 const AI_QUICK_ACTIONS = ['Сделать дешевле', 'Добавить больше музеев', 'Убрать пешие прогулки'];
 
 export function AIAssistantPage() {
   const router = useRouter();
+  const [showPlannerConflictModal, setShowPlannerConflictModal] = useState(false);
+  const [pendingPlannerTripId, setPendingPlannerTripId] = useState<string | null>(null);
+  const [conflictType, setConflictType] = useState<PlannerConflictType>('different_route');
   const {
     sessions,
     activeSessionId,
@@ -89,11 +95,47 @@ export function AIAssistantPage() {
     createNewSession(currentTrip?.id ?? null);
   };
 
-  const handleOpenPlanner = () => {
+  const handleOpenPlanner = (tripIdOverride?: string | null, messageId?: string) => {
     // TRI-104: переход в Planner с applyTripId, чтобы PlannerPage могла корректно
     // обработать конфликты несохранённых изменений (same/different route modal).
     // MERGE-NOTE: query-параметр applyTripId используется в PlannerPage useEffect.
-    const targetTripId = activeSession?.tripId ?? currentTrip?.id ?? null;
+    const targetTripId = tripIdOverride ?? activeSession?.tripId ?? currentTrip?.id ?? null;
+
+    // TRI-104 UX guard:
+    // если в Planner уже открыт другой маршрут, показываем модалку подтверждения
+    // ещё в AI-чате, до навигации в Planner.
+    const openedPlannerTripId = currentTrip?.id ?? null;
+    if (targetTripId && openedPlannerTripId) {
+      if (openedPlannerTripId !== targetTripId) {
+        setConflictType('different_route');
+        setPendingPlannerTripId(targetTripId);
+        setShowPlannerConflictModal(true);
+        return;
+      } else if (messageId && messageId !== lastAppliedPlanMessageId) {
+        // Тот же маршрут, но применяется новая версия из чата
+        setConflictType('same_route');
+        setPendingPlannerTripId(targetTripId);
+        setShowPlannerConflictModal(true);
+        return;
+      }
+    }
+
+    if (!targetTripId || targetTripId.startsWith('guest-')) {
+      router.push('/planner');
+      return;
+    }
+
+    const query = new URLSearchParams();
+    query.set('applyTripId', targetTripId);
+    if (messageId) query.set('draftMessageId', messageId);
+    router.push(`/planner?${query.toString()}`);
+  };
+
+  const handleConfirmPlannerReplace = () => {
+    const targetTripId = pendingPlannerTripId;
+    setShowPlannerConflictModal(false);
+    setPendingPlannerTripId(null);
+
     if (!targetTripId || targetTripId.startsWith('guest-')) {
       router.push('/planner');
       return;
@@ -101,6 +143,8 @@ export function AIAssistantPage() {
 
     router.push(`/planner?applyTripId=${encodeURIComponent(targetTripId)}`);
   };
+
+  const plannerRouteTitle = currentTrip?.title?.trim() || 'без названия';
 
   return (
     <div className="min-h-full w-full">
@@ -133,7 +177,9 @@ export function AIAssistantPage() {
                     className="w-full text-left"
                     onClick={() => switchSession(session.id)}
                   >
-                    <p className="line-clamp-1 text-sm font-semibold text-slate-800">{session.title}</p>
+                    <p className="line-clamp-1 text-sm font-semibold text-slate-800">
+                      {session.title}
+                    </p>
                     <p className="mt-1 text-xs text-slate-500">
                       {new Date(session.updatedAt).toLocaleString('ru-RU', {
                         day: '2-digit',
@@ -161,7 +207,10 @@ export function AIAssistantPage() {
 
         <div className="flex-1">
           <div className="mb-3 flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 md:hidden">
-            <p className="text-xs text-slate-600">Активный чат: {sessionsList.find((s) => s.id === activeSessionId)?.title ?? 'Новый чат'}</p>
+            <p className="text-xs text-slate-600">
+              Активный чат:{' '}
+              {sessionsList.find((s) => s.id === activeSessionId)?.title ?? 'Новый чат'}
+            </p>
             <Button type="button" size="sm" variant="outline" onClick={handleCreateSession}>
               <Plus className="mr-1 h-3.5 w-3.5" />
               Новый
@@ -173,6 +222,7 @@ export function AIAssistantPage() {
             isLoading={isLoading || isSessionsLoading}
             onSend={handleSend}
             onApplyPlan={handleApplyPlan}
+            onOpenPlanner={handleOpenPlanner}
             lastAppliedPlanMessageId={lastAppliedPlanMessageId}
             chatKey={activeSessionId ?? 'chat-empty'}
             quickActions={AI_QUICK_ACTIONS}
@@ -181,10 +231,37 @@ export function AIAssistantPage() {
           />
 
           <div className="mt-3 flex justify-end">
-            <Button type="button" variant="outline" onClick={handleOpenPlanner}>
+            <Button type="button" variant="outline" onClick={() => handleOpenPlanner()}>
               Открыть Planner 🗺️
             </Button>
           </div>
+
+          <PlannerConflictModal
+            open={showPlannerConflictModal}
+            onOpenChange={setShowPlannerConflictModal}
+            conflictType={conflictType}
+            currentRouteTitle={plannerRouteTitle}
+            onCancel={() => {
+              setShowPlannerConflictModal(false);
+              setPendingPlannerTripId(null);
+            }}
+            onReplaceWithoutSave={handleConfirmPlannerReplace}
+            onSaveAndReplace={async () => {
+              if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+                await tripsApi.update(currentTrip.id, {
+                  title: currentTrip.title,
+                  description: currentTrip.description ?? undefined,
+                  budget: currentTrip.budget ?? undefined,
+                });
+              }
+              handleConfirmPlannerReplace();
+            }}
+            onGoToPlannerOnly={() => {
+              setShowPlannerConflictModal(false);
+              setPendingPlannerTripId(null);
+              router.push('/planner');
+            }}
+          />
         </div>
       </div>
     </div>

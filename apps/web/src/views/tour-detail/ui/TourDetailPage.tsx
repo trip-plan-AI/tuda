@@ -7,7 +7,16 @@ import { ArrowLeft, Clock, Cloud, CloudSun, MapPin, Sun, Wind } from 'lucide-rea
 import { useTripStore, tripsApi } from '@/entities/trip';
 import type { Trip } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point';
-import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/shared/ui';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/shared/ui';
+import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 import { cn } from '@/shared/lib/utils';
 import { env } from '@/shared/config/env';
 
@@ -50,7 +59,8 @@ function formatDistance(meters: number) {
 
 export function TourDetailPage({ tourId }: TourDetailPageProps) {
   const router = useRouter();
-  const { currentTrip, setCurrentTrip, setPoints, clearPlanner, isDirty, setCachedRouteInfo } = useTripStore();
+  const { currentTrip, setCurrentTrip, setPoints, clearPlanner, isDirty, setCachedRouteInfo } =
+    useTripStore();
   const points = currentTrip?.points || [];
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
   const [isOpening, setIsOpening] = useState(false);
@@ -180,15 +190,29 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     } finally {
       setIsOpening(false);
     }
-  }, [tour, focusCoords, attractions, geocodeCity, clearPlanner, setCurrentTrip, setPoints, router, routeInfo, setCachedRouteInfo]);
+  }, [
+    tour,
+    focusCoords,
+    attractions,
+    geocodeCity,
+    clearPlanner,
+    setCurrentTrip,
+    setPoints,
+    router,
+    routeInfo,
+    setCachedRouteInfo,
+  ]);
 
   const handleOpenRoute = useCallback(() => {
-    if (points && points.length > 0 && isDirty) {
+    // Если в Planner УЖЕ есть какой-то непустой маршрут
+    // (даже если он сохранён или гостевой), то при открытии тура он затрётся.
+    // Поэтому всегда показываем модалку, если есть points.
+    if (points && points.length > 0) {
       setShowConfirmOverwrite(true);
     } else {
       doOpenRoute();
     }
-  }, [points, doOpenRoute, isDirty]);
+  }, [points, doOpenRoute]);
 
   const confirmOverwrite = () => {
     setShowConfirmOverwrite(false);
@@ -214,7 +238,6 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
   return (
     <div className="bg-white min-h-screen">
       <div className="max-w-5xl mx-auto px-4 md:px-6 py-8 md:py-12">
-
         {/* Назад */}
         <button
           onClick={() => router.back()}
@@ -250,7 +273,9 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
 
           {tour.budget != null && (
             <div className="mt-6 inline-flex items-center gap-2 bg-brand-yellow/10 rounded-2xl px-5 py-3">
-              <span className="text-slate-500 font-bold text-sm uppercase tracking-widest">Стоимость:</span>
+              <span className="text-slate-500 font-bold text-sm uppercase tracking-widest">
+                Стоимость:
+              </span>
               <span className="text-brand-yellow font-black text-xl">
                 {tour.budget.toLocaleString('ru-RU')} ₽
               </span>
@@ -370,34 +395,34 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
         )}
       </div>
 
-      <Dialog open={showConfirmOverwrite} onOpenChange={setShowConfirmOverwrite}>
-        <DialogContent className="sm:max-w-md border-none shadow-2xl rounded-[2.5rem] p-10 overflow-hidden">
-          <DialogHeader className="gap-4">
-            <DialogTitle className="text-xl font-black text-brand-indigo uppercase tracking-widest leading-tight">
-              Внимание
-            </DialogTitle>
-            <DialogDescription className="text-slate-500 font-bold text-lg leading-snug">
-              В конструкторе уже есть непустой маршрут. При открытии нового маршрута старый будет очищен. Продолжить?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex-col sm:flex-row gap-3 mt-8">
-            <Button
-              variant="ghost"
-              className="flex-1 font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50 h-12 rounded-xl"
-              onClick={() => setShowConfirmOverwrite(false)}
-            >
-              ОТМЕНА
-            </Button>
-            <Button
-              variant="brand-indigo"
-              className="flex-1 font-black uppercase tracking-widest h-12 rounded-xl shadow-lg shadow-brand-indigo/20"
-              onClick={confirmOverwrite}
-            >
-              ПРОДОЛЖИТЬ
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PlannerConflictModal
+        open={showConfirmOverwrite}
+        onOpenChange={setShowConfirmOverwrite}
+        conflictType="landing_new"
+        currentRouteTitle={currentTrip?.title || 'без названия'}
+        onCancel={() => setShowConfirmOverwrite(false)}
+        onReplaceWithoutSave={() => {
+          setShowConfirmOverwrite(false);
+          confirmOverwrite();
+        }}
+        onSaveAndReplace={async () => {
+          setShowConfirmOverwrite(false);
+          if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+            await tripsApi.update(currentTrip.id, {
+              title: currentTrip.title,
+              description: currentTrip.description ?? undefined,
+              budget: currentTrip.budget ?? undefined,
+            });
+
+            // Если нужно сохранить точки, используем store или отдельный вызов
+          }
+          confirmOverwrite();
+        }}
+        onGoToPlannerOnly={() => {
+          setShowConfirmOverwrite(false);
+          router.push('/planner');
+        }}
+      />
     </div>
   );
 }

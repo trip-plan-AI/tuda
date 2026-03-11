@@ -20,6 +20,7 @@ interface AiChatProps {
   // MERGE-NOTE: изменение этих пропсов требует синхронной правки MessageBubble.
   hasLinkedTrip?: boolean;
   appliedTripId?: string | null;
+  onOpenPlanner?: (tripId: string | null, messageId?: string) => void;
 }
 
 const DEFAULT_QUICK_ACTIONS = [
@@ -62,6 +63,7 @@ export function AiChat({
   quickActions = DEFAULT_QUICK_ACTIONS,
   hasLinkedTrip = false,
   appliedTripId = null,
+  onOpenPlanner,
 }: AiChatProps) {
   const [query, setQuery] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -126,6 +128,7 @@ export function AiChat({
                 wasApplied={lastAppliedPlanMessageId === message.id}
                 hasLinkedTrip={hasLinkedTrip}
                 appliedTripId={appliedTripId}
+                onOpenPlanner={onOpenPlanner}
               />
             ))}
 

@@ -617,12 +617,6 @@ export function PlannerPage() {
   const [popularSearch, setPopularSearch] = useState('');
   const [predefinedTrips, setPredefinedTrips] = useState<Trip[]>([]);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  // TRI-104: state модалки конфликтов при переходе AI -> Planner.
-  // Если убрать эти состояния, вернётся silent-replace сценарий без явного решения пользователя.
-  const [showApplyConfirm, setShowApplyConfirm] = useState(false);
-  const [applyModalType, setApplyModalType] = useState<'same' | 'different'>('different');
-  const [pendingApplyTripId, setPendingApplyTripId] = useState<string | null>(null);
-  const [pendingApplyTripTitle, setPendingApplyTripTitle] = useState('');
   const [modal, setModal] = useState<'login' | 'register' | null>(null);
   const [isAddPointMode, setIsAddPointMode] = useState(false);
 
@@ -1294,28 +1288,12 @@ export function PlannerPage() {
       // Для одного и того же маршрута считаем переход из чата потенциально новой версией,
       // если пришёл draftMessageId или есть несохранённые локальные правки.
       // MERGE-NOTE: draftMessageId критичен для кейса "same trip, new AI draft".
-      if (Boolean(draftMessageId) || isDirty) {
-        setPendingApplyTripId(incomingTripId);
-        setApplyModalType('same');
-        setPendingApplyTripTitle(currentTrip.title || 'текущий маршрут');
-        setShowApplyConfirm(true);
-        return;
-      }
-
       void applyIncomingTrip(incomingTripId);
       return;
     }
 
-    if (isDirty) {
-      setPendingApplyTripId(incomingTripId);
-      setApplyModalType('different');
-      setPendingApplyTripTitle(currentTrip.title || 'текущий маршрут');
-      setShowApplyConfirm(true);
-      return;
-    }
-
     void applyIncomingTrip(incomingTripId);
-  }, [applyIncomingTrip, currentTrip, isDirty, searchParams]);
+  }, [applyIncomingTrip, currentTrip, searchParams]);
 
   return (
     <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
@@ -2031,75 +2009,6 @@ export function PlannerPage() {
               onClick={() => handleConfirmClear(true)}
             >
               СОХРАНИТЬ
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showApplyConfirm} onOpenChange={setShowApplyConfirm}>
-        {/* TRI-104: модалка явного решения пользователя при входящем AI-draft.
-            Функция: предотвращает неосознанную замену текущего маршрута.
-            Если убрать модалку, пользователь снова получит silent replace без контроля. */}
-        <DialogContent className="sm:max-w-xl rounded-[2rem] border-none shadow-2xl p-8 md:p-10">
-          <DialogHeader className="gap-3">
-            <DialogTitle className="text-2xl font-black text-brand-indigo tracking-tight">
-              {applyModalType === 'same'
-                ? 'Внимание: перезапись маршрута'
-                : 'Внимание: потеря текущего маршрута'}
-            </DialogTitle>
-            <DialogDescription className="text-slate-600 text-base leading-relaxed">
-              {applyModalType === 'same' ? (
-                <>
-                  В планировщике сейчас открыта{' '}
-                  <span className="font-bold text-slate-800">старая версия</span> этого же маршрута.{' '}
-                  Если вы продолжите, все текущие точки на карте{' '}
-                  <span className="font-bold text-rose-600 underline decoration-rose-200 decoration-2 underline-offset-4">
-                    будут безвозвратно заменены
-                  </span>{' '}
-                  на новую версию из AI-чата.
-                </>
-              ) : (
-                <>
-                  Сейчас у вас открыт маршрут{' '}
-                  <span className="font-bold text-slate-800">«{pendingApplyTripTitle}»</span>. Если
-                  вы откроете новый план из чата, текущий маршрут{' '}
-                  <span className="font-bold text-rose-600 underline decoration-rose-200 decoration-2 underline-offset-4">
-                    будет закрыт без сохранения
-                  </span>{' '}
-                  последних изменений.
-                </>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex flex-col gap-3 mt-8 sm:flex-col sm:justify-center">
-            <Button
-              variant="brand-indigo"
-              className="w-full h-14 text-base font-black uppercase tracking-widest bg-rose-500 hover:bg-rose-600 text-white shadow-lg shadow-rose-500/20 border-none"
-              onClick={() => {
-                void (async () => {
-                  if (!pendingApplyTripId) return;
-                  // TRI-104: "Заменить" = загрузить маршрут из AI и закрыть модалку.
-                  // Если убрать applyIncomingTrip, кнопка станет визуальной и ничего не изменит.
-                  await applyIncomingTrip(pendingApplyTripId);
-                  setShowApplyConfirm(false);
-                  setPendingApplyTripId(null);
-                })();
-              }}
-            >
-              ДА, ЗАМЕНИТЬ МАРШРУТ
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full h-14 text-base font-bold text-slate-500 hover:bg-slate-50 hover:text-slate-700 border-2 border-slate-200 rounded-xl"
-              onClick={() => {
-                // TRI-104: "Отмена" = оставить текущий маршрут без изменений.
-                // Если убрать reset pendingApplyTripId, возможно повторное срабатывание при следующем рендере.
-                setShowApplyConfirm(false);
-                setPendingApplyTripId(null);
-                toast.info('Применение маршрута из AI-чата отменено');
-              }}
-            >
-              ОТМЕНА
             </Button>
           </DialogFooter>
         </DialogContent>

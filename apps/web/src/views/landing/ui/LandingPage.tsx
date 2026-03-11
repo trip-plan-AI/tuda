@@ -38,6 +38,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/shared/ui';
+import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 import { env } from '@/shared/config/env';
 
 type Modal = 'login' | 'register' | null;
@@ -930,35 +931,32 @@ export function LandingPage() {
         </div>
       </div>
 
-      <Dialog open={showConfirmOverwrite} onOpenChange={setShowConfirmOverwrite}>
-        <DialogContent className="sm:max-w-md border-none shadow-2xl rounded-[2.5rem] p-10 overflow-hidden z-[100]">
-          <DialogHeader className="gap-4">
-            <DialogTitle className="text-xl font-black text-brand-indigo uppercase tracking-widest leading-tight">
-              Внимание
-            </DialogTitle>
-            <DialogDescription className="text-slate-500 font-bold text-lg leading-snug">
-              В конструкторе уже есть непустой маршрут. При открытии нового маршрута старый будет
-              очищен. Продолжить?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex-col sm:flex-row gap-3 mt-8">
-            <Button
-              variant="ghost"
-              className="flex-1 font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50 h-12 rounded-xl"
-              onClick={() => setShowConfirmOverwrite(false)}
-            >
-              ОТМЕНА
-            </Button>
-            <Button
-              variant="brand-indigo"
-              className="flex-1 font-black uppercase tracking-widest h-12 rounded-xl shadow-lg shadow-brand-indigo/20"
-              onClick={confirmOverwrite}
-            >
-              ПРОДОЛЖИТЬ
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PlannerConflictModal
+        open={showConfirmOverwrite}
+        onOpenChange={setShowConfirmOverwrite}
+        conflictType="landing_new"
+        currentRouteTitle={currentTrip?.title || 'без названия'}
+        onCancel={() => setShowConfirmOverwrite(false)}
+        onReplaceWithoutSave={() => {
+          setShowConfirmOverwrite(false);
+          confirmOverwrite();
+        }}
+        onSaveAndReplace={async () => {
+          setShowConfirmOverwrite(false);
+          if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+            await tripsApi.update(currentTrip.id, {
+              title: currentTrip.title,
+              description: currentTrip.description ?? undefined,
+              budget: currentTrip.budget ?? undefined,
+            });
+          }
+          confirmOverwrite();
+        }}
+        onGoToPlannerOnly={() => {
+          setShowConfirmOverwrite(false);
+          router.push('/planner');
+        }}
+      />
 
       <LoginModal
         open={modal === 'login'}
