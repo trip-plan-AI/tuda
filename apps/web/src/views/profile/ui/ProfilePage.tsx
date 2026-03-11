@@ -332,8 +332,9 @@ export function ProfilePage() {
     };
 
     const onTripUpdate = ({ trip_id, ...patch }: { trip_id: string } & any) => {
-      if (trip_id !== currentTrip.id) return;
-      updateCurrentTrip(patch);
+      if (trip_id === currentTrip.id) {
+        updateCurrentTrip(patch);
+      }
       setSavedTrips((prev) => prev.map((t) => (t.id === trip_id ? { ...t, ...patch } : t)));
     };
 
@@ -422,7 +423,9 @@ export function ProfilePage() {
       if (socket.connected) {
         socket.emit('trip:update', { trip_id: routeId, isActive: newIsActive });
       }
-      toast.success(newIsActive ? 'Маршрут активирован' : 'Маршрут деактивирован', { id: 'route-activation' });
+      toast.success(newIsActive ? 'Маршрут активирован' : 'Маршрут деактивирован', {
+        id: 'route-activation',
+      });
     } catch {
       toast.error('Ошибка при обновлении статуса', { id: 'route-activation-error' });
     }
@@ -710,7 +713,11 @@ export function ProfilePage() {
                     {/* Превью карты (только мобилка) */}
                     {isMobile && (
                       <div className="w-full aspect-[16/9] md:hidden rounded-2xl overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100 mt-3">
-                        <RouteMap key={`card-${activeRoute.id}-${activeTab}`} points={activeRoute.points || []} onPointDragEnd={() => {}} />
+                        <RouteMap
+                          key={`card-${activeRoute.id}-${activeTab}`}
+                          points={activeRoute.points || []}
+                          onPointDragEnd={() => {}}
+                        />
                       </div>
                     )}
                   </div>

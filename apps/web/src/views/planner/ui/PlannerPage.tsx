@@ -748,10 +748,11 @@ export function PlannerPage() {
   const { user } = useUserStore();
   const isOwner =
     !currentTrip || currentTrip.id.startsWith('guest-') || currentTrip.ownerId === user?.id;
-  const canEdit = isOwner || !!currentTrip?.isActive;
+  // Коллаборатор может редактировать только если владелец активировал маршрут (ownerIsActive)
+  const canEdit = isOwner || !!currentTrip?.ownerIsActive;
   const crud = usePointCrud(currentTrip?.id);
 
-  useCollaborationSocket(currentTrip?.id ?? '', currentTrip?.isActive ?? false);
+  useCollaborationSocket(currentTrip?.id ?? '', currentTrip?.isActive || !!currentTrip?.ownerIsActive);
 
   useEffect(() => {
     const socket = getSocket();
@@ -843,6 +844,14 @@ export function PlannerPage() {
   useEffect(() => {
     setIsActiveRoute(currentTrip?.isActive ?? false);
   }, [currentTrip?.id, currentTrip?.isActive]);
+
+  // Refresh ownerIsActive from server on every trip change to avoid stale localStorage data
+  useEffect(() => {
+    if (!currentTrip?.id || currentTrip.id.startsWith('guest-') || !isAuthenticated) return;
+    tripsApi.getOne(currentTrip.id).then((fresh) => {
+      setCurrentTrip({ ...currentTrip, ownerIsActive: fresh.ownerIsActive, isActive: fresh.isActive });
+    }).catch(() => {});
+  }, [currentTrip?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!currentTrip?.id || currentTrip.id.startsWith('guest-')) return;
@@ -1934,7 +1943,9 @@ export function PlannerPage() {
                               backendMessage.includes('Not enough points to optimize')
                             ) {
                               const serverPoints = await pointsApi.getAll(tripId);
-                              await Promise.all(serverPoints.map((p) => pointsApi.remove(tripId, p.id)));
+                              await Promise.all(
+                                serverPoints.map((p) => pointsApi.remove(tripId, p.id)),
+                              );
 
                               const recreatedPoints = await Promise.all(
                                 points.map((p, index) =>
@@ -1969,7 +1980,9 @@ export function PlannerPage() {
                             } else {
                               const nextBackendMessage =
                                 typeof result?.message === 'string' ? result.message : '';
-                              const userMessage = nextBackendMessage.includes('Not enough points to optimize')
+                              const userMessage = nextBackendMessage.includes(
+                                'Not enough points to optimize',
+                              )
                                 ? 'Недостаточно точек в сохранённом маршруте. Сначала сохраните точки, затем повторите оптимизацию.'
                                 : 'Оптимизация не внесла изменений в маршрут.';
 
