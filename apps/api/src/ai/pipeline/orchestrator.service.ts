@@ -67,6 +67,13 @@ export class OrchestratorService {
     history: SessionMessage[],
   ): Promise<ParsedIntent> {
     const normalizedQuery = query.trim();
+
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: ранний guard для первого "недоописанного" запроса,
+    //    чтобы не строить маршрут из случайного контекста и сразу просить город.
+    // 3) Если убрать: LLM может догадаться город по шуму/истории и вернуть нерелевантный маршрут.
+    // 4) Возможен конфликт с ветками, где правила pre-LLM валидации intent вынесены в отдельный сервис.
     if (this.isNeedCityClarification(normalizedQuery, history)) {
       this.logger.warn(
         `[IntentClarification] NEED_CITY due to underspecified first query: "${normalizedQuery}"`,
@@ -98,6 +105,12 @@ export class OrchestratorService {
     );
 
     if (!intent.city) {
+      // TRI-106 / MERGE-GUARD
+      // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+      // 2) Потребность: даже после LLM парсинга enforce контракт NEED_CITY,
+      //    чтобы frontend обрабатывал отсутствие города единообразно.
+      // 3) Если убрать: часть сценариев уйдет в generic 422 и сломает UX уточнения города.
+      // 4) Возможен конфликт с ветками, где normalizeIntent гарантирует city и считает этот блок недостижимым.
       this.logger.warn(
         `[IntentClarification] NEED_CITY due to parse result without city. Query: "${normalizedQuery}"`,
       );
@@ -115,6 +128,12 @@ export class OrchestratorService {
     query: string,
     history: SessionMessage[],
   ): boolean {
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: не блокировать валидные однословные города (например, "Казань"),
+    //    но отсеивать шум на первом сообщении без city.
+    // 3) Если убрать: снова появятся ложные NEED_CITY для городов ИЛИ ложные маршруты для шумовых токенов.
+    // 4) Возможен конфликт с ветками, где city-детектор использует словарь гео-сущностей/NER.
     const userHistoryCount = history.filter(
       (item) => item.role === 'user' && item.content.trim().length > 0,
     ).length;

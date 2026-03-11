@@ -70,6 +70,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: стабильно извлекать code/session_id даже из вложенных форматов ошибок NestJS,
+    //    чтобы frontend мог корректно продолжать тот же AI-чат после NEED_CITY.
+    // 3) Если убрать: потеряется session_id в ошибках, и follow-up запросы уйдут в другой/новый чат.
+    // 4) Возможен конфликт с ветками, где backend унифицирует error envelope и убирает вложенный payload.
     const responseObj =
       err && typeof err.response === 'object' && err.response !== null
         ? (err.response as Record<string, unknown>)

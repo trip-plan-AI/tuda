@@ -293,6 +293,13 @@ export class AiSessionsService {
   }) {
     const { tripId, userId, sessionId } = params;
 
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: жестко изолировать AI-сессии; при явном sessionId нельзя "переиспользовать"
+    //    другой чат пользователя по trip_id/null-trip, иначе однословный запрос может попасть в старый контекст.
+    // 3) Если убрать: вернется склейка чатов, появятся ложные маршруты (например, "небанальный" -> старый город).
+    // 4) В этом блоке ранее не было веточного комментария; прямого конфликта со старым комментарием нет.
+
     if (sessionId) {
       const byId = await this.getByIdForUser(sessionId, userId);
       if (byId) return byId;

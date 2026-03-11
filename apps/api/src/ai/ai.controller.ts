@@ -32,6 +32,13 @@ import { PointsService } from '../points/points.service';
 export class AiController {
   private readonly logger = new Logger('AI_PIPELINE');
 
+  // TRI-106 / MERGE-GUARD
+  // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+  // 2) Потребность: единый текст NEED_CITY для детерминированной UX-обработки на frontend
+  //    и для устойчивых проверок в тестах/логах.
+  // 3) Если убрать: фронт может получать разные формулировки и не показывать корректный сценарий уточнения города.
+  // 4) Возможен конфликт с ветками, где меняют контракт ошибок 422 (code/message/session_id)
+  //    в ai-пайплайне и клиентском error parser.
   private readonly needCityMessage =
     'Недостаточно данных для построения маршрута. Укажите, пожалуйста, город.';
 
@@ -46,6 +53,13 @@ export class AiController {
   ) {}
 
   private isNeedCityError(error: unknown): boolean {
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: отделить доменную ошибку NEED_CITY от остальных 422, чтобы
+    //    сохранять контекст сессии и отдавать клиенту предсказуемый payload.
+    // 3) Если убрать: контроллер не перехватит NEED_CITY из orchestrator, сессия не сохранит
+    //    clarify-диалог, а UI потеряет continuity между сообщениями.
+    // 4) В этом блоке ранее не было веточного комментария; прямого конфликта со старым комментарием нет.
     if (!(error instanceof UnprocessableEntityException)) return false;
 
     const response = error.getResponse();
@@ -210,6 +224,12 @@ ${JSON.stringify(points)}
     @Body() dto: { trip_id?: string },
     @CurrentUser() user: { id: string },
   ) {
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: позволить frontend создать серверную AI-сессию ДО первого /ai/plan,
+    //    чтобы однословные/уточняющие запросы не теряли chat identity.
+    // 3) Если убрать: первый запрос снова может идти с session_id=null и "прилипать" к чужому контексту.
+    // 4) Возможен конфликт с ветками, где создание сессии происходит неявно только внутри /ai/plan.
     const session = await this.aiSessionsService.getOrCreateForPlan({
       tripId: dto.trip_id,
       userId: user.id,
@@ -244,6 +264,12 @@ ${JSON.stringify(points)}
         llmContext,
       );
     } catch (error) {
+      // TRI-106 / MERGE-GUARD
+      // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+      // 2) Потребность: при NEED_CITY сохранять user+assistant clarify-сообщения в ту же сессию,
+      //    чтобы follow-up пользователя продолжал диалог, а не стартовал новый маршрут.
+      // 3) Если убрать: история чата будет рваться, и повторный запрос может снова привести к неверному городу.
+      // 4) Возможен конфликт с ветками, где 422 обрабатывается глобально без локального saveMessages.
       if (!this.isNeedCityError(error)) {
         throw error;
       }
@@ -300,6 +326,12 @@ ${JSON.stringify(points)}
     await this.aiSessionsService.saveMessages(session.id, newMessages);
 
     if (!intent.city) {
+      // TRI-106 / MERGE-GUARD
+      // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+      // 2) Потребность: унифицировать контракт ошибки "нет города" (code=NEED_CITY),
+      //    чтобы frontend не зависел от строкового текста исключения.
+      // 3) Если убрать: клиентские ветки обработки снова перейдут к generic-ошибке 422 без уточняющего UX.
+      // 4) Возможен конфликт с ветками, где ожидается старый текст "Could not parse city from request".
       throw new UnprocessableEntityException({
         code: 'NEED_CITY',
         message: this.needCityMessage,

@@ -403,6 +403,12 @@ export function LandingPage() {
   const handleSearch = () => {
     if (searchMode === 'ai') {
       if (searchQuery.trim()) {
+        // TRI-106 / MERGE-GUARD
+        // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+        // 2) Потребность: перед переходом в /ai-assistant фиксируем атомарный handoff
+        //    (query + targetSessionId), чтобы UI открыл именно тот чат, куда уйдет запрос.
+        // 3) Если убрать: первое сообщение/скелетон может рендериться в одном чате, а запрос уйдет в другой.
+        // 4) Возможен конфликт с ветками, где стартовый запрос передается только как ai:pending-query.
         const sessionId = createNewSession();
         sessionStorage.setItem(
           'ai:pending-handoff',
@@ -531,6 +537,12 @@ export function LandingPage() {
                       href="/ai-assistant"
                       onClick={() => {
                         if (searchQuery.trim()) {
+                          // TRI-106 / MERGE-GUARD
+                          // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+                          // 2) Потребность: тот же handoff-контракт для CTA-кнопки, что и для handleSearch,
+                          //    чтобы все входы в AI-чат вели себя одинаково.
+                          // 3) Если убрать: одна из точек входа снова начнет воспроизводить race-condition по activeSession.
+                          // 4) Возможен конфликт с ветками, где Link onClick очищает/переопределяет pending ключи.
                           const sessionId = createNewSession();
                           sessionStorage.setItem(
                             'ai:pending-handoff',
@@ -819,6 +831,12 @@ export function LandingPage() {
                   <button
                     key={idx}
                     onClick={() => {
+                      // TRI-106 / MERGE-GUARD
+                      // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+                      // 2) Потребность: быстрые фильтры должны использовать тот же атомарный handoff,
+                      //    что и основной поиск, иначе поведение входа в чат будет непоследовательным.
+                      // 3) Если убрать: через quick filters снова возможен race-condition с неверным active chat.
+                      // 4) Возможен конфликт с ветками, где quick filters отправляют запрос напрямую без перехода.
                       const sessionId = createNewSession();
                       sessionStorage.setItem(
                         'ai:pending-handoff',

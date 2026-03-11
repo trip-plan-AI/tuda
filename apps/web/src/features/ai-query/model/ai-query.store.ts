@@ -55,6 +55,11 @@ function getPendingHandoffTargetSessionId(): string | null {
   if (typeof window === 'undefined') return null;
 
   try {
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: защитить handoff Landing -> AI от потери targetSessionId во время загрузки списка сессий.
+    // 3) Если убрать: loadSessions может активировать другой чат, и первый запрос/скелетон будут не в том окне.
+    // 4) Возможен конфликт с ветками, где handoff хранится не в sessionStorage, а в router state/query params.
     const raw = window.sessionStorage.getItem('ai:pending-handoff');
     if (!raw) return null;
 
@@ -313,6 +318,13 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           ...localTransientSessions,
         };
 
+        // TRI-106 / MERGE-GUARD
+        // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+        // 2) Потребность: при наличии pending-handoff удержать activeSessionId на целевом локальном чате,
+        //    чтобы UI (первое user-message + loader) рендерился в правильной сессии.
+        // 3) Если убрать: воспроизводится race-condition — список сессий перехватывает фокус на другой чат.
+        // 4) Возможен конфликт с веткой feature/TRI-104-ai-planner-interaction,
+        //    где activeSessionId может приоритетно вычисляться от currentTrip/trip-session.
         const pendingHandoffTargetSessionId = getPendingHandoffTargetSessionId();
 
         nextActiveSessionId =
@@ -380,6 +392,13 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       ensuredSessionId = preRequestSession.sessionId;
 
       if (!ensuredSessionId) {
+        // TRI-106 / MERGE-GUARD
+        // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+        // 2) Потребность: серверная сессия должна быть создана до /ai/plan, чтобы даже первый запрос
+        //    (включая NEED_CITY) был связан с постоянным session_id.
+        // 3) Если убрать: first-turn запросы снова пойдут с session_id=null и могут склеиваться между чатами.
+        // 4) Возможен конфликт с веткой feature/TRI-104-ai-planner-interaction,
+        //    если в ней ожидается старый flow с ленивым созданием сессии внутри /ai/plan.
         const created = await api.post<CreateSessionResponse>('/ai/sessions', {
           trip_id: tripId && isUuid(tripId) ? tripId : undefined,
         });

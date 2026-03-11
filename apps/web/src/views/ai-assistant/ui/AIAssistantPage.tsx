@@ -74,6 +74,13 @@ export function AIAssistantPage() {
     if (typeof window === 'undefined') return;
     if (isSessionsLoading) return;
 
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: атомарно обработать handoff из Landing (query + targetSessionId),
+    //    чтобы сначала активировать нужный чат, а потом отправить запрос именно в него.
+    // 3) Если убрать: запрос может уйти в одну сессию, а UI (первое сообщение/скелетон) откроется в другой.
+    // 4) Возможен конфликт с ветками, где вход в AI-чат использует только ai:pending-query
+    //    или где sendQuery вызывается до switchSession.
     const rawHandoff = sessionStorage.getItem('ai:pending-handoff');
     if (!rawHandoff) {
       const pendingQuery = sessionStorage.getItem('ai:pending-query');

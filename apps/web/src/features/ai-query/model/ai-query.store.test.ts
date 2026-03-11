@@ -15,6 +15,11 @@ describe('useAiQueryStore', () => {
   const baseSessionId = 'session-local-1';
 
   beforeEach(() => {
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: изоляция тестов от sessionStorage-побочных эффектов между кейсами handoff.
+    // 3) Если убрать: тесты, использующие ai:pending-handoff, станут flaky и зависимыми от порядка выполнения.
+    // 4) В этом блоке ранее не было веточного комментария; прямого конфликта со старым комментарием нет.
     window.sessionStorage.clear();
 
     useAiQueryStore.setState({
@@ -424,6 +429,11 @@ describe('useAiQueryStore', () => {
   });
 
   it('loadSessions keeps handoff target session as active during landing->assistant transition', async () => {
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: закрепить инвариант — во время handoff приоритет у targetSessionId, а не у списка с backend.
+    // 3) Если убрать: легко вернуть regression, где первое сообщение/loader отображаются не в том чате.
+    // 4) Возможен конфликт с ветками, где стратегия выбора activeSessionId меняется (например, приоритет trip-based).
     const handoffTargetId = 'handoff-local';
     const anotherServerSessionId = 'server-other';
 
@@ -482,6 +492,11 @@ describe('useAiQueryStore', () => {
   });
 
   it('loadSessions ignores invalid handoff payload and keeps current active session', async () => {
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: защитить store от падения/переключения activeSession при битом JSON в handoff key.
+    // 3) Если убрать: поврежденный pending payload может внезапно перехватывать фокус чата.
+    // 4) Возможен конфликт с ветками, где ожидается fallback на первый серверный чат при любой ошибке handoff.
     window.sessionStorage.setItem('ai:pending-handoff', '{bad-json');
 
     vi.mocked(api.get).mockResolvedValueOnce([
