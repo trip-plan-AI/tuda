@@ -278,7 +278,14 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         const localTransientSessions = Object.values(state.sessions).reduce<
           Record<string, ChatSession>
         >((acc, session) => {
-          if (session.sessionId === null) {
+          // Сохраняем локальные черновики (sessionId=null)
+          // и оптимистично-промоутнутые серверные сессии,
+          // которые еще не успели попасть в ответ /ai/sessions.
+          const shouldKeepLocal =
+            session.sessionId === null ||
+            (session.sessionId !== null && !remoteSessions[session.sessionId]);
+
+          if (shouldKeepLocal) {
             acc[session.id] = session;
           }
           return acc;

@@ -363,6 +363,40 @@ describe('useAiQueryStore', () => {
     expect(api.post).not.toHaveBeenCalled();
   });
 
+  it('loadSessions keeps optimistic server session not yet returned by backend list', async () => {
+    const optimisticId = 'a141e5d6-4d06-4e53-b04f-ff7314f00387';
+    useAiQueryStore.setState((state) => ({
+      ...state,
+      sessions: {
+        [optimisticId]: {
+          id: optimisticId,
+          title: 'казань',
+          tripId: null,
+          sessionId: optimisticId,
+          messages: [
+            {
+              id: 'u1',
+              role: 'user',
+              content: 'казань',
+              timestamp: new Date().toISOString(),
+            },
+          ],
+          lastAppliedPlanMessageId: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      activeSessionId: optimisticId,
+    }));
+
+    vi.mocked(api.get).mockResolvedValueOnce([]);
+    await useAiQueryStore.getState().loadSessions();
+
+    const state = useAiQueryStore.getState();
+    expect(state.sessions[optimisticId]).toBeDefined();
+    expect(state.sessions[optimisticId]?.messages[0]?.content).toBe('казань');
+  });
+
   it('creates backend chat before /ai/plan for first message', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({
       session_id: 'server-first',
