@@ -37,6 +37,37 @@ declare const ymaps3: any;
 // In-memory кэш OSRM-ответов (переживает ремаунт компонента)
 const osrmCache = new Map<string, { geometry: any; duration: number; distance: number } | null>();
 
+// Module-level реестр инстансов карты по DOM-контейнеру.
+const _mapRegistry = new WeakMap<HTMLElement, any>();
+// Таймеры отложенного destroy — отменяются если компонент ремаунтится до истечения
+const _destroyTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+
+// Глобальный список всех активных инстансов для контроля лимита WebGL-контекстов (не более 6)
+let _activeInstances: { container: HTMLElement; instance: any; timestamp: number }[] = [];
+const MAX_WEBGL_CONTEXTS = 6;
+
+function cleanupOldInstances() {
+  if (_activeInstances.length >= MAX_WEBGL_CONTEXTS) {
+    // Сортируем по времени (старые в начале) и удаляем лишние
+    _activeInstances.sort((a, b) => a.timestamp - b.timestamp);
+    const toDestroy = _activeInstances.slice(0, _activeInstances.length - MAX_WEBGL_CONTEXTS + 1);
+    
+    toDestroy.forEach(item => {
+      try {
+        item.instance.destroy();
+        _mapRegistry.delete(item.container);
+        const timer = _destroyTimers.get(item.container);
+        if (timer) clearTimeout(timer);
+        _destroyTimers.delete(item.container);
+      } catch (e) {
+        console.warn('[RouteMap] Force destroy failed:', e);
+      }
+    });
+    
+    _activeInstances = _activeInstances.filter(item => !toDestroy.includes(item));
+  }
+}
+
 function getOsrmCacheKey(fromLon: number, fromLat: number, toLon: number, toLat: number, profile: string) {
   return `${fromLon},${fromLat};${toLon},${toLat}|${profile}`;
 }
@@ -168,7 +199,9 @@ export function RouteMap({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    if (!cursorIndicatorRef.current && isAddPointMode) {
+    // Курсор-индикатор нужен только на устройствах с мышью
+    const isTouchOnly = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+    if (!cursorIndicatorRef.current && isAddPointMode && !isTouchOnly) {
       const indicator = document.createElement('div');
       Object.assign(indicator.style, {
         position: 'fixed',
@@ -214,11 +247,18 @@ export function RouteMap({
       }
     };
 
+    const handleContextMenu = (e: MouseEvent) => {
+      if (!isAddPointModeRef.current) return;
+      e.preventDefault();
+      onAddPointModeChangeRef.current?.(false);
+    };
+
     if (isAddPointMode && containerRef.current) {
       // Слушаем mousemove только над контейнером карты, не глобально
       containerRef.current.addEventListener('mousemove', handleMouseMove);
       containerRef.current.addEventListener('mouseleave', handleMouseLeave);
       containerRef.current.addEventListener('mouseenter', handleMouseEnter);
+      containerRef.current.addEventListener('contextmenu', handleContextMenu);
     }
 
     return () => {
@@ -226,14 +266,33 @@ export function RouteMap({
         containerRef.current.removeEventListener('mousemove', handleMouseMove);
         containerRef.current.removeEventListener('mouseleave', handleMouseLeave);
         containerRef.current.removeEventListener('mouseenter', handleMouseEnter);
+        containerRef.current.removeEventListener('contextmenu', handleContextMenu);
       }
     };
   }, [isAddPointMode]);
 
   // Инициализация карты
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
     let cancelled = false;
+
+    // Отменяем отложенный destroy если он был запланирован (Fast Refresh remount)
+    const pendingDestroy = _destroyTimers.get(container);
+    if (pendingDestroy !== undefined) {
+      clearTimeout(pendingDestroy);
+      _destroyTimers.delete(container);
+    }
+
+    // Переиспользуем инстанс если он уже существует для этого контейнера
+    if (_mapRegistry.has(container)) {
+      mapRef.current = _mapRegistry.get(container);
+      // Обновляем таймштамп в списке активных
+      const idx = _activeInstances.findIndex(i => i.container === container);
+      if (idx !== -1 && _activeInstances[idx]) _activeInstances[idx]!.timestamp = Date.now();
+      setMapReady(true);
+      return () => { cancelled = true; };
+    }
 
     loadYandexMaps(env.yandexMapsKey)
       .then(async () => {
@@ -241,9 +300,19 @@ export function RouteMap({
         const { YMapZoomControl } = await import('@yandex/ymaps3-default-ui-theme');
         if (cancelled) return;
 
+        if (containerRef.current.childElementCount > 0) {
+          containerRef.current.innerHTML = '';
+        }
+
+        // Очищаем старые инстансы перед созданием нового если лимит превышен
+        cleanupOldInstances();
+
         mapRef.current = new ymaps3.YMap(containerRef.current, {
           location: { center: [37.618423, 55.751244], zoom: 12 },
         });
+        _mapRegistry.set(containerRef.current, mapRef.current);
+        _activeInstances.push({ container: containerRef.current, instance: mapRef.current, timestamp: Date.now() });
+
         mapRef.current.addChild(new ymaps3.YMapDefaultSchemeLayer({}));
         mapRef.current.addChild(new ymaps3.YMapDefaultFeaturesLayer({}));
 
@@ -269,10 +338,25 @@ export function RouteMap({
 
     return () => {
       cancelled = true;
-      if (mapRef.current) {
-        mapRef.current.destroy();
-        mapRef.current = null;
-      }
+      const c = containerRef.current ?? container;
+      // Откладываем destroy — если это Fast Refresh remount, следующий mount
+      // отменит таймер и переиспользует инстанс без создания нового WebGL-контекста.
+      // Сокращаем до 100мс для более быстрой очистки при навигации.
+      const timer = setTimeout(() => {
+        _destroyTimers.delete(c);
+        const instance = _mapRegistry.get(c);
+        if (instance) {
+          try {
+            instance.destroy();
+          } catch (e) {
+            console.warn('[RouteMap] Destroy failed:', e);
+          }
+          _mapRegistry.delete(c);
+          _activeInstances = _activeInstances.filter(i => i.container !== c);
+        }
+      }, 100);
+      _destroyTimers.set(c, timer);
+      mapRef.current = null;
     };
   }, []);
 
@@ -296,22 +380,31 @@ export function RouteMap({
         const oldPoint = prevPointsRef.current[i];
         const newPoint = points[i];
 
-        const coordsChanged = !oldPoint || !newPoint ||
+        if (!oldPoint || !newPoint) continue;
+
+        const coordsChanged = 
             oldPoint.lon !== newPoint.lon ||
             oldPoint.lat !== newPoint.lat;
 
-        const transportModeChanged = (oldPoint?.transportMode || prevRouteProfileRef.current) !== (newPoint?.transportMode || routeProfile);
+        // transportMode точки i определяет режим передвижения сегмента (i-1) -> i
+        const oldMode = oldPoint.transportMode || prevRouteProfileRef.current;
+        const newMode = newPoint.transportMode || routeProfile;
+        const modeChanged = oldMode !== newMode;
 
-        if (coordsChanged || transportModeChanged) {
-          // Сегмент i-1 (входящий в точку i) затронут если изменились координаты или transportMode
-          if (i > 0) affectedSegments.add(i - 1);
+        if (coordsChanged || modeChanged) {
+          // Сегмент i-1 (входящий в точку i) затронут если изменились координаты или режим
+          if (i > 0) {
+            affectedSegments.add(i - 1);
+          }
 
-          // Сегмент i (исходящий из точки i) затронут только если изменились координаты
-          if (coordsChanged && i < points.length - 1) affectedSegments.add(i);
+          // Сегмент i (исходящий из точки i) затронут только если изменились координаты самой точки
+          if (coordsChanged && i < points.length - 1) {
+            affectedSegments.add(i);
+          }
         }
       }
     } else {
-      // Первый раз или размер массива изменился - пересчитываем все
+      // Первый раз или размер массива изменился (добавление/удаление точки) - пересчитываем все
       for (let i = 0; i < points.length - 1; i++) {
         affectedSegments.add(i);
       }
@@ -333,6 +426,7 @@ export function RouteMap({
       const promises = Array.from(affectedSegments).map(async (segmentIndex) => {
         const from = points[segmentIndex]!;
         const to = points[segmentIndex + 1]!;
+        // Режим сегмента i -> i+1 определяется настройкой точки i+1
         const profile = to.transportMode || routeProfile;
 
         if (profile === 'direct') {
@@ -398,14 +492,14 @@ export function RouteMap({
         });
         setSegmentsData(updatedSegments as SegmentData[]);
         prevSegmentsRef.current = updatedSegments as SegmentData[];
+        prevPointsRef.current = points;
+        prevRouteProfileRef.current = routeProfile;
       }
       setLoadingSegments(new Set());
       onRouteInfoLoading?.(false);
     };
 
     fetchAffectedSegments();
-    prevPointsRef.current = points;
-    prevRouteProfileRef.current = routeProfile;
 
     return () => {
       isCancelled = true;
@@ -729,13 +823,40 @@ export function RouteMap({
   // Прочие эффекты (зум при клике, фит на старте)
   useEffect(() => {
     if (!mapRef.current || !focusCoords) return;
-    mapRef.current.update({ location: { center: [focusCoords.lon, focusCoords.lat], duration: 500 } });
+    mapRef.current.update({ location: { center: [focusCoords.lon, focusCoords.lat], zoom: 14, duration: 500 } });
+    hasInitialFitPerformed.current = true; // Отключаем авто-фит, если произошел фокус
   }, [focusCoords]);
+
+  // Если режим добавления точек активируется — блокируем авто-зум навсегда
+  useEffect(() => {
+    if (isAddPointMode) {
+      hasInitialFitPerformed.current = true;
+    }
+  }, [isAddPointMode]);
 
   useEffect(() => {
     if (!mapRef.current || !mapReady || points.length === 0 || hasInitialFitPerformed.current) return;
-    const lons = points.map(p => p.lon), lats = points.map(p => p.lat);
-    const bounds = [[Math.min(...lons) - 0.01, Math.min(...lats) - 0.01], [Math.max(...lons) + 0.01, Math.max(...lats) + 0.01]];
+    
+    const lons = points.map(p => p.lon);
+    const lats = points.map(p => p.lat);
+    
+    const minLon = Math.min(...lons);
+    const maxLon = Math.max(...lons);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    
+    // Вычисляем охват и добавляем 10% запас с каждой стороны
+    const lonSpan = maxLon - minLon;
+    const latSpan = maxLat - minLat;
+    
+    const marginLon = Math.max(lonSpan * 0.1, 0.01);
+    const marginLat = Math.max(latSpan * 0.1, 0.01);
+    
+    const bounds = [
+      [minLon - marginLon, minLat - marginLat], 
+      [maxLon + marginLon, maxLat + marginLat]
+    ];
+    
     mapRef.current.update({ location: { bounds, duration: 500 } });
     hasInitialFitPerformed.current = true;
   }, [points.length > 0, mapReady]);
@@ -749,5 +870,5 @@ export function RouteMap({
     };
   }, []);
 
-  return <div ref={containerRef} className="w-full h-full rounded-[2.5rem] overflow-hidden" />;
+  return <div ref={containerRef} className="w-full h-full" />;
 }

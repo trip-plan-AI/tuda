@@ -94,8 +94,6 @@ export function ProfilePage() {
   const { isAuthenticated } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<'routes' | 'saved'>('routes');
-  const [sheetHeight, setSheetHeight] = useState(60);
-  const [isDragging, setIsDragging] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(user?.name || '');
   const [savedTrips, setSavedTrips] = useState<Trip[]>([]);
@@ -103,14 +101,6 @@ export function ProfilePage() {
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
 
   const progressColor = scrollProgress < 0.4 ? '#0ea5e9' : scrollProgress < 0.8 ? '#4f46e5' : '#9333ea';
   const progressTrackColor = '#e2e8f0';
@@ -119,8 +109,6 @@ export function ProfilePage() {
   const savedListScrollRef = useRef<HTMLDivElement>(null);
   const routePointsScrollRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
-  const startY = useRef(0);
-  const startHeight = useRef(0);
 
   const evaluateScrollState = useCallback(() => {
     const container = activeTab === 'saved' ? savedListScrollRef.current : routePointsScrollRef.current;
@@ -190,21 +178,6 @@ export function ProfilePage() {
   const activeRoute = savedTrips.find((t) => t.isActive);
   const activeRouteTotalBudget = activeRoute?.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setIsDragging(true);
-    startY.current = e.touches[0]!.clientY;
-    startHeight.current = sheetHeight;
-  };
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging) return;
-    const deltaY = startY.current - e.touches[0]!.clientY;
-    const deltaPercent = (deltaY / window.innerHeight) * 100;
-    let newHeight = startHeight.current + deltaPercent;
-    newHeight = Math.max(20, Math.min(90, newHeight));
-    setSheetHeight(newHeight);
-  };
-  const handleTouchEnd = () => setIsDragging(false);
-
   const handleAvatarClick = () => fileInputRef.current?.click();
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -251,7 +224,7 @@ export function ProfilePage() {
   };
 
   return (
-    <div className="flex flex-col h-full max-h-[calc(100vh-100px)] bg-slate-50 relative overflow-hidden w-full rounded-[1.5rem] shadow-sm border border-slate-200 animate-in fade-in slide-in-from-bottom-8 duration-1000 ease-out">
+    <div className="flex flex-col h-full max-h-[calc(100vh-100px)] bg-slate-50 relative overflow-hidden w-full">
       <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
 
       {/* ── ШАПКА ПРОФИЛЯ ── */}
@@ -319,40 +292,15 @@ export function ProfilePage() {
       </div>
 
       {/* ── ОСНОВНАЯ ОБЛАСТЬ ── */}
-      <div className="flex-1 flex flex-col md:flex-row relative overflow-hidden w-full">
-
-        {/* Мобильный бэкграунд */}
-        <div className="md:hidden absolute inset-0 bg-slate-100 flex items-start justify-center pt-4">
-          {isMobile && activeRoute && activeRoute.points && activeRoute.points.length > 0 ? (
-            <div className="w-full h-1/2 opacity-60 pointer-events-none grayscale">
-              <RouteMap key={`bg-${activeRoute.id}-${activeTab}`} points={activeRoute.points} onPointDragEnd={() => {}} />
-            </div>
-          ) : (
-            <MapIcon size={48} className="text-slate-200 mt-10" />
-          )}
-        </div>
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full">
 
         {/* ── ЛЕВАЯ КОЛОНКА: Список ── */}
         <div
           className={cn(
-            'absolute bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] md:bottom-auto md:top-0',
-            'h-[var(--sheet-height)] md:h-full w-full md:static',
-            'flex flex-col bg-white z-10',
-            'shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] md:shadow-none',
-            'rounded-t-[1.5rem] md:rounded-none',
-            'transition-[height] duration-75 ease-out overflow-hidden',
-            'md:w-[40%] lg:w-[35%] xl:w-[400px] shrink-0 md:border-r md:border-slate-200',
+            'flex flex-col bg-white overflow-hidden',
+            'flex-1 md:flex-none w-full md:w-[40%] lg:w-[35%] xl:w-[400px] shrink-0 md:border-r md:border-slate-200',
           )}
-          style={{ ['--sheet-height' as string]: `${sheetHeight}%` }}
         >
-          <div
-            className="w-full pt-2 pb-1 shrink-0 bg-white rounded-t-[1.5rem] md:hidden cursor-grab active:cursor-grabbing touch-none"
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-          >
-            <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto" />
-          </div>
 
           <div className="px-3 md:px-4 pt-3 md:pt-4 shrink-0 bg-white z-20">
             <div className="flex w-full p-1 bg-slate-100 rounded-xl">
@@ -395,10 +343,10 @@ export function ProfilePage() {
               </button>
             </div>
 
-            <div className="h-full overflow-y-auto p-3 md:p-4 flex flex-col no-scrollbar">
+            <div className="h-full overflow-y-auto p-3 md:p-4 no-scrollbar">
               {activeTab === 'routes' ? (
                 activeRoute ? (
-                  <div className="space-y-3 w-full h-full flex flex-col">
+                  <div className="space-y-3 w-full">
                     <div className="flex justify-between items-center px-1">
                       <h3 className="text-[10px] font-black text-brand-indigo uppercase tracking-widest">Активный маршрут</h3>
                       <Button variant="outline" size="sm" onClick={() => handleEditRoute(activeRoute)} className="h-7 px-2 rounded-lg border-slate-200 text-slate-500 font-bold text-[9px]">
@@ -407,7 +355,12 @@ export function ProfilePage() {
                       </Button>
                     </div>
 
-                    <div className="bg-white p-3 md:p-4 rounded-2xl border border-slate-100 shadow-sm flex-1 min-h-0 flex flex-col">
+                    {/* Превью карты */}
+                    <div className="w-full aspect-video md:hidden rounded-2xl overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100">
+                      <RouteMap key={`card-${activeRoute.id}`} points={activeRoute.points || []} onPointDragEnd={() => {}} />
+                    </div>
+
+                    <div className="bg-white p-3 md:p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col">
                       <div className="flex items-center gap-3 mb-3">
                         <div className="w-10 h-10 rounded-xl bg-brand-blue/10 text-brand-blue flex items-center justify-center shrink-0">
                           <MapIcon size={20} />
@@ -418,9 +371,9 @@ export function ProfilePage() {
                         </div>
                       </div>
 
-                      <div className="relative flex-1 min-h-[100px]">
-                        <div ref={routePointsScrollRef} onScroll={handleContentScroll} className="h-full overflow-y-auto pr-1 no-scrollbar">
-                          <div className="space-y-2.5 pb-2">
+                      <div>
+                        <div ref={routePointsScrollRef} onScroll={handleContentScroll} className="pr-1 no-scrollbar">
+                          <div className="space-y-2.5">
                             {activeRoute.points?.map((point, idx) => (
                               <div key={point.id} className="flex items-start gap-3">
                                 <div className="w-5 h-5 rounded-full bg-brand-blue text-white font-black flex items-center justify-center text-[8px] shrink-0 mt-0.5">
@@ -442,13 +395,6 @@ export function ProfilePage() {
                         <BudgetSummary plannedBudget={activeRoute.budget} totalBudget={activeRouteTotalBudget} />
                       </div>
                     </div>
-
-                    {/* Превью карты (только мобилка) */}
-                    {isMobile && (
-                      <div className="w-full aspect-[16/9] md:hidden rounded-2xl overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100 mt-3">
-                        <RouteMap key={`card-${activeRoute.id}-${activeTab}`} points={activeRoute.points || []} onPointDragEnd={() => {}} />
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-6">
@@ -516,8 +462,8 @@ export function ProfilePage() {
 
         <div className="hidden md:flex flex-1 relative bg-slate-50 items-center justify-center overflow-hidden p-4">
           <div className="w-full h-full max-w-[96%] max-h-[96%] overflow-hidden relative rounded-2xl border border-slate-200 shadow-lg">
-            {!isMobile && activeRoute && activeRoute.points && activeRoute.points.length > 0 ? (
-              <RouteMap key={`desktop-${activeRoute.id}-${activeTab}`} points={activeRoute.points} onPointDragEnd={() => {}} />
+            {activeRoute && activeRoute.points && activeRoute.points.length > 0 ? (
+              <RouteMap key={`desktop-${activeRoute.id}`} points={activeRoute.points} onPointDragEnd={() => {}} />
             ) : (
               <MapIcon 
                 size={44} 

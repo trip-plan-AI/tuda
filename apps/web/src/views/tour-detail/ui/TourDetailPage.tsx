@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Clock, Cloud, CloudSun, MapPin, Sun, Wind } from 'lucide-react';
+import { ArrowLeft, Clock, Cloud, CloudSun, MapPin, Route, Sun, Wind } from 'lucide-react';
 import { useTripStore, tripsApi } from '@/entities/trip';
 import type { Trip } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point';
@@ -45,7 +45,7 @@ function formatDuration(seconds: number) {
   const h = Math.floor((seconds % 86400) / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const parts = [];
-  if (d > 0) parts.push(`${d} дн.`);
+  if (d > 0) parts.push(`${d} д`);
   if (h > 0) parts.push(`${h} ч`);
   if (m > 0) parts.push(`${m} мин`);
   return parts.length > 0 ? parts.join(' ') : '< 1 мин';
@@ -181,7 +181,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           createdAt: new Date().toISOString(),
         });
       }
-      setPoints(newPoints);
+      setPoints(newPoints, false);
       if (routeInfo) setCachedRouteInfo(routeInfo);
       router.push('/planner?profile=driving');
     } catch (e) {
@@ -240,7 +240,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           className="flex items-center gap-2 text-slate-400 hover:text-brand-indigo font-bold text-sm transition-colors mb-10 group"
         >
           <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
-          Назад
+          Популярные
         </button>
 
         {/* Hero */}
@@ -269,7 +269,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-8">
             {tour.budget != null && (
-              <div className="inline-flex items-center gap-2 bg-brand-yellow/10 rounded-2xl px-5 py-3">
+              <div className="inline-flex items-center gap-2 bg-brand-yellow/10 rounded-2xl px-5 py-3 shrink-0 whitespace-nowrap">
                 <span className="text-slate-500 font-bold text-sm uppercase tracking-widest">
                   Стоимость:
                 </span>
@@ -280,40 +280,42 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
             )}
 
             {/* Суммарный route info */}
-            {(routeInfo || isRouteLoading) && (
-              <div className="flex items-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 relative overflow-hidden transition-all duration-300 min-h-[48px] sm:ml-auto">
-                {isRouteLoading && (
-                  <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10">
-                    <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
-                  </div>
-                )}
-                <div className={cn('flex items-center gap-6', isRouteLoading && 'opacity-40')}>
-                  {routeInfo && (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <Clock size={16} className="text-brand-sky" />
-                        <span className="text-sm font-black text-slate-700 leading-none">
-                          {formatDuration(routeInfo.duration)}
-                        </span>
-                      </div>
-                      <div className="w-px h-6 bg-brand-indigo/10" />
-                      <div className="flex items-center gap-2">
-                        <MapPin size={16} className="text-brand-indigo" />
-                        <span className="text-sm font-black text-slate-700 leading-none">
-                          {formatDistance(routeInfo.distance)}
-                        </span>
-                      </div>
-                    </>
-                  )}
+            <div className="flex items-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 relative overflow-hidden transition-all duration-300 min-h-[48px] w-full sm:w-auto lg:min-w-[24rem] lg:w-fit h-auto sm:ml-auto">
+              {isRouteLoading && (
+                <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10 animate-in fade-in duration-200">
+                  <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
                 </div>
+              )}
+              <div className={cn('flex items-center gap-6 w-full justify-center shrink-0', isRouteLoading && 'opacity-40')}>
+                {routeInfo ? (
+                  <>
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      <Clock size={16} className="text-brand-blue" />
+                      <span className="text-sm font-black text-slate-700 leading-none">
+                        {formatDuration(routeInfo.duration)}
+                      </span>
+                    </div>
+                    <div className="w-px h-6 bg-brand-indigo/10 shrink-0" />
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      <Route size={16} className="text-emerald-500" />
+                      <span className="text-sm font-black text-slate-700 leading-none">
+                        {formatDistance(routeInfo.distance)}
+                      </span>
+                    </div>
+                  </>
+                ) : !isRouteLoading && (
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">
+                    Расчёт маршрута...
+                  </span>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
 
         {/* Карта с маршрутом */}
         <div className="mb-8">
-          <div className="w-full aspect-[4/5] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden border border-slate-200 shadow-inner bg-slate-50">
+          <div className="w-full aspect-[4/3] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden border border-slate-200 shadow-inner bg-slate-50">
             <RouteMap
               points={attractions}
               focusCoords={attractions.length === 0 ? focusCoords : null}

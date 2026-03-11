@@ -3,10 +3,11 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Search,
   MapPin,
+  Route as RouteIcon,
   Plus,
   Minus,
   MessageSquare,
@@ -45,10 +46,10 @@ import { startOfMonth } from 'date-fns';
 import { startOfToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { useTripStore, tripsApi, type CreateTripPayload, type Trip } from '@/entities/trip';
+import { useUserStore } from '@/entities/user';
 import { usePointCrud } from '@/features/route-create';
 import { pointsApi } from '@/entities/route-point';
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
-import { CompareSaveModal } from '@/widgets/compare-save';
 import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point';
 import { toast } from 'sonner';
@@ -87,6 +88,50 @@ interface GeoSuggestion {
   uri?: string; // ymapsbm1://geo?ll=LON,LAT&z=...
 }
 
+function filterUniqueSuggestions(results: any[]): GeoSuggestion[] {
+  const seenCoords = new Set<string>();
+  const seenNames = new Set<string>();
+  const unique: GeoSuggestion[] = [];
+
+  for (const item of results) {
+    const displayName = (item.displayName ?? '').trim();
+    if (!displayName) continue;
+
+    const uri = item.uri as string | undefined;
+    // Check various possible coordinate fields for robustness (backend tiers may vary)
+    const lat = item.lat ?? item.geometry?.point?.lat ?? item.data?.geo_lat;
+    const lon = item.lon ?? item.geometry?.point?.lon ?? item.data?.geo_lon;
+
+    if (seenNames.has(displayName.toLowerCase())) continue;
+
+    let coordsKey = '';
+    if (lat !== undefined && lon !== undefined && !isNaN(Number(lat)) && !isNaN(Number(lon))) {
+      coordsKey = `${Number(lon).toFixed(5)},${Number(lat).toFixed(5)}`;
+    } else if (uri) {
+      const match = uri.match(/[?&]ll=([^&]+)/);
+      if (match && match[1]) {
+        const rawCoords = decodeURIComponent(match[1]);
+        const [p0, p1] = rawCoords.split(',').map(Number);
+        if (p0 !== undefined && p1 !== undefined && !isNaN(p0) && !isNaN(p1)) {
+          coordsKey = `${p0.toFixed(5)},${p1.toFixed(5)}`;
+        } else {
+          coordsKey = rawCoords;
+        }
+      }
+    }
+
+    if (coordsKey) {
+      if (seenCoords.has(coordsKey)) continue;
+      seenCoords.add(coordsKey);
+    }
+
+    seenNames.add(displayName.toLowerCase());
+    unique.push({ displayName, uri });
+  }
+
+  return unique;
+}
+
 const FILTERS = ['Все', 'Активный', 'Зима', 'Экстрим'] as const;
 type Filter = (typeof FILTERS)[number];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -101,12 +146,46 @@ function formatDuration(seconds: number) {
   if (h > 0) parts.push(`${h} ч`);
   if (m > 0) parts.push(`${m} мин`);
 
-  return parts.length > 0 ? parts.join('  ') : '0 мин';
+  return parts.length > 0 ? parts.join(' ') : '0 мин';
 }
 
 function formatDistance(meters: number) {
   if (meters < 1000) return `${Math.round(meters)} м`;
   return `${(meters / 1000).toFixed(1)} км`;
+}
+
+/**
+ * Вычисляет даты для точек маршрута по цепочке.
+ * Если у точки дата пустая или раньше (дата предыдущей + время пути), ставит автоматически.
+ * Возвращает массив {id, visitDate} для точек, которые нужно обновить.
+ */
+function computeDateCascade(
+  points: RoutePoint[],
+  legs: { duration: number; distance: number }[],
+  fromIndex: number,
+): Array<{ id: string; visitDate: string }> {
+  const updates: Array<{ id: string; visitDate: string }> = [];
+  const dates = points.map((p) => p.visitDate);
+
+  for (let j = fromIndex + 1; j < points.length; j++) {
+    const prevDate = dates[j - 1];
+    if (!prevDate) break;
+
+    const leg = legs[j - 1];
+    if (!leg) break;
+
+    const minMs = new Date(prevDate).getTime() + leg.duration * 1000;
+    const currentMs = dates[j] ? new Date(dates[j]!).getTime() : null;
+
+    if (currentMs === null || currentMs < minMs) {
+      const newDate = new Date(minMs).toISOString();
+      dates[j] = newDate;
+      updates.push({ id: points[j]!.id, visitDate: newDate });
+    }
+    // Если дата уже корректна — оставляем её, но продолжаем проверку дальше по цепочке
+  }
+
+  return updates;
 }
 
 interface PointRowProps {
@@ -132,7 +211,7 @@ interface PointRowProps {
   onFocusPoint: (coords: { lon: number; lat: number }) => void;
   leg?: { duration: number; distance: number };
   isRouteLoading?: boolean;
-  routeProfile?: 'driving' | 'foot' | 'bike' | 'direct';
+  userLocation?: { lat: number; lon: number };
 }
 
 function SortablePointRow({
@@ -147,7 +226,7 @@ function SortablePointRow({
   onFocusPoint,
   leg,
   isRouteLoading,
-  routeProfile,
+  userLocation,
 }: PointRowProps) {
   const [addressVal, setAddressVal] = useState(point.address ?? '');
   const [suggestions, setSuggestions] = useState<GeoSuggestion[]>([]);
@@ -188,14 +267,12 @@ function SortablePointRow({
     }
     setIsSearching(true);
     try {
-      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
+      const locSuffix = userLocation ? `&lat=${userLocation.lat}&lon=${userLocation.lon}` : '';
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}${locSuffix}`;
       const res = await fetch(url);
       const data = await res.json();
 
-      const found: GeoSuggestion[] = (data.results ?? []).map((item: any) => ({
-        displayName: item.displayName ?? '',
-        uri: item.uri as string | undefined,
-      }));
+      const found = filterUniqueSuggestions(data.results ?? []);
       setSuggestions(found);
       setShowDropdownState(true);
     } catch {
@@ -259,19 +336,11 @@ function SortablePointRow({
       {index > 0 && (leg || isRouteLoading) && (
         <div
           className={cn(
-            'flex items-center gap-3 self-center px-4 py-2 bg-white border border-slate-100 rounded-full shadow-sm animate-in fade-in slide-in-from-top-1 -mb-1 relative z-10 w-full sm:max-w-lg md:max-w-2xl lg:max-w-4xl justify-center flex-nowrap overflow-x-auto transition-all',
-            isDragging && 'pointer-events-none',
+            'flex flex-wrap items-center gap-1.5 md:gap-3 self-center px-2.5 md:px-4 py-2 bg-white border border-slate-100 rounded-2xl md:rounded-full shadow-sm animate-in fade-in slide-in-from-top-1 my-2 relative z-10 w-full max-w-[300px] sm:max-w-[340px] md:max-w-[420px] justify-center transition-all',
+            isDragging && 'invisible',
           )}
         >
-          {isDragging ? (
-            <div className="flex items-center justify-center gap-3 min-h-10">
-              <div className="w-24 h-4 bg-slate-200 rounded-full animate-pulse" />
-              <div className="w-1 h-1 rounded-full bg-slate-200" />
-              <div className="w-20 h-4 bg-slate-200 rounded-full animate-pulse" />
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-1.5 pr-4">
+          <div className="flex items-center gap-1 md:gap-1.5 shrink-0">
                 <button
                   onClick={() => onUpdate(point.id, { transportMode: 'driving' })}
                   className={cn(
@@ -321,15 +390,15 @@ function SortablePointRow({
                   <span className="text-sm md:text-base leading-none">📏</span>
                 </button>
               </div>
-              <div className="w-1 h-1 rounded-full bg-slate-200" />
-              <div className="relative flex items-center gap-1.5 pl-4 overflow-hidden">
+              <div className="w-px h-4 bg-slate-100 md:w-1 md:h-1 md:rounded-full md:bg-slate-200" />
+              <div className="relative flex flex-wrap items-center gap-1.5 md:pl-2">
                 {isRouteLoading && (
                   <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10 animate-in fade-in duration-200">
                     <div className="w-4 h-4 border border-brand-indigo border-t-transparent rounded-full animate-spin" />
                   </div>
                 )}
                 {leg && (
-                  <div className={cn("flex items-center gap-1.5", isRouteLoading && "opacity-40")}>
+                  <div className={cn('flex flex-wrap items-center gap-x-3 gap-y-1', isRouteLoading && 'opacity-40')}>
                     {(point.transportMode || 'driving') !== 'direct' && (
                       <>
                         <div className="flex items-center gap-1.5 whitespace-nowrap">
@@ -338,11 +407,11 @@ function SortablePointRow({
                             {formatDuration(leg.duration)}
                           </span>
                         </div>
-                        <div className="w-0.5 h-4 rounded-full bg-slate-200" />
+                        <div className="w-px h-3 bg-slate-200" />
                       </>
                     )}
                     <div className="flex items-center gap-1.5 whitespace-nowrap">
-                      <MapPin size={12} className="text-slate-400 shrink-0" />
+                      <RouteIcon size={12} className="text-emerald-500 shrink-0" />
                       <span className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-tight">
                         {formatDistance(leg.distance)}
                       </span>
@@ -350,8 +419,6 @@ function SortablePointRow({
                   </div>
                 )}
               </div>
-            </>
-          )}
         </div>
       )}
 
@@ -363,13 +430,9 @@ function SortablePointRow({
       >
         <button
           onClick={() => onRemove(point.id)}
-          className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-white transition-all active:scale-95 shadow-md border border-slate-50 z-10 group/del"
+          className="absolute top-3 right-3 w-7 h-7 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all active:scale-95 z-10"
         >
-          <X
-            size={14}
-            strokeWidth={2.5}
-            className="group-hover/del:scale-110 transition-transform"
-          />
+          <X size={14} strokeWidth={2.5} />
         </button>
 
         <div className="flex items-center lg:items-start gap-2 lg:pt-1">
@@ -582,6 +645,8 @@ function SortablePointRow({
 const weatherIcons = [Cloud, Sun, CloudSun, Wind];
 
 export function PlannerPage() {
+  const { geoDenied, setGeoDenied } = useUserStore();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab') === 'popular' ? 'popular' : 'my';
   const [activeTab, setActiveTab] = useState<'my' | 'popular'>(initialTab);
@@ -592,6 +657,9 @@ export function PlannerPage() {
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const justMigratedRef = useRef(false);
+  const userLocationRef = useRef<{ lat: number; lon: number } | null>(null);
+  const prevLegsCountRef = useRef(0);
+  const prevLegsDurationsRef = useRef<string>('');
 
   const [isActiveRoute, setIsActiveRoute] = useState(false);
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
@@ -605,11 +673,59 @@ export function PlannerPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [modal, setModal] = useState<'login' | 'register' | null>(null);
   const [isAddPointMode, setIsAddPointMode] = useState(false);
+  const [showOptimizationResults, setShowOptimizationResults] = useState(true);
+  const addPointStartCountRef = useRef(0);
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.geolocation && !geoDenied) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          userLocationRef.current = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        },
+        (err) => {
+          if (err.code === err.PERMISSION_DENIED) {
+            setGeoDenied(true);
+          }
+          console.warn('Geolocation error:', err.message);
+        },
+        { timeout: 5000 },
+      );
+    }
+  }, [geoDenied, setGeoDenied]);
+
+  const handleAddPointModeChange = useCallback((active: boolean) => {
+    if (active) {
+      addPointStartCountRef.current = useTripStore.getState().currentTrip?.points?.length ?? 0;
+    }
+    setIsAddPointMode(active);
+  }, []);
 
   const profileParam = searchParams.get('profile');
   const [routeProfile, setRouteProfile] = useState<'driving' | 'foot' | 'bike' | 'direct'>(
     (profileParam as any) || 'driving',
   );
+
+  const {
+    currentTrip,
+    setCurrentTrip,
+    updateCurrentTrip,
+    clearPlanner,
+    setPoints,
+    _hasHydrated,
+    isDirty,
+    setSaved,
+    optimizationResults,
+    setOptimizationResults,
+    previousPoints,
+    setPreviousPoints,
+    lastOptimizedPoints,
+    setLastOptimizedPoints,
+    lastOptimizedProfile,
+    setLastOptimizedProfile,
+  } = useTripStore();
+  const points = currentTrip?.points || [];
+  const { isAuthenticated } = useAuthStore();
+  const crud = usePointCrud(currentTrip?.id);
 
   const [routeInfo, setRouteInfo] = useState<{
     duration: number;
@@ -620,24 +736,35 @@ export function PlannerPage() {
   const [affectedSegments, setAffectedSegments] = useState<Set<number>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isOptimizing, setIsOptimizing] = useState(false);
-  const [compareModalData, setCompareModalData] = useState<{
-    isOpen: boolean;
-    metrics: {
-      originalKm: number;
-      newKm: number;
-      originalHours: number;
-      newHours: number;
-      originalRub: number;
-      newRub: number;
-    } | null;
-  }>({
-    isOpen: false,
-    metrics: null,
-  });
+
+  const isAlreadyOptimal = useMemo(() => {
+    if (!lastOptimizedPoints || points.length !== lastOptimizedPoints.length) return false;
+    return points.every((p, i) => {
+      const lo = lastOptimizedPoints[i];
+      // Compare ID and coordinates
+      return lo && p.id === lo.id && p.lat === lo.lat && p.lon === lo.lon;
+    });
+  }, [points, lastOptimizedPoints]);
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'popular' || tab === 'my') {
+      setActiveTab(tab as 'my' | 'popular');
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (optimizationResults.status !== 'idle' && !isAlreadyOptimal) {
+      setOptimizationResults({ status: 'idle', metrics: null });
+      setPreviousPoints(null);
+    }
+  }, [isAlreadyOptimal, optimizationResults.status]);
 
   const resolveCoords = useCallback(async (query: string) => {
     try {
-      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
+      const loc = userLocationRef.current;
+      const locSuffix = loc ? `&lat=${loc.lat}&lon=${loc.lon}` : '';
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}${locSuffix}`;
       const res = await fetch(url);
       if (!res.ok) return null;
       const data = await res.json();
@@ -666,31 +793,15 @@ export function PlannerPage() {
       const url = `${env.apiUrl}/geosearch/reverse?lat=${coords.lat}&lon=${coords.lon}`;
       const res = await fetch(url);
       if (!res.ok) return null;
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!data) return null;
       const address = data.displayName || `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`;
       const title = data.title || address;
       return { address, title };
-    } catch (error) {
-      console.error('[Geosearch] Exception during reverse geocoding:', error);
+    } catch {
       return null;
     }
   }, []);
-
-  const {
-    currentTrip,
-    setCurrentTrip,
-    updateCurrentTrip,
-    addPoint,
-    clearPlanner,
-    setPoints,
-    _hasHydrated,
-    isDirty,
-    setSaved,
-  } = useTripStore();
-  const points = currentTrip?.points || [];
-  const { isAuthenticated } = useAuthStore();
-  const crud = usePointCrud(currentTrip?.id);
 
   const { isMixedRoute, mixedModes } = useMemo(() => {
     if (points.length < 2) return { isMixedRoute: false, mixedModes: [] };
@@ -710,6 +821,52 @@ export function PlannerPage() {
     }),
   );
 
+  // Обёртка над crud.update: при смене visitDate каскадно пересчитывает даты вперёд
+  const handlePointUpdate = useCallback(
+    async (id: string, patch: Parameters<typeof crud.update>[1]) => {
+      const fullPatch = { ...patch };
+      if ('title' in patch && patch.title) {
+        (fullPatch as any).isTitleCustom = true;
+      }
+      await crud.update(id, fullPatch);
+      if ('visitDate' in patch && patch.visitDate && routeInfo?.legs) {
+        const pts = useTripStore.getState().currentTrip?.points ?? [];
+        const fromIndex = pts.findIndex((p) => p.id === id);
+        if (fromIndex >= 0) {
+          const cascadeUpdates = computeDateCascade(pts, routeInfo.legs, fromIndex);
+          for (const u of cascadeUpdates) {
+            await crud.update(u.id, { visitDate: u.visitDate });
+          }
+        }
+      }
+    },
+    [crud, routeInfo],
+  );
+
+  // Когда появляется новый сегмент или меняется duration сегмента (смена режима передвижения),
+  // каскадно проставляем даты от первой датированной точки
+  useEffect(() => {
+    const legs = routeInfo?.legs;
+    const legsCount = legs?.length ?? 0;
+    const legsDurationsKey = legs ? legs.map((l) => l.duration).join(',') : '';
+
+    const legsCountChanged = legsCount > prevLegsCountRef.current;
+    const legsDurationsChanged = legsDurationsKey !== prevLegsDurationsRef.current;
+
+    if ((legsCountChanged || legsDurationsChanged) && legs && points.length > 1) {
+      prevLegsCountRef.current = legsCount;
+      prevLegsDurationsRef.current = legsDurationsKey;
+      const firstDatedIdx = points.findIndex((p) => p.visitDate);
+      if (firstDatedIdx >= 0) {
+        const cascadeUpdates = computeDateCascade(points, legs, firstDatedIdx);
+        cascadeUpdates.forEach((u) => crud.update(u.id, { visitDate: u.visitDate }));
+      }
+    } else {
+      prevLegsCountRef.current = legsCount;
+      prevLegsDurationsRef.current = legsDurationsKey;
+    }
+  }, [routeInfo]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     useTripStore.getState().setCachedRouteInfo(null);
   }, []);
@@ -727,7 +884,7 @@ export function PlannerPage() {
 
     pointsApi
       .getAll(currentTrip.id)
-      .then(setPoints)
+      .then((pts) => setPoints(pts, false))
       .catch((e) => {
         console.error('Failed to load points:', e);
 
@@ -739,7 +896,7 @@ export function PlannerPage() {
           return;
         }
 
-        setPoints([]);
+        setPoints([], false);
       });
   }, [currentTrip?.id, setPoints]);
 
@@ -870,7 +1027,10 @@ export function PlannerPage() {
       if (newIndex < newOrder.length - 1) affectedIndices.add(newIndex); // сегмент после новой позиции
 
       // Собираем обновления для затронутых точек
-      const pointsToUpdate: Array<{ id: string; transportMode: 'driving' | 'foot' | 'bike' | 'direct' }> = [];
+      const pointsToUpdate: Array<{
+        id: string;
+        transportMode: 'driving' | 'foot' | 'bike' | 'direct';
+      }> = [];
       updatedOrder.forEach((p, i) => {
         if (i > 0 && affectedIndices.has(i - 1)) {
           // Точка i определяет сегмент (i-1)→i, и этот сегмент был затронут
@@ -900,14 +1060,20 @@ export function PlannerPage() {
       _mapTitle: string,
     ) => {
       const geoData = await resolveMapCoords(newCoords);
-      crud.update(pointId, {
+      const point = points.find((p) => p.id === pointId);
+      const patch: any = {
         lat: newCoords.lat,
         lon: newCoords.lon,
         address: geoData?.address || `${newCoords.lat.toFixed(4)}, ${newCoords.lon.toFixed(4)}`,
-        title: geoData?.title || `${newCoords.lat.toFixed(4)}, ${newCoords.lon.toFixed(4)}`,
-      });
+      };
+
+      if (!point?.isTitleCustom) {
+        patch.title = geoData?.title || `${newCoords.lat.toFixed(4)}, ${newCoords.lon.toFixed(4)}`;
+      }
+
+      crud.update(pointId, patch);
     },
-    [crud, resolveMapCoords],
+    [crud, resolveMapCoords, points],
   );
 
   const ensureTripId = useCallback(async (): Promise<string> => {
@@ -946,10 +1112,9 @@ export function PlannerPage() {
 
       justMigratedRef.current = true;
       setCurrentTrip(trip);
-      setPoints(createdPoints);
+      setPoints(createdPoints, false);
       return trip.id;
     }
-
     if (!isAuthenticated) {
       const guestTrip: Trip = {
         id: `guest-${Date.now()}`,
@@ -1011,13 +1176,12 @@ export function PlannerPage() {
     }
     setIsSearching(true);
     try {
-      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
+      const loc = userLocationRef.current;
+      const locSuffix = loc ? `&lat=${loc.lat}&lon=${loc.lon}` : '';
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}${locSuffix}`;
       const res = await fetch(url);
       const data = await res.json();
-      const found: GeoSuggestion[] = (data.results ?? []).map((item: any) => ({
-        displayName: item.displayName ?? '',
-        uri: item.uri as string | undefined,
-      }));
+      const found = filterUniqueSuggestions(data.results ?? []);
       setSuggestions(found);
       setShowDropdown(true);
     } catch {
@@ -1044,27 +1208,9 @@ export function PlannerPage() {
 
   const addPoint_ = useCallback(
     async (payload: { title: string; lat: number; lon: number; address?: string }) => {
-      const tripId = await ensureTripId();
-      if (tripId.startsWith('guest-')) {
-        const guestPoint = {
-          ...payload,
-          id: `point-${Date.now()}`,
-          tripId,
-          order: 0,
-          budget: 0,
-          visitDate: null,
-          imageUrl: null,
-          address: payload.address ?? null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        addPoint(guestPoint as any);
-      } else {
-        const created = await pointsApi.create(tripId, { ...payload, budget: 0 });
-        addPoint(created);
-      }
+      await crud.add({ ...payload, budget: 0 });
     },
-    [ensureTripId, addPoint],
+    [crud],
   );
 
   const handleAddByQuery = async () => {
@@ -1082,6 +1228,7 @@ export function PlannerPage() {
       setSearchInput('');
       setShowDropdown(false);
       setSuggestions([]);
+      setFocusCoords({ lon: coords.lon, lat: coords.lat });
     } finally {
       setIsSearching(false);
     }
@@ -1095,7 +1242,29 @@ export function PlannerPage() {
         return;
       }
       try {
+        const isExistingRealTrip = !!currentTrip?.id && UUID_RE.test(currentTrip.id);
         const tripId = await ensureTripId();
+
+        if (isExistingRealTrip) {
+          const backendPoints = await pointsApi.getAll(tripId);
+          await Promise.all(backendPoints.map((p) => pointsApi.remove(tripId, p.id)));
+          await Promise.all(
+            points.map((p, i) =>
+              pointsApi.create(tripId, {
+                title: p.title,
+                lat: p.lat,
+                lon: p.lon,
+                budget: p.budget ?? 0,
+                visitDate: p.visitDate ?? undefined,
+                imageUrl: p.imageUrl ?? undefined,
+                order: i,
+                address: p.address ?? undefined,
+                transportMode: p.transportMode,
+              }),
+            ),
+          );
+        }
+
         const autoTitle =
           points.length > 1
             ? `${points[0]!.title} — ${points[points.length - 1]!.title}`
@@ -1140,6 +1309,10 @@ export function PlannerPage() {
     toast.info('Конструктор очищен', { id: 'planner-status' });
   };
 
+  const handleEditWithAi = () => {
+    router.push('/ai-assistant');
+  };
+
   const handleSelectSuggestion = async (s: GeoSuggestion) => {
     setShowDropdown(false);
     setSearchInput('');
@@ -1165,6 +1338,7 @@ export function PlannerPage() {
         lon: coords.lon,
         address: s.displayName,
       });
+      setFocusCoords({ lon: coords.lon, lat: coords.lat });
     } catch (e) {
       console.error('Не удалось добавить точку:', e);
     } finally {
@@ -1184,6 +1358,16 @@ export function PlannerPage() {
           address: geoData?.address || `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`,
         };
         await addPoint_(payload);
+
+        // Автоотключение режима добавления точки:
+        // - если точек не было → ждём 2 → отключаем
+        // - если хотя бы 1 была → ждём 1 → отключаем
+        const startCount = addPointStartCountRef.current;
+        const needed = startCount === 0 ? 2 : 1;
+        const newCount = useTripStore.getState().currentTrip?.points?.length ?? 0;
+        if (newCount >= startCount + needed) {
+          setIsAddPointMode(false);
+        }
       } catch (e) {
         console.error('Не удалось добавить точку с карты:', e);
       } finally {
@@ -1203,8 +1387,8 @@ export function PlannerPage() {
 
   return (
     <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
-      <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-10 w-full flex-1 flex flex-col relative">
-        <div className="mb-8 bg-white md:p-0 rounded-none w-full">
+      <div className="w-full mx-auto px-4 md:px-8 py-6 md:py-10 flex-1 flex flex-col relative">
+        <div className="mb-8 bg-white md:p-0 rounded-none w-full max-w-7xl mx-auto">
           <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight mb-6 text-left">
             Маршруты
           </h2>
@@ -1214,13 +1398,16 @@ export function PlannerPage() {
               { label: 'Популярные', value: 'popular' },
             ]}
             value={activeTab}
-            onChange={(val) => setActiveTab(val as 'my' | 'popular')}
+            onChange={(val) => {
+              setActiveTab(val as 'my' | 'popular');
+              router.push(`/planner?tab=${val}`);
+            }}
           />
         </div>
 
         {activeTab === 'my' ? (
-          <div className="animate-in fade-in duration-500">
-            <div className="mb-10 w-full">
+          <div className="animate-in fade-in duration-500 w-full relative">
+            <div className="mb-10 w-full max-w-7xl mx-auto">
               {isBudgetExceeded && showBudgetWarning && (
                 <div className="fixed right-4 bottom-20 md:bottom-6 z-40 animate-in slide-in-from-right-4 duration-300">
                   <div className="relative group flex items-start gap-2 rounded-2xl border border-red-200 bg-white/95 backdrop-blur px-3 py-2 shadow-lg max-w-[300px]">
@@ -1244,11 +1431,8 @@ export function PlannerPage() {
                   </div>
                 </div>
               )}
-              <div
-                ref={searchContainerRef}
-                className="flex flex-col md:flex-row gap-4 w-full relative items-center z-30"
-              >
-                <div className="w-full relative group flex-1">
+              <div ref={searchContainerRef} className="w-full relative z-30">
+                <div className="w-full relative group">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-blue transition-colors">
                     {isSearching ? (
                       <div className="w-5 h-5 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
@@ -1271,16 +1455,6 @@ export function PlannerPage() {
                     className="w-full pl-12 pr-4 py-4 md:py-5 bg-slate-50 rounded-xl md:rounded-2xl border-none focus:ring-2 focus:ring-brand-blue/20 outline-none text-slate-800 font-bold text-base md:text-lg transition-all placeholder:text-slate-400 shadow-sm"
                   />
                 </div>
-                <Button
-                  onClick={handleAddByQuery}
-                  disabled={isSearching}
-                  variant="brand-yellow"
-                  size="xl"
-                  shape="responsive"
-                  className="w-full md:w-auto font-black uppercase tracking-widest whitespace-nowrap disabled:opacity-70"
-                >
-                  ДОБАВИТЬ
-                </Button>
                 {showDropdown && searchInput.length > 2 && (
                   <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl border border-slate-100 shadow-2xl overflow-hidden z-40 animate-in fade-in slide-in-from-top-2">
                     <div className="flex flex-col">
@@ -1312,11 +1486,11 @@ export function PlannerPage() {
                         onClick={() => {}}
                         className="flex items-center gap-3 w-full text-left px-5 py-5 bg-slate-50 hover:bg-slate-100 transition-colors group mt-2 border-t border-slate-100"
                       >
-                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-600 via-violet-500 to-indigo-400 text-white flex items-center justify-center shadow-lg shadow-purple-500/20 group-hover:scale-105 transition-transform duration-300">
+                        <div className="w-12 h-12 rounded-2xl bg-brand-purple text-white flex items-center justify-center shadow-lg shadow-brand-purple/20 group-hover:scale-105 transition-transform duration-300">
                           <MessageSquare size={22} />
                         </div>
                         <div className="flex flex-col">
-                          <span className="font-black text-brand-indigo uppercase tracking-wider text-xs">
+                          <span className="font-black text-brand-purple uppercase tracking-wider text-xs">
                             Найти с AI
                           </span>
                           <span className="text-slate-500 text-sm font-medium">
@@ -1325,7 +1499,7 @@ export function PlannerPage() {
                         </div>
                         <ArrowRight
                           size={18}
-                          className="ml-auto text-brand-indigo transition-transform group-hover:translate-x-1"
+                          className="ml-auto text-brand-purple transition-transform group-hover:translate-x-1"
                         />
                       </button>
                     </div>
@@ -1334,17 +1508,46 @@ export function PlannerPage() {
               </div>
             </div>
 
-            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 mb-6 w-full">
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 mb-6 w-full max-w-7xl mx-auto">
               <div className="grid grid-cols-2 sm:flex sm:flex-row items-stretch bg-slate-100 p-1.5 rounded-[1.25rem] shadow-inner shrink-0 h-auto lg:h-16 gap-1 sm:gap-0">
                 {isMixedRoute ? (
                   <div className="col-span-2 sm:col-span-1 flex items-center justify-between px-4 sm:px-6 py-3.5 bg-white shadow-sm rounded-[1rem] flex-1 text-sm font-bold text-slate-700">
                     <div className="flex items-center gap-2">
-                      <span>Смешанный маршрут</span>
-                      <div className="flex gap-1 ml-2 text-base">
-                        {mixedModes.includes('driving') && <span>🚗</span>}
-                        {mixedModes.includes('foot') && <span>🚶</span>}
-                        {mixedModes.includes('bike') && <span>🚲</span>}
-                        {mixedModes.includes('direct') && <span>📏</span>}
+                      <span className="hidden sm:inline">Смешанный маршрут</span>
+                      <span className="sm:hidden text-xs text-slate-400">Смешанный</span>
+                      <div className="flex gap-1.5 ml-1 md:ml-2">
+                        {mixedModes.includes('driving') && (
+                          <div
+                            className="w-7 h-7 rounded-lg bg-[#eaf5fd] flex items-center justify-center shadow-xs"
+                            title="Авто"
+                          >
+                            <span className="text-sm">🚗</span>
+                          </div>
+                        )}
+                        {mixedModes.includes('foot') && (
+                          <div
+                            className="w-7 h-7 rounded-lg bg-brand-amber/10 flex items-center justify-center shadow-xs"
+                            title="Пешком"
+                          >
+                            <span className="text-sm">🚶</span>
+                          </div>
+                        )}
+                        {mixedModes.includes('bike') && (
+                          <div
+                            className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center shadow-xs"
+                            title="Вело"
+                          >
+                            <span className="text-sm">🚲</span>
+                          </div>
+                        )}
+                        {mixedModes.includes('direct') && (
+                          <div
+                            className="w-7 h-7 rounded-lg bg-brand-purple/10 flex items-center justify-center shadow-xs"
+                            title="Прямой"
+                          >
+                            <span className="text-sm">📏</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <button
@@ -1369,10 +1572,10 @@ export function PlannerPage() {
                       }}
                       disabled={points.length < 2}
                       className={cn(
-                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-bold transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default',
+                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-black transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default border border-transparent',
                         routeProfile === 'driving'
-                          ? 'bg-white text-brand-blue shadow-sm'
-                          : 'text-slate-500 enabled:hover:text-slate-700',
+                          ? 'bg-white text-brand-blue shadow-sm border-slate-100'
+                          : 'text-slate-500 hover:text-brand-blue hover:bg-white/50',
                       )}
                     >
                       <span className="leading-none align-middle -translate-y-px mr-2">🚗</span>{' '}
@@ -1388,10 +1591,10 @@ export function PlannerPage() {
                       }}
                       disabled={points.length < 2}
                       className={cn(
-                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-bold transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default',
+                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-black transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default border border-transparent',
                         routeProfile === 'foot'
-                          ? 'bg-white text-brand-amber shadow-sm'
-                          : 'text-slate-500 enabled:hover:text-slate-700',
+                          ? 'bg-white text-brand-amber shadow-sm border-slate-100'
+                          : 'text-slate-500 hover:text-brand-amber hover:bg-white/50',
                       )}
                     >
                       <span className="leading-none align-middle -translate-y-px mr-2">🚶</span>{' '}
@@ -1407,10 +1610,10 @@ export function PlannerPage() {
                       }}
                       disabled={points.length < 2}
                       className={cn(
-                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-bold transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default',
+                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-black transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default border border-transparent',
                         routeProfile === 'bike'
-                          ? 'bg-white text-emerald-500 shadow-sm'
-                          : 'text-slate-500 enabled:hover:text-slate-700',
+                          ? 'bg-white text-emerald-500 shadow-sm border-slate-100'
+                          : 'text-slate-500 hover:text-emerald-500 hover:bg-white/50',
                       )}
                     >
                       <span className="leading-none align-middle -translate-y-px mr-2">🚲</span>{' '}
@@ -1426,10 +1629,10 @@ export function PlannerPage() {
                       }}
                       disabled={points.length < 2}
                       className={cn(
-                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-bold transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default',
+                        'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-black transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default border border-transparent',
                         routeProfile === 'direct'
-                          ? 'bg-white text-brand-purple shadow-sm'
-                          : 'text-slate-500 enabled:hover:text-slate-700',
+                          ? 'bg-white text-brand-purple shadow-sm border-slate-100'
+                          : 'text-slate-500 hover:text-brand-purple hover:bg-white/50',
                       )}
                     >
                       <span className="leading-none align-middle -translate-y-px mr-2">📏</span>{' '}
@@ -1446,7 +1649,7 @@ export function PlannerPage() {
                       <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
                     </div>
                   )}
-                  <div className={cn("flex items-center gap-6", isRouteLoading && "opacity-40")}>
+                  <div className={cn('flex items-center gap-6', isRouteLoading && 'opacity-40')}>
                     {routeInfo && routeProfile !== 'direct' && (
                       <>
                         <div className="flex items-center gap-2">
@@ -1460,7 +1663,7 @@ export function PlannerPage() {
                     )}
                     {routeInfo && (
                       <div className="flex items-center gap-2">
-                        <MapPin size={18} className="text-brand-indigo" />
+                        <RouteIcon size={18} className="text-emerald-500" />
                         <span className="text-sm font-black text-slate-700 leading-none">
                           {formatDistance(routeInfo.distance)}
                         </span>
@@ -1471,7 +1674,7 @@ export function PlannerPage() {
               )}
             </div>
 
-            <div className="w-full aspect-[4/5] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden relative z-0 border border-slate-200 shadow-inner bg-slate-50 group">
+            <div className="w-full max-w-7xl mx-auto aspect-[4/3] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden relative z-0 border border-slate-200 shadow-inner bg-slate-50 group">
               <RouteMap
                 points={points}
                 focusCoords={focusCoords}
@@ -1479,305 +1682,466 @@ export function PlannerPage() {
                 isDropdownOpen={showDropdown}
                 onMapClick={handleMapClick}
                 isAddPointMode={isAddPointMode}
-                onAddPointModeChange={setIsAddPointMode}
+                onAddPointModeChange={handleAddPointModeChange}
                 routeProfile={routeProfile}
                 onRouteInfoUpdate={setRouteInfo}
                 onRouteInfoLoading={setIsRouteLoading}
                 onAffectedSegmentsChange={setAffectedSegments}
               />
+              {/* Кнопка добавления точек — над зумом слева */}
+              <button
+                title={
+                  isAddPointMode ? 'Выйти из режима добавления' : 'Добавить точку кликом на карту'
+                }
+                className={cn(
+                  'absolute left-3 top-3 md:top-16 z-10',
+                  'w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center',
+                  'shadow-lg transition-all active:scale-95 border-2',
+                  isAddPointMode
+                    ? 'bg-brand-sky text-white border-brand-sky'
+                    : 'bg-white text-slate-600 border-transparent hover:border-brand-sky/30',
+                )}
+                onClick={() => handleAddPointModeChange(!isAddPointMode)}
+              >
+                <MapPin size={22} />
+              </button>
             </div>
 
-            <div className="mb-10 mt-10 w-full bg-white rounded-[2rem] p-6 md:p-8 border border-slate-100 shadow-xl shadow-slate-200/20">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12 pb-8 border-b border-slate-50">
-                <h3 className="text-xl md:text-2xl font-black text-brand-indigo uppercase tracking-widest">
-                  Бюджет маршрута
-                </h3>
-                <div className="flex items-center gap-3">
-                  <span className="font-black text-brand-indigo uppercase tracking-widest text-xs md:text-sm flex items-center gap-1.5">
-                    <span className="text-base">💳</span> Планируемый:
-                  </span>
-                  <div className="flex items-center justify-between border border-slate-200 rounded-xl px-2 py-2 bg-white hover:border-slate-300 transition-colors w-full sm:w-48">
-                    <button
-                      onClick={() => handleUpdatePlannedBudget(plannedBudget - 1000)}
-                      className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center"
-                      type="button"
-                    >
-                      <Minus size={16} />
-                    </button>
-                    <div className="flex items-center justify-center flex-1 min-w-0">
-                      <input
-                        type="number"
-                        min="0"
-                        step="1000"
-                        value={plannedBudget}
-                        onChange={(e) => handleUpdatePlannedBudget(Number(e.target.value) || 0)}
-                        className="w-16 md:w-20 bg-transparent text-center font-bold text-brand-indigo outline-none text-sm md:text-base [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        style={{ MozAppearance: 'textfield' }}
-                      />
-                      <span className="text-slate-400 font-bold text-sm">₽</span>
-                    </div>
-                    <button
-                      onClick={() => handleUpdatePlannedBudget(plannedBudget + 1000)}
-                      className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center"
-                      type="button"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </div>
-                </div>
+            <div className="max-w-7xl mx-auto w-full mt-8">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <Button
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      setModal('register');
+                      return;
+                    }
+                    if (points.length > 0 && isDirty) {
+                      setShowClearConfirm(true);
+                    } else {
+                      handleConfirmClear(false);
+                    }
+                  }}
+                  disabled={points.length < 2}
+                  variant="brand-blue"
+                  className="w-full font-black text-[10px] md:text-xs tracking-widest uppercase py-6 rounded-2xl h-auto shadow-lg shadow-brand-blue/10"
+                >
+                  НОВЫЙ
+                </Button>
+
+                <Button
+                  onClick={handleEditWithAi}
+                  disabled={points.length === 0}
+                  variant="brand-purple"
+                  className="w-full font-black text-[10px] md:text-xs tracking-widest uppercase py-6 rounded-2xl h-auto shadow-lg shadow-brand-purple/10"
+                >
+                  РЕДАКТИРОВАТЬ С AI
+                </Button>
+
+                <Button
+                  onClick={async () => {
+                    if (!isAuthenticated) {
+                      setModal('register');
+                      return;
+                    }
+                    try {
+                      setIsOptimizing(true);
+                      const tripId = await ensureTripId();
+                      const latestPoints = useTripStore.getState().currentTrip?.points || points;
+                      const result = await tripsApi.optimize(tripId, routeProfile, latestPoints);
+                      if (result?.optimizedPoints) {
+                        const pointsChanged = !points.every(
+                          (p, i) =>
+                            result.optimizedPoints?.[i] && p.id === result.optimizedPoints[i].id,
+                        );
+                        if (pointsChanged) {
+                          setPreviousPoints([...points]);
+                          useTripStore.getState().setPoints(result.optimizedPoints);
+                          setLastOptimizedPoints(result.optimizedPoints);
+                          setLastOptimizedProfile(routeProfile);
+                          setOptimizationResults({
+                            status: 'success',
+                            metrics: result.metrics || null,
+                          });
+                          setShowOptimizationResults(true);
+                        } else {
+                          setLastOptimizedPoints([...points]);
+                          setLastOptimizedProfile(routeProfile);
+                          setOptimizationResults({ status: 'optimal', metrics: null });
+                          setShowOptimizationResults(true);
+                        }
+                      }
+                    } catch (error) {
+                      console.error('Optimization error:', error);
+                      toast.error('Ошибка оптимизации');
+                    } finally {
+                      setIsOptimizing(false);
+                    }
+                  }}
+                  disabled={points.length < 3 || isOptimizing || isAlreadyOptimal}
+                  variant="brand-yellow"
+                  className="w-full font-black text-[10px] md:text-xs tracking-widest uppercase py-6 rounded-2xl h-auto shadow-lg shadow-brand-yellow/10"
+                >
+                  {isOptimizing
+                    ? 'ОПТИМИЗАЦИЯ...'
+                    : isAlreadyOptimal
+                      ? 'ОПТИМАЛЬНО'
+                      : 'ОПТИМИЗИРОВАТЬ'}
+                </Button>
+
+                <Button
+                  onClick={async () => {
+                    if (!isAuthenticated) {
+                      setModal('register');
+                      return;
+                    }
+                    try {
+                      const tripId = await ensureTripId();
+                      const isExistingRealTrip = !!currentTrip?.id && UUID_RE.test(currentTrip.id);
+                      if (isExistingRealTrip) {
+                        const backendPoints = await pointsApi.getAll(tripId);
+                        await Promise.all(backendPoints.map((p) => pointsApi.remove(tripId, p.id)));
+                        await Promise.all(
+                          points.map((p, i) =>
+                            pointsApi.create(tripId, {
+                              title: p.title,
+                              lat: p.lat,
+                              lon: p.lon,
+                              order: i,
+                              budget: p.budget ?? undefined,
+                              visitDate: p.visitDate ?? undefined,
+                              imageUrl: p.imageUrl ?? undefined,
+                              address: p.address ?? undefined,
+                              transportMode: p.transportMode,
+                            }),
+                          ),
+                        );
+                      }
+                      const autoTitle =
+                        points.length > 1
+                          ? `${points[0]!.title} — ${points[points.length - 1]!.title}`
+                          : 'Мой маршрут';
+                      const updated = await tripsApi.update(tripId, {
+                        title: autoTitle,
+                        budget: currentTrip?.budget ?? 0,
+                        isActive: isActiveRoute,
+                      });
+                      updateCurrentTrip(updated);
+                      setSaved();
+                      toast.success('Маршрут сохранён');
+                    } catch {
+                      toast.error('Не удалось сохранить');
+                    }
+                  }}
+                  disabled={points.length === 0}
+                  variant="brand-indigo"
+                  className="w-full font-black text-[10px] md:text-xs tracking-widest uppercase py-6 rounded-2xl h-auto shadow-lg shadow-brand-indigo/10"
+                >
+                  СОХРАНИТЬ
+                </Button>
               </div>
 
-              <div className="flex flex-col gap-3">
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragStart={handleDragStart}
-                  onDragEnd={handleDragEnd}
-                  onDragCancel={handleDragCancel}
-                >
-                  <SortableContext
-                    items={points.map((p) => p.id)}
-                    strategy={verticalListSortingStrategy}
+              {/* Optimization Results Block moved here, right under buttons */}
+              {optimizationResults.status !== 'idle' && showOptimizationResults && (
+                <div className="mt-8 p-0 bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/20 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500 relative group/opt">
+                  <button
+                    onClick={() => setShowOptimizationResults(false)}
+                    className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all z-10"
+                    title="Закрыть"
                   >
-                    {points.map((point, i) => (
-                      <SortablePointRow
-                        key={point.id}
-                        point={point}
-                        index={i}
-                        editingPointId={editingPointId}
-                        editingTitle={editingTitle}
-                        setEditingPointId={setEditingPointId}
-                        setEditingTitle={setEditingTitle}
-                        onUpdate={crud.update}
-                        onRemove={crud.remove}
-                        onFocusPoint={setFocusCoords}
-                        leg={i > 0 && routeInfo?.legs ? routeInfo.legs[i - 1] : undefined}
-                        isRouteLoading={isRouteLoading && affectedSegments.has(i - 1)}
-                        routeProfile={routeProfile}
-                      />
-                    ))}
-                  </SortableContext>
-                  <DragOverlay adjustScale={false}>
-                    {activeId ? (
-                      <div className="w-full pointer-events-none opacity-90 scale-102 shadow-2xl rounded-2xl">
-                        {(() => {
-                          const activePoint = points.find((p) => p.id === activeId);
-                          const idx = points.findIndex((p) => p.id === activeId);
-                          if (!activePoint) return null;
-                          return (
-                            <div className="flex flex-row items-center lg:items-start justify-start gap-3 md:gap-4 bg-white p-4 rounded-2xl border-2 border-brand-blue shadow-xl">
-                              <div className="flex items-center lg:items-start gap-2 lg:pt-1">
-                                <GripVertical size={16} className="text-brand-blue" />
-                                <div className="w-5 h-5 md:w-6 md:h-6 shrink-0 rounded-full bg-brand-blue text-white font-bold hidden lg:flex items-center justify-center text-[10px]">
-                                  {idx + 1}
+                    <X size={16} />
+                  </button>
+
+                  {optimizationResults.status === 'optimal' ||
+                  (optimizationResults.status === 'success' &&
+                    routeProfile !== lastOptimizedProfile) ? (
+                    <div className="p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 bg-slate-50/50">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center shrink-0">
+                          <MapPin size={22} className="text-emerald-500" />
+                        </div>
+                        <div>
+                          <h4 className="text-brand-indigo font-black uppercase tracking-widest text-sm md:text-base mb-1">
+                            Маршрут оптимален
+                          </h4>
+                          <p className="text-slate-400 text-xs md:text-sm font-bold uppercase tracking-wider">
+                            {routeProfile !== lastOptimizedProfile
+                              ? `Порядок точек идеален для режима «${routeProfile === 'driving' ? 'Авто' : routeProfile === 'foot' ? 'Пешком' : routeProfile === 'bike' ? 'Вело' : 'Прямой'}»`
+                              : 'Текущий порядок точек — самый эффективный'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="px-6 py-3 bg-emerald-50 rounded-xl border border-emerald-100/50 mr-8">
+                        <span className="text-emerald-600 font-black text-xs uppercase tracking-widest flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                          Улучшение не требуется
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col">
+                      <div className="p-6 md:p-8 border-b border-slate-50 bg-gradient-to-r from-brand-indigo/[0.02] to-transparent flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-brand-indigo rounded-2xl shadow-lg shadow-brand-indigo/20 flex items-center justify-center shrink-0">
+                            <MapPin size={22} className="text-white" />
+                          </div>
+                          <div>
+                            <h4 className="text-brand-indigo font-black uppercase tracking-widest text-sm md:text-base mb-1">
+                              Маршрут оптимизирован
+                            </h4>
+                            <p className="text-slate-400 text-xs md:text-sm font-bold uppercase tracking-wider">
+                              Мы нашли путь короче и быстрее
+                            </p>
+                          </div>
+                        </div>
+                        {previousPoints && (
+                          <Button
+                            onClick={() => {
+                              useTripStore.getState().setPoints(previousPoints);
+                              setPreviousPoints(null);
+                              setOptimizationResults({ status: 'idle', metrics: null });
+                              setLastOptimizedPoints(null);
+                              setLastOptimizedProfile(null);
+                              toast.info('Маршрут возвращён к исходному состоянию');
+                            }}
+                            variant="ghost"
+                            shape="xl"
+                            className="text-slate-400 hover:text-brand-indigo hover:bg-brand-indigo/5 font-black uppercase tracking-widest text-[10px] md:text-xs h-10 px-6 border border-slate-200 transition-all active:scale-95 mr-10"
+                          >
+                            Вернуть как было
+                          </Button>
+                        )}
+                      </div>
+
+                      <div className="p-6 md:p-8 bg-white">
+                        {optimizationResults.metrics && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                            <div className="group bg-slate-50/50 p-6 rounded-3xl border border-slate-100 hover:border-emerald-500/30 transition-all duration-300">
+                              <div className="flex items-center gap-3 mb-6">
+                                <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-slate-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                  <Clock size={16} className="text-brand-blue" />
                                 </div>
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                                  Время в пути
+                                </span>
                               </div>
-                              <div className="flex-1 flex flex-col items-start gap-2 min-w-0 pr-10 w-full">
-                                <div className="flex items-center gap-2 w-full">
-                                  <span className="font-bold text-slate-700 text-sm md:text-base truncate">
-                                    {activePoint.title}
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                                    Было:
+                                  </span>
+                                  <span className="text-sm font-bold text-slate-400 line-through decoration-slate-300">
+                                    {formatDuration(
+                                      Math.round(optimizationResults.metrics.originalHours * 3600),
+                                    )}
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl w-full">
-                                  <MapPin size={14} className="text-slate-400 shrink-0" />
-                                  <span className="text-xs text-slate-500 font-bold truncate">
-                                    {activePoint.address || 'Адрес не указан'}
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-black text-brand-blue uppercase tracking-widest">
+                                    Стало:
+                                  </span>
+                                  <span className="text-xl font-black text-slate-700 tabular-nums">
+                                    {formatDuration(
+                                      Math.round(optimizationResults.metrics.newHours * 3600),
+                                    )}
                                   </span>
                                 </div>
                               </div>
                             </div>
-                          );
-                        })()}
+
+                            <div className="group bg-slate-50/50 p-6 rounded-3xl border border-slate-100 hover:border-emerald-500/30 transition-all duration-300">
+                              <div className="flex items-center gap-3 mb-6">
+                                <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-slate-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                  <RouteIcon size={16} className="text-emerald-500" />
+                                </div>
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                                  Расстояние
+                                </span>
+                              </div>
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                                    Было:
+                                  </span>
+                                  <span className="text-sm font-bold text-slate-400 line-through decoration-slate-300">
+                                    {optimizationResults.metrics.originalKm.toFixed(1)} км
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
+                                    Стало:
+                                  </span>
+                                  <span className="text-xl font-black text-slate-700 tabular-nums">
+                                    {optimizationResults.metrics.newKm.toFixed(1)}{' '}
+                                    <span className="text-sm text-slate-400">км</span>
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    ) : null}
-                  </DragOverlay>
-                </DndContext>
-                {points.length === 0 && (
-                  <p className="text-center text-slate-400 text-sm py-4">
-                    Пока нет добавленных мест
-                  </p>
-                )}
-                <div className="mt-6 pt-4 border-t border-slate-200/60 flex flex-col gap-6">
-                  <div className="flex items-center justify-between px-2">
-                    <span className="font-black text-slate-400 uppercase tracking-widest text-xs md:text-sm">
-                      Итого по точкам
-                    </span>
-                    <span
-                      className={`font-black text-xl md:text-3xl drop-shadow-[0_1px_1px_rgba(0,0,0,0.05)] ${
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="relative max-w-7xl mx-auto w-full">
+              {/* Main Content: Points List */}
+              <div className="w-full">
+                <div className="mb-10 mt-10 w-full bg-white rounded-[2rem] p-6 md:p-8 border border-slate-100 shadow-xl shadow-slate-200/20">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12 pb-8 border-b border-slate-50">
+                    <h3 className="text-xl md:text-2xl font-black text-brand-indigo uppercase tracking-widest">
+                      Бюджет маршрута
+                    </h3>
+                    <div className="flex items-center gap-3">
+                      <span className="font-black text-brand-indigo uppercase tracking-widest text-xs md:text-sm flex items-center gap-1.5">
+                        <span className="text-base">💳</span> Планируемый:
+                      </span>
+                      <div className="flex items-center justify-between border border-slate-200 rounded-xl px-2 py-2 bg-white hover:border-slate-300 transition-colors w-full sm:w-48">
+                        <button
+                          onClick={() => handleUpdatePlannedBudget(plannedBudget - 1000)}
+                          className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center"
+                          type="button"
+                        >
+                          <Minus size={16} />
+                        </button>
+                        <div className="flex items-center justify-center flex-1 min-w-0">
+                          <input
+                            type="number"
+                            min="0"
+                            step="1000"
+                            value={plannedBudget}
+                            onChange={(e) => handleUpdatePlannedBudget(Number(e.target.value) || 0)}
+                            className="w-16 md:w-20 bg-transparent text-center font-bold text-brand-indigo outline-none text-sm md:text-base [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            style={{ MozAppearance: 'textfield' }}
+                          />
+                          <span className="text-slate-400 font-bold text-sm">₽</span>
+                        </div>
+                        <button
+                          onClick={() => handleUpdatePlannedBudget(plannedBudget + 1000)}
+                          className="text-slate-400 hover:text-brand-indigo transition-colors p-1 flex items-center justify-center"
+                          type="button"
+                        >
+                          <Plus size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                      onDragCancel={handleDragCancel}
+                    >
+                      <SortableContext
+                        items={points.map((p) => p.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        {points.map((point, i) => (
+                          <SortablePointRow
+                            key={point.id}
+                            point={point}
+                            index={i}
+                            editingPointId={editingPointId}
+                            editingTitle={editingTitle}
+                            setEditingPointId={setEditingPointId}
+                            setEditingTitle={setEditingTitle}
+                            onUpdate={handlePointUpdate}
+                            onRemove={crud.remove}
+                            onFocusPoint={setFocusCoords}
+                            leg={i > 0 && routeInfo?.legs ? routeInfo.legs[i - 1] : undefined}
+                            isRouteLoading={isRouteLoading && affectedSegments.has(i - 1)}
+                            userLocation={userLocationRef.current ?? undefined}
+                          />
+                        ))}
+                      </SortableContext>
+                      <DragOverlay adjustScale={false}>
+                        {activeId ? (
+                          <div className="w-full pointer-events-none opacity-90 scale-102 shadow-2xl rounded-2xl">
+                            {(() => {
+                              const activePoint = points.find((p) => p.id === activeId);
+                              const idx = points.findIndex((p) => p.id === activeId);
+                              if (!activePoint) return null;
+                              return (
+                                <div className="flex flex-row items-center lg:items-start justify-start gap-3 md:gap-4 bg-white p-4 rounded-2xl border-2 border-brand-blue shadow-xl">
+                                  <div className="flex items-center lg:items-start gap-2 lg:pt-1">
+                                    <GripVertical size={16} className="text-brand-blue" />
+                                    <div className="w-5 h-5 md:w-6 md:h-6 shrink-0 rounded-full bg-brand-blue text-white font-bold hidden lg:flex items-center justify-center text-[10px]">
+                                      {idx + 1}
+                                    </div>
+                                  </div>
+                                  <div className="flex-1 flex flex-col items-start gap-2 min-w-0 pr-10 w-full">
+                                    <div className="flex items-center gap-2 w-full">
+                                      <span className="font-bold text-slate-700 text-sm md:text-base truncate">
+                                        {activePoint.title}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl w-full">
+                                      <MapPin size={14} className="text-slate-400 shrink-0" />
+                                      <span className="text-xs text-slate-500 font-bold truncate">
+                                        {activePoint.address || 'Адрес не указан'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        ) : null}
+                      </DragOverlay>
+                    </DndContext>
+                    {points.length === 0 && (
+                      <p className="text-center text-slate-400 text-sm py-4">
+                        Пока нет добавленных мест
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mb-10 px-8 py-6 bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/20 flex items-center justify-between">
+                  <h4 className="text-xs md:text-sm font-black text-slate-400 uppercase tracking-widest">
+                    ИТОГО ПО ТОЧКАМ
+                  </h4>
+                  <div className="flex flex-col items-end">
+                    <div
+                      className={cn(
+                        'text-2xl md:text-3xl font-black tabular-nums transition-colors',
                         plannedBudget > 0 && totalBudget > plannedBudget
                           ? 'text-red-500'
-                          : plannedBudget > 0 && totalBudget <= plannedBudget
-                            ? 'text-emerald-500'
-                            : 'text-brand-yellow'
-                      }`}
+                          : 'text-brand-indigo',
+                      )}
                     >
                       {totalBudget.toLocaleString('ru-RU')} ₽
-                    </span>
-                  </div>
-                  <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-start lg:justify-between bg-slate-50/50 p-4 rounded-2xl border border-slate-100 w-full">
-                    <Button
-                      onClick={() => {
-                        if (!isAuthenticated) {
-                          setModal('register');
-                          return;
-                        }
-                        if (points.length > 0 && isDirty) {
-                          setShowClearConfirm(true);
-                        } else {
-                          handleConfirmClear(false);
-                        }
-                      }}
-                      disabled={points.length < 2}
-                      variant="ghost"
-                      shape="xl"
-                      className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto bg-white border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-all shadow-sm active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      НОВЫЙ МАРШРУТ
-                    </Button>
-                    <div className="flex flex-col lg:flex-row gap-3 w-full lg:w-auto">
-                      <Button
-                        onClick={async () => {
-                          if (!isAuthenticated) {
-                            setModal('register');
-                            return;
-                          }
-                          try {
-                            setIsOptimizing(true);
-                            const tripId = await ensureTripId();
-                            let result = await tripsApi.optimize(tripId, routeProfile);
-
-                            const backendMessage =
-                              typeof result?.message === 'string' ? result.message : '';
-                            const hasEnoughLocalPoints = points.length >= 2;
-
-                            // Если локально точек достаточно, но бэкенд пишет, что их мало,
-                            // значит точки были только в store и не успели сохраниться в БД.
-                            // Синхронизируем точки в БД и повторяем оптимизацию один раз.
-                            if (
-                              !result?.optimizedPoints &&
-                              hasEnoughLocalPoints &&
-                              backendMessage.includes('Not enough points to optimize')
-                            ) {
-                              const serverPoints = await pointsApi.getAll(tripId);
-                              await Promise.all(serverPoints.map((p) => pointsApi.remove(tripId, p.id)));
-
-                              const recreatedPoints = await Promise.all(
-                                points.map((p, index) =>
-                                  pointsApi.create(tripId, {
-                                    title: p.title,
-                                    lat: p.lat,
-                                    lon: p.lon,
-                                    budget: p.budget ?? 0,
-                                    visitDate: p.visitDate ?? undefined,
-                                    imageUrl: p.imageUrl ?? undefined,
-                                    order: index,
-                                    address: p.address ?? undefined,
-                                    transportMode: p.transportMode,
-                                  }),
-                                ),
-                              );
-
-                              useTripStore.getState().setPoints(recreatedPoints);
-                              result = await tripsApi.optimize(tripId, routeProfile);
-                            }
-
-                            if (result?.optimizedPoints) {
-                              useTripStore.getState().setPoints(result.optimizedPoints);
-                              if (result.metrics) {
-                                setCompareModalData({
-                                  isOpen: true,
-                                  metrics: result.metrics,
-                                });
-                              } else {
-                                toast.success('Маршрут оптимизирован!', { id: 'optimize-success' });
-                              }
-                            } else {
-                              const nextBackendMessage =
-                                typeof result?.message === 'string' ? result.message : '';
-                              const userMessage = nextBackendMessage.includes('Not enough points to optimize')
-                                ? 'Недостаточно точек в сохранённом маршруте. Сначала сохраните точки, затем повторите оптимизацию.'
-                                : 'Оптимизация не внесла изменений в маршрут.';
-
-                              toast.info(userMessage, {
-                                id: 'optimize-info',
-                              });
-                            }
-                          } catch (error) {
-                            console.error('Optimization error:', error);
-                            toast.error('Ошибка оптимизации', { id: 'optimize-error' });
-                          } finally {
-                            setIsOptimizing(false);
-                          }
-                        }}
-                        disabled={points.length < 2 || isOptimizing}
-                        variant="brand-yellow"
-                        shape="xl"
-                        className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
-                      >
-                        {isOptimizing ? 'ОПТИМИЗАЦИЯ...' : 'ОПТИМИЗИРОВАТЬ МАРШРУТ'}
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          if (!isAuthenticated) {
-                            setModal('register');
-                            return;
-                          }
-                        }}
-                        disabled={points.length === 0}
-                        variant="brand-purple"
-                        shape="xl"
-                        className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
-                      >
-                        РЕДАКТИРОВАТЬ С AI
-                      </Button>
-                      <Button
-                        onClick={async () => {
-                          if (!isAuthenticated) {
-                            setModal('register');
-                            return;
-                          }
-                          const tripId = await ensureTripId();
-                          const autoTitle =
-                            points.length > 1
-                              ? `${points[0]!.title} — ${points[points.length - 1]!.title}`
-                              : points.length === 1
-                                ? points[0]!.title
-                                : 'Мой маршрут';
-                          const updated = await tripsApi.update(tripId, {
-                            title: autoTitle,
-                            budget: currentTrip?.budget ?? 0,
-                            isActive: isActiveRoute,
-                          });
-                          updateCurrentTrip(updated);
-                          setSaved();
-                          toast.success('Маршрут сохранён', { id: 'save-route' });
-                        }}
-                        disabled={points.length === 0}
-                        variant="brand-indigo"
-                        shape="xl"
-                        className="px-8 py-4 font-black uppercase tracking-widest text-xs h-auto disabled:opacity-50 disabled:cursor-not-allowed flex-1 lg:flex-none"
-                      >
-                        СОХРАНИТЬ МАРШРУТ
-                      </Button>
                     </div>
+                    {isBudgetExceeded && (
+                      <p className="text-[10px] font-bold text-red-400 uppercase mt-1">
+                        Превышение на {(totalBudget - plannedBudget).toLocaleString()} ₽
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* Mobile Actions (Fallback for smaller screens) is removed */}
           </div>
         ) : (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto w-full">
             <div className="w-full mb-10">
               <div className="relative group mb-8">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-blue transition-colors">
-                  <MapPin size={20} />
+                  <Search size={20} />
                 </div>
                 <input
                   type="text"
                   value={popularSearch}
                   onChange={(e) => setPopularSearch(e.target.value)}
                   placeholder="Куда"
-                  className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-xl md:rounded-2xl border-none focus:ring-2 focus:ring-brand-blue/20 outline-none text-slate-800 font-bold text-base md:text-lg transition-all placeholder:text-slate-400"
+                  className="w-full pl-12 pr-4 py-4 md:py-5 bg-slate-50 rounded-xl md:rounded-2xl border-none focus:ring-2 focus:ring-brand-blue/20 outline-none text-slate-800 font-bold text-base md:text-lg transition-all placeholder:text-slate-400 shadow-sm"
                 />
               </div>
               <div className="relative -mx-4 px-4 md:mx-0 md:px-0">
@@ -1819,7 +2183,7 @@ export function PlannerPage() {
                       className="group block w-full cursor-pointer"
                       href={`/tours/${trip.id}`}
                     >
-                      <div className="relative aspect-4/5 md:aspect-16/10 rounded-[3rem] overflow-hidden mb-6 shadow-2xl">
+                      <div className="relative aspect-4/3 md:aspect-16/10 rounded-[3rem] overflow-hidden mb-6 shadow-2xl">
                         <img
                           src={trip.img ?? ''}
                           className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 will-change-transform"
@@ -1836,7 +2200,9 @@ export function PlannerPage() {
                             {trip.title}
                           </h3>
                           <div className="bg-brand-yellow text-white px-6 py-2.5 rounded-full text-sm font-black uppercase tracking-widest inline-block shadow-xl">
-                            {trip.budget ? `${trip.budget.toLocaleString('ru-RU')} ₽` : 'По запросу'}
+                            {trip.budget
+                              ? `${trip.budget.toLocaleString('ru-RU')} ₽`
+                              : 'По запросу'}
                           </div>
                         </div>
                       </div>
@@ -1888,11 +2254,6 @@ export function PlannerPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <CompareSaveModal
-        isOpen={compareModalData.isOpen}
-        onClose={() => setCompareModalData((prev) => ({ ...prev, isOpen: false }))}
-        metrics={compareModalData.metrics!}
-      />
       <LoginModal
         open={modal === 'login'}
         onClose={() => setModal(null)}

@@ -23,12 +23,31 @@ interface TripStore {
   addTrip: (t: Trip) => void
   updateCurrentTrip: (data: Partial<Trip>) => void
   // Helpers for nested points management
-  setPoints: (ps: RoutePoint[]) => void
+  setPoints: (ps: RoutePoint[], isDirty?: boolean) => void
   addPoint: (p: RoutePoint) => void
   updatePoint: (id: string, data: Partial<RoutePoint>) => void
   removePoint: (id: string) => void
   reorderPoints: (orderedIds: string[]) => void
   clearPlanner: () => void
+  optimizationResults: {
+    status: 'idle' | 'success' | 'optimal';
+    metrics: {
+      originalKm: number;
+      newKm: number;
+      originalHours: number;
+      newHours: number;
+      originalRub: number;
+      newRub: number;
+      isFuel?: boolean;
+    } | null;
+  }
+  setOptimizationResults: (results: TripStore['optimizationResults']) => void
+  previousPoints: RoutePoint[] | null
+  setPreviousPoints: (points: RoutePoint[] | null) => void
+  lastOptimizedPoints: RoutePoint[] | null
+  setLastOptimizedPoints: (points: RoutePoint[] | null) => void
+  lastOptimizedProfile: string | null
+  setLastOptimizedProfile: (profile: string | null) => void
 }
 
 export const useTripStore = create<TripStore>()(
@@ -49,9 +68,9 @@ export const useTripStore = create<TripStore>()(
         if (!s.currentTrip) return s
         return { currentTrip: { ...s.currentTrip, ...data }, isDirty: true }
       }),
-      setPoints: (points) => set((s) => {
+      setPoints: (points, isDirty = true) => set((s) => {
         if (!s.currentTrip) return s
-        return { currentTrip: { ...s.currentTrip, points }, isDirty: false }
+        return { currentTrip: { ...s.currentTrip, points }, isDirty }
       }),
       addPoint: (p) => set((s) => {
         if (!s.currentTrip) return s
@@ -88,11 +107,32 @@ export const useTripStore = create<TripStore>()(
         }).filter(Boolean) as RoutePoint[]
         return { currentTrip: { ...s.currentTrip, points: newPoints }, isDirty: true }
       }),
-      clearPlanner: () => set({ currentTrip: null, isDirty: false }),
+      clearPlanner: () => set({ 
+        currentTrip: null, 
+        isDirty: false, 
+        optimizationResults: { status: 'idle', metrics: null },
+        previousPoints: null,
+        lastOptimizedPoints: null,
+        lastOptimizedProfile: null
+      }),
+      optimizationResults: { status: 'idle', metrics: null },
+      setOptimizationResults: (optimizationResults) => set({ optimizationResults }),
+      previousPoints: null,
+      setPreviousPoints: (previousPoints) => set({ previousPoints }),
+      lastOptimizedPoints: null,
+      setLastOptimizedPoints: (lastOptimizedPoints) => set({ lastOptimizedPoints }),
+      lastOptimizedProfile: null,
+      setLastOptimizedProfile: (lastOptimizedProfile) => set({ lastOptimizedProfile }),
     }),
     {
       name: 'trip-planner-storage',
-      partialize: (state) => ({ currentTrip: state.currentTrip }),
+      partialize: (state) => ({ 
+        currentTrip: state.currentTrip,
+        optimizationResults: state.optimizationResults,
+        previousPoints: state.previousPoints,
+        lastOptimizedPoints: state.lastOptimizedPoints,
+        lastOptimizedProfile: state.lastOptimizedProfile
+      }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true)
       },
