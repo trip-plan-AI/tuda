@@ -275,7 +275,7 @@ export function ProfilePage() {
   const activeRouteTotalBudget =
     displayedActiveRoute?.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
 
-  useCollaborationSocket(activeRoute?.id ?? '', activeRoute?.isActive ?? false);
+  useCollaborationSocket(activeRoute?.id ?? '');
 
   // When the current user is invited to a trip, add it to the list in real-time
   useEffect(() => {
@@ -339,7 +339,7 @@ export function ProfilePage() {
     };
 
     socket.on('point:reorder', onPointReorder);
-    socket.on('point:update', onPointUpdate);
+    socket.on('point:updated', onPointUpdate);
     socket.on('point:move', onPointUpdate);
     socket.on('point:add', onPointAdd);
     socket.on('point:delete', onPointDelete);
@@ -347,7 +347,7 @@ export function ProfilePage() {
 
     return () => {
       socket.off('point:reorder', onPointReorder);
-      socket.off('point:update', onPointUpdate);
+      socket.off('point:updated', onPointUpdate);
       socket.off('point:move', onPointUpdate);
       socket.off('point:add', onPointAdd);
       socket.off('point:delete', onPointDelete);

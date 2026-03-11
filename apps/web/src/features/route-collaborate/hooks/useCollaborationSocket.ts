@@ -7,12 +7,12 @@ import { pointsApi } from '@/entities/route-point/api/points.api';
 import { useCollaborateStore } from '../model/collaborate.store';
 import type { Collaborator } from '../model/collaborate.store';
 
-export function useCollaborationSocket(tripId: string, isActive: boolean = true) {
+export function useCollaborationSocket(tripId: string) {
   const { setOnline, addCollaborator, removeCollaborator } = useCollaborateStore();
   const { addPoint, updatePoint, removePoint, setPoints } = useTripStore();
 
   useEffect(() => {
-    if (!tripId || !isActive || tripId.startsWith('guest-')) return;
+    if (!tripId || tripId.startsWith('guest-')) return;
 
     pointsApi.getAll(tripId).then(setPoints).catch(console.error);
 
@@ -55,5 +55,5 @@ export function useCollaborationSocket(tripId: string, isActive: boolean = true)
       socket.off('point:deleted');
       socket.off('point:updated');
     };
-  }, [tripId, isActive]);
+  }, [tripId]);
 }
