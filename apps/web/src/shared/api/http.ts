@@ -1,6 +1,13 @@
 import { useAuthStore } from '@/features/auth/model/auth.store';
 import { useUserStore } from '@/entities/user';
 
+interface ApiRequestError {
+  status: number;
+  message: string;
+  code?: string;
+  session_id?: string;
+}
+
 function resolveApiBase(): string {
   const configured = process.env.NEXT_PUBLIC_API_URL;
 
@@ -63,7 +70,48 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.message ?? `HTTP ${res.status}`);
+
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: стабильно извлекать code/session_id даже из вложенных форматов ошибок NestJS,
+    //    чтобы frontend мог корректно продолжать тот же AI-чат после NEED_CITY.
+    // 3) Если убрать: потеряется session_id в ошибках, и follow-up запросы уйдут в другой/новый чат.
+    // 4) Возможен конфликт с ветками, где backend унифицирует error envelope и убирает вложенный payload.
+    const responseObj =
+      err && typeof err.response === 'object' && err.response !== null
+        ? (err.response as Record<string, unknown>)
+        : null;
+    const nested =
+      err && typeof err.message === 'object' && err.message !== null
+        ? (err.message as Record<string, unknown>)
+        : responseObj && typeof responseObj.message === 'object'
+          ? (responseObj.message as Record<string, unknown>)
+          : null;
+
+    const resolvedMessage =
+      typeof err.message === 'string'
+        ? err.message
+        : typeof nested?.message === 'string'
+          ? nested.message
+          : `HTTP ${res.status}`;
+
+    const apiError: ApiRequestError = {
+      status: res.status,
+      message: resolvedMessage,
+      code:
+        typeof err.code === 'string'
+          ? err.code
+          : typeof nested?.code === 'string'
+            ? nested.code
+            : undefined,
+      session_id:
+        typeof err.session_id === 'string'
+          ? err.session_id
+          : typeof nested?.session_id === 'string'
+            ? nested.session_id
+            : undefined,
+    };
+    throw apiError;
   }
 
   return res.json();

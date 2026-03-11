@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search,
   MapPin,
@@ -66,6 +66,7 @@ import { cn } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/button';
 import { Chip } from '@/shared/ui/chip';
 import { SegmentedControl } from '@/shared/ui/segmented-control';
+import { useAiQueryStore } from '@/features/ai-query';
 import {
   Avatar,
   AvatarImage,
@@ -632,7 +633,15 @@ function SortablePointRow({
 const weatherIcons = [Cloud, Sun, CloudSun, Wind];
 
 export function PlannerPage() {
+  // feature/TRI-104-ai-planner-interaction: Planner выступает конечной точкой синхронизации для маршрутов из AI-чата.
+  // Потребность: бесшовное применение маршрутов, созданных в AI.
+  // MERGE-NOTE (SYNC CONTRACT):
+  // - applyTripId: какой маршрут нужно открыть из AI.
+  // - draftMessageId: индикатор, что пришла новая AI-версия.
+  // Если сломать этот контракт, Planner перестанет подхватывать маршруты из URL-параметров.
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const { openOrCreateSessionFromTrip } = useAiQueryStore();
   const initialTab = searchParams.get('tab') === 'popular' ? 'popular' : 'my';
   const [activeTab, setActiveTab] = useState<'my' | 'popular'>(initialTab);
   const [searchInput, setSearchInput] = useState('');
@@ -642,10 +651,17 @@ export function PlannerPage() {
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const justMigratedRef = useRef(false);
+  // feature/TRI-104-ai-planner-interaction: idempotency-guard для обработки applyTripId.
+  // Потребность: чтобы не срабатывали повторные toasts/загрузки при re-render и router.replace.
+  // Если убрать: возможны бесконечные петли обновления страницы.
+  const handledApplyTripIdRef = useRef<string | null>(null);
 
   const [isActiveRoute, setIsActiveRoute] = useState(false);
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
   const [showBudgetWarning, setShowBudgetWarning] = useState(true);
+  // TRI-104: принудительный remount карты после подмены маршрута из AI.
+  // Иначе часть слоёв/полилиний может остаться от предыдущего trip.
+  const [lastMapRenderAt, setLastMapRenderAt] = useState<number>(Date.now());
 
   const [editingPointId, setEditingPointId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -1430,6 +1446,95 @@ export function PlannerPage() {
     }
   };
 
+  const saveCurrentTrip = useCallback(async () => {
+    // TRI-104: выделенный helper сохранения перед переходом в AI или перед заменой маршрута.
+    // MERGE-NOTE: все новые точки входа должны использовать этот helper,
+    // чтобы заголовок/бюджет маршрута были консистентны перед переходом в AI.
+    if (!isAuthenticated) {
+      setModal('register');
+      return false;
+    }
+
+    const tripId = await ensureTripId();
+    const autoTitle =
+      points.length > 1
+        ? `${points[0]!.title} — ${points[points.length - 1]!.title}`
+        : points.length === 1
+          ? points[0]!.title
+          : 'Мой маршрут';
+
+    const updated = await tripsApi.update(tripId, {
+      title: autoTitle,
+      budget: currentTrip?.budget ?? 0,
+      isActive: isActiveRoute,
+    });
+    updateCurrentTrip(updated);
+    setSaved();
+    return true;
+  }, [
+    currentTrip?.budget,
+    ensureTripId,
+    isActiveRoute,
+    isAuthenticated,
+    points,
+    setSaved,
+    updateCurrentTrip,
+  ]);
+
+  const applyIncomingTrip = useCallback(
+    async (tripId: string) => {
+      // feature/TRI-104-ai-planner-interaction: централизованное применение tripId из query-параметра applyTripId.
+      // Потребность: загрузить маршрут в UI без перезагрузки страницы (тихое применение)
+      // Если убрать: маршруты из AI чата не будут переноситься в Planner.
+      // Возможен конфликт с ветками, изменяющими логику pointsApi/tripsApi (если меняется модель загрузки trip/points, правьте здесь и в effect ниже одновременно).
+      const all = await tripsApi.getAll();
+      const target = all.find((trip) => trip.id === tripId);
+      if (!target) return;
+
+      const targetPoints = await pointsApi.getAll(tripId);
+      setCurrentTrip({ ...target, points: targetPoints });
+      setSaved();
+      // feature/TRI-104-ai-planner-interaction: ремоунт карты после обновления trip/points.
+      // Потребность: очистить кэш слоев карты.
+      // Если убрать: UI может показывать визуальные артефакты старого маршрута при навигации из чата.
+      setLastMapRenderAt(Date.now());
+
+      const params = new URLSearchParams(searchParams.toString());
+      // feature/TRI-104-ai-planner-interaction: очищаем applyTripId после успешного применения.
+      // Потребность: защититься от повторного вызова (зацикливания) эффекта при дальнейших ре-рендерах.
+      // Если убрать: effect будет ловить applyTripId повторно и зациклит toasts/загрузки.
+      params.delete('applyTripId');
+      params.delete('draftMessageId');
+      const nextQuery = params.toString();
+      router.replace(nextQuery ? `/planner?${nextQuery}` : '/planner');
+
+      toast.success('Маршрут из AI чата открыт в Planner');
+    },
+    [router, searchParams, setCurrentTrip, setSaved],
+  );
+
+  useEffect(() => {
+    // feature/TRI-104-ai-planner-interaction: IDEMPOTENCY GUARD
+    // Потребность: исключить зацикливание подгрузки маршрута при ре-рендерах.
+    // Если убрать этот guard, Planner будет бесконечно загружать маршрут по кругу.
+    const incomingTripId = searchParams.get('applyTripId');
+    const draftMessageId = searchParams.get('draftMessageId');
+    
+    if (!incomingTripId || incomingTripId.startsWith('guest-')) {
+      handledApplyTripIdRef.current = null; // reset if cleared
+      return;
+    }
+
+    const currentKey = `${incomingTripId}-${draftMessageId || 'nodraft'}`;
+
+    if (handledApplyTripIdRef.current === currentKey) {
+      return; // уже обработали этот ID в рамках сессии
+    }
+
+    handledApplyTripIdRef.current = currentKey;
+    void applyIncomingTrip(incomingTripId);
+  }, [applyIncomingTrip, searchParams]);
+
   return (
     <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
       <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-10 w-full flex-1 flex flex-col relative">
@@ -1752,6 +1857,7 @@ export function PlannerPage() {
 
             <div className="w-full aspect-[4/5] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden relative z-0 border border-slate-200 shadow-inner bg-slate-50 group">
               <RouteMap
+                key={`route-map-${currentTrip?.id ?? 'none'}-${lastMapRenderAt}`}
                 points={points}
                 focusCoords={focusCoords}
                 draggable={canEdit}
@@ -2006,10 +2112,34 @@ export function PlannerPage() {
                       </Button>
                       <Button
                         onClick={() => {
+                          // TRI-104: "Редактировать с AI" = сохранить текущий маршрут,
+                          // найти/создать связанный чат и перейти в AI с sessionId.
+                          // MERGE-NOTE: не переводить в прямой переход без saveCurrentTrip/openOrCreateSessionFromTrip,
+                          // иначе ломается инвариант one-to-one chat<->trip.
                           if (!isAuthenticated) {
                             setModal('register');
                             return;
                           }
+                          void (async () => {
+                            try {
+                              const tripId = await ensureTripId();
+                              const saved = await saveCurrentTrip();
+                              if (!saved) return;
+
+                              const sessionId = await openOrCreateSessionFromTrip(tripId);
+                              if (!sessionId) {
+                                toast.error('Не удалось открыть AI-чат для маршрута');
+                                return;
+                              }
+
+                              toast.success('Маршрут сохранен. Переходим в AI-чат');
+                              router.push(
+                                `/ai-assistant?sessionId=${encodeURIComponent(sessionId)}`,
+                              );
+                            } catch {
+                              toast.error('Не удалось подготовить маршрут для AI');
+                            }
+                          })();
                         }}
                         disabled={points.length === 0}
                         variant="brand-purple"
@@ -2183,6 +2313,7 @@ export function PlannerPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
       <CompareSaveModal
         isOpen={compareModalData.isOpen}
         onClose={() => setCompareModalData((prev) => ({ ...prev, isOpen: false }))}

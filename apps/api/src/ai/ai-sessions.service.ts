@@ -1,9 +1,16 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { and, desc, eq } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { DRIZZLE } from '../db/db.module';
 import * as schema from '../db/schema';
-import type { SessionMessage } from './types/pipeline.types';
+import type { RoutePlan, SessionMessage } from './types/pipeline.types';
 
 interface AiSessionEntity {
   id: string;
@@ -15,10 +22,209 @@ interface AiSessionEntity {
 
 @Injectable()
 export class AiSessionsService {
+  private readonly logger = new Logger(AiSessionsService.name);
+
+  private deriveSessionTitleFromRoute(messages: SessionMessage[]): string {
+    const lastAssistantWithRoute = [...messages]
+      .reverse()
+      .find(
+        (item) => item.role === 'assistant' && typeof item.content === 'string',
+      );
+
+    if (!lastAssistantWithRoute) return 'Новый чат';
+
+    try {
+      const parsed = JSON.parse(lastAssistantWithRoute.content) as {
+        days?: Array<{
+          points?: Array<{
+            poi?: {
+              name?: string;
+            };
+          }>;
+        }>;
+      };
+
+      const days = parsed.days ?? [];
+      const allPoints = days.flatMap((day) => day.points ?? []);
+      const firstName = allPoints[0]?.poi?.name?.trim();
+      const lastName = allPoints[allPoints.length - 1]?.poi?.name?.trim();
+
+      if (firstName && lastName)
+        return `${firstName} -> ${lastName}`.slice(0, 60);
+      if (firstName) return firstName.slice(0, 60);
+      return 'Новый чат';
+    } catch {
+      return 'Новый чат';
+    }
+  }
+
   constructor(
     @Inject(DRIZZLE)
     private readonly db: NodePgDatabase<typeof schema>,
   ) {}
+
+  async applyRoutePlanToTrip(params: {
+    sessionId: string;
+    userId: string;
+    routePlan: RoutePlan;
+  }) {
+    // TRI-104: AI Assistant -> Planner.
+    // Назначение: атомарно создать/обновить trip из AI routePlan и поддержать связь 1:1 session<->trip.
+    // MERGE-NOTE: если в других ветках меняется формат routePlan или стратегия апдейта точек,
+    // синхронизируйте это место с endpoint `POST /ai/sessions/:id/apply`.
+    const { sessionId, userId, routePlan } = params;
+
+    if (!routePlan?.days?.length) {
+      throw new BadRequestException('Route plan is empty');
+    }
+
+    const session = await this.getByIdForUser(sessionId, userId);
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
+    const [user] = await this.db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+
+    if (!user) {
+      throw new ForbiddenException('User not found');
+    }
+
+    const firstPoint = routePlan.days[0]?.points[0]?.poi;
+    const fallbackTitle = routePlan.city
+      ? `Маршрут по ${routePlan.city}`
+      : firstPoint?.name
+        ? `Маршрут: ${firstPoint.name}`
+        : 'Маршрут из AI-чата';
+
+    const tripId = session.tripId;
+    const targetTrip = tripId
+      ? await this.db.query.trips.findFirst({
+          where: eq(schema.trips.id, tripId),
+        })
+      : null;
+
+    const trip = targetTrip
+      ? targetTrip
+      : (
+          await this.db
+            .insert(schema.trips)
+            .values({
+              ownerId: userId,
+              title: fallbackTitle,
+              budget: Math.round(routePlan.total_budget_estimated || 0),
+              isActive: false,
+            })
+            .returning()
+        )[0];
+
+    if (!trip) {
+      throw new BadRequestException('Trip was not created');
+    }
+
+    if (targetTrip) {
+      await this.db
+        .update(schema.trips)
+        .set({
+          title: routePlan.city
+            ? `Маршрут по ${routePlan.city}`
+            : targetTrip.title,
+          budget: Math.round(routePlan.total_budget_estimated || 0),
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.trips.id, trip.id));
+
+      await this.db
+        .delete(schema.routePoints)
+        .where(eq(schema.routePoints.tripId, trip.id));
+    }
+
+    const pointsToInsert = routePlan.days.flatMap((day) =>
+      day.points.map((point, index) => ({
+        tripId: trip.id,
+        title: point.poi?.name || `Точка ${index + 1}`,
+        description: null,
+        lat: point.poi?.coordinates?.lat ?? 0,
+        lon: point.poi?.coordinates?.lon ?? 0,
+        budget:
+          typeof point.estimated_cost === 'number'
+            ? Math.round(point.estimated_cost)
+            : null,
+        visitDate: day.date || null,
+        imageUrl: point.poi?.image_url || null,
+        address: point.poi?.address || null,
+        transportMode: 'driving',
+        order: point.order,
+      })),
+    );
+
+    if (pointsToInsert.length > 0) {
+      await this.db.insert(schema.routePoints).values(pointsToInsert);
+    }
+
+    if (session.tripId !== trip.id) {
+      await this.db
+        .update(schema.aiSessions)
+        .set({ tripId: trip.id })
+        .where(eq(schema.aiSessions.id, session.id));
+    }
+
+    return { tripId: trip.id, created: !targetTrip };
+  }
+
+  async getOrCreateByTrip(userId: string, tripId: string) {
+    // TRI-104: гарантирует инвариант "один маршрут -> один AI-чат" для пользователя.
+    // MERGE-NOTE: при изменении уникальности/индексов ai_sessions по tripId обновить эту выборку.
+    const existing = await this.db.query.aiSessions.findFirst({
+      where: and(
+        eq(schema.aiSessions.userId, userId),
+        eq(schema.aiSessions.tripId, tripId),
+      ),
+    });
+
+    if (existing) {
+      return {
+        id: existing.id,
+        tripId: existing.tripId,
+        userId: existing.userId,
+        messages: this.normalizeMessages(existing.messages),
+        createdAt: existing.createdAt,
+      };
+    }
+
+    const [created] = await this.db
+      .insert(schema.aiSessions)
+      .values({ userId, tripId, messages: [] })
+      .returning();
+
+    return {
+      id: created.id,
+      tripId: created.tripId,
+      userId: created.userId,
+      messages: [] as SessionMessage[],
+      createdAt: created.createdAt,
+    };
+  }
+
+  async appendMessages(sessionId: string, messages: SessionMessage[]) {
+    // TRI-104: сервисный append для сценария инициализации чата из Planner.
+    // MERGE-NOTE: не заменяет историю, а дописывает, чтобы не терять сообщения при параллельной работе.
+    const current = await this.db.query.aiSessions.findFirst({
+      where: eq(schema.aiSessions.id, sessionId),
+    });
+    if (!current) {
+      throw new NotFoundException('Session not found');
+    }
+
+    const merged = [...this.normalizeMessages(current.messages), ...messages];
+    await this.saveMessages(sessionId, merged);
+    this.logger.log(
+      `Appended ${messages.length} message(s) to AI session ${sessionId}`,
+    );
+  }
 
   async listByUser(userId: string) {
     const rows = await this.db
@@ -30,12 +236,15 @@ export class AiSessionsService {
     return rows.map((row) => {
       const messages = this.normalizeMessages(row.messages);
       const firstUserMessage = messages.find((item) => item.role === 'user');
+      const routeDerivedTitle = this.deriveSessionTitleFromRoute(messages);
 
       return {
         id: row.id,
         trip_id: row.tripId,
         created_at: row.createdAt,
-        title: (firstUserMessage?.content ?? 'Новый чат').slice(0, 60),
+        title: firstUserMessage
+          ? firstUserMessage.content.slice(0, 60)
+          : routeDerivedTitle,
         messages_count: messages.length,
       };
     });
@@ -84,31 +293,17 @@ export class AiSessionsService {
   }) {
     const { tripId, userId, sessionId } = params;
 
+    // TRI-106 / MERGE-GUARD
+    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+    // 2) Потребность: жестко изолировать AI-сессии; при явном sessionId нельзя "переиспользовать"
+    //    другой чат пользователя по trip_id/null-trip, иначе однословный запрос может попасть в старый контекст.
+    // 3) Если убрать: вернется склейка чатов, появятся ложные маршруты (например, "небанальный" -> старый город).
+    // 4) В этом блоке ранее не было веточного комментария; прямого конфликта со старым комментарием нет.
+
     if (sessionId) {
       const byId = await this.getByIdForUser(sessionId, userId);
       if (byId) return byId;
-    }
-
-    const existing = await this.db.query.aiSessions.findFirst({
-      where: tripId
-        ? and(
-            eq(schema.aiSessions.userId, userId),
-            eq(schema.aiSessions.tripId, tripId),
-          )
-        : and(
-            eq(schema.aiSessions.userId, userId),
-            isNull(schema.aiSessions.tripId),
-          ),
-    });
-
-    if (existing) {
-      return {
-        id: existing.id,
-        tripId: existing.tripId,
-        userId: existing.userId,
-        messages: this.normalizeMessages(existing.messages),
-        createdAt: existing.createdAt,
-      };
+      throw new NotFoundException('AI session not found');
     }
 
     const [created] = await this.db

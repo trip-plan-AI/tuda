@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { AiSessionsService } from './ai-sessions.service';
 import { AiController } from './ai.controller';
+import { PointsModule } from '../points/points.module';
+import { TripsModule } from '../trips/trips.module';
 import { KudagoClientService } from './pipeline/kudago-client.service';
 import { LlmClientService } from './pipeline/llm-client.service';
 import { OrchestratorService } from './pipeline/orchestrator.service';
@@ -12,6 +14,11 @@ import { SemanticFilterService } from './pipeline/semantic-filter.service';
 import { YandexFetchService } from './pipeline/yandex-fetch.service';
 
 @Module({
+  // TRI-104: AI контроллер теперь использует Trips/Points для сценариев
+  // "применить план в маршрут" и "редактировать маршрут с AI".
+  // MERGE-NOTE: при выносе сервисов в другие модули не забудьте обновить imports,
+  // иначе DI упадёт на AiController.
+  imports: [TripsModule, PointsModule],
   controllers: [AiController],
   providers: [
     AiSessionsService,

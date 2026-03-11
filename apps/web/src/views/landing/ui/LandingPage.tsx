@@ -38,6 +38,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/shared/ui';
+import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 import { env } from '@/shared/config/env';
 
 type Modal = 'login' | 'register' | null;
@@ -119,7 +120,6 @@ export function LandingPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const debounceFromRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceToRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sendAiQuery = useAiQueryStore((state) => state.sendQuery);
   const createNewSession = useAiQueryStore((state) => state.createNewSession);
   const { currentTrip, setCurrentTrip, addPoint, clearPlanner } = useTripStore();
   const points = currentTrip?.points || [];
@@ -403,8 +403,20 @@ export function LandingPage() {
   const handleSearch = () => {
     if (searchMode === 'ai') {
       if (searchQuery.trim()) {
-        createNewSession();
-        void sendAiQuery(searchQuery);
+        // TRI-106 / MERGE-GUARD
+        // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+        // 2) Потребность: перед переходом в /ai-assistant фиксируем атомарный handoff
+        //    (query + targetSessionId), чтобы UI открыл именно тот чат, куда уйдет запрос.
+        // 3) Если убрать: первое сообщение/скелетон может рендериться в одном чате, а запрос уйдет в другой.
+        // 4) Возможен конфликт с ветками, где стартовый запрос передается только как ai:pending-query.
+        const sessionId = createNewSession();
+        sessionStorage.setItem(
+          'ai:pending-handoff',
+          JSON.stringify({
+            query: searchQuery.trim(),
+            targetSessionId: sessionId,
+          }),
+        );
       }
       router.push('/ai-assistant');
       return;
@@ -525,8 +537,20 @@ export function LandingPage() {
                       href="/ai-assistant"
                       onClick={() => {
                         if (searchQuery.trim()) {
-                          createNewSession();
-                          void sendAiQuery(searchQuery);
+                          // TRI-106 / MERGE-GUARD
+                          // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+                          // 2) Потребность: тот же handoff-контракт для CTA-кнопки, что и для handleSearch,
+                          //    чтобы все входы в AI-чат вели себя одинаково.
+                          // 3) Если убрать: одна из точек входа снова начнет воспроизводить race-condition по activeSession.
+                          // 4) Возможен конфликт с ветками, где Link onClick очищает/переопределяет pending ключи.
+                          const sessionId = createNewSession();
+                          sessionStorage.setItem(
+                            'ai:pending-handoff',
+                            JSON.stringify({
+                              query: searchQuery.trim(),
+                              targetSessionId: sessionId,
+                            }),
+                          );
                         }
                       }}
                       className="w-14 h-14 md:w-16 md:h-16 lg:w-20 lg:h-20 bg-brand-yellow text-white rounded-full flex items-center justify-center shadow-xl hover:scale-105 active:scale-95 shrink-0 transition-none"
@@ -571,9 +595,14 @@ export function LandingPage() {
                                       setFromSuggestions([]);
                                       setFromDropdownOpen(false);
                                     }
-                                    if (debounceFromRef.current) clearTimeout(debounceFromRef.current);
+                                    if (debounceFromRef.current)
+                                      clearTimeout(debounceFromRef.current);
                                     debounceFromRef.current = setTimeout(() => {
-                                      void getSuggestions(value, setFromSuggestions, setIsSearchingFrom);
+                                      void getSuggestions(
+                                        value,
+                                        setFromSuggestions,
+                                        setIsSearchingFrom,
+                                      );
                                     }, 700);
                                   }}
                                   onFocus={() => manualForm.from && setFromDropdownOpen(true)}
@@ -641,7 +670,11 @@ export function LandingPage() {
                                     }
                                     if (debounceToRef.current) clearTimeout(debounceToRef.current);
                                     debounceToRef.current = setTimeout(() => {
-                                      void getSuggestions(value, setToSuggestions, setIsSearchingTo);
+                                      void getSuggestions(
+                                        value,
+                                        setToSuggestions,
+                                        setIsSearchingTo,
+                                      );
                                     }, 700);
                                   }}
                                   onFocus={() => manualForm.to && setToDropdownOpen(true)}
@@ -798,8 +831,17 @@ export function LandingPage() {
                   <button
                     key={idx}
                     onClick={() => {
-                      createNewSession();
-                      void sendAiQuery(filter.label);
+                      // TRI-106 / MERGE-GUARD
+                      // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
+                      // 2) Потребность: быстрые фильтры должны использовать тот же атомарный handoff,
+                      //    что и основной поиск, иначе поведение входа в чат будет непоследовательным.
+                      // 3) Если убрать: через quick filters снова возможен race-condition с неверным active chat.
+                      // 4) Возможен конфликт с ветками, где quick filters отправляют запрос напрямую без перехода.
+                      const sessionId = createNewSession();
+                      sessionStorage.setItem(
+                        'ai:pending-handoff',
+                        JSON.stringify({ query: filter.label, targetSessionId: sessionId }),
+                      );
                       router.push('/ai-assistant');
                     }}
                     className="px-5 py-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full text-white text-xs md:text-sm font-bold hover:bg-white/20 transition-none"
@@ -930,35 +972,32 @@ export function LandingPage() {
         </div>
       </div>
 
-      <Dialog open={showConfirmOverwrite} onOpenChange={setShowConfirmOverwrite}>
-        <DialogContent className="sm:max-w-md border-none shadow-2xl rounded-[2.5rem] p-10 overflow-hidden z-[100]">
-          <DialogHeader className="gap-4">
-            <DialogTitle className="text-xl font-black text-brand-indigo uppercase tracking-widest leading-tight">
-              Внимание
-            </DialogTitle>
-            <DialogDescription className="text-slate-500 font-bold text-lg leading-snug">
-              В конструкторе уже есть непустой маршрут. При открытии нового маршрута старый будет
-              очищен. Продолжить?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex-col sm:flex-row gap-3 mt-8">
-            <Button
-              variant="ghost"
-              className="flex-1 font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50 h-12 rounded-xl"
-              onClick={() => setShowConfirmOverwrite(false)}
-            >
-              ОТМЕНА
-            </Button>
-            <Button
-              variant="brand-indigo"
-              className="flex-1 font-black uppercase tracking-widest h-12 rounded-xl shadow-lg shadow-brand-indigo/20"
-              onClick={confirmOverwrite}
-            >
-              ПРОДОЛЖИТЬ
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PlannerConflictModal
+        open={showConfirmOverwrite}
+        onOpenChange={setShowConfirmOverwrite}
+        conflictType="landing_new"
+        currentRouteTitle={currentTrip?.title || 'без названия'}
+        onCancel={() => setShowConfirmOverwrite(false)}
+        onReplaceWithoutSave={() => {
+          setShowConfirmOverwrite(false);
+          confirmOverwrite();
+        }}
+        onSaveAndReplace={async () => {
+          setShowConfirmOverwrite(false);
+          if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+            await tripsApi.update(currentTrip.id, {
+              title: currentTrip.title,
+              description: currentTrip.description ?? undefined,
+              budget: currentTrip.budget ?? undefined,
+            });
+          }
+          confirmOverwrite();
+        }}
+        onGoToPlannerOnly={() => {
+          setShowConfirmOverwrite(false);
+          router.push('/planner');
+        }}
+      />
 
       <LoginModal
         open={modal === 'login'}

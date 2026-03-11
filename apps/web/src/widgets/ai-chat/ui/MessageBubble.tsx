@@ -8,9 +8,29 @@ interface MessageBubbleProps {
   message: ChatMessage;
   onApplyPlan?: (messageId: string) => void;
   wasApplied?: boolean;
+  hasLinkedTrip?: boolean;
+  appliedTripId?: string | null;
+  onOpenPlanner?: (tripId: string | null, messageId?: string) => void;
 }
 
-export function MessageBubble({ message, onApplyPlan, wasApplied = false }: MessageBubbleProps) {
+export function MessageBubble({
+  message,
+  onApplyPlan,
+  wasApplied = false,
+  hasLinkedTrip = false,
+  appliedTripId = null,
+  onOpenPlanner,
+}: MessageBubbleProps) {
+  // TRI-104: bubble знает контекст связки chat<->trip и меняет CTA:
+  // "Применить план" только для первого создания trip из чата.
+  // Для уже связанного trip — только переход в Planner.
+  // MERGE-NOTE (CONFLICT-SAFE):
+  // 1) Не возвращайте кнопку "Обновить маршрут" для hasLinkedTrip.
+  // 2) Для linked-trip обязательно передавайте draftMessageId в query,
+  //    иначе Planner не поймёт, что пришла новая версия из чата,
+  //    и модалка замены может не сработать.
+  // MERGE-NOTE: если переносите кнопки из bubble в другой компонент, сохраните эту развилку,
+  // иначе сломается UX-логика one-to-one связи.
   const isAssistant = message.role === 'assistant';
 
   const getFallbackPoi = (point: {
@@ -113,27 +133,47 @@ export function MessageBubble({ message, onApplyPlan, wasApplied = false }: Mess
 
             {onApplyPlan && (
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onApplyPlan(message.id)}
-                  className={[
-                    'rounded-lg px-3 py-2 text-xs font-semibold transition',
-                    wasApplied
-                      ? 'cursor-default bg-emerald-100 text-emerald-700'
-                      : 'bg-brand-sky text-white hover:bg-brand-sky/90',
-                  ].join(' ')}
-                >
-                  {wasApplied ? '✓ План применен' : 'Применить план в маршрут'}
-                </button>
-
-                {wasApplied && (
-                  <Link
-                    href="/planner"
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-brand-indigo hover:text-brand-indigo"
+                {!hasLinkedTrip && (
+                  <button
+                    type="button"
+                    onClick={() => onApplyPlan(message.id)}
+                    className={[
+                      'rounded-lg px-3 py-2 text-xs font-semibold transition',
+                      wasApplied
+                        ? 'cursor-default bg-emerald-100 text-emerald-700'
+                        : 'bg-brand-sky text-white hover:bg-brand-sky/90',
+                    ].join(' ')}
                   >
-                    Открыть Planner 🗺️
-                  </Link>
+                    {wasApplied ? '✓ План применен' : 'Применить план в маршрут'}
+                  </button>
                 )}
+
+                {(wasApplied || hasLinkedTrip) &&
+                  (onOpenPlanner ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenPlanner(appliedTripId, message.id)}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-brand-indigo hover:text-brand-indigo"
+                    >
+                      Открыть Planner 🗺️
+                    </button>
+                  ) : (
+                    <Link
+                      href={
+                        // TRI-104 / DRAFT-HANDOFF:
+                        // Задача: передать в Planner факт, что переход идёт из конкретной AI-версии.
+                        // Функция: draftMessageId триггерит сравнение/предупреждение в PlannerPage.
+                        // Если убрать draftMessageId, переход на тот же tripId может выглядеть как
+                        // "ничего нового", и пользователь не увидит предупреждение о замене.
+                        appliedTripId
+                          ? `/planner?applyTripId=${encodeURIComponent(appliedTripId)}&draftMessageId=${encodeURIComponent(message.id)}`
+                          : '/planner'
+                      }
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-brand-indigo hover:text-brand-indigo"
+                    >
+                      Открыть Planner 🗺️
+                    </Link>
+                  ))}
               </div>
             )}
           </div>
