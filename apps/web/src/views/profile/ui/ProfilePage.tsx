@@ -614,15 +614,17 @@ export function ProfilePage() {
                             </AvatarGroup>
                           </button>
                         )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setInviteModalOpen(true)}
-                          className="h-7 px-2 rounded-lg border-brand-sky/30 text-brand-sky font-bold text-[9px] hover:bg-brand-sky/5"
-                        >
-                          <UserPlus size={12} className="mr-1" />
-                          ПРИГЛАСИТЬ
-                        </Button>
+                        {activeRoute.ownerId === user?.id && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setInviteModalOpen(true)}
+                            className="h-7 px-2 rounded-lg border-brand-sky/30 text-brand-sky font-bold text-[9px] hover:bg-brand-sky/5"
+                          >
+                            <UserPlus size={12} className="mr-1" />
+                            ПРИГЛАСИТЬ
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"

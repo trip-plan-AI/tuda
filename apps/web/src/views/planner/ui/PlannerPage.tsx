@@ -21,6 +21,7 @@ import {
   CloudSun,
   Sun,
   Wind,
+  UserPlus,
 } from 'lucide-react';
 import {
   DndContext,
@@ -48,7 +49,13 @@ import { useTripStore, tripsApi, type CreateTripPayload, type Trip } from '@/ent
 import { useUserStore } from '@/entities/user';
 import { usePointCrud } from '@/features/route-create';
 import { pointsApi } from '@/entities/route-point';
-import { useCollaborationSocket, CollaboratorsAvatarGroup } from '@/features/route-collaborate';
+import {
+  useCollaborationSocket,
+  useCollaborateStore,
+  collaborateApi,
+  InviteModal,
+  CollaboratorsModal,
+} from '@/features/route-collaborate';
 import { getSocket } from '@/shared/socket/socket-client';
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
 import { env } from '@/shared/config/env';
@@ -58,6 +65,13 @@ import { cn } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/button';
 import { Chip } from '@/shared/ui/chip';
 import { SegmentedControl } from '@/shared/ui/segmented-control';
+import {
+  Avatar,
+  AvatarImage,
+  AvatarFallback,
+  AvatarGroup,
+  AvatarGroupCount,
+} from '@/shared/ui/avatar';
 import {
   Dialog,
   DialogContent,
@@ -641,6 +655,10 @@ export function PlannerPage() {
   const [modal, setModal] = useState<'login' | 'register' | null>(null);
   const [isAddPointMode, setIsAddPointMode] = useState(false);
 
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [collaboratorsModalOpen, setCollaboratorsModalOpen] = useState(false);
+  const { collaborators, setCollaborators } = useCollaborateStore();
+
   const profileParam = searchParams.get('profile');
   const [routeProfile, setRouteProfile] = useState<'driving' | 'foot' | 'bike' | 'direct'>(
     (profileParam as any) || 'driving',
@@ -741,7 +759,11 @@ export function PlannerPage() {
       }
     };
 
-    const onPointUpdate = ({ trip_id, point_id, ...patch }: { trip_id: string; point_id: string } & any) => {
+    const onPointUpdate = ({
+      trip_id,
+      point_id,
+      ...patch
+    }: { trip_id: string; point_id: string } & any) => {
       if (trip_id !== currentTrip?.id) return;
       const currentPoints = useTripStore.getState().currentTrip?.points || [];
       setPoints(currentPoints.map((p) => (p.id === point_id ? { ...p, ...patch } : p)));
@@ -777,7 +799,7 @@ export function PlannerPage() {
       socket.off('point:add', onPointAdd);
       socket.off('point:delete', onPointDelete);
     };
-  }, [currentTrip?.id, setPoints, updateCurrentTrip, addPoint, removePoint]);
+  }, [currentTrip?.id, setPoints, updateCurrentTrip, addPoint, removePoint, setPoints]);
 
   const { isMixedRoute, mixedModes } = useMemo(() => {
     if (points.length < 2) return { isMixedRoute: false, mixedModes: [] };
@@ -863,6 +885,16 @@ export function PlannerPage() {
   useEffect(() => {
     tripsApi.getPredefined().then(setPredefinedTrips).catch(console.error);
   }, []);
+
+  // Загружаем коллабораторов
+  useEffect(() => {
+    if (currentTrip?.id && !currentTrip.id.startsWith('guest-')) {
+      collaborateApi
+        .getAll(currentTrip.id)
+        .then(setCollaborators)
+        .catch(() => setCollaborators([]));
+    }
+  }, [currentTrip?.id, setCollaborators]);
 
   // Синхронизация routeProfile с transportMode точек
   useEffect(() => {
@@ -1354,7 +1386,40 @@ export function PlannerPage() {
               Маршруты
             </h2>
             {currentTrip?.id && !currentTrip.id.startsWith('guest-') && (
-              <CollaboratorsAvatarGroup tripId={currentTrip.id} />
+              <div className="flex items-center gap-2">
+                {collaborators.length > 0 && (
+                  <button
+                    onClick={() => setCollaboratorsModalOpen(true)}
+                    className="flex items-center hover:opacity-80 transition-opacity"
+                    title="Участники маршрута"
+                  >
+                    <AvatarGroup>
+                      {collaborators.slice(0, 3).map((c) => (
+                        <Avatar key={c.userId} size="sm">
+                          {c.photo && <AvatarImage src={c.photo} alt={c.name} />}
+                          <AvatarFallback>{c.name.charAt(0).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                      ))}
+                      {collaborators.length > 3 && (
+                        <AvatarGroupCount>+{collaborators.length - 3}</AvatarGroupCount>
+                      )}
+                    </AvatarGroup>
+                  </button>
+                )}
+                {isOwner && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setInviteModalOpen(true)}
+                    className="h-8 w-8 p-0 rounded-full border-brand-indigo/20 text-brand-indigo hover:bg-brand-indigo/5 md:w-auto md:h-9 md:px-3 md:rounded-xl"
+                  >
+                    <UserPlus size={16} className="md:mr-1.5" />
+                    <span className="hidden md:inline font-bold text-xs uppercase tracking-wide">
+                      Пригласить
+                    </span>
+                  </Button>
+                )}
+              </div>
             )}
           </div>
           <SegmentedControl
@@ -1428,16 +1493,18 @@ export function PlannerPage() {
                     className="w-full pl-12 pr-4 py-4 md:py-5 bg-slate-50 rounded-xl md:rounded-2xl border-none focus:ring-2 focus:ring-brand-blue/20 outline-none text-slate-800 font-bold text-base md:text-lg transition-all placeholder:text-slate-400 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
-                <Button
-                  onClick={handleAddByQuery}
-                  disabled={isSearching || !canEdit}
-                  variant="brand-yellow"
-                  size="xl"
-                  shape="responsive"
-                  className="w-full md:w-auto font-black uppercase tracking-widest whitespace-nowrap disabled:opacity-70"
-                >
-                  ДОБАВИТЬ
-                </Button>
+                {isOwner && (
+                  <Button
+                    onClick={handleAddByQuery}
+                    disabled={isSearching || !canEdit}
+                    variant="brand-yellow"
+                    size="xl"
+                    shape="responsive"
+                    className="w-full md:w-auto font-black uppercase tracking-widest whitespace-nowrap disabled:opacity-70"
+                  >
+                    ДОБАВИТЬ
+                  </Button>
+                )}
                 {showDropdown && searchInput.length > 2 && (
                   <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl border border-slate-100 shadow-2xl overflow-hidden z-40 animate-in fade-in slide-in-from-top-2">
                     <div className="flex flex-col">
@@ -1506,7 +1573,9 @@ export function PlannerPage() {
                     </div>
                     <button
                       onClick={() => {
-                        points.forEach((p) => handlePointUpdate(p.id, { transportMode: routeProfile }));
+                        points.forEach((p) =>
+                          handlePointUpdate(p.id, { transportMode: routeProfile }),
+                        );
                       }}
                       className="ml-4 w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center hover:bg-red-100 hover:text-red-500 transition-colors"
                       title="Сбросить на единый профиль"
@@ -1634,7 +1703,7 @@ export function PlannerPage() {
                 focusCoords={focusCoords}
                 draggable={canEdit}
                 onPointDragEnd={canEdit ? handlePointDragEnd : () => {}}
-                isDropdownOpen={showDropdown}
+                isDropdownOpen={showDropdown || inviteModalOpen || collaboratorsModalOpen}
                 onMapClick={canEdit ? handleMapClick : undefined}
                 isAddPointMode={canEdit && isAddPointMode}
                 onAddPointModeChange={canEdit ? setIsAddPointMode : undefined}
@@ -1986,6 +2055,22 @@ export function PlannerPage() {
         onClose={() => setModal(null)}
         onSwitchToLogin={() => setModal('login')}
       />
+      {currentTrip?.id && (
+        <>
+          <InviteModal
+            tripId={currentTrip.id}
+            open={inviteModalOpen}
+            onClose={() => setInviteModalOpen(false)}
+            zIndex={50}
+          />
+          <CollaboratorsModal
+            tripId={currentTrip.id}
+            ownerId={currentTrip.ownerId}
+            open={collaboratorsModalOpen}
+            onClose={() => setCollaboratorsModalOpen(false)}
+          />
+        </>
+      )}
     </div>
   );
 }
