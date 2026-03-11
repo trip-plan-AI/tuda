@@ -41,6 +41,7 @@ interface SessionFromTripResponse {
 interface HttpError {
   status?: number;
   message?: string;
+  code?: string;
 }
 
 function isUuid(value: string): boolean {
@@ -95,6 +96,8 @@ function sanitizeQuery(query: string) {
 
 function mapErrorToUserMessage(error: HttpError) {
   if (error.status === 401) return 'Сессия истекла. Выполните вход повторно.';
+  if (error.code === 'NEED_CITY')
+    return 'Понял идею. Уточните, пожалуйста, город, для которого построить маршрут.';
   if (error.status === 422)
     return 'Не удалось построить маршрут по запросу. Уточните город и предпочтения.';
   if (error.status === 429) return 'Слишком много запросов. Подождите немного и повторите.';
