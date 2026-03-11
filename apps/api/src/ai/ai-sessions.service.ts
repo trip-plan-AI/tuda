@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { DRIZZLE } from '../db/db.module';
 import * as schema from '../db/schema';
@@ -296,28 +296,7 @@ export class AiSessionsService {
     if (sessionId) {
       const byId = await this.getByIdForUser(sessionId, userId);
       if (byId) return byId;
-    }
-
-    const existing = await this.db.query.aiSessions.findFirst({
-      where: tripId
-        ? and(
-            eq(schema.aiSessions.userId, userId),
-            eq(schema.aiSessions.tripId, tripId),
-          )
-        : and(
-            eq(schema.aiSessions.userId, userId),
-            isNull(schema.aiSessions.tripId),
-          ),
-    });
-
-    if (existing) {
-      return {
-        id: existing.id,
-        tripId: existing.tripId,
-        userId: existing.userId,
-        messages: this.normalizeMessages(existing.messages),
-        createdAt: existing.createdAt,
-      };
+      throw new NotFoundException('AI session not found');
     }
 
     const [created] = await this.db

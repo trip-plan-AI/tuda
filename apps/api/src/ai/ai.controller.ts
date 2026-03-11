@@ -58,7 +58,9 @@ export class AiController {
     }
   }
 
-  private async enrichDescriptions(points: Array<{ title: string; address?: string | null }>) {
+  private async enrichDescriptions(
+    points: Array<{ title: string; address?: string | null }>,
+  ) {
     // TRI-104: генерация описаний точек только на backend (backend-only external API policy).
     // MERGE-NOTE: любые переносы в frontend запрещены политикой; интеграции внешних LLM только через Nest.
     const apiKey = process.env.YANDEX_GPT_API_KEY?.trim();
@@ -92,7 +94,11 @@ ${JSON.stringify(points)}
           },
           body: JSON.stringify({
             modelUri: `gpt://${folderId}/yandexgpt-lite`,
-            completionOptions: { stream: false, temperature: 0.3, maxTokens: 1500 },
+            completionOptions: {
+              stream: false,
+              temperature: 0.3,
+              maxTokens: 1500,
+            },
             messages: [{ role: 'user', text: prompt }],
           }),
         },
@@ -113,17 +119,24 @@ ${JSON.stringify(points)}
 
       const byTitle = new Map(
         (parsed.items ?? [])
-          .filter((item) => typeof item.title === 'string' && typeof item.description === 'string')
+          .filter(
+            (item) =>
+              typeof item.title === 'string' &&
+              typeof item.description === 'string',
+          )
           .map((item) => [item.title as string, item.description as string]),
       );
 
       return points.map((point) => ({
         ...point,
         description:
-          byTitle.get(point.title) ?? `Интересное место: ${point.title}. Рекомендуем включить в маршрут.`,
+          byTitle.get(point.title) ??
+          `Интересное место: ${point.title}. Рекомендуем включить в маршрут.`,
       }));
     } catch (error) {
-      this.logger.warn(`Yandex description generation failed: ${String(error)}`);
+      this.logger.warn(
+        `Yandex description generation failed: ${String(error)}`,
+      );
       return points.map((point) => ({
         ...point,
         description: `Интересное место: ${point.title}. Рекомендуем включить в маршрут.`,
@@ -222,9 +235,11 @@ ${JSON.stringify(points)}
     await this.aiSessionsService.saveMessages(session.id, newMessages);
 
     if (!intent.city) {
-      throw new UnprocessableEntityException(
-        'Could not parse city from request',
-      );
+      throw new UnprocessableEntityException({
+        code: 'NEED_CITY',
+        message:
+          'Недостаточно данных для построения маршрута. Укажите, пожалуйста, город.',
+      });
     }
 
     return {
@@ -260,7 +275,10 @@ ${JSON.stringify(points)}
   ) {
     // TRI-104: применяет AI-план к trip (создание при первом применении, обновление при следующих).
     // MERGE-NOTE: frontend кнопка apply/update опирается на этот контракт { trip_id, mode }.
-    const session = await this.aiSessionsService.getByIdForUser(sessionId, user.id);
+    const session = await this.aiSessionsService.getByIdForUser(
+      sessionId,
+      user.id,
+    );
     if (!session) {
       throw new NotFoundException('Session not found');
     }
@@ -270,7 +288,9 @@ ${JSON.stringify(points)}
       .reverse()
       .find((item) => item.role === 'assistant' && item.content);
 
-    const routePlan = dto.route_plan || (sourceMessage ? this.tryParseRoutePlan(sourceMessage) : null);
+    const routePlan =
+      dto.route_plan ||
+      (sourceMessage ? this.tryParseRoutePlan(sourceMessage) : null);
 
     if (!routePlan) {
       throw new BadRequestException('Route plan message not found in session');
@@ -334,29 +354,34 @@ ${JSON.stringify(points)}
       });
     }
 
-    const days = Array.from(dateMap.entries()).map(([date, dayPoints], index) => ({
-      day_number: index + 1,
-      date,
-      day_budget_estimated: dayPoints.reduce((sum, point) => sum + (point.budget || 0), 0),
-      day_start_time: '10:00',
-      day_end_time: '20:00',
-      points: dayPoints.map((point, pointIndex) => ({
-        poi_id: `${index + 1}-${pointIndex + 1}`,
-        order: pointIndex,
-        arrival_time: '10:00',
-        departure_time: '12:00',
-        visit_duration_min: 90,
-        estimated_cost: point.budget || 0,
-        poi: {
-          id: `${index + 1}-${pointIndex + 1}`,
-          name: point.title,
-          address: point.address ?? 'Адрес не указан',
-          description: point.description,
-          coordinates: { lat: 0, lon: 0 },
-          category: 'attraction' as const,
-        },
-      })),
-    }));
+    const days = Array.from(dateMap.entries()).map(
+      ([date, dayPoints], index) => ({
+        day_number: index + 1,
+        date,
+        day_budget_estimated: dayPoints.reduce(
+          (sum, point) => sum + (point.budget || 0),
+          0,
+        ),
+        day_start_time: '10:00',
+        day_end_time: '20:00',
+        points: dayPoints.map((point, pointIndex) => ({
+          poi_id: `${index + 1}-${pointIndex + 1}`,
+          order: pointIndex,
+          arrival_time: '10:00',
+          departure_time: '12:00',
+          visit_duration_min: 90,
+          estimated_cost: point.budget || 0,
+          poi: {
+            id: `${index + 1}-${pointIndex + 1}`,
+            name: point.title,
+            address: point.address ?? 'Адрес не указан',
+            description: point.description,
+            coordinates: { lat: 0, lon: 0 },
+            category: 'attraction' as const,
+          },
+        })),
+      }),
+    );
 
     const routePlan: RoutePlan = {
       city: trip.title,
@@ -367,8 +392,13 @@ ${JSON.stringify(points)}
       notes: `Бюджет: ${trip.budget ?? 'неограничен'}`,
     };
 
-    const session = await this.aiSessionsService.getOrCreateByTrip(user.id, tripId);
-    const existingHasRoute = session.messages.some((message) => this.tryParseRoutePlan(message));
+    const session = await this.aiSessionsService.getOrCreateByTrip(
+      user.id,
+      tripId,
+    );
+    const existingHasRoute = session.messages.some((message) =>
+      this.tryParseRoutePlan(message),
+    );
 
     if (!existingHasRoute) {
       await this.aiSessionsService.appendMessages(session.id, [

@@ -66,13 +66,25 @@ export class OrchestratorService {
     query: string,
     history: SessionMessage[],
   ): Promise<ParsedIntent> {
+    const normalizedQuery = query.trim();
+    if (this.isNeedCityClarification(normalizedQuery, history)) {
+      this.logger.warn(
+        `[IntentClarification] NEED_CITY due to underspecified first query: "${normalizedQuery}"`,
+      );
+      throw new UnprocessableEntityException({
+        code: 'NEED_CITY',
+        message:
+          'Недостаточно данных для построения маршрута. Укажите, пожалуйста, город.',
+      });
+    }
+
     const messages: ChatCompletionMessageParam[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       ...history.slice(-8).map((message) => ({
         role: message.role,
         content: message.content,
       })),
-      { role: 'user', content: query },
+      { role: 'user', content: normalizedQuery },
     ];
 
     this.logger.log(
@@ -86,12 +98,34 @@ export class OrchestratorService {
     );
 
     if (!intent.city) {
-      throw new UnprocessableEntityException(
-        'Could not parse city from request',
+      this.logger.warn(
+        `[IntentClarification] NEED_CITY due to parse result without city. Query: "${normalizedQuery}"`,
       );
+      throw new UnprocessableEntityException({
+        code: 'NEED_CITY',
+        message:
+          'Недостаточно данных для построения маршрута. Укажите, пожалуйста, город.',
+      });
     }
 
     return intent;
+  }
+
+  private isNeedCityClarification(
+    query: string,
+    history: SessionMessage[],
+  ): boolean {
+    const userHistoryCount = history.filter(
+      (item) => item.role === 'user' && item.content.trim().length > 0,
+    ).length;
+    if (userHistoryCount > 0) return false;
+
+    const words = query
+      .split(/\s+/)
+      .map((word) => word.trim())
+      .filter(Boolean);
+
+    return words.length <= 1;
   }
 
   private async callWithTimeout(

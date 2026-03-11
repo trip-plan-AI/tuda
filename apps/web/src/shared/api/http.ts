@@ -1,6 +1,12 @@
 import { useAuthStore } from '@/features/auth/model/auth.store';
 import { useUserStore } from '@/entities/user';
 
+interface ApiRequestError {
+  status: number;
+  message: string;
+  code?: string;
+}
+
 function resolveApiBase(): string {
   const configured = process.env.NEXT_PUBLIC_API_URL;
 
@@ -63,7 +69,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.message ?? `HTTP ${res.status}`);
+    const apiError: ApiRequestError = {
+      status: res.status,
+      message: err.message ?? `HTTP ${res.status}`,
+      code: typeof err.code === 'string' ? err.code : undefined,
+    };
+    throw apiError;
   }
 
   return res.json();

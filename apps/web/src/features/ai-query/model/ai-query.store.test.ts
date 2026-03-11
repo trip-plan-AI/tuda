@@ -126,7 +126,76 @@ describe('useAiQueryStore', () => {
     expect(lastMessage?.content).toContain('Слишком много запросов');
   });
 
-  it('applies plan to trip store', async () => {
+  it('maps NEED_CITY error to clarification question', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce({
+      status: 422,
+      code: 'NEED_CITY',
+      message: 'Недостаточно данных для построения маршрута. Укажите, пожалуйста, город.',
+    });
+
+    await useAiQueryStore.getState().sendQuery('небанальный');
+
+    const lastMessage = useAiQueryStore.getState().messages.at(-1);
+    expect(lastMessage?.isError).toBe(true);
+    expect(lastMessage?.content).toContain('Уточните, пожалуйста, город');
+  });
+
+  it('keeps non-null session_id for existing server session', async () => {
+    useAiQueryStore.setState((state) => ({
+      ...state,
+      sessions: {
+        serverSession: {
+          id: 'serverSession',
+          title: 'Существующий чат',
+          tripId: null,
+          sessionId: '8e94f2da-7047-488d-85e7-6ddf8f2dbf0f',
+          messages: [],
+          lastAppliedPlanMessageId: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      activeSessionId: 'serverSession',
+    }));
+
+    vi.mocked(api.post).mockResolvedValueOnce({
+      session_id: '8e94f2da-7047-488d-85e7-6ddf8f2dbf0f',
+      route_plan: {
+        city: 'Москва',
+        total_budget_estimated: 1000,
+        days: [
+          {
+            day_number: 1,
+            date: '2026-03-05',
+            day_budget_estimated: 1000,
+            day_start_time: '10:00',
+            day_end_time: '21:00',
+            points: [],
+          },
+        ],
+      },
+      meta: {
+        steps_duration_ms: {
+          orchestrator: 1,
+          yandex_fetch: 1,
+          semantic_filter: 1,
+          scheduler: 1,
+          total: 4,
+        },
+        poi_counts: { yandex_raw: 1, after_prefilter: 1, after_semantic: 1 },
+        fallbacks_triggered: [],
+      },
+    });
+
+    await useAiQueryStore.getState().sendQuery('2 дня в Москве');
+
+    expect(api.post).toHaveBeenCalledWith('/ai/plan', {
+      user_query: '2 дня в Москве',
+      session_id: '8e94f2da-7047-488d-85e7-6ddf8f2dbf0f',
+    });
+  });
+
+  it('marks selected plan in AI session without mutating trip store directly', async () => {
     const assistantMessage = {
       id: 'm1',
       role: 'assistant' as const,
@@ -180,11 +249,10 @@ describe('useAiQueryStore', () => {
       messages: [assistantMessage],
     });
 
-    useAiQueryStore.getState().applyPlanToCurrentTrip('m1');
+    await useAiQueryStore.getState().applyPlanToCurrentTrip('m1');
 
     const points = useTripStore.getState().currentTrip?.points ?? [];
-    expect(points).toHaveLength(1);
-    expect(points[0]?.title).toBe('Кремль');
+    expect(points).toHaveLength(0);
     expect(useAiQueryStore.getState().lastAppliedPlanMessageId).toBe('m1');
     expect(useAiQueryStore.getState().sessions[baseSessionId]?.lastAppliedPlanMessageId).toBe('m1');
   });
