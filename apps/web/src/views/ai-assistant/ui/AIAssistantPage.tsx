@@ -74,12 +74,44 @@ export function AIAssistantPage() {
     if (typeof window === 'undefined') return;
     if (isSessionsLoading) return;
 
-    const pendingQuery = sessionStorage.getItem('ai:pending-query');
-    if (!pendingQuery) return;
+    const rawHandoff = sessionStorage.getItem('ai:pending-handoff');
+    if (!rawHandoff) {
+      const pendingQuery = sessionStorage.getItem('ai:pending-query');
+      if (!pendingQuery) return;
 
-    sessionStorage.removeItem('ai:pending-query');
-    void sendQuery(pendingQuery, activeSession?.tripId ?? undefined);
-  }, [isSessionsLoading, sendQuery, activeSession?.tripId]);
+      sessionStorage.removeItem('ai:pending-query');
+      void sendQuery(pendingQuery, activeSession?.tripId ?? undefined);
+      return;
+    }
+
+    let handoff: { query?: unknown; targetSessionId?: unknown } | null = null;
+    try {
+      handoff = JSON.parse(rawHandoff) as { query?: unknown; targetSessionId?: unknown };
+    } catch {
+      sessionStorage.removeItem('ai:pending-handoff');
+      return;
+    }
+
+    if (
+      !handoff ||
+      typeof handoff.query !== 'string' ||
+      !handoff.query.trim() ||
+      typeof handoff.targetSessionId !== 'string' ||
+      !handoff.targetSessionId
+    ) {
+      sessionStorage.removeItem('ai:pending-handoff');
+      return;
+    }
+
+    sessionStorage.removeItem('ai:pending-handoff');
+
+    void (async () => {
+      await switchSession(handoff.targetSessionId as string);
+      const targetTripId =
+        useAiQueryStore.getState().sessions[handoff.targetSessionId as string]?.tripId;
+      await sendQuery(handoff.query as string, targetTripId ?? undefined);
+    })();
+  }, [isSessionsLoading, sendQuery, switchSession, activeSession?.tripId]);
 
   const handleSend = async (query: string) => {
     // Важно: запрос должен идти в контексте активного чата, а не текущего trip из Planner.

@@ -15,6 +15,8 @@ describe('useAiQueryStore', () => {
   const baseSessionId = 'session-local-1';
 
   beforeEach(() => {
+    window.sessionStorage.clear();
+
     useAiQueryStore.setState({
       sessions: {
         [baseSessionId]: {
@@ -419,5 +421,82 @@ describe('useAiQueryStore', () => {
       user_query: 'небанальный',
       session_id: 'server-first',
     });
+  });
+
+  it('loadSessions keeps handoff target session as active during landing->assistant transition', async () => {
+    const handoffTargetId = 'handoff-local';
+    const anotherServerSessionId = 'server-other';
+
+    useAiQueryStore.setState((state) => ({
+      ...state,
+      sessions: {
+        [handoffTargetId]: {
+          id: handoffTargetId,
+          title: 'handoff',
+          tripId: null,
+          sessionId: null,
+          messages: [
+            {
+              id: 'u-handoff',
+              role: 'user',
+              content: 'небанальный',
+              timestamp: new Date().toISOString(),
+            },
+          ],
+          lastAppliedPlanMessageId: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      activeSessionId: handoffTargetId,
+      messages: [
+        {
+          id: 'u-handoff',
+          role: 'user',
+          content: 'небанальный',
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    }));
+
+    window.sessionStorage.setItem(
+      'ai:pending-handoff',
+      JSON.stringify({ query: 'небанальный', targetSessionId: handoffTargetId }),
+    );
+
+    vi.mocked(api.get).mockResolvedValueOnce([
+      {
+        id: anotherServerSessionId,
+        trip_id: null,
+        created_at: new Date().toISOString(),
+        title: 'Другой чат',
+        messages_count: 0,
+      },
+    ]);
+
+    await useAiQueryStore.getState().loadSessions();
+
+    const state = useAiQueryStore.getState();
+    expect(state.activeSessionId).toBe(handoffTargetId);
+    expect(state.messages[0]?.content).toBe('небанальный');
+  });
+
+  it('loadSessions ignores invalid handoff payload and keeps current active session', async () => {
+    window.sessionStorage.setItem('ai:pending-handoff', '{bad-json');
+
+    vi.mocked(api.get).mockResolvedValueOnce([
+      {
+        id: 'server-default',
+        trip_id: null,
+        created_at: new Date().toISOString(),
+        title: 'Default',
+        messages_count: 0,
+      },
+    ]);
+
+    await useAiQueryStore.getState().loadSessions();
+
+    const state = useAiQueryStore.getState();
+    expect(state.activeSessionId).toBe(baseSessionId);
   });
 });

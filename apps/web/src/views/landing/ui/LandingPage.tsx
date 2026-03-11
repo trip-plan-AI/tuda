@@ -403,8 +403,14 @@ export function LandingPage() {
   const handleSearch = () => {
     if (searchMode === 'ai') {
       if (searchQuery.trim()) {
-        createNewSession();
-        sessionStorage.setItem('ai:pending-query', searchQuery.trim());
+        const sessionId = createNewSession();
+        sessionStorage.setItem(
+          'ai:pending-handoff',
+          JSON.stringify({
+            query: searchQuery.trim(),
+            targetSessionId: sessionId,
+          }),
+        );
       }
       router.push('/ai-assistant');
       return;
@@ -521,14 +527,20 @@ export function LandingPage() {
                         <Mic size={24} />
                       </button>
                     </div>
-                      <Link
-                        href="/ai-assistant"
-                        onClick={() => {
-                          if (searchQuery.trim()) {
-                            createNewSession();
-                            sessionStorage.setItem('ai:pending-query', searchQuery.trim());
-                          }
-                        }}
+                    <Link
+                      href="/ai-assistant"
+                      onClick={() => {
+                        if (searchQuery.trim()) {
+                          const sessionId = createNewSession();
+                          sessionStorage.setItem(
+                            'ai:pending-handoff',
+                            JSON.stringify({
+                              query: searchQuery.trim(),
+                              targetSessionId: sessionId,
+                            }),
+                          );
+                        }
+                      }}
                       className="w-14 h-14 md:w-16 md:h-16 lg:w-20 lg:h-20 bg-brand-yellow text-white rounded-full flex items-center justify-center shadow-xl hover:scale-105 active:scale-95 shrink-0 transition-none"
                     >
                       <ArrowRight size={28} className="rotate-0 transition-none text-white" />
@@ -571,9 +583,14 @@ export function LandingPage() {
                                       setFromSuggestions([]);
                                       setFromDropdownOpen(false);
                                     }
-                                    if (debounceFromRef.current) clearTimeout(debounceFromRef.current);
+                                    if (debounceFromRef.current)
+                                      clearTimeout(debounceFromRef.current);
                                     debounceFromRef.current = setTimeout(() => {
-                                      void getSuggestions(value, setFromSuggestions, setIsSearchingFrom);
+                                      void getSuggestions(
+                                        value,
+                                        setFromSuggestions,
+                                        setIsSearchingFrom,
+                                      );
                                     }, 700);
                                   }}
                                   onFocus={() => manualForm.from && setFromDropdownOpen(true)}
@@ -641,7 +658,11 @@ export function LandingPage() {
                                     }
                                     if (debounceToRef.current) clearTimeout(debounceToRef.current);
                                     debounceToRef.current = setTimeout(() => {
-                                      void getSuggestions(value, setToSuggestions, setIsSearchingTo);
+                                      void getSuggestions(
+                                        value,
+                                        setToSuggestions,
+                                        setIsSearchingTo,
+                                      );
                                     }, 700);
                                   }}
                                   onFocus={() => manualForm.to && setToDropdownOpen(true)}
@@ -798,8 +819,11 @@ export function LandingPage() {
                   <button
                     key={idx}
                     onClick={() => {
-                      createNewSession();
-                      sessionStorage.setItem('ai:pending-query', filter.label);
+                      const sessionId = createNewSession();
+                      sessionStorage.setItem(
+                        'ai:pending-handoff',
+                        JSON.stringify({ query: filter.label, targetSessionId: sessionId }),
+                      );
                       router.push('/ai-assistant');
                     }}
                     className="px-5 py-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full text-white text-xs md:text-sm font-bold hover:bg-white/20 transition-none"

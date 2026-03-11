@@ -51,6 +51,23 @@ interface HttpError {
   session_id?: string;
 }
 
+function getPendingHandoffTargetSessionId(): string | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.sessionStorage.getItem('ai:pending-handoff');
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { targetSessionId?: unknown };
+    if (typeof parsed.targetSessionId !== 'string' || parsed.targetSessionId.length === 0)
+      return null;
+
+    return parsed.targetSessionId;
+  } catch {
+    return null;
+  }
+}
+
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
@@ -296,10 +313,15 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           ...localTransientSessions,
         };
 
+        const pendingHandoffTargetSessionId = getPendingHandoffTargetSessionId();
+
         nextActiveSessionId =
-          state.activeSessionId && mergedSessions[state.activeSessionId]
+          (pendingHandoffTargetSessionId && mergedSessions[pendingHandoffTargetSessionId]
+            ? pendingHandoffTargetSessionId
+            : null) ??
+          (state.activeSessionId && mergedSessions[state.activeSessionId]
             ? state.activeSessionId
-            : (list[0]?.id ?? null);
+            : (list[0]?.id ?? null));
 
         return {
           sessions: mergedSessions,
