@@ -31,6 +31,9 @@ import { PointsService } from '../points/points.service';
 export class AiController {
   private readonly logger = new Logger('AI_PIPELINE');
 
+  private readonly needCityMessage =
+    'Недостаточно данных для построения маршрута. Укажите, пожалуйста, город.';
+
   constructor(
     private readonly aiSessionsService: AiSessionsService,
     private readonly tripsService: TripsService,
@@ -40,6 +43,20 @@ export class AiController {
     private readonly semanticFilterService: SemanticFilterService,
     private readonly schedulerService: SchedulerService,
   ) {}
+
+  private isNeedCityError(error: unknown): boolean {
+    if (!(error instanceof UnprocessableEntityException)) return false;
+
+    const response = error.getResponse();
+    if (typeof response === 'string') return false;
+
+    return (
+      !!response &&
+      typeof response === 'object' &&
+      'code' in response &&
+      (response as { code?: unknown }).code === 'NEED_CITY'
+    );
+  }
 
   private tryParseRoutePlan(message: SessionMessage): RoutePlan | null {
     // TRI-104: безопасный парсинг assistant-message в RoutePlan.
@@ -200,10 +217,39 @@ ${JSON.stringify(points)}
     const history = session.messages;
     const llmContext = history.slice(-10);
     const orchestratorStart = Date.now();
-    const intent = await this.orchestratorService.parseIntent(
-      dto.user_query,
-      llmContext,
-    );
+
+    let intent;
+    try {
+      intent = await this.orchestratorService.parseIntent(
+        dto.user_query,
+        llmContext,
+      );
+    } catch (error) {
+      if (!this.isNeedCityError(error)) {
+        throw error;
+      }
+
+      const clarificationMessages: SessionMessage[] = [
+        ...history,
+        { role: 'user' as const, content: dto.user_query },
+        {
+          role: 'assistant' as const,
+          content: this.needCityMessage,
+        },
+      ];
+
+      await this.aiSessionsService.saveMessages(
+        session.id,
+        clarificationMessages,
+      );
+
+      throw new UnprocessableEntityException({
+        code: 'NEED_CITY',
+        message: this.needCityMessage,
+        session_id: session.id,
+      });
+    }
+
     const orchestratorDuration = Date.now() - orchestratorStart;
 
     const providerStart = Date.now();
@@ -237,8 +283,7 @@ ${JSON.stringify(points)}
     if (!intent.city) {
       throw new UnprocessableEntityException({
         code: 'NEED_CITY',
-        message:
-          'Недостаточно данных для построения маршрута. Укажите, пожалуйста, город.',
+        message: this.needCityMessage,
       });
     }
 

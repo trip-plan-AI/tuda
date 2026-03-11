@@ -140,6 +140,25 @@ describe('useAiQueryStore', () => {
     expect(lastMessage?.content).toContain('Уточните, пожалуйста, город');
   });
 
+  it('binds local chat to server session id on NEED_CITY error', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce({
+      status: 422,
+      code: 'NEED_CITY',
+      session_id: '3d95f381-6ce5-4d11-8fcc-d55f4ce4de66',
+      message: 'Недостаточно данных для построения маршрута. Укажите, пожалуйста, город.',
+    });
+
+    await useAiQueryStore.getState().sendQuery('небанальный');
+
+    const state = useAiQueryStore.getState();
+    expect(state.activeSessionId).toBe('3d95f381-6ce5-4d11-8fcc-d55f4ce4de66');
+    expect(state.sessionId).toBe('3d95f381-6ce5-4d11-8fcc-d55f4ce4de66');
+    expect(state.sessions['3d95f381-6ce5-4d11-8fcc-d55f4ce4de66']?.sessionId).toBe(
+      '3d95f381-6ce5-4d11-8fcc-d55f4ce4de66',
+    );
+    expect(state.sessions[baseSessionId]).toBeUndefined();
+  });
+
   it('keeps non-null session_id for existing server session', async () => {
     useAiQueryStore.setState((state) => ({
       ...state,
@@ -267,5 +286,54 @@ describe('useAiQueryStore', () => {
 
     void afterCreate.switchSession(baseSessionId);
     expect(useAiQueryStore.getState().activeSessionId).toBe(baseSessionId);
+  });
+
+  it('clearChat creates a fresh local draft and does not nullify persisted sessionId', () => {
+    useAiQueryStore.setState((state) => ({
+      ...state,
+      sessions: {
+        persisted: {
+          id: 'persisted',
+          title: 'Серверный чат',
+          tripId: null,
+          sessionId: '8e94f2da-7047-488d-85e7-6ddf8f2dbf0f',
+          messages: [
+            {
+              id: 'm1',
+              role: 'user',
+              content: 'Казань',
+              timestamp: new Date().toISOString(),
+            },
+          ],
+          lastAppliedPlanMessageId: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      activeSessionId: 'persisted',
+      sessionId: '8e94f2da-7047-488d-85e7-6ddf8f2dbf0f',
+    }));
+
+    useAiQueryStore.getState().clearChat();
+
+    const state = useAiQueryStore.getState();
+    expect(state.sessions['persisted']?.sessionId).toBe('8e94f2da-7047-488d-85e7-6ddf8f2dbf0f');
+
+    const nextActiveId = state.activeSessionId;
+    expect(nextActiveId).not.toBeNull();
+    expect(nextActiveId).not.toBe('persisted');
+
+    const nextActiveSession = nextActiveId ? state.sessions[nextActiveId] : null;
+    expect(nextActiveSession?.sessionId).toBeNull();
+    expect(nextActiveSession?.messages).toHaveLength(0);
+  });
+
+  it('does not create backend chat before first user message', async () => {
+    const before = useAiQueryStore.getState();
+    const localId = before.createNewSession(null);
+
+    const stateAfterCreate = useAiQueryStore.getState();
+    expect(stateAfterCreate.sessions[localId]?.sessionId).toBeNull();
+    expect(api.post).not.toHaveBeenCalled();
   });
 });

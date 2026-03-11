@@ -42,6 +42,7 @@ interface HttpError {
   status?: number;
   message?: string;
   code?: string;
+  session_id?: string;
 }
 
 function isUuid(value: string): boolean {
@@ -148,6 +149,9 @@ function createSession(tripId: string | null = null): ChatSession {
     id: crypto.randomUUID(),
     title: 'Новый чат',
     tripId,
+    // Инвариант TRI-106:
+    // sessionId === null допустим только для локального пустого чата
+    // до первой отправки user_query на backend.
     sessionId: null,
     messages: [],
     lastAppliedPlanMessageId: null,
@@ -402,6 +406,11 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           return { isLoading: false };
         }
 
+        const serverSessionId =
+          error.code === 'NEED_CITY' && typeof error.session_id === 'string'
+            ? error.session_id
+            : null;
+
         const errorMessage: ChatMessage = {
           id: crypto.randomUUID(),
           role: 'assistant',
@@ -412,20 +421,23 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
 
         const nextSession: ChatSession = {
           ...activeSession,
+          id: serverSessionId ?? activeSession.id,
+          sessionId: serverSessionId ?? activeSession.sessionId,
           messages: [...activeSession.messages, errorMessage],
           updatedAt: new Date().toISOString(),
         };
 
-        const nextSessions = {
-          ...state.sessions,
-          [nextSession.id]: nextSession,
-        };
+        const nextSessions = { ...state.sessions };
+        if (activeSession.id !== nextSession.id) {
+          delete nextSessions[activeSession.id];
+        }
+        nextSessions[nextSession.id] = nextSession;
 
         return {
           sessions: nextSessions,
-          activeSessionId: activeId,
+          activeSessionId: nextSession.id,
           isLoading: false,
-          ...syncLegacyFields(nextSessions, activeId),
+          ...syncLegacyFields(nextSessions, nextSession.id),
         };
       });
     }
@@ -684,23 +696,20 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         };
       }
 
-      const clearedSession: ChatSession = {
-        ...activeSession,
-        sessionId: null,
-        messages: [],
-        lastAppliedPlanMessageId: null,
-        updatedAt: new Date().toISOString(),
-      };
+      // Для соблюдения инварианта не обнуляем sessionId у существующей серверной сессии.
+      // Вместо этого создаем новый локальный пустой чат и делаем его активным.
+      const freshLocalSession = createSession(activeSession.tripId);
 
       const nextSessions = {
         ...state.sessions,
-        [clearedSession.id]: clearedSession,
+        [freshLocalSession.id]: freshLocalSession,
       };
 
       return {
         sessions: nextSessions,
         isLoading: false,
-        ...syncLegacyFields(nextSessions, state.activeSessionId),
+        activeSessionId: freshLocalSession.id,
+        ...syncLegacyFields(nextSessions, freshLocalSession.id),
       };
     });
   },
