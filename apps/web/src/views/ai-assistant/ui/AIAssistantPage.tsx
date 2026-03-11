@@ -23,6 +23,7 @@ export function AIAssistantPage() {
   const router = useRouter();
   const [showPlannerConflictModal, setShowPlannerConflictModal] = useState(false);
   const [pendingPlannerTripId, setPendingPlannerTripId] = useState<string | null>(null);
+  const [pendingDraftMessageId, setPendingDraftMessageId] = useState<string | null>(null);
   const [conflictType, setConflictType] = useState<PlannerConflictType>('different_route');
   const {
     sessions,
@@ -70,7 +71,10 @@ export function AIAssistantPage() {
   const activeSession = activeSessionId ? sessions[activeSessionId] : null;
 
   const handleSend = async (query: string) => {
-    await sendQuery(query, currentTrip?.id);
+    // Важно: запрос должен идти в контексте активного чата, а не текущего trip из Planner.
+    // Иначе новый чат "прилипает" к открытому в Planner маршруту, скрывает кнопку применения
+    // и ломает one-to-one модель chat -> trip.
+    await sendQuery(query, activeSession?.tripId ?? undefined);
   };
 
   const handleApplyPlan = async (messageId: string) => {
@@ -118,12 +122,14 @@ export function AIAssistantPage() {
       if (openedPlannerTripId !== targetTripId) {
         setConflictType('different_route');
         setPendingPlannerTripId(targetTripId);
+        setPendingDraftMessageId(messageId ?? null);
         setShowPlannerConflictModal(true);
         return;
       } else if (messageId && messageId !== lastAppliedPlanMessageId) {
         // Тот же маршрут, но применяется новая версия из чата
         setConflictType('same_route');
         setPendingPlannerTripId(targetTripId);
+        setPendingDraftMessageId(messageId);
         setShowPlannerConflictModal(true);
         return;
       }
@@ -142,15 +148,20 @@ export function AIAssistantPage() {
 
   const handleConfirmPlannerReplace = () => {
     const targetTripId = pendingPlannerTripId;
+    const draftMessageId = pendingDraftMessageId;
     setShowPlannerConflictModal(false);
     setPendingPlannerTripId(null);
+    setPendingDraftMessageId(null);
 
     if (!targetTripId || targetTripId.startsWith('guest-')) {
       router.push('/planner');
       return;
     }
 
-    router.push(`/planner?applyTripId=${encodeURIComponent(targetTripId)}`);
+    const query = new URLSearchParams();
+    query.set('applyTripId', targetTripId);
+    if (draftMessageId) query.set('draftMessageId', draftMessageId);
+    router.push(`/planner?${query.toString()}`);
   };
 
   const plannerRouteTitle = currentTrip?.title?.trim() || 'без названия';
@@ -239,11 +250,13 @@ export function AIAssistantPage() {
             appliedTripId={activeSession?.tripId ?? null}
           />
 
-          <div className="mt-3 flex justify-end">
-            <Button type="button" variant="outline" onClick={() => handleOpenPlanner()}>
-              Открыть Planner 🗺️
-            </Button>
-          </div>
+          {activeSession?.tripId && (
+            <div className="mt-3 flex justify-end">
+              <Button type="button" variant="outline" onClick={() => handleOpenPlanner()}>
+                Открыть Planner 🗺️
+              </Button>
+            </div>
+          )}
 
           {/* feature/TRI-104-ai-planner-interaction: единый компонент модалки конфликтов (добавлен вместо разрозненных Dialog)
               Закрывает потребность в унифицированном дизайне и 4-х вариантах действий.
@@ -256,6 +269,7 @@ export function AIAssistantPage() {
             onCancel={() => {
               setShowPlannerConflictModal(false);
               setPendingPlannerTripId(null);
+              setPendingDraftMessageId(null);
             }}
             onReplaceWithoutSave={handleConfirmPlannerReplace}
             onSaveAndReplace={async () => {
@@ -271,6 +285,7 @@ export function AIAssistantPage() {
             onGoToPlannerOnly={() => {
               setShowPlannerConflictModal(false);
               setPendingPlannerTripId(null);
+              setPendingDraftMessageId(null);
               router.push('/planner');
             }}
           />
