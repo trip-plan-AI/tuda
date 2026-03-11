@@ -24,6 +24,40 @@ interface AiSessionEntity {
 export class AiSessionsService {
   private readonly logger = new Logger(AiSessionsService.name);
 
+  private deriveSessionTitleFromRoute(messages: SessionMessage[]): string {
+    const lastAssistantWithRoute = [...messages]
+      .reverse()
+      .find(
+        (item) => item.role === 'assistant' && typeof item.content === 'string',
+      );
+
+    if (!lastAssistantWithRoute) return 'Новый чат';
+
+    try {
+      const parsed = JSON.parse(lastAssistantWithRoute.content) as {
+        days?: Array<{
+          points?: Array<{
+            poi?: {
+              name?: string;
+            };
+          }>;
+        }>;
+      };
+
+      const days = parsed.days ?? [];
+      const allPoints = days.flatMap((day) => day.points ?? []);
+      const firstName = allPoints[0]?.poi?.name?.trim();
+      const lastName = allPoints[allPoints.length - 1]?.poi?.name?.trim();
+
+      if (firstName && lastName)
+        return `${firstName} -> ${lastName}`.slice(0, 60);
+      if (firstName) return firstName.slice(0, 60);
+      return 'Новый чат';
+    } catch {
+      return 'Новый чат';
+    }
+  }
+
   constructor(
     @Inject(DRIZZLE)
     private readonly db: NodePgDatabase<typeof schema>,
@@ -68,7 +102,9 @@ export class AiSessionsService {
 
     const tripId = session.tripId;
     const targetTrip = tripId
-      ? await this.db.query.trips.findFirst({ where: eq(schema.trips.id, tripId) })
+      ? await this.db.query.trips.findFirst({
+          where: eq(schema.trips.id, tripId),
+        })
       : null;
 
     const trip = targetTrip
@@ -93,7 +129,9 @@ export class AiSessionsService {
       await this.db
         .update(schema.trips)
         .set({
-          title: routePlan.city ? `Маршрут по ${routePlan.city}` : targetTrip.title,
+          title: routePlan.city
+            ? `Маршрут по ${routePlan.city}`
+            : targetTrip.title,
           budget: Math.round(routePlan.total_budget_estimated || 0),
           updatedAt: new Date(),
         })
@@ -183,7 +221,9 @@ export class AiSessionsService {
 
     const merged = [...this.normalizeMessages(current.messages), ...messages];
     await this.saveMessages(sessionId, merged);
-    this.logger.log(`Appended ${messages.length} message(s) to AI session ${sessionId}`);
+    this.logger.log(
+      `Appended ${messages.length} message(s) to AI session ${sessionId}`,
+    );
   }
 
   async listByUser(userId: string) {
@@ -196,12 +236,15 @@ export class AiSessionsService {
     return rows.map((row) => {
       const messages = this.normalizeMessages(row.messages);
       const firstUserMessage = messages.find((item) => item.role === 'user');
+      const routeDerivedTitle = this.deriveSessionTitleFromRoute(messages);
 
       return {
         id: row.id,
         trip_id: row.tripId,
         created_at: row.createdAt,
-        title: (firstUserMessage?.content ?? 'Новый чат').slice(0, 60),
+        title: firstUserMessage
+          ? firstUserMessage.content.slice(0, 60)
+          : routeDerivedTitle,
         messages_count: messages.length,
       };
     });
