@@ -131,6 +131,10 @@ export class GeosearchService {
     );
   }
 
+  private get yandexGeosuggestApiKey() {
+    return process.env.YANDEX_GEOSUGGEST_API_KEY;
+  }
+
   private get dadataApiKey() {
     return process.env.DADATA_API_KEY;
   }
@@ -282,7 +286,7 @@ export class GeosearchService {
       return this.applyProximity(scored, userLat, userLon);
     }
 
-    // Tier 3: Photon → Yandex Maps → Yandex Geosuggest (каскадный поиск)
+    // Tier 3: Photon → Yandex Maps → Yandex Geosuggest → Nominatim EN (каскадный поиск)
     let tier3Results: Array<{ displayName: string; uri: string }> = [];
 
     // Сначала пробуем Photon (быстро, работает везде)
@@ -295,10 +299,16 @@ export class GeosearchService {
       if (yandexResults && yandexResults.length > 0) {
         tier3Results = yandexResults;
       } else {
-        // Последний контур: Yandex Geosuggest (для иностранных городов/улиц)
+        // Пробуем Yandex Geosuggest (если API ключ настроен)
         const yandexGeoResults = await this.getYandexGeoSuggest(normalized);
         if (yandexGeoResults && yandexGeoResults.length > 0) {
           tier3Results = yandexGeoResults;
+        } else {
+          // Последний контур: Nominatim с английским языком (находит иностранные города/улицы типо "Севилья")
+          const nominatimEnResults = await this.getNominatimSuggestions(normalized, undefined, 'en,ru', false);
+          if (nominatimEnResults && nominatimEnResults.length > 0) {
+            tier3Results = nominatimEnResults;
+          }
         }
       }
     }
@@ -1072,20 +1082,20 @@ export class GeosearchService {
   private async getYandexGeoSuggest(
     q: string,
   ): Promise<Array<{ displayName: string; uri: string }> | null> {
-    if (!this.yandexApiKey) return null;
+    if (!this.yandexGeosuggestApiKey) return null;
 
     try {
-      const res = await fetch('https://geosuggest.maps.yandex.ru/v1/geosuggest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: q,
-          types: ['geo'],
-          lang: 'ru',
-          v: 9,
-          apikey: this.yandexApiKey,
-        }),
+      // Используем GET запрос с lang=en для международных результатов
+      const params = new URLSearchParams({
+        text: q,
+        types: 'geo',
+        lang: 'en',
+        apikey: this.yandexGeosuggestApiKey,
       });
+
+      const res = await fetch(
+        `https://suggest-maps.yandex.ru/v1/suggest?${params}`,
+      );
 
       if (res.status === 429 || res.status === 403 || !res.ok) return null;
 
@@ -1096,13 +1106,13 @@ export class GeosearchService {
         .map((item: any) => {
           const title = item.title?.text ?? '';
           const subtitle = item.subtitle?.text ?? '';
-          const coords = item.geometry?.[0];
 
-          if (!coords || coords.length < 2) return null;
+          if (!title) return null;
 
           return {
             displayName: subtitle ? `${title}, ${subtitle}` : title,
-            uri: `ymapsbm1://geo?ll=${coords[0]},${coords[1]}&z=12`,
+            // Используем текстовый поиск в URI, так как API не возвращает точные координаты
+            uri: `ymapsbm1://geo?text=${encodeURIComponent(title)}&z=12`,
           };
         })
         .filter(
