@@ -282,16 +282,24 @@ export class GeosearchService {
       return this.applyProximity(scored, userLat, userLon);
     }
 
-    // Tier 3: Photon → Yandex (если Tier 2 не нашёл достаточно хороших результатов)
+    // Tier 3: Photon → Yandex Maps → Yandex Geosuggest (каскадный поиск)
     let tier3Results: Array<{ displayName: string; uri: string }> = [];
 
+    // Сначала пробуем Photon (быстро, работает везде)
     const photonResults = await this.getPhotonSuggestions(normalized);
     if (photonResults && photonResults.length > 0) {
       tier3Results = photonResults;
     } else {
+      // Если Photon ничего не нашёл, пробуем Yandex Maps Suggest (хорош для РФ)
       const yandexResults = await this.getYandexSuggestions(normalized);
       if (yandexResults && yandexResults.length > 0) {
         tier3Results = yandexResults;
+      } else {
+        // Последний контур: Yandex Geosuggest (для иностранных городов/улиц)
+        const yandexGeoResults = await this.getYandexGeoSuggest(normalized);
+        if (yandexGeoResults && yandexGeoResults.length > 0) {
+          tier3Results = yandexGeoResults;
+        }
       }
     }
 
@@ -1049,6 +1057,52 @@ export class GeosearchService {
           return {
             displayName: subtitle ? `${title}, ${subtitle}` : title,
             uri: `ymapsbm1://geo?ll=${coords.lon},${coords.lat}&z=12`,
+          };
+        })
+        .filter(
+          (
+            item: { displayName: string; uri: string } | null,
+          ): item is { displayName: string; uri: string } => item !== null,
+        );
+    } catch {
+      return null;
+    }
+  }
+
+  private async getYandexGeoSuggest(
+    q: string,
+  ): Promise<Array<{ displayName: string; uri: string }> | null> {
+    if (!this.yandexApiKey) return null;
+
+    try {
+      const res = await fetch('https://geosuggest.maps.yandex.ru/v1/geosuggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: q,
+          types: ['geo'],
+          lang: 'ru',
+          v: 9,
+          apikey: this.yandexApiKey,
+        }),
+      });
+
+      if (res.status === 429 || res.status === 403 || !res.ok) return null;
+
+      const data = await res.json();
+      const results = Array.isArray(data?.results) ? data.results : [];
+
+      return results
+        .map((item: any) => {
+          const title = item.title?.text ?? '';
+          const subtitle = item.subtitle?.text ?? '';
+          const coords = item.geometry?.[0];
+
+          if (!coords || coords.length < 2) return null;
+
+          return {
+            displayName: subtitle ? `${title}, ${subtitle}` : title,
+            uri: `ymapsbm1://geo?ll=${coords[0]},${coords[1]}&z=12`,
           };
         })
         .filter(
