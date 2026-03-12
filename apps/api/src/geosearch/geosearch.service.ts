@@ -139,10 +139,6 @@ export class GeosearchService {
     const normalized = query.trim();
     if (normalized.length < 2) return [];
 
-    if (normalized.toLowerCase() === 'уфа') {
-      console.log(`[SUGGEST] "Уфа" request started`);
-    }
-
     // Tier 1: Redis cache (TTL 7 дней)
     const cacheKey = `geo:suggest:${normalized.toLowerCase()}`;
     const cached = await this.redis.get(cacheKey);
@@ -197,19 +193,24 @@ export class GeosearchService {
         const normalizedQuery = normalized.trim().toLowerCase();
         const queryWords = normalizedQuery.split(/\s+/).filter(w => w.length >= 2);
 
-        if (displayNameFirst === normalizedQuery) {
+        // Убираем городские префиксы (г., г , пгт, пгт. и т.п.) для сравнения
+        const cityPrefixRe = /^(г\.?\s+|пгт\.?\s+|рп\.?\s+|пос\.?\s+|с\.?\s+|д\.?\s+)/;
+        const displayNameFirstClean = displayNameFirst.replace(cityPrefixRe, '').trim();
+
+        if (displayNameFirst === normalizedQuery || displayNameFirstClean === normalizedQuery) {
           baseScore += 15.0; // Максимальный бонус за точное совпадение
-        } else if (displayNameFirst.startsWith(normalizedQuery)) {
+        } else if (displayNameFirst.startsWith(normalizedQuery) || displayNameFirstClean.startsWith(normalizedQuery)) {
           baseScore += 10.0; // Сильный бонус за совпадение в начале
-        } else if (queryWords.some(w => displayNameFirst.startsWith(w))) {
+        } else if (queryWords.some(w => displayNameFirst.startsWith(w) || displayNameFirstClean.startsWith(w))) {
           baseScore += 8.0; // Умеренный бонус за совпадение первого слова в начале
         }
 
         // Бонус за тип результата (если это город, а не улица)
-        // Города обычно более релевантны для поиска по названию города
         const displayNameLower = item.displayName.toLowerCase();
-        if (/(^|[,\s])(город|г\.|г\s|city|town|settlement|посёлок|деревня)(\s|,|$)/i.test(displayNameLower)) {
-          baseScore += 2.0; // Сильный бонус за город
+        // Проверяем "г " (без точки), "г." (с точкой), "город" — все форматы
+        if (/^(г\.?\s|город\s|пгт\.?\s|рп\.?\s)/i.test(displayNameFirst) ||
+            /(^|,\s*)(г\.?\s|город\s|city\s|town\s)/i.test(displayNameLower)) {
+          baseScore += 2.0; // Бонус за город
         } else if (/(улица|ул\.|проспект|пр-кт|переулок|площадь|пл\.|шоссе|street|avenue|road|square)/i.test(displayNameLower)) {
           baseScore -= 1.0; // Штраф за улицу
         }
@@ -428,10 +429,23 @@ export class GeosearchService {
 
           return true;
         })
-        .map((item: any) => ({
-          displayName: item.value,
-          uri: `ymapsbm1://geo?ll=${item.data.geo_lon},${item.data.geo_lat}&z=12`,
-        }));
+        .map((item: any) => {
+          const d = item.data;
+          let displayName = item.value;
+
+          // Для городских результатов (не улиц) переставляем порядок: "г Город, Регион обл"
+          // вместо DaData-шного "Регион обл, г Город" — чтобы скоринг и фильтры работали корректно
+          if (d.city && !d.street && d.city_with_type && d.region_with_type) {
+            displayName = `${d.city_with_type}, ${d.region_with_type}`;
+          } else if (d.settlement && !d.street && d.settlement_with_type && d.region_with_type) {
+            displayName = `${d.settlement_with_type}, ${d.region_with_type}`;
+          }
+
+          return {
+            displayName,
+            uri: `ymapsbm1://geo?ll=${d.geo_lon},${d.geo_lat}&z=12`,
+          };
+        });
     } catch (error) {
       console.error('[GeosearchService] DaData error:', error);
       return null;
