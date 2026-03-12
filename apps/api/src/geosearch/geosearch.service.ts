@@ -168,27 +168,54 @@ export class GeosearchService {
       })
       .sort((a, b) => b.score - a.score);
 
+    // Фильтр: убираем результаты без валидных координат (ll=null,null или NaN)
+    const validCoords = allScored.filter(item => {
+      const match = item.uri.match(/ll=([^&]+)/);
+      if (!match) return false; // нет координат вообще — не нужен
+      const [lon, lat] = match[1].split(',').map(Number);
+      return !isNaN(lon) && !isNaN(lat) && lon !== 0 && lat !== 0;
+    });
+
     // Dedup pass 1: координаты (0.02° ≈ 2км) — highest-scored в ячейке
     const seenCoords = new Set<string>();
-    const coordDeduped = allScored.filter(item => {
+    const coordDeduped = validCoords.filter(item => {
       const match = item.uri.match(/ll=([^&]+)/);
       if (!match) return true;
       const [lon, lat] = match[1].split(',').map(Number);
-      if (isNaN(lon) || isNaN(lat)) return true;
       const key = `${Math.round(lon * 50)},${Math.round(lat * 50)}`;
       if (seenCoords.has(key)) return false;
       seenCoords.add(key);
       return true;
     });
 
-    // Dedup pass 2: имя (первый сегмент до запятой) — убирает сегменты одной улицы
-    // на границе координатных ячеек (напр. два фрагмента "Купчинской улицы" в СПб)
+    // Нормализует имя для дедупа: убирает административные префиксы
+    // "г Москва" → "москва", "г. Москва" → "москва", "Москва" → "москва"
+    const normalizeNameKey = (name: string): string =>
+      yo(name.split(',')[0].trim().toLowerCase())
+        .replace(/^(г\.?\s+|пгт\.?\s+|рп\.?\s+|с\.?\s+|д\.?\s+|обл\.?\s+|р-н\.?\s+|ул\.?\s+|пр-т\.?\s+)/, '');
+
+    // Фильтр: убирает результаты, где первый сегмент заканчивается на чистую область/край
+    // "Челябинская обл" → отбросить (не город, не посёлок, просто область)
+    // "г Челябинск" → оставить (город)
+    // "Челябинская обл, Сосновский р-н, поселок..." → отбросить (первый сегмент всё ещё область)
+    const noPureAdminRegions = coordDeduped.filter(item => {
+      const firstName = item.displayName.split(',')[0].trim().toLowerCase();
+      // Убираем если первый сегмент это просто "область", "край", "республика" и т.д.
+      // Используем пробелы вместо \b для работы с кириллицей
+      const isPureAdmin = (/ (область|обл\.?|край|republic|республика|автономная|округ|federal)$/i.test(firstName) ||
+                           /^(область|обл\.?|край|republic|республика|автономная|округ|federal)$/i.test(firstName)) &&
+                          !/(город|г\.?|city|town|settlement|деревня|village|посёлок|hamlet)/i.test(firstName);
+      return !isPureAdmin;
+    });
+
+    // Dedup pass 2: имя (первый сегмент до запятой, без префиксов) — убирает дубли
+    // типа "г Москва" vs "Москва" от разных провайдеров
     const seenName = new Set<string>();
-    const scored = coordDeduped.filter(item => {
-      const firstName = yo(item.displayName.split(',')[0].trim().toLowerCase());
-      if (!firstName) return true;
-      if (seenName.has(firstName)) return false;
-      seenName.add(firstName);
+    const scored = noPureAdminRegions.filter(item => {
+      const key = normalizeNameKey(item.displayName);
+      if (!key) return true;
+      if (seenName.has(key)) return false;
+      seenName.add(key);
       return true;
     }).slice(0, 10);
 
@@ -273,6 +300,9 @@ export class GeosearchService {
     if (/\b(аэропорт|airport|aerodrome|aeroporto)\b/i.test(dn)) typeBonus = 2.0;
     else if (/\b(город|г\.|city|town|capitale|столица|capital)\b/i.test(dn)) typeBonus = 2.0;
     else if (/\b(курорт|resort|остров|island|île)\b/i.test(dn)) typeBonus = 1.5;
+    else if (/\b(область|обл\.?|oblast|region)\b/i.test(dn)) typeBonus = -3.0; // сильный штраф за чистую область
+    else if (/\b(край|округ|republic)\b/i.test(dn)) typeBonus = -2.5; // край/республика тоже административная единица
+    else if (/\b(район|р-н\.?|district)\b/i.test(dn)) typeBonus = -1.0;
     else if (/\b(село|деревня|village|посёлок|хутор|аул|урочище|территория)\b/i.test(dn)) typeBonus = 0.3;
     else if (/\b(улица|ул\.|проспект|пр-т|переулок|шоссе|street|avenue|road)\b/i.test(dn)) typeBonus = -0.5;
     else if (/\b(сельское поселение|муниципальный округ|городской округ)\b/i.test(dn)) typeBonus = 0.5;
