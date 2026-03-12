@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { ParsedIntent } from '../types/pipeline.types';
+import type {
+  MassCollectionShadowMeta,
+  MassCollectionShadowProviderStat,
+  ParsedIntent,
+} from '../types/pipeline.types';
 import type { PoiItem } from '../types/poi.types';
 import { KudagoClientService } from './kudago-client.service';
 import { OverpassClientService } from './overpass-client.service';
@@ -16,19 +20,53 @@ export class ProviderSearchService {
     private readonly llmClientService: LlmClientService,
   ) {}
 
+  private buildEmptyProviderStat(
+    provider: MassCollectionShadowProviderStat['provider'],
+  ): MassCollectionShadowProviderStat {
+    return {
+      provider,
+      attempted: false,
+      raw_count: 0,
+      used_count: 0,
+      failed: false,
+    };
+  }
+
   async fetchAndFilter(
     intent: ParsedIntent,
     fallbacks: string[] = [],
-  ): Promise<PoiItem[]> {
+  ): Promise<{
+    pois: PoiItem[];
+    shadowDiagnostics?: MassCollectionShadowMeta;
+  }> {
     this.logger.log(
       `[ProviderSearch] Started for city: "${intent.city}", categories: [${intent.categories.join(', ')}]`,
     );
 
     let pois: PoiItem[] = [];
+    const providerStats: Record<
+      MassCollectionShadowProviderStat['provider'],
+      MassCollectionShadowProviderStat
+    > = {
+      kudago: this.buildEmptyProviderStat('kudago'),
+      overpass: this.buildEmptyProviderStat('overpass'),
+      llm_fill: this.buildEmptyProviderStat('llm_fill'),
+    };
 
     // 1) Сначала обращаемся к приоритетному источнику (KudaGo)
     this.logger.log(`[ProviderSearch] Requesting KudaGo API...`);
-    const kudagoRaw = await this.kudagoClient.fetchByIntent(intent);
+    providerStats.kudago.attempted = true;
+    let kudagoRaw: PoiItem[] = [];
+    try {
+      kudagoRaw = await this.kudagoClient.fetchByIntent(intent);
+      providerStats.kudago.raw_count = kudagoRaw.length;
+      providerStats.kudago.used_count = kudagoRaw.length;
+    } catch (error: unknown) {
+      providerStats.kudago.failed = true;
+      providerStats.kudago.fail_reason =
+        error instanceof Error ? error.message : String(error);
+      throw error;
+    }
     this.logger.log(
       `[ProviderSearch] KudaGo returned ${kudagoRaw.length} points.`,
     );
@@ -46,7 +84,16 @@ export class ProviderSearchService {
       this.logger.log(
         `[ProviderSearch] KudaGo POIs < 15. Calling Overpass API for supplement...`,
       );
-      overpassRaw = await this.overpassClient.fetchByIntent(intent);
+      providerStats.overpass.attempted = true;
+      try {
+        overpassRaw = await this.overpassClient.fetchByIntent(intent);
+        providerStats.overpass.raw_count += overpassRaw.length;
+      } catch (error: unknown) {
+        providerStats.overpass.failed = true;
+        providerStats.overpass.fail_reason =
+          error instanceof Error ? error.message : String(error);
+        throw error;
+      }
       this.logger.log(
         `[ProviderSearch] Overpass returned ${overpassRaw.length} points.`,
       );
@@ -60,15 +107,28 @@ export class ProviderSearchService {
       this.logger.warn(
         `[ProviderSearch] Still low on POIs (${pois.length}). Retrying Overpass with radius * 1.3...`,
       );
-      const retryOverpass = await this.overpassClient.fetchByIntent({
-        ...intent,
-        radius_km: intent.radius_km * 1.3,
-      });
+      providerStats.overpass.attempted = true;
+      let retryOverpass: PoiItem[] = [];
+      try {
+        retryOverpass = await this.overpassClient.fetchByIntent({
+          ...intent,
+          radius_km: intent.radius_km * 1.3,
+        });
+        providerStats.overpass.raw_count += retryOverpass.length;
+      } catch (error: unknown) {
+        providerStats.overpass.failed = true;
+        providerStats.overpass.fail_reason =
+          error instanceof Error ? error.message : String(error);
+        throw error;
+      }
       pois = [...kudagoRaw, ...retryOverpass];
+      overpassRaw = retryOverpass;
       this.logger.log(
         `[ProviderSearch] After Overpass retry, total raw points: ${pois.length}`,
       );
     }
+
+    providerStats.overpass.used_count = overpassRaw.length;
 
     const minRequired = intent.days * 2;
 
@@ -78,6 +138,7 @@ export class ProviderSearchService {
         `[ProviderSearch] Only ${pois.length} points found, but ${minRequired} needed for ${intent.days} days. Requesting LLM to generate missing points...`,
       );
       const missingCount = minRequired - pois.length;
+      providerStats.llm_fill.attempted = true;
       try {
         const generatedPois = await this.generateMissingPois(
           intent.city,
@@ -85,6 +146,8 @@ export class ProviderSearchService {
           pois,
         );
         pois = [...pois, ...generatedPois];
+        providerStats.llm_fill.raw_count = generatedPois.length;
+        providerStats.llm_fill.used_count = generatedPois.length;
         fallbacks.push('LLM_GENERATED_MISSING_POIS');
         this.logger.log(
           `[ProviderSearch] Successfully generated ${generatedPois.length} missing points. Total now: ${pois.length}`,
@@ -95,6 +158,8 @@ export class ProviderSearchService {
         this.logger.error(
           `[ProviderSearch] Failed to generate missing points via LLM: ${errorMessage}`,
         );
+        providerStats.llm_fill.failed = true;
+        providerStats.llm_fill.fail_reason = errorMessage;
         fallbacks.push('LLM_POI_GENERATION_FAILED');
       }
     }
@@ -103,7 +168,21 @@ export class ProviderSearchService {
       this.logger.error(
         `[ProviderSearch] ❌ FATAL: 0 points found for ${intent.city} across all providers and generators.`,
       );
-      return [];
+      return {
+        pois: [],
+        shadowDiagnostics: {
+          provider_stats: [
+            providerStats.kudago,
+            providerStats.overpass,
+            providerStats.llm_fill,
+          ],
+          totals: {
+            before_dedup: 0,
+            after_dedup: 0,
+            returned: 0,
+          },
+        },
+      };
     }
 
     this.logger.log(
@@ -140,7 +219,21 @@ export class ProviderSearchService {
     this.logger.log(
       `[ProviderSearch] Final pre-filter complete. Kept ${topNonFood.length} non-food and ${topFood.length} food points (Total: ${result.length}) for Semantic Filter.`,
     );
-    return result;
+    return {
+      pois: result,
+      shadowDiagnostics: {
+        provider_stats: [
+          providerStats.kudago,
+          providerStats.overpass,
+          providerStats.llm_fill,
+        ],
+        totals: {
+          before_dedup: pois.length,
+          after_dedup: deduped.length,
+          returned: result.length,
+        },
+      },
+    };
   }
 
   private deduplicate(pois: PoiItem[]): PoiItem[] {

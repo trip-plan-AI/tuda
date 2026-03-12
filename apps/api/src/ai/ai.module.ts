@@ -11,7 +11,13 @@ import { PopularGeneratorService } from './pipeline/popular-generator.service';
 import { ProviderSearchService } from './pipeline/provider-search.service';
 import { SchedulerService } from './pipeline/scheduler.service';
 import { SemanticFilterService } from './pipeline/semantic-filter.service';
+import { IntentRouterService } from './pipeline/intent-router.service';
+import { LogicalIdFilterService } from './pipeline/logical-id-filter.service';
+import { PolicyService } from './pipeline/policy.service';
+import { VectorPrefilterService } from './pipeline/vector-prefilter.service';
 import { YandexFetchService } from './pipeline/yandex-fetch.service';
+import { DeterministicPlannerService } from './pipeline/deterministic-planner.service';
+import { YandexBatchRefinementService } from './pipeline/yandex-batch-refinement.service';
 
 @Module({
   // TRI-104: AI контроллер теперь использует Trips/Points для сценариев
@@ -31,6 +37,12 @@ import { YandexFetchService } from './pipeline/yandex-fetch.service';
     PopularGeneratorService,
     SemanticFilterService,
     SchedulerService,
+    IntentRouterService,
+    PolicyService,
+    LogicalIdFilterService,
+    VectorPrefilterService,
+    DeterministicPlannerService,
+    YandexBatchRefinementService,
   ],
   exports: [
     AiSessionsService,

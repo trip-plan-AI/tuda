@@ -6,6 +6,7 @@ export interface PoiItem {
   id: string;
   name: string;
   address: string;
+  logical_id?: string;
   coordinates: {
     lat: number;
     lon: number;
