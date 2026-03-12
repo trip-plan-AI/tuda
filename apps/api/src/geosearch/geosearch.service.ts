@@ -188,8 +188,22 @@ export class GeosearchService {
         if ('score' in item && typeof (item as any).score === 'number' && isFinite((item as any).score)) {
           return item as any;
         }
-        // Для Tier 2 результатов: базовый скор + бонус за тип (город > улица)
+        // Для Tier 2 результатов: базовый скор + бонусы
         let baseScore = this.scoreResult(item.displayName, normalized);
+
+        // Бонус за точное совпадение названия
+        // Если название начинается с точного совпадения запроса - это очень релевантно
+        const displayNameFirst = item.displayName.split(',')[0].trim().toLowerCase();
+        const normalizedQuery = normalized.trim().toLowerCase();
+        const queryWords = normalizedQuery.split(/\s+/).filter(w => w.length >= 2);
+
+        if (displayNameFirst === normalizedQuery) {
+          baseScore += 15.0; // Максимальный бонус за точное совпадение
+        } else if (displayNameFirst.startsWith(normalizedQuery)) {
+          baseScore += 10.0; // Сильный бонус за совпадение в начале
+        } else if (queryWords.some(w => displayNameFirst.startsWith(w))) {
+          baseScore += 8.0; // Умеренный бонус за совпадение первого слова в начале
+        }
 
         // Бонус за тип результата (если это город, а не улица)
         // Города обычно более релевантны для поиска по названию города
@@ -1057,7 +1071,11 @@ export class GeosearchService {
         .filter((item: NominatimItem) => {
           if (excludeAmenity && NOMINATIM_GEO_EXCLUDED.has(item.class)) return false;
           const dn = yo(item.display_name.toLowerCase());
-          return matchWords.length === 0 || matchWords.every(w => fuzzyIncludes(dn, w));
+          // Требуем точное совпадение хотя бы одного слова или fuzzyIncludes для всех слов
+          // Это позволяет найти "Золотоустовский округ" для запроса "Золотоуст"
+          const exactMatch = matchWords.some(w => dn.includes(w));
+          const fuzzyMatch = matchWords.every(w => fuzzyIncludes(dn, w));
+          return exactMatch || fuzzyMatch;
         })
         .map((item: NominatimItem) => ({
           displayName: normalizeAddress(item.display_name),
