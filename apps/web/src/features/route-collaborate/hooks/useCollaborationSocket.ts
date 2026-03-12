@@ -7,17 +7,46 @@ import { pointsApi } from '@/entities/route-point/api/points.api';
 import { useCollaborateStore } from '../model/collaborate.store';
 import type { Collaborator } from '../model/collaborate.store';
 
+import { tripsApi } from '@/entities/trip/api/trips.api';
+
 export function useCollaborationSocket(tripId: string) {
   const { setOnline, addCollaborator, removeCollaborator } = useCollaborateStore();
-  const { addPoint, updatePoint, removePoint, setPoints } = useTripStore();
+  const { addPoint, updatePoint, removePoint, setPoints, setCurrentTrip } = useTripStore();
 
   useEffect(() => {
     if (!tripId || tripId.startsWith('guest-')) return;
 
-    pointsApi.getAll(tripId).then(setPoints).catch(console.error);
+    const loadTripData = () => {
+      // Load actual trip and points concurrently to avoid partial state updates
+      Promise.all([tripsApi.getOne(tripId), pointsApi.getAll(tripId)])
+        .then(([trip, points]) => {
+          if (trip && points) {
+            useTripStore.setState((state) => ({
+              ...state,
+              currentTrip: { ...trip, points },
+              isDirty: false,
+            }));
+          }
+        })
+        .catch(console.error);
+    };
+
+    loadTripData();
 
     const socket = getSocket();
     socket.emit('join:trip', { trip_id: tripId });
+
+    socket.on('connect', () => {
+      loadTripData();
+      socket.emit('join:trip', { trip_id: tripId });
+    });
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadTripData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     socket.on('presence:update', ({ onlineUserIds }: { onlineUserIds: string[] }) => {
       setOnline(onlineUserIds);
@@ -62,7 +91,9 @@ export function useCollaborationSocket(tripId: string) {
     });
 
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       socket.emit('leave:trip', { trip_id: tripId });
+      socket.off('connect');
       socket.off('presence:update');
       socket.off('collaborator:added');
       socket.off('collaborator:removed');

@@ -1287,6 +1287,14 @@ export function PlannerPage() {
           budget: currentTrip?.budget || null,
           isActive: isActiveRoute,
         });
+        import('@/shared/socket/socket-client').then(({ getSocket }) => {
+          getSocket().emit('trip:update', {
+            trip_id: tripId,
+            title: autoTitle,
+            budget: currentTrip?.budget || null,
+            isActive: isActiveRoute,
+          });
+        });
         setSaved();
         toast.success('Предыдущий маршрут сохранен', { id: 'planner-status' });
       } catch {
@@ -1848,6 +1856,12 @@ export function PlannerPage() {
                         isActive: isActiveRoute,
                       });
                       updateCurrentTrip(updated);
+                      import('@/shared/socket/socket-client').then(({ getSocket }) => {
+                        getSocket().emit('trip:update', {
+                          trip_id: tripId,
+                          ...updated,
+                        });
+                      });
                       setSaved();
                       toast.success('Маршрут сохранён');
                     } catch {
@@ -1919,6 +1933,10 @@ export function PlannerPage() {
                           <Button
                             onClick={() => {
                               useTripStore.getState().setPoints(previousPoints);
+                              if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+                                const orderedIds = previousPoints.map((p) => p.id);
+                                crud.reorder(orderedIds).catch(console.error);
+                              }
                               setPreviousPoints(null);
                               setOptimizationResults({ status: 'idle', metrics: null });
                               setLastOptimizedPoints(null);

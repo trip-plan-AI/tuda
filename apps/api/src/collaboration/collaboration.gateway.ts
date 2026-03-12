@@ -107,12 +107,13 @@ export class CollaborationGateway
   @SubscribeMessage('point:add')
   async handlePointAdd(
     @ConnectedSocket() _client: TypedSocket,
-    @MessageBody() data: CreatePointDto & { trip_id: string },
+    @MessageBody() data: { trip_id: string; point: any },
   ) {
     await this.checkAccess(_client.data.userId, data.trip_id);
-    const { trip_id, ...dto } = data;
-    const point = await this.pointsService.create(trip_id, dto);
-    this.server.to(`trip_${trip_id}`).emit('point:added', { point });
+    // DB already saved via REST — just broadcast to other collaborators
+    _client
+      .to(`trip_${data.trip_id}`)
+      .emit('point:added', { point: data.point });
   }
 
   @SubscribeMessage('point:move')
@@ -138,8 +139,8 @@ export class CollaborationGateway
     @MessageBody() data: { trip_id: string; point_id: string },
   ) {
     await this.checkAccess(_client.data.userId, data.trip_id);
-    await this.pointsService.remove(data.point_id, data.trip_id);
-    this.server
+    // DB already saved via REST — just broadcast to other collaborators
+    _client
       .to(`trip_${data.trip_id}`)
       .emit('point:deleted', { point_id: data.point_id });
   }

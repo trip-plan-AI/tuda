@@ -23,6 +23,8 @@ export function usePointCrud(tripId: string | undefined) {
         // Real trip: save to backend to get a proper UUID
         const savedPoint = await pointsApi.create(tripId, payload);
         addPoint(savedPoint as any);
+        // Broadcast to collaborators
+        getSocket().emit('point:add', { trip_id: tripId, point: savedPoint });
         return savedPoint;
       }
       // Guest trip: local-only with temp ID
@@ -50,6 +52,7 @@ export function usePointCrud(tripId: string | undefined) {
       removePoint(id);
       if (isRealTrip) {
         await pointsApi.remove(tripId, id);
+        getSocket().emit('point:delete', { trip_id: tripId, point_id: id });
       }
     },
     [tripId, isRealTrip, removePoint],
