@@ -259,8 +259,11 @@ export function ProfilePage() {
   useEffect(() => {
     if (activeRoute && currentTrip?.id !== activeRoute.id) {
       setCurrentTrip(activeRoute);
+      if (activeRoute.points) {
+        setPoints(activeRoute.points, false);
+      }
     }
-  }, [activeRoute?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeRoute?.id, activeRoute?.points, setCurrentTrip, setPoints]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Prefer currentTrip.points (kept live by WS) when viewing the active route
   const displayedActiveRoute = activeRoute
@@ -486,7 +489,10 @@ export function ProfilePage() {
               );
               const storeState = useTripStore.getState();
               if (storeState.currentTrip?.id === routeId) {
-                storeState.updateCurrentTrip({ ...updatedTrip, points: updatedPoints });
+                storeState.updateCurrentTrip(updatedTrip);
+                if (updatedPoints) {
+                  storeState.setPoints(updatedPoints, false);
+                }
               }
             }
           })
