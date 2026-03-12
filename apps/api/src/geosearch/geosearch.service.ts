@@ -144,21 +144,23 @@ export class GeosearchService {
     const cached = await this.redis.get(cacheKey);
     if (cached) return this.applyProximity(JSON.parse(cached), userLat, userLon);
 
-    // Tier 0 (DB) + Tier 2: DaData (RU) + Nominatim WW параллельно, timeout 800ms
-    const [tier0Res, dadataRes, nominatimWwRes] = await Promise.allSettled([
+    // Tier 0 (DB) + Tier 2: DaData (RU) + Nominatim RU параллельно, timeout 800ms
+    const [tier0Res, dadataRes, nominatimRuRes] = await Promise.allSettled([
       this.withTimeout(this.popularDestinations.search(normalized), 800),
       this.dadataApiKey
         ? this.withTimeout(this.getDaDataSuggestions(normalized), 800)
         : Promise.resolve(null),
-      this.withTimeout(this.getNominatimSuggestions(normalized, undefined, 'ru,en', false), 800),
+      this.withTimeout(this.getNominatimSuggestions(normalized, 'ru', 'ru,en', false), 800),
     ]);
 
     const tier0Items = tier0Res.status === 'fulfilled' ? (tier0Res.value ?? []) : [];
     const dadataItems = dadataRes.status === 'fulfilled' ? (dadataRes.value ?? []) : [];
-    const nominatimWwItems = nominatimWwRes.status === 'fulfilled' ? (nominatimWwRes.value ?? []) : [];
+    const nominatimRuItems = nominatimRuRes.status === 'fulfilled' ? (nominatimRuRes.value ?? []) : [];
+
+    console.log(`[GeosearchService] suggest("${normalized}"): tier0=${tier0Items.length}, dadata=${dadataItems.length}, nominatimRu=${nominatimRuItems.length}`);
 
     // Score сначала — чтобы dedup оставлял наиболее релевантный результат в ячейке
-    const allScored = [...tier0Items, ...dadataItems, ...nominatimWwItems]
+    const allScored = [...tier0Items, ...dadataItems, ...nominatimRuItems]
       .map(item => {
         // Tier0 items имеют score из DB; если он невалидный (NaN/null) — пересчитываем
         if ('score' in item && typeof (item as any).score === 'number' && isFinite((item as any).score)) {
