@@ -404,24 +404,29 @@ export class GeosearchService {
         ? data.suggestions
         : [];
 
-      const matchWords = yo(q.toLowerCase()).split(/\s+/).filter(w => w.length >= 3);
       return suggestions
         .filter((item: any) => {
           if (!item.data.geo_lon || !item.data.geo_lat) return false;
-          // Проверяем только географические поля (city, settlement, region, street)
-          // чтобы не матчить названия бизнесов ("ресторан Токио в Москве")
           const d = item.data;
-          // city/settlement/region/area — fuzzy includes (опечатки в названии города)
-          const geoFields = [
-            d.city, d.settlement, d.region, d.area,
-          ].filter(Boolean).map((f: string) => yo(f.toLowerCase()));
-          // street — fuzzy совпадение (DaData сам делает fuzzy, мы не должны его блокировать)
-          // "париж" не матчит "Парижской Коммуны": lev("парижской", "париж") = 4 > 1 → false ✓
-          const streetField = d.street ? yo(d.street.toLowerCase()) : '';
-          return matchWords.length === 0 || matchWords.some(w =>
-            geoFields.some((field: string) => fuzzyIncludes(field, w)) ||
-            (streetField && fuzzyIncludes(streetField, w)),
-          );
+
+          // DaData уже делает fuzzy поиск на своей стороне, поэтому если он вернул результат,
+          // это значит он релевантен. Не блокируем по жесткой фильтрации гео-полей.
+          // Просто убеждаемся, что это не чисто amenity/business результат
+          const value = item.value.toLowerCase();
+          const hasCity = d.city || d.settlement;
+          const hasStreet = d.street;
+
+          // Если это город/поселок - берем
+          if (hasCity) return true;
+
+          // Если это улица - проверяем по более мягким критериям
+          if (hasStreet) {
+            // Не берем если это явно business/amenity (кафе, магазин, офис)
+            const businessKeywords = /(кафе|ресторан|магазин|офис|салон|клиника|аптека|банк|школа|детский|кинотеатр)/i;
+            return !businessKeywords.test(value);
+          }
+
+          return true;
         })
         .map((item: any) => ({
           displayName: item.value,
