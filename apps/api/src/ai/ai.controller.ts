@@ -4,14 +4,20 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  MessageEvent,
   NotFoundException,
   Param,
   Logger,
   Post,
   BadRequestException,
+  Req,
+  Sse,
   UnprocessableEntityException,
   UseGuards,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import type { Request } from 'express';
+import { Observable } from 'rxjs';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AiSessionsService } from './ai-sessions.service';
@@ -21,9 +27,32 @@ import { OrchestratorService } from './pipeline/orchestrator.service';
 import { ProviderSearchService } from './pipeline/provider-search.service';
 import { SchedulerService } from './pipeline/scheduler.service';
 import { SemanticFilterService } from './pipeline/semantic-filter.service';
+import { IntentRouterService } from './pipeline/intent-router.service';
+import { PolicyService } from './pipeline/policy.service';
+import { LogicalIdFilterService } from './pipeline/logical-id-filter.service';
+import { VectorPrefilterService } from './pipeline/vector-prefilter.service';
+import { DeterministicPlannerService } from './pipeline/deterministic-planner.service';
+import { YandexBatchRefinementService } from './pipeline/yandex-batch-refinement.service';
 import type { SessionMessage } from './types/pipeline.types';
 import type { RoutePlan } from './types/pipeline.types';
 import type { ParsedIntent } from './types/pipeline.types';
+import type {
+  DeterministicPlannerShadowMeta,
+  IntentRouterDecision,
+  LogicalIdShadowMeta,
+  MassCollectionShadowMeta,
+  PipelineStatus,
+  PlannerVersion,
+  PlanResponseContractMeta,
+  PolicySnapshot,
+  VectorPrefilterShadowMeta,
+  YandexBatchRefinementDiagnostics,
+} from './types/pipeline.types';
+import type {
+  HeartbeatSseEvent,
+  PlanStartedSseEvent,
+  PlannerSseEvent,
+} from './types/ai-stream-event.types';
 import { TripsService } from '../trips/trips.service';
 import { PointsService } from '../points/points.service';
 
@@ -42,6 +71,77 @@ export class AiController {
   private readonly needCityMessage =
     'Недостаточно данных для построения маршрута. Укажите, пожалуйста, город.';
 
+  private parseBooleanEnv(value: string | undefined): boolean {
+    if (!value) return false;
+    const normalized = value.trim().toLowerCase();
+    return ['1', 'true', 'yes', 'on'].includes(normalized);
+  }
+
+  private isPlannerContractFieldsEnabled(): boolean {
+    return this.parseBooleanEnv(process.env.FF_PLANNER_V2_CONTRACT_FIELDS);
+  }
+
+  private isIntentRouterV2Enabled(): boolean {
+    return this.parseBooleanEnv(process.env.FF_INTENT_ROUTER_V2);
+  }
+
+  private isPolicyCalcV2Enabled(): boolean {
+    return this.parseBooleanEnv(process.env.FF_POLICY_CALC_V2);
+  }
+
+  private isLogicalIdFilterV2Enabled(): boolean {
+    return this.parseBooleanEnv(process.env.FF_LOGICAL_ID_FILTER_V2);
+  }
+
+  private isVectorPrefilterRedisEnabled(): boolean {
+    return this.parseBooleanEnv(process.env.FF_VECTOR_PREFILTER_REDIS);
+  }
+
+  private isDeterministicPlannerV2Enabled(): boolean {
+    return this.parseBooleanEnv(process.env.FF_DETERMINISTIC_PLANNER_V2);
+  }
+
+  private isMassCollectionV2Enabled(): boolean {
+    return this.parseBooleanEnv(process.env.FF_MASS_COLLECTION_V2);
+  }
+
+  private isPlannerSseEnabled(): boolean {
+    return this.parseBooleanEnv(process.env.FF_PLANNER_SSE_ENABLED);
+  }
+
+  private isYandexBatchRefinementEnabled(): boolean {
+    return this.parseBooleanEnv(process.env.FF_YANDEX_BATCH_REFINEMENT);
+  }
+
+  private resolveVectorTopK(): number {
+    const fallbackTopK = 200;
+    const rawValue = Number.parseInt(process.env.AI_VECTOR_TOPK ?? '', 10);
+
+    if (!Number.isFinite(rawValue) || rawValue <= 0) {
+      return fallbackTopK;
+    }
+
+    return rawValue;
+  }
+
+  private resolvePlannerVersion(): PlannerVersion {
+    const plannerV2Enabled = this.parseBooleanEnv(
+      process.env.FF_PLANNER_V2_ENABLED,
+    );
+    return plannerV2Enabled ? 'v2' : 'v2-shadow';
+  }
+
+  private buildPipelineStatus(fallbacks: string[]): PipelineStatus {
+    const hasFallbacks = fallbacks.length > 0;
+
+    return {
+      intent: 'ok',
+      provider: hasFallbacks ? 'fallback' : 'ok',
+      semantic: hasFallbacks ? 'fallback' : 'ok',
+      scheduler: 'ok',
+    };
+  }
+
   constructor(
     private readonly aiSessionsService: AiSessionsService,
     private readonly tripsService: TripsService,
@@ -50,6 +150,12 @@ export class AiController {
     private readonly providerSearchService: ProviderSearchService,
     private readonly semanticFilterService: SemanticFilterService,
     private readonly schedulerService: SchedulerService,
+    private readonly intentRouterService: IntentRouterService,
+    private readonly policyService: PolicyService,
+    private readonly logicalIdFilterService: LogicalIdFilterService,
+    private readonly vectorPrefilterService: VectorPrefilterService,
+    private readonly deterministicPlannerService: DeterministicPlannerService,
+    private readonly yandexBatchRefinementService: YandexBatchRefinementService,
   ) {}
 
   private isNeedCityError(error: unknown): boolean {
@@ -256,6 +362,15 @@ ${JSON.stringify(points)}
     const history = session.messages;
     const llmContext = history.slice(-10);
     const orchestratorStart = Date.now();
+    const intentRouterEnabled = this.isIntentRouterV2Enabled();
+
+    let intentRouterDecision: IntentRouterDecision | null = null;
+    if (intentRouterEnabled) {
+      intentRouterDecision = this.intentRouterService.route(
+        dto.user_query,
+        llmContext,
+      );
+    }
 
     let intent: ParsedIntent;
     try {
@@ -296,26 +411,134 @@ ${JSON.stringify(points)}
     }
 
     const orchestratorDuration = Date.now() - orchestratorStart;
+    const policyCalcEnabled = this.isPolicyCalcV2Enabled();
+    const plannerVersion = this.resolvePlannerVersion();
+    const policySnapshot: PolicySnapshot | null = policyCalcEnabled
+      ? this.policyService.calculatePolicySnapshot(
+          intent,
+          llmContext,
+          plannerVersion,
+        )
+      : null;
 
     const providerStart = Date.now();
     const fallbacks: string[] = [];
-    const rawPoi = await this.providerSearchService.fetchAndFilter(
+    const providerResult = await this.providerSearchService.fetchAndFilter(
       intent,
       fallbacks,
     );
+    const rawPoi = providerResult.pois;
+    const massCollectionShadowMeta: MassCollectionShadowMeta | null =
+      providerResult.shadowDiagnostics ?? null;
     const providerDuration = Date.now() - providerStart;
 
+    const vectorPrefilterRedisEnabled = this.isVectorPrefilterRedisEnabled();
+    let vectorPrefilterShadowMeta: VectorPrefilterShadowMeta | null = null;
+
+    if (vectorPrefilterRedisEnabled) {
+      const personaSummary =
+        policySnapshot?.user_persona_summary ?? dto.user_query;
+      vectorPrefilterShadowMeta =
+        await this.vectorPrefilterService.runShadowPrefilter(
+          personaSummary,
+          rawPoi,
+          this.resolveVectorTopK(),
+        );
+    }
+
+    const logicalIdFilterEnabled = this.isLogicalIdFilterV2Enabled();
+    let logicalIdShadowMeta: LogicalIdShadowMeta | null = null;
+
+    if (logicalIdFilterEnabled) {
+      const enrichedWithLogicalIds =
+        this.logicalIdFilterService.attachLogicalIds(rawPoi, intent.city);
+      const duplicateGroups =
+        this.logicalIdFilterService.analyzeDuplicatesByLogicalId(
+          enrichedWithLogicalIds,
+        );
+
+      logicalIdShadowMeta = {
+        total_candidates: enrichedWithLogicalIds.length,
+        duplicates_groups: duplicateGroups.length,
+        duplicates_total: duplicateGroups.reduce(
+          (sum, group) => sum + group.count,
+          0,
+        ),
+      };
+    }
+
     const semanticStart = Date.now();
-    const filteredPoi = await this.semanticFilterService.select(
+    const selected = await this.semanticFilterService.select(
       rawPoi,
       intent,
       fallbacks,
     );
+
+    const yandexBatchRefinementEnabled = this.isYandexBatchRefinementEnabled();
+    const personaSummary =
+      policySnapshot?.user_persona_summary ?? dto.user_query;
+    let selectedForScheduler = selected;
+    let yandexBatchRefinementDiagnostics: YandexBatchRefinementDiagnostics | null =
+      null;
+
+    if (yandexBatchRefinementEnabled) {
+      try {
+        const refinementResult =
+          await this.yandexBatchRefinementService.refineSelectedInBatches(
+            selected,
+            personaSummary,
+            { intent },
+          );
+        selectedForScheduler = refinementResult.refined;
+        yandexBatchRefinementDiagnostics = refinementResult.diagnostics;
+      } catch (error) {
+        const reason =
+          error instanceof Error && typeof error.message === 'string'
+            ? error.message
+            : 'UNKNOWN';
+        fallbacks.push(`YANDEX_BATCH_REFINEMENT_FAILED:${reason}`);
+        yandexBatchRefinementDiagnostics = {
+          batch_count: 0,
+          failed_batches: 1,
+          fallback_reasons: [`service_error:${reason}`],
+        };
+      }
+    }
+
     const semanticDuration = Date.now() - semanticStart;
 
     const schedulerStart = Date.now();
-    const routePlan = this.schedulerService.buildPlan(filteredPoi, intent);
+    const routePlan = this.schedulerService.buildPlan(
+      selectedForScheduler,
+      intent,
+    );
     const schedulerDuration = Date.now() - schedulerStart;
+
+    const deterministicPlannerEnabled = this.isDeterministicPlannerV2Enabled();
+    let deterministicPlannerShadowMeta: DeterministicPlannerShadowMeta | null =
+      null;
+
+    if (deterministicPlannerEnabled) {
+      try {
+        deterministicPlannerShadowMeta = {
+          status: 'ok',
+          input_hash: this.deterministicPlannerService.buildInputHash(
+            intent,
+            selectedForScheduler,
+          ),
+          decision_summary:
+            this.deterministicPlannerService.buildDecisionLogSummary(routePlan),
+          deterministic_mode: 'shadow',
+        };
+      } catch {
+        deterministicPlannerShadowMeta = {
+          status: 'fallback',
+          input_hash: null,
+          decision_summary: null,
+          deterministic_mode: 'shadow',
+        };
+      }
+    }
 
     const newMessages: SessionMessage[] = [
       ...history,
@@ -338,29 +561,155 @@ ${JSON.stringify(points)}
       });
     }
 
+    const baseMeta = {
+      parsed_intent: intent,
+      steps_duration_ms: {
+        orchestrator: orchestratorDuration,
+        yandex_fetch: providerDuration, // Для обратной совместимости клиента оставляем ключ
+        semantic_filter: semanticDuration,
+        scheduler: schedulerDuration,
+        total:
+          orchestratorDuration +
+          providerDuration +
+          semanticDuration +
+          schedulerDuration,
+      },
+      poi_counts: {
+        yandex_raw: rawPoi.length, // Оставляем старый ключ
+        after_semantic: selected.length,
+      },
+      fallbacks_triggered: fallbacks,
+    };
+
+    const contractMeta: PlanResponseContractMeta | Record<string, never> =
+      this.isPlannerContractFieldsEnabled()
+        ? {
+            planner_version: plannerVersion,
+            pipeline_status: this.buildPipelineStatus(fallbacks),
+          }
+        : {};
+
+    const policyMeta =
+      this.isPlannerContractFieldsEnabled() && policySnapshot
+        ? { policy_snapshot: policySnapshot }
+        : {};
+
+    const intentRouterMeta =
+      this.isPlannerContractFieldsEnabled() && intentRouterDecision
+        ? { intent_router: intentRouterDecision }
+        : {};
+
+    const logicalIdMeta =
+      this.isPlannerContractFieldsEnabled() &&
+      logicalIdFilterEnabled &&
+      logicalIdShadowMeta
+        ? { logical_id_shadow: logicalIdShadowMeta }
+        : {};
+
+    const vectorPrefilterMeta =
+      this.isPlannerContractFieldsEnabled() &&
+      vectorPrefilterRedisEnabled &&
+      vectorPrefilterShadowMeta
+        ? { vector_prefilter_shadow: vectorPrefilterShadowMeta }
+        : {};
+
+    const deterministicPlannerMeta =
+      this.isPlannerContractFieldsEnabled() &&
+      deterministicPlannerEnabled &&
+      deterministicPlannerShadowMeta
+        ? { deterministic_planner_shadow: deterministicPlannerShadowMeta }
+        : {};
+
+    const massCollectionMeta =
+      this.isPlannerContractFieldsEnabled() &&
+      this.isMassCollectionV2Enabled() &&
+      massCollectionShadowMeta
+        ? { mass_collection_shadow: massCollectionShadowMeta }
+        : {};
+
+    const yandexBatchRefinementMeta =
+      this.isPlannerContractFieldsEnabled() &&
+      yandexBatchRefinementEnabled &&
+      yandexBatchRefinementDiagnostics
+        ? {
+            yandex_batch_refinement: {
+              status:
+                yandexBatchRefinementDiagnostics.failed_batches > 0
+                  ? 'fallback'
+                  : 'ok',
+              ...yandexBatchRefinementDiagnostics,
+            },
+          }
+        : {};
+
     return {
       session_id: session.id,
       route_plan: routePlan,
       meta: {
-        parsed_intent: intent,
-        steps_duration_ms: {
-          orchestrator: orchestratorDuration,
-          yandex_fetch: providerDuration, // Для обратной совместимости клиента оставляем ключ
-          semantic_filter: semanticDuration,
-          scheduler: schedulerDuration,
-          total:
-            orchestratorDuration +
-            providerDuration +
-            semanticDuration +
-            schedulerDuration,
-        },
-        poi_counts: {
-          yandex_raw: rawPoi.length, // Оставляем старый ключ
-          after_semantic: filteredPoi.length,
-        },
-        fallbacks_triggered: fallbacks,
+        ...baseMeta,
+        ...contractMeta,
+        ...intentRouterMeta,
+        ...policyMeta,
+        ...logicalIdMeta,
+        ...vectorPrefilterMeta,
+        ...deterministicPlannerMeta,
+        ...massCollectionMeta,
+        ...yandexBatchRefinementMeta,
       },
     };
+  }
+
+  @Sse('plan/stream')
+  planStream(@Req() req: Request): Observable<MessageEvent> {
+    if (!this.isPlannerSseEnabled()) {
+      throw new NotFoundException('Not Found');
+    }
+
+    const requestId = randomUUID();
+    const plannerVersion = this.resolvePlannerVersion();
+    const heartbeatIntervalMs = 10_000;
+
+    return new Observable<MessageEvent>((subscriber) => {
+      const startedEvent: PlanStartedSseEvent = {
+        event: 'plan_started',
+        data: {
+          request_id: requestId,
+          planner_version: plannerVersion,
+        },
+      };
+
+      subscriber.next({
+        type: startedEvent.event,
+        data: startedEvent.data,
+      } satisfies PlannerSseEvent);
+
+      const intervalId = setInterval(() => {
+        const heartbeatEvent: HeartbeatSseEvent = {
+          event: 'heartbeat',
+          data: {
+            request_id: requestId,
+            timestamp: new Date().toISOString(),
+          },
+        };
+
+        subscriber.next({
+          type: heartbeatEvent.event,
+          data: heartbeatEvent.data,
+        } satisfies PlannerSseEvent);
+      }, heartbeatIntervalMs);
+
+      const handleClose = () => {
+        clearInterval(intervalId);
+        subscriber.complete();
+      };
+
+      req.on('close', handleClose);
+
+      return () => {
+        clearInterval(intervalId);
+        req.off('close', handleClose);
+      };
+    });
   }
 
   @Post('sessions/:id/apply')
