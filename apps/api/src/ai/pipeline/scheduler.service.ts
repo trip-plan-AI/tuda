@@ -134,30 +134,6 @@ export class SchedulerService {
       );
       let dayNonFoodPoints = 0;
 
-      const getNearestCandidate = (
-        candidates: FilteredPoi[],
-        fromPoi: FilteredPoi | undefined,
-      ): FilteredPoi | undefined => {
-        if (!fromPoi || candidates.length === 0) return candidates[0];
-
-        let nearest = candidates[0];
-        let minDistance = Infinity;
-
-        for (const candidate of candidates) {
-          const dist = this.haversineKm(
-            fromPoi.coordinates.lat,
-            fromPoi.coordinates.lon,
-            candidate.coordinates.lat,
-            candidate.coordinates.lon,
-          );
-          if (dist < minDistance) {
-            minDistance = dist;
-            nearest = candidate;
-          }
-        }
-        return nearest;
-      };
-
       const tryAddPoint = (poi: FilteredPoi, customStart?: number): boolean => {
         const lastPoi =
           points.length > 0
@@ -287,12 +263,13 @@ export class SchedulerService {
           continue;
         }
 
-        // Выбираем географически ближайшую точку
+        // TRI-108-5: Use geographic optimization to minimize backtracking
         const lastPoi =
           points.length > 0
             ? (points[points.length - 1].poi as FilteredPoi)
             : undefined;
-        const next = getNearestCandidate(validCandidates, lastPoi);
+        const optimizedOrder = this.optimizeRouteOrder(validCandidates, lastPoi);
+        const next = optimizedOrder[0];
 
         if (!next || !tryAddPoint(next)) {
           break;
@@ -425,5 +402,80 @@ export class SchedulerService {
       Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
 
     return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  // TRI-108-5: Geographic clustering for route optimization
+  private clusterPoisByZone(pois: FilteredPoi[]): Map<string, FilteredPoi[]> {
+    const clusters = new Map<string, FilteredPoi[]>();
+
+    for (const poi of pois) {
+      // Create zone key: round coordinates to 0.1 degree (~11km) grid
+      const latZone = Math.round(poi.coordinates.lat * 10) / 10;
+      const lonZone = Math.round(poi.coordinates.lon * 10) / 10;
+      const zoneKey = `${latZone},${lonZone}`;
+
+      if (!clusters.has(zoneKey)) {
+        clusters.set(zoneKey, []);
+      }
+      clusters.get(zoneKey)!.push(poi);
+    }
+
+    return clusters;
+  }
+
+  // TRI-108-5: Sort POIs to minimize backtracking using nearest-neighbor with zone awareness
+  private optimizeRouteOrder(candidates: FilteredPoi[], lastPoi?: FilteredPoi): FilteredPoi[] {
+    if (candidates.length === 0) return [];
+    if (candidates.length === 1) return candidates;
+
+    const clusters = this.clusterPoisByZone(candidates);
+    const clusterCenters = Array.from(clusters.entries()).map(([key, pois]) => {
+      const avgLat = pois.reduce((sum, p) => sum + p.coordinates.lat, 0) / pois.length;
+      const avgLon = pois.reduce((sum, p) => sum + p.coordinates.lon, 0) / pois.length;
+      return { key, lat: avgLat, lon: avgLon, pois };
+    });
+
+    // Sort clusters by proximity to last position
+    let currentLat = lastPoi?.coordinates.lat ?? 0;
+    let currentLon = lastPoi?.coordinates.lon ?? 0;
+
+    const sortedClusters: typeof clusterCenters = [];
+    const visitedKeys = new Set<string>();
+
+    // Greedy TSP: visit nearest unvisited cluster
+    while (visitedKeys.size < clusterCenters.length) {
+      let nearestCluster = null;
+      let minDistance = Infinity;
+
+      for (const cluster of clusterCenters) {
+        if (visitedKeys.has(cluster.key)) continue;
+        const dist = this.haversineKm(currentLat, currentLon, cluster.lat, cluster.lon);
+        if (dist < minDistance) {
+          minDistance = dist;
+          nearestCluster = cluster;
+        }
+      }
+
+      if (nearestCluster) {
+        sortedClusters.push(nearestCluster);
+        visitedKeys.add(nearestCluster.key);
+        currentLat = nearestCluster.lat;
+        currentLon = nearestCluster.lon;
+      }
+    }
+
+    // Flatten clusters into ordered POI list
+    const optimized: FilteredPoi[] = [];
+    for (const cluster of sortedClusters) {
+      // Within cluster, sort by proximity to cluster center
+      const sortedPois = cluster.pois.sort((a, b) => {
+        const distA = this.haversineKm(cluster.lat, cluster.lon, a.coordinates.lat, a.coordinates.lon);
+        const distB = this.haversineKm(cluster.lat, cluster.lon, b.coordinates.lat, b.coordinates.lon);
+        return distA - distB;
+      });
+      optimized.push(...sortedPois);
+    }
+
+    return optimized;
   }
 }
