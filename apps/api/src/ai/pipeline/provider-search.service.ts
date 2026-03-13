@@ -8,6 +8,7 @@ import type { PoiItem } from '../types/poi.types';
 import { KudagoClientService } from './kudago-client.service';
 import { OverpassClientService } from './overpass-client.service';
 import { LlmClientService } from './llm-client.service';
+import { GeosearchService } from '../geosearch/geosearch.service';
 import { randomUUID } from 'crypto';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class ProviderSearchService {
     private readonly kudagoClient: KudagoClientService,
     private readonly overpassClient: OverpassClientService,
     private readonly llmClientService: LlmClientService,
+    private readonly geosearch: GeosearchService,
   ) {}
 
   private buildEmptyProviderStat(
@@ -146,13 +148,9 @@ export class ProviderSearchService {
           `[ProviderSearch] TRI-108-6 AI FALLBACK: Only ${allFood} food POIs found. Generating AI recommendations...`,
         );
         try {
-          const allCurrentPois = [...kudagoRaw, ...overpassRaw, ...photonRaw];
-          aiGeneratedFood = await this.generateFoodVenuesWithAI(
-            intent,
-            allCurrentPois,
-          );
+          aiGeneratedFood = await this.generateFoodVenuesWithAI(intent);
           this.logger.log(
-            `[ProviderSearch] ✨ AI generated ${aiGeneratedFood.length} food venues`,
+            `[ProviderSearch] ✨ AI generated and geocoded ${aiGeneratedFood.length} food venues`,
           );
           fallbacks.push('AI_GENERATED_FOOD_RECOMMENDATIONS');
         } catch (error: unknown) {
@@ -523,10 +521,9 @@ export class ProviderSearchService {
     return results;
   }
 
-  // TRI-108-6 Extended: Generate AI-recommended food venues based on user preferences
+  // TRI-108-6 Extended: Generate AI-recommended food venues based on user preferences + geocode them
   private async generateFoodVenuesWithAI(
     intent: ParsedIntent,
-    existingPois: PoiItem[] = [],
   ): Promise<PoiItem[]> {
     const preferences = intent.preferences_text.toLowerCase();
 
@@ -639,38 +636,59 @@ Return ONLY valid JSON (no markdown):
         `[AI_FOOD] Generated ${restaurants.length} recommendations for ${intent.city}`,
       );
 
-      return restaurants.map((r, idx) => {
-        // Map AI price_segment to valid PriceSegment values
-        let priceSegment: 'free' | 'budget' | 'mid' | 'premium' = 'mid';
-        if (r.price_segment === 'budget') priceSegment = 'budget';
-        if (r.price_segment === 'luxury' || r.price_segment === 'premium')
-          priceSegment = 'premium';
+      // TRI-108-6: Geocode each AI restaurant to get real coordinates
+      const results: PoiItem[] = [];
 
-        // Use existing POI coords as base, or fallback to reasonable defaults
-        const baseLat =
-          existingPois.length > 0
-            ? existingPois[0].coordinates.lat
-            : 51.5; // Default to ~London latitude if no reference
-        const baseLon =
-          existingPois.length > 0
-            ? existingPois[0].coordinates.lon
-            : 0; // Default to Prime Meridian if no reference
+      for (const r of restaurants) {
+        try {
+          const query = `${r.name}, ${intent.city}`;
+          this.logger.log(`[AI_FOOD_GEOCODE] Searching: "${query}"`);
 
-        const lat = baseLat + (Math.random() - 0.5) * 0.05; // ±0.025 degrees (~2.8km)
-        const lon = baseLon + (Math.random() - 0.5) * 0.05;
+          const suggestions = await this.geosearch.suggest(query);
 
-        return {
-          id: `ai-food-${intent.city.replace(/\s+/g, '-')}-${idx}`,
-          name: r.name,
-          address: `${intent.city}, ${r.cuisine} restaurant`,
-          category: 'restaurant' as const,
-          coordinates: { lat, lon },
-          price_segment: priceSegment,
-          rating: r.rating || 4.2,
-          website: undefined,
-          description: r.why_recommended,
-        };
-      });
+          if (suggestions && suggestions.length > 0) {
+            const best = suggestions[0];
+
+            // Map price_segment to valid PriceSegment
+            let priceSegment: 'free' | 'budget' | 'mid' | 'premium' = 'mid';
+            if (r.price_segment === 'budget') priceSegment = 'budget';
+            if (
+              r.price_segment === 'luxury' ||
+              r.price_segment === 'premium'
+            )
+              priceSegment = 'premium';
+
+            const poi: PoiItem = {
+              id: `ai-food-${intent.city.replace(/\s+/g, '-')}-${randomUUID().slice(0, 8)}`,
+              name: r.name,
+              address: best.address || query,
+              category: 'restaurant',
+              coordinates: {
+                lat: best.lat,
+                lon: best.lon,
+              },
+              price_segment: priceSegment,
+              rating: r.rating || 4.2,
+              website: undefined,
+            };
+
+            results.push(poi);
+            this.logger.log(
+              `[AI_FOOD_GEOCODE] ✅ ${r.name} → (${best.lat.toFixed(2)}, ${best.lon.toFixed(2)})`,
+            );
+          } else {
+            this.logger.warn(
+              `[AI_FOOD_GEOCODE] ⚠️ No geocoding results for "${query}"`,
+            );
+          }
+        } catch (error) {
+          this.logger.warn(
+            `[AI_FOOD_GEOCODE] Error: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+
+      return results;
     } catch (error: unknown) {
       const errorMsg =
         error instanceof Error ? error.message : String(error);
