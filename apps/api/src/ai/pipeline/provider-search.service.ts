@@ -51,6 +51,7 @@ export class ProviderSearchService {
       kudago: this.buildEmptyProviderStat('kudago'),
       overpass: this.buildEmptyProviderStat('overpass'),
       llm_fill: this.buildEmptyProviderStat('llm_fill'),
+      photon: this.buildEmptyProviderStat('photon'),
     };
 
     // 1) Сначала обращаемся к приоритетному источнику (KudaGo)
@@ -99,8 +100,42 @@ export class ProviderSearchService {
       );
     }
 
-    // 3) Объединяем и дедуплицируем
-    pois = [...kudagoRaw, ...overpassRaw];
+    // 3) TRI-108-6: If food focus detected and food POI count is low, search via Photon
+    const hasFoodFocus = intent.categories.some(
+      (cat) =>
+        /cafe|кафе|restaurant|ресторан|bar|бар|food|еда|coffee|кофе/i.test(cat),
+    );
+    const foodCount = [...kudagoRaw, ...overpassRaw].filter(
+      (p) => p.category === 'restaurant' || p.category === 'cafe',
+    ).length;
+
+    let photonRaw: PoiItem[] = [];
+    if (hasFoodFocus && foodCount < 2) {
+      this.logger.log(
+        `[ProviderSearch] TRI-108-6: Food focus detected but only ${foodCount} food POIs found. Searching Photon for food venues...`,
+      );
+      providerStats.photon = this.buildEmptyProviderStat('photon');
+      providerStats.photon.attempted = true;
+      try {
+        photonRaw = await this.searchPhotonForFood(intent.city, intent.radius_km);
+        providerStats.photon.raw_count = photonRaw.length;
+        providerStats.photon.used_count = photonRaw.length;
+        this.logger.log(
+          `[ProviderSearch] Photon returned ${photonRaw.length} food venues.`,
+        );
+        fallbacks.push('PHOTON_FOOD_SEARCH_SUPPLEMENT');
+      } catch (error: unknown) {
+        providerStats.photon.failed = true;
+        providerStats.photon.fail_reason =
+          error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `[ProviderSearch] Photon food search failed: ${providerStats.photon.fail_reason}`,
+        );
+      }
+    }
+
+    // 3a) Объединяем и дедуплицируем
+    pois = [...kudagoRaw, ...overpassRaw, ...photonRaw];
 
     // Если после объединения все еще мало POI, пробуем расширить радиус поиска Overpass
     if (pois.length < 3) {
@@ -366,5 +401,69 @@ export class ProviderSearchService {
           rating: p.rating ?? 4.0,
         };
       });
+  }
+
+  // TRI-108-6: Search Photon API for food venues (cafes, restaurants)
+  private async searchPhotonForFood(city: string): Promise<PoiItem[]> {
+    const results: PoiItem[] = [];
+
+    // Search for "кафе" and "ресторан" in the city
+    const queries = [`кафе ${city}`, `ресторан ${city}`];
+
+    for (const query of queries) {
+      try {
+        const url = new URL('https://photon.komoot.io/api/');
+        url.searchParams.set('q', query);
+        url.searchParams.set('limit', '10');
+        url.searchParams.set('lang', 'ru');
+
+        const response = await fetch(url.toString());
+
+        if (!response.ok) {
+          this.logger.warn(
+            `[Photon] Search failed for "${query}": HTTP ${response.status}`,
+          );
+          continue;
+        }
+
+        const data = (await response.json()) as any;
+        const features = data.features || [];
+
+        for (const feature of features) {
+          const props = feature.properties || {};
+          const coords = feature.geometry?.coordinates;
+
+          if (!coords || coords.length < 2) continue;
+
+          // Determine if it's a cafe or restaurant
+          const name = props.name || 'Unnamed Food Venue';
+          const amenity = props.amenity || '';
+
+          let category: 'cafe' | 'restaurant' = 'cafe';
+          if (/ресторан|rstoran|rest/i.test(name) || amenity === 'restaurant') {
+            category = 'restaurant';
+          }
+
+          const poi: PoiItem = {
+            id: `photon-${props.osm_id || randomUUID()}`,
+            name,
+            address: props.address || city,
+            category,
+            coordinates: { lat: coords[1], lon: coords[0] },
+            price_segment: 'mid',
+            rating: 4.2, // Default rating for Photon results
+            website: props.website || undefined,
+          };
+
+          results.push(poi);
+        }
+      } catch (error) {
+        this.logger.warn(
+          `[Photon] Search error for "${query}": ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    return results;
   }
 }
