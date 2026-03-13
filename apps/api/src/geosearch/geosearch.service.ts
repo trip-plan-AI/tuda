@@ -5,14 +5,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents */
 import { Injectable } from '@nestjs/common';
+import { transliterate } from 'transliteration';
 import { RedisService } from '../redis/redis.service';
 import { PopularDestinationsService } from './popular-destinations.service';
-
-interface YandexSuggestion {
-  title?: { text: string };
-  subtitle?: { text: string };
-  geometry?: { point: { lon: number; lat: number } };
-}
 
 interface NominatimItem {
   display_name: string;
@@ -122,14 +117,6 @@ export class GeosearchService {
   private readonly providerRequestTimestamps: Partial<
     Record<RouteProvider, number[]>
   > = {};
-
-  private get yandexApiKey() {
-    return (
-      process.env.YANDEX_SUGGEST_KEY ??
-      process.env.YANDEX_MAPS_API_KEY ??
-      process.env.NEXT_PUBLIC_YANDEX_GEOSUGGEST_KEY
-    );
-  }
 
   private get yandexGeosuggestApiKey() {
     return process.env.YANDEX_GEOSUGGEST_API_KEY;
@@ -295,38 +282,38 @@ export class GeosearchService {
       }
     }
 
-    // Tier 3: для русских запросов - Yandex Geosuggest(en) первым, иначе Photon → Yandex Maps
+    // Tier 3: Best Practice порядок → Photon → Nominatim EN → Yandex
     let tier3Results: Array<{ displayName: string; uri: string }> = [];
 
-    // Если русский запрос - сначала пробуем Yandex Geosuggest (для иностранных городов типа "Севилья")
-    if (isRussianQuery) {
-      const yandexGeoResults = await this.getYandexGeoSuggest(normalized);
-      if (yandexGeoResults && yandexGeoResults.length > 0) {
-        tier3Results = yandexGeoResults;
+    // 1️⃣ Photon (без транслита)
+    const photonResults = await this.getPhotonSuggestions(normalized);
+    if (photonResults && photonResults.length > 0) {
+      tier3Results = photonResults;
+    }
+
+    // 1b️⃣ Photon с трансли (для русских запросов)
+    if (tier3Results.length === 0 && isRussianQuery) {
+      const translitQuery = transliterate(normalized);
+      const photonTranslit = await this.getPhotonSuggestions(translitQuery);
+      if (photonTranslit && photonTranslit.length > 0) {
+        tier3Results = photonTranslit;
       }
     }
 
-    // Если Yandex не помог или не русский запрос - пробуем Photon
+    // 2️⃣ Nominatim EN (с трансли для русских)
     if (tier3Results.length === 0) {
-      const photonResults = await this.getPhotonSuggestions(normalized);
-      if (photonResults && photonResults.length > 0) {
-        tier3Results = photonResults;
+      const searchQuery = isRussianQuery ? transliterate(normalized) : normalized;
+      const nomResults = await this.getNominatimSuggestions(searchQuery, undefined, 'en', false);
+      if (nomResults && nomResults.length > 0) {
+        tier3Results = nomResults;
       }
     }
 
-    // Если ничего не нашли - пробуем Yandex Maps Suggest
+    // 3️⃣ Yandex (ТОЛЬКО как последняя попытка)
     if (tier3Results.length === 0) {
-      const yandexResults = await this.getYandexSuggestions(normalized);
+      const yandexResults = await this.getYandexGeoSuggest(normalized);
       if (yandexResults && yandexResults.length > 0) {
         tier3Results = yandexResults;
-      }
-    }
-
-    // Последний контур: Nominatim с английским языком
-    if (tier3Results.length === 0) {
-      const nominatimEnResults = await this.getNominatimSuggestions(normalized, undefined, 'en,ru', false);
-      if (nominatimEnResults && nominatimEnResults.length > 0) {
-        tier3Results = nominatimEnResults;
       }
     }
 
@@ -1057,54 +1044,6 @@ export class GeosearchService {
     }
 
     return null;
-  }
-
-  private async getYandexSuggestions(
-    q: string,
-  ): Promise<Array<{ displayName: string; uri: string }> | null> {
-    if (!this.yandexApiKey) return null;
-
-    try {
-      const res = await fetch('https://suggest-maps.yandex.ru/v1/suggest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: q,
-          ll: '55.7558,37.6173',
-          spn: '10,10',
-          limit: 10,
-          types: ['biz', 'geo'],
-          apikey: this.yandexApiKey,
-        }),
-      });
-
-      if (res.status === 429 || res.status === 403 || !res.ok) return null;
-
-      const data = await res.json();
-      const suggestions = Array.isArray(data?.suggestions)
-        ? data.suggestions
-        : [];
-
-      return suggestions
-        .map((item: YandexSuggestion) => {
-          const coords = item.geometry?.point;
-          if (!coords) return null;
-
-          const title = item.title?.text ?? '';
-          const subtitle = item.subtitle?.text ?? '';
-          return {
-            displayName: subtitle ? `${title}, ${subtitle}` : title,
-            uri: `ymapsbm1://geo?ll=${coords.lon},${coords.lat}&z=12`,
-          };
-        })
-        .filter(
-          (
-            item: { displayName: string; uri: string } | null,
-          ): item is { displayName: string; uri: string } => item !== null,
-        );
-    } catch {
-      return null;
-    }
   }
 
   private async getYandexGeoSuggest(
