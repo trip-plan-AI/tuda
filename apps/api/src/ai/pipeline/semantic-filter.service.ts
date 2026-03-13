@@ -241,14 +241,15 @@ export class SemanticFilterService {
       Math.max(minPlaces, intent.days * 6),
       pois.length,
     );
+    // TRI-108-1: Expanded food intent detection
     const preferences = intent.preferences_text.toLowerCase();
     const hasFoodFocus =
-      preferences.includes('гастро') ||
-      preferences.includes('ресторан') ||
-      preferences.includes('кофе') ||
-      preferences.includes('еда') ||
-      preferences.includes('дегустац');
+      /гастро|ресторан|кафе|с\s+кафе|кофе|еда|дегустац|гурман|булка|пирог|торт|сладкое|кулинарн|фудтур|по\s+кафе/i.test(
+        preferences,
+      );
+    const minRestaurants = hasFoodFocus ? 1 : Math.floor(intent.days / 2); // 1+ if food focus, else optional
     const maxRestaurants = intent.days * 3;
+    const minCafes = hasFoodFocus ? 1 : 0;
     const maxCafes = intent.days * 2;
 
     return `Мы собрали список из ${pois.length} мест вокруг. Выбери из них от ${minPlaces} до ${maxPlaces} самых интересных и подходящих мест для туристического маршрута.
@@ -260,12 +261,15 @@ export class SemanticFilterService {
 4. Категории: постарайся найти места, соответствующие категориям [${intent.categories.join(', ')}].
 5. Избегай категорий: [${intent.excluded_categories.join(', ')}].
 6. Выбирай разнообразные места, чтобы маршрут был интересным.
-7. Правила по питанию (anti-food-spam и гарантия еды):
+7. Правила по питанию (гарантия еды в маршруте):
    - Явный гастро-фокус в запросе: ${hasFoodFocus ? 'ДА' : 'НЕТ'}.
-   - Если гастро-фокуса НЕТ, соблюдай строгие рамки:
-     - category="restaurant": ОБЯЗАТЕЛЬНО не менее ${intent.days} (минимум 1 в день) и не более ${maxRestaurants} на весь маршрут;
-     - category="cafe": не более ${maxCafes} на весь маршрут.
-   - Если гастро-фокус ЕСТЬ, лимиты можно ослабить, но минимум ${intent.days} restaurant все равно обязателен.
+   - Обязательные минимумы:
+     - category="restaurant": не менее ${minRestaurants} (${hasFoodFocus ? '⚠️ FOOD INTENT DETECTED - приоритизируй рестораны' : 'опционально'})
+     - category="cafe": не менее ${minCafes} (${hasFoodFocus ? 'ДА - включай кафе' : 'опционально'})
+   - Максимальные лимиты:
+     - category="restaurant": не более ${maxRestaurants}
+     - category="cafe": не более ${maxCafes}
+   ${hasFoodFocus ? '   - ⭐ ПОЛЬЗОВАТЕЛЬ ИЩЕТ КАФЕ И ЕДУ - включи их в выбор обязательно!' : ''}
 
 Список мест (JSON):
 ${JSON.stringify(
