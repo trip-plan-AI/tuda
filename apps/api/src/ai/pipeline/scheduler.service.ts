@@ -7,17 +7,34 @@ import type {
 } from '../types/pipeline.types';
 import type { FilteredPoi } from '../types/poi.types';
 
+// TRI-108-2: Realistic visit durations (in minutes)
+// Museums/Galleries need 2-3 hours, not 1.5
 const VISIT_DURATION: Record<string, number> = {
-  museum: 90,
-  park: 60,
-  restaurant: 60,
-  cafe: 30,
-  attraction: 60,
-  shopping: 45,
-  entertainment: 120,
+  museum: 150,      // 2.5 hours (was 90)
+  gallery: 120,     // 2 hours
+  park: 90,         // 1.5 hours (was 60)
+  monument: 45,     // 45 min quick visit
+  restaurant: 75,   // 1.25 hours with drinks (was 60)
+  cafe: 45,         // 45 min coffee + snack (was 30)
+  attraction: 90,   // 1.5 hours (was 60)
+  shopping: 60,     // 1 hour (was 45)
+  entertainment: 120, // 2 hours
+  viewpoint: 30,    // Quick photo stop
+  theater: 180,     // 3 hours (show + breaks)
+  market: 60,       // 1 hour browsing
 };
 
-const DEFAULT_TRANSIT_DURATION_MIN = 25;
+// TRI-108-2: Transit times between locations (in minutes)
+// Realistic for city navigation, not optimistic
+const TRANSIT_DURATION_BY_DISTANCE: Record<string, number> = {
+  same_location: 5,    // Within same POI area
+  same_district: 15,   // Within same neighborhood
+  adjacent_district: 30, // Next to current area
+  across_city: 50,     // Metro/taxi across city
+  far_distance: 80,    // Long distance travel
+};
+
+const DEFAULT_TRANSIT_DURATION_MIN = 30; // Conservative default (was 25)
 const RESTAURANT_MIN_GAP_MIN = 4 * 60;
 const CAFE_AFTER_MEAL_MIN = 60;
 const TIME_SHIFT_ON_FOOD_CONFLICT_MIN = 30;
@@ -155,23 +172,28 @@ export class SchedulerService {
             poi.coordinates.lat,
             poi.coordinates.lon,
           );
-          // Если меньше 1 км - идем пешком (~5 км/ч), иначе едем (авто ~25 км/ч)
-          // Добавляем 5 мин на сборы/ожидание
+          // TRI-108-2: Realistic travel time calculation
+          // < 1km: walking at 5km/h
+          // >= 1km: metro/taxi at 25km/h + 10min for waiting/walking to station
           const rawMinutes =
-            dist < 1.0 ? (dist / 5) * 60 : (dist / 25) * 60 + 5;
-          transitTime = Math.max(5, Math.min(45, Math.round(rawMinutes)));
+            dist < 1.0
+              ? (dist / 5) * 60
+              : (dist / 25) * 60 + 10; // +10 min for station/waiting
+          // TRI-108-2: No artificial cap at 45min - allow 5-90min based on distance
+          transitTime = Math.max(5, Math.min(90, Math.round(rawMinutes)));
         } else {
           transitTime = 0; // Первая точка дня
         }
 
         const arrival = customStart ?? currentTime + transitTime;
-        // Сокращаем время визита, чтобы больше успеть
-        const baseDuration = VISIT_DURATION[poi.category] ?? 60;
-        const visitDuration = Math.max(30, Math.round(baseDuration * 0.8));
+        // TRI-108-2: Use realistic visit durations, don't artificially shorten them
+        const baseDuration = VISIT_DURATION[poi.category] ?? 90;
+        const visitDuration = Math.max(30, baseDuration); // No 0.8 multiplier - respect realistic times!
         const leaveTime = arrival + visitDuration;
 
-        // Допускаем небольшое превышение времени (до 60 минут), чтобы показать точку
-        if (leaveTime > endMinutes + 60) return false;
+        // TRI-108-2: Allow reasonable overflow (up to 2 hours) if POI is that important
+        // Better to show fewer items with realistic times than many unrealistic ones
+        if (leaveTime > endMinutes + 120) return false;
 
         const pointCost = this.estimatePointCost(poi, dayBudget);
         points.push({
