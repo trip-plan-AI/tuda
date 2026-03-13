@@ -299,6 +299,46 @@ export class SchedulerService {
         }
       }
 
+      // TRI-108-3: Fill remaining budget with food POIs if available
+      const remainingBudget = dayBudget - dayCost;
+      const budgetUtilization = dayBudget > 0 ? (dayCost / dayBudget) * 100 : 100;
+
+      if (remainingBudget > 500 && currentTime < endMinutes - 60) {
+        // Try to add food venues to fill remaining budget
+        const MAX_RESTAURANTS = 3;
+        const MAX_CAFES = 2;
+
+        const foodCandidates = availablePois.filter(
+          (p) =>
+            !usedPoiIds.has(p.id) &&
+            (p.category === 'restaurant' || p.category === 'cafe') &&
+            (p.category !== 'cafe' || dayCafePoints < MAX_CAFES) &&
+            (p.category !== 'restaurant' || dayRestaurantPoints < MAX_RESTAURANTS),
+        );
+
+        // Sort by price (budget ones first to maximize count)
+        foodCandidates.sort((a, b) => {
+          const costA = this.estimatePointCost(a, dayBudget);
+          const costB = this.estimatePointCost(b, dayBudget);
+          return costA - costB;
+        });
+
+        // Add food POIs until budget exhausted or time exhausted
+        for (const foodPoi of foodCandidates) {
+          if (!tryAddPoint(foodPoi, currentTime)) {
+            break; // Can't fit this one
+          }
+          const newBudget = dayBudget - dayCost;
+          if (newBudget < 300) {
+            break; // Remaining budget too small
+          }
+        }
+      }
+
+      this.logger.log(
+        `[TRI-108-3] Day ${dayNumber}: spent ${dayCost}/${dayBudget} (${budgetUtilization.toFixed(0)}%)`,
+      );
+
       days.push({
         day_number: dayNumber,
         date: this.dayDateFromNow(dayNumber - 1),
