@@ -3,6 +3,7 @@ import { AiSessionsService } from './ai-sessions.service';
 import { AiController } from './ai.controller';
 import { PointsModule } from '../points/points.module';
 import { TripsModule } from '../trips/trips.module';
+import { GeosearchModule } from '../geosearch/geosearch.module';
 import { KudagoClientService } from './pipeline/kudago-client.service';
 import { LlmClientService } from './pipeline/llm-client.service';
 import { OrchestratorService } from './pipeline/orchestrator.service';
@@ -25,7 +26,8 @@ import { LogicalIdSelectorService } from './pipeline/logical-id-selector.service
   // "применить план в маршрут" и "редактировать маршрут с AI".
   // MERGE-NOTE: при выносе сервисов в другие модули не забудьте обновить imports,
   // иначе DI упадёт на AiController.
-  imports: [TripsModule, PointsModule],
+  // TRI-108-6: Added GeosearchModule for food POI geocoding
+  imports: [TripsModule, PointsModule, GeosearchModule],
   controllers: [AiController],
   providers: [
     AiSessionsService,
