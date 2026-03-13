@@ -235,6 +235,46 @@ export class SemanticFilterService {
     return compact.length > 0 ? compact : null;
   }
 
+  // TRI-108-4: Build semantic category guidance for LLM
+  private buildCategoryInstructions(
+    hasCulturalFocus: boolean,
+    hasLeisureFocus: boolean,
+    hasNightlifeFocus: boolean,
+    entertainmentCategories: string[],
+  ): string {
+    let instructions = 'Правила по категориям:';
+
+    if (hasCulturalFocus) {
+      instructions += `
+   - ⚠️ КУЛЬТУРНЫЙ ФОКУС ОБНАРУЖЕН: пользователь ищет культуру (музеи, галереи, театры, исторические достопримечательности).
+   - ПРИОРИТИЗИРУЙ: музеи, галереи, театры, памятники, исторические места, соборы, архитектурные шедевры.
+   - ИЗБЕГАЙ И ИСКЛЮЧИ: ${entertainmentCategories.slice(0, 4).join(', ')} - эти места НЕ подходят для "культурной программы".
+   - ОЦЕНКА: музеи и галереи (+0.3), театры и соборы (+0.2), прочие культурные объекты (+0.1), развлечения (-0.3).`;
+    }
+
+    if (hasLeisureFocus) {
+      instructions += `
+   - 🎡 ДОСУГ И РАЗВЛЕЧЕНИЯ: парки, аттракционы, активные виды деятельности.
+   - ПРИОРИТИЗИРУЙ: парки, тематические парки, аквариумы, природные объекты, спортивные объекты.
+   - РАЗНООБРАЗИЕ: включай как "мирные" (парки), так и активные (парки с аттракционами) варианты.`;
+    }
+
+    if (hasNightlifeFocus) {
+      instructions += `
+   - 🌙 НОЧНАЯ ЖИЗНЬ: клубы, бары, вечерние развлечения.
+   - ПРИОРИТИЗИРУЙ: клубы, бары, рестораны с живой музыкой, вечерние шоу.
+   - ВРЕМЯ: выбирай места, которые открыты вечером/ночью.`;
+    }
+
+    if (!hasCulturalFocus && !hasLeisureFocus && !hasNightlifeFocus) {
+      instructions += `
+   - Выбирай СМЕШАННЫЙ маршрут: культура + досуг + еда для баланса.
+   - ИЗБЕГАЙ: слишком узкие категории, монотонный маршрут.`;
+    }
+
+    return instructions;
+  }
+
   private buildPrompt(pois: PoiItem[], intent: ParsedIntent): string {
     const minPlaces = Math.min(intent.days * 4, pois.length);
     const maxPlaces = Math.min(
@@ -251,6 +291,40 @@ export class SemanticFilterService {
     const maxRestaurants = intent.days * 3;
     const minCafes = hasFoodFocus ? 1 : 0;
     const maxCafes = intent.days * 2;
+
+    // TRI-108-4: Semantic category differentiation (cultural vs entertainment vs leisure)
+    const hasCulturalFocus =
+      /культур|музе|галере|театр|опер|памятник|историч|святыня|церковь|собор|архитектур|достопримечательност/i.test(
+        preferences,
+      );
+    const hasLeisureFocus =
+      /развлечени|парк|природ|прогулк|активн|экстрим|спорт|приключени/i.test(
+        preferences,
+      );
+    const hasNightlifeFocus =
+      /ночн|клуб|бар|вечер|развлечени|весели/i.test(preferences);
+
+    // Entertainment-type POIs to exclude when cultural intent detected
+    const entertainmentCategories = [
+      'aquarium',
+      'аквариум',
+      'photo_zone',
+      'фото-зона',
+      'event_space',
+      'event_center',
+      'shopping_center',
+      'торговый центр',
+      'nightclub',
+      'ночной клуб',
+    ];
+
+    // TRI-108-4: Build category-aware semantic instructions
+    const categoryInstructions = this.buildCategoryInstructions(
+      hasCulturalFocus,
+      hasLeisureFocus,
+      hasNightlifeFocus,
+      entertainmentCategories,
+    );
 
     return `Мы собрали список из ${pois.length} мест вокруг. Выбери из них от ${minPlaces} до ${maxPlaces} самых интересных и подходящих мест для туристического маршрута.
 
@@ -270,6 +344,8 @@ export class SemanticFilterService {
      - category="restaurant": не более ${maxRestaurants}
      - category="cafe": не более ${maxCafes}
    ${hasFoodFocus ? '   - ⭐ ПОЛЬЗОВАТЕЛЬ ИЩЕТ КАФЕ И ЕДУ - включи их в выбор обязательно!' : ''}
+
+8. ${categoryInstructions}
 
 Список мест (JSON):
 ${JSON.stringify(
