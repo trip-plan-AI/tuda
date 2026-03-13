@@ -18,6 +18,7 @@ import { VectorPrefilterService } from './pipeline/vector-prefilter.service';
 import { YandexFetchService } from './pipeline/yandex-fetch.service';
 import { DeterministicPlannerService } from './pipeline/deterministic-planner.service';
 import { YandexBatchRefinementService } from './pipeline/yandex-batch-refinement.service';
+import { LogicalIdSelectorService } from './pipeline/logical-id-selector.service';
 
 @Module({
   // TRI-104: AI контроллер теперь использует Trips/Points для сценариев
@@ -43,6 +44,7 @@ import { YandexBatchRefinementService } from './pipeline/yandex-batch-refinement
     VectorPrefilterService,
     DeterministicPlannerService,
     YandexBatchRefinementService,
+    LogicalIdSelectorService,
   ],
   exports: [
     AiSessionsService,

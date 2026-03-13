@@ -70,11 +70,14 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async executeCommand(...args: string[]): Promise<unknown> {
+  async executeCommand(
+    command: string,
+    ...args: (string | number | Buffer)[]
+  ): Promise<unknown> {
     if (!this.available) {
       throw new Error('REDIS_UNAVAILABLE');
     }
 
-    return this.client!.call(...args);
+    return this.client!.call(command, ...args);
   }
 }

@@ -209,7 +209,10 @@ export class OptimizationService {
 
       let newDistance = 0;
       for (let i = 0; i < optimizedIndices.length - 1; i++) {
-        newDistance += getDistance(optimizedIndices[i], optimizedIndices[i + 1]);
+        newDistance += getDistance(
+          optimizedIndices[i],
+          optimizedIndices[i + 1],
+        );
       }
 
       const savedKm = originalDistance - newDistance;

@@ -316,7 +316,7 @@ async function seed() {
   await db.delete(schema.popularDestinations);
   console.log('Cleared old popular destinations');
 
-  const destinationChunks: typeof DESTINATIONS[] = [];
+  const destinationChunks: (typeof DESTINATIONS)[] = [];
   const CHUNK_SIZE = 50;
   for (let i = 0; i < DESTINATIONS.length; i += CHUNK_SIZE) {
     destinationChunks.push(DESTINATIONS.slice(i, i + CHUNK_SIZE));

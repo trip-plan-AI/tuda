@@ -26,6 +26,39 @@ const TIME_SHIFT_ON_FOOD_CONFLICT_MIN = 30;
 export class SchedulerService {
   private readonly logger = new Logger('AI_PIPELINE:Scheduler');
 
+  rebuildSingleDayPlan(
+    pois: FilteredPoi[],
+    intent: ParsedIntent,
+    dayTemplate: Pick<PlanDay, 'day_number' | 'date'>,
+  ): PlanDay {
+    const singleDayBudget =
+      intent.budget_per_day ??
+      (intent.budget_total !== null ? Math.max(0, Math.round(intent.budget_total)) : null);
+
+    const singleDayIntent: ParsedIntent = {
+      ...intent,
+      days: 1,
+      budget_total: singleDayBudget,
+      budget_per_day: singleDayBudget,
+    };
+
+    const rebuilt = this.buildPlan(pois, singleDayIntent);
+    const rebuiltDay = rebuilt.days[0] ?? {
+      day_number: dayTemplate.day_number,
+      date: dayTemplate.date,
+      day_budget_estimated: 0,
+      day_start_time: intent.start_time,
+      day_end_time: intent.end_time,
+      points: [],
+    };
+
+    return {
+      ...rebuiltDay,
+      day_number: dayTemplate.day_number,
+      date: dayTemplate.date,
+    };
+  }
+
   buildPlan(pois: FilteredPoi[], intent: ParsedIntent): RoutePlan {
     this.logger.log(
       `Starting to build route plan for ${intent.days} days with ${pois.length} selected POIs...`,

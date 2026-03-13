@@ -37,11 +37,9 @@ export class CollaborationService {
     const data = this.presence.get(socketId);
     if (data) {
       this.presence.delete(socketId);
-      server
-        .to(`trip_${data.tripId}`)
-        .emit('presence:update', {
-          onlineUserIds: this.getOnlineUsers(data.tripId),
-        });
+      server.to(`trip_${data.tripId}`).emit('presence:update', {
+        onlineUserIds: this.getOnlineUsers(data.tripId),
+      });
     }
   }
 
