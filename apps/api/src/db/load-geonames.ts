@@ -13,7 +13,9 @@ import { OpenAI } from 'openai';
 import * as dotenv from 'dotenv';
 import * as schema from './schema';
 
-dotenv.config({ path: '../../../../.env' });
+dotenv.config({
+  path: '/home/dmitriy/projects/trip/travel-planner/.env',
+});
 
 interface GeoNamesCity {
   geonameid: number;
@@ -52,6 +54,7 @@ const db = drizzle(pool, { schema });
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
+      baseURL: 'https://openrouter.ai/api/v1',
     })
   : null;
 
@@ -273,7 +276,7 @@ async function insertCitiesBatch(cities: GeoNamesCity[]): Promise<void> {
   };
 
   try {
-    const valuesToInsert = [];
+    const valuesToInsert: Array<typeof schema.cities.$inferInsert> = [];
     for (const city of cities) {
       // Переводим на русский
       const nameRu = await translateCityToRussian(city.name);
@@ -292,7 +295,7 @@ async function insertCitiesBatch(cities: GeoNamesCity[]): Promise<void> {
         longitude: city.longitude,
         population: city.population || 0,
         placeId: `geonames-${city.geonameid}`,
-      });
+      } as typeof schema.cities.$inferInsert);
     }
 
     // Вставляем через Drizzle (автоматически пропускает дубли)
