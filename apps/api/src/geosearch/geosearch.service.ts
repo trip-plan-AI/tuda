@@ -386,19 +386,59 @@ export class GeosearchService {
     if (!query || query.length < 2) return [];
 
     try {
-      // Ищем по русскому названию и транслитерации (для русских запросов)
-      const results = await this.db.query.cities.findMany({
-        where: or(
-          ilike(schema.cities.nameRu, `%${query}%`),
-          ilike(schema.cities.nameTransliterated, `%${query}%`),
-        ),
-        limit: 15,
-      });
+      const isRussian = /[а-яё]/i.test(query);
 
-      return results.map(city => ({
-        displayName: `${city.nameRu}${city.countryNameRu ? `, ${city.countryNameRu}` : ''}`,
-        uri: `ymapsbm1://geo?ll=${city.longitude},${city.latitude}&z=12`,
-      }));
+      // Поиск по разным полям в зависимости от языка запроса
+      const results = isRussian
+        ? // Русский запрос: ищем по nameRu и nameTransliterated
+          await this.db.query.cities.findMany({
+            where: or(
+              ilike(schema.cities.nameRu, `%${query}%`),
+              ilike(schema.cities.nameTransliterated, `%${query}%`),
+            ),
+            limit: 25,
+          })
+        : // Английский запрос: ищем по name и nameTransliterated
+          await this.db.query.cities.findMany({
+            where: or(
+              ilike(schema.cities.name, `%${query}%`),
+              ilike(schema.cities.nameTransliterated, `%${query}%`),
+            ),
+            limit: 25,
+          });
+
+      // Сортировка по релевантности (популярность, тип совпадения)
+      const scored = results
+        .map((city: any) => {
+          let score = 0;
+          const queryLower = query.toLowerCase();
+          const nameRuLower = city.nameRu.toLowerCase();
+          const nameLower = city.name.toLowerCase();
+          const translitLower = city.nameTransliterated.toLowerCase();
+
+          // Точное совпадение начала
+          if (nameLower.startsWith(queryLower) || nameRuLower.startsWith(queryLower)) {
+            score += 10;
+          } else if (translitLower.startsWith(queryLower)) {
+            score += 8;
+          }
+
+          // Популярность (если есть данные)
+          if (city.population) {
+            score += Math.log(city.population + 1) / 10;
+          } else {
+            score += 2; // базовый скор для городов без населения
+          }
+
+          return {
+            displayName: `${city.nameRu}${city.countryNameRu ? `, ${city.countryNameRu}` : ''}`,
+            uri: `ymapsbm1://geo?ll=${city.longitude},${city.latitude}&z=12`,
+            score,
+          };
+        })
+        .sort((a: any, b: any) => b.score - a.score);
+
+      return scored;
     } catch (error) {
       console.error('❌ Ошибка поиска локальных городов:', error);
       return [];
