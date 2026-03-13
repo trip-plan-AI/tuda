@@ -22,6 +22,7 @@ import {
   CloudSun,
   Sun,
   Wind,
+  ChevronDown,
 } from 'lucide-react';
 import {
   DndContext,
@@ -685,7 +686,7 @@ export function PlannerPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [modal, setModal] = useState<'login' | 'register' | null>(null);
   const [isAddPointMode, setIsAddPointMode] = useState(false);
-  const [showOptimizationResults, setShowOptimizationResults] = useState(true);
+  const [isOptimizationExpanded, setIsOptimizationExpanded] = useState(true);
   const addPointStartCountRef = useRef(0);
 
   useEffect(() => {
@@ -1846,12 +1847,12 @@ export function PlannerPage() {
                             status: 'success',
                             metrics: result.metrics || null,
                           });
-                          setShowOptimizationResults(true);
+                          setIsOptimizationExpanded(true);
                         } else {
                           setLastOptimizedPoints([...points]);
                           setLastOptimizedProfile(routeProfile);
                           setOptimizationResults({ status: 'optimal', metrics: null });
-                          setShowOptimizationResults(true);
+                          setIsOptimizationExpanded(true);
                         }
                       }
                     } catch (error) {
@@ -1931,45 +1932,64 @@ export function PlannerPage() {
               </div>
 
               {/* Optimization Results Block moved here, right under buttons */}
-              {optimizationResults.status !== 'idle' && showOptimizationResults && (
+              {optimizationResults.status !== 'idle' && (
                 <div className="mt-8 p-0 bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/20 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500 relative group/opt">
-                  <button
-                    onClick={() => setShowOptimizationResults(false)}
-                    className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all z-10"
-                    title="Закрыть"
-                  >
-                    <X size={16} />
-                  </button>
-
                   {optimizationResults.status === 'optimal' ||
                   (optimizationResults.status === 'success' &&
                     routeProfile !== lastOptimizedProfile) ? (
-                    <div className="p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 bg-slate-50/50">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center shrink-0">
-                          <MapPin size={22} className="text-emerald-500" />
+                    <div className="flex flex-col">
+                      <div
+                        className={cn(
+                          "p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-slate-50/50 cursor-pointer transition-colors hover:bg-slate-100/50",
+                          isOptimizationExpanded ? "border-b border-slate-100" : ""
+                        )}
+                        onClick={() => setIsOptimizationExpanded(!isOptimizationExpanded)}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center shrink-0">
+                            <MapPin size={22} className="text-emerald-500" />
+                          </div>
+                          <div>
+                            <h4 className="text-brand-indigo font-black uppercase tracking-widest text-sm md:text-base mb-1">
+                              Маршрут оптимален
+                            </h4>
+                            <p className="text-slate-400 text-xs md:text-sm font-bold uppercase tracking-wider">
+                              {routeProfile !== lastOptimizedProfile
+                                ? `Порядок точек идеален для режима «${routeProfile === 'driving' ? 'Авто' : routeProfile === 'foot' ? 'Пешком' : routeProfile === 'bike' ? 'Вело' : 'Прямой'}»`
+                                : 'Текущий порядок точек — самый эффективный'}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <h4 className="text-brand-indigo font-black uppercase tracking-widest text-sm md:text-base mb-1">
-                            Маршрут оптимален
-                          </h4>
-                          <p className="text-slate-400 text-xs md:text-sm font-bold uppercase tracking-wider">
-                            {routeProfile !== lastOptimizedProfile
-                              ? `Порядок точек идеален для режима «${routeProfile === 'driving' ? 'Авто' : routeProfile === 'foot' ? 'Пешком' : routeProfile === 'bike' ? 'Вело' : 'Прямой'}»`
-                              : 'Текущий порядок точек — самый эффективный'}
-                          </p>
+                        <div className="flex items-center gap-4 mt-4 md:mt-0 ml-auto">
+                          <button
+                            className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center transition-transform hover:bg-slate-200"
+                            style={{ transform: isOptimizationExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                          >
+                            <ChevronDown size={20} />
+                          </button>
                         </div>
                       </div>
-                      <div className="px-6 py-3 bg-emerald-50 rounded-xl border border-emerald-100/50 mr-8">
-                        <span className="text-emerald-600 font-black text-xs uppercase tracking-widest flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                          Улучшение не требуется
-                        </span>
-                      </div>
+                      
+                      {isOptimizationExpanded && (
+                        <div className="p-6 md:p-8 bg-white flex justify-start md:justify-end animate-in slide-in-from-top-2 fade-in">
+                          <div className="px-6 py-3 bg-emerald-50 rounded-xl border border-emerald-100/50">
+                            <span className="text-emerald-600 font-black text-xs uppercase tracking-widest flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                              Улучшение не требуется
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="flex flex-col">
-                      <div className="p-6 md:p-8 border-b border-slate-50 bg-gradient-to-r from-brand-indigo/[0.02] to-transparent flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                      <div
+                        className={cn(
+                          "p-6 md:p-8 bg-gradient-to-r from-brand-indigo/[0.02] to-transparent flex flex-col md:flex-row items-start md:items-center justify-between gap-6 cursor-pointer hover:from-brand-indigo/[0.05] transition-colors",
+                          isOptimizationExpanded ? "border-b border-slate-50" : ""
+                        )}
+                        onClick={() => setIsOptimizationExpanded(!isOptimizationExpanded)}
+                      >
                         <div className="flex items-center gap-4">
                           <div className="w-12 h-12 bg-brand-indigo rounded-2xl shadow-lg shadow-brand-indigo/20 flex items-center justify-center shrink-0">
                             <MapPin size={22} className="text-white" />
@@ -1983,97 +2003,136 @@ export function PlannerPage() {
                             </p>
                           </div>
                         </div>
-                        {previousPoints && (
-                          <Button
-                            onClick={() => {
-                              useTripStore.getState().setPoints(previousPoints);
-                              if (currentTrip && !currentTrip.id.startsWith('guest-')) {
-                                const orderedIds = previousPoints.map((p) => p.id);
-                                crud.reorder(orderedIds).catch(console.error);
-                              }
-                              setPreviousPoints(null);
-                              setOptimizationResults({ status: 'idle', metrics: null });
-                              setLastOptimizedPoints(null);
-                              setLastOptimizedProfile(null);
-                              toast.info('Маршрут возвращён к исходному состоянию');
-                            }}
-                            variant="ghost"
-                            shape="xl"
-                            className="text-slate-400 hover:text-brand-indigo hover:bg-brand-indigo/5 font-black uppercase tracking-widest text-[10px] md:text-xs h-10 px-6 border border-slate-200 transition-all active:scale-95 mr-10"
+                        
+                        <div className="flex items-center gap-4 w-full md:w-auto justify-end mt-4 md:mt-0">
+                          {previousPoints && !isOptimizationExpanded && (
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                useTripStore.getState().setPoints(previousPoints);
+                                if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+                                  const orderedIds = previousPoints.map((p) => p.id);
+                                  crud.reorder(orderedIds).catch(console.error);
+                                }
+                                setPreviousPoints(null);
+                                setOptimizationResults({ status: 'idle', metrics: null });
+                                setLastOptimizedPoints(null);
+                                setLastOptimizedProfile(null);
+                                toast.info('Маршрут возвращён к исходному состоянию');
+                              }}
+                              variant="ghost"
+                              shape="xl"
+                              className="text-slate-400 hover:text-brand-indigo hover:bg-brand-indigo/5 font-black uppercase tracking-widest text-[10px] md:text-xs h-10 px-6 border border-slate-200 transition-all active:scale-95"
+                            >
+                              Вернуть
+                            </Button>
+                          )}
+                          <button
+                            className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center transition-transform hover:bg-slate-200"
+                            style={{ transform: isOptimizationExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
                           >
-                            Вернуть как было
-                          </Button>
-                        )}
+                            <ChevronDown size={20} />
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="p-6 md:p-8 bg-white">
-                        {optimizationResults.metrics && (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                            <div className="group bg-slate-50/50 p-6 rounded-3xl border border-slate-100 hover:border-emerald-500/30 transition-all duration-300">
-                              <div className="flex items-center gap-3 mb-6">
-                                <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-slate-100 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                  <Clock size={16} className="text-brand-blue" />
-                                </div>
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
-                                  Время в пути
-                                </span>
-                              </div>
-                              <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
-                                    Было:
-                                  </span>
-                                  <span className="text-sm font-bold text-slate-400 line-through decoration-slate-300">
-                                    {formatDuration(
-                                      Math.round(optimizationResults.metrics.originalHours * 3600),
-                                    )}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-black text-brand-blue uppercase tracking-widest">
-                                    Стало:
-                                  </span>
-                                  <span className="text-xl font-black text-slate-700 tabular-nums">
-                                    {formatDuration(
-                                      Math.round(optimizationResults.metrics.newHours * 3600),
-                                    )}
-                                  </span>
-                                </div>
-                              </div>
+                      {isOptimizationExpanded && (
+                        <div className="flex flex-col bg-white animate-in slide-in-from-top-2 fade-in">
+                          {previousPoints && (
+                            <div className="px-6 md:px-8 pt-6 flex justify-end">
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  useTripStore.getState().setPoints(previousPoints);
+                                  if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+                                    const orderedIds = previousPoints.map((p) => p.id);
+                                    crud.reorder(orderedIds).catch(console.error);
+                                  }
+                                  setPreviousPoints(null);
+                                  setOptimizationResults({ status: 'idle', metrics: null });
+                                  setLastOptimizedPoints(null);
+                                  setLastOptimizedProfile(null);
+                                  toast.info('Маршрут возвращён к исходному состоянию');
+                                }}
+                                variant="ghost"
+                                shape="xl"
+                                className="text-slate-400 hover:text-brand-indigo hover:bg-brand-indigo/5 font-black uppercase tracking-widest text-[10px] md:text-xs h-10 px-6 border border-slate-200 transition-all active:scale-95"
+                              >
+                                Вернуть как было
+                              </Button>
                             </div>
+                          )}
 
-                            <div className="group bg-slate-50/50 p-6 rounded-3xl border border-slate-100 hover:border-emerald-500/30 transition-all duration-300">
-                              <div className="flex items-center gap-3 mb-6">
-                                <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-slate-100 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                  <RouteIcon size={16} className="text-emerald-500" />
+                          <div className="p-6 md:p-8">
+                            {optimizationResults.metrics && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                                <div className="group bg-slate-50/50 p-6 rounded-3xl border border-slate-100 hover:border-emerald-500/30 transition-all duration-300">
+                                  <div className="flex items-center gap-3 mb-6">
+                                    <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-slate-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                      <Clock size={16} className="text-brand-blue" />
+                                    </div>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                                      Время в пути
+                                    </span>
+                                  </div>
+                                  <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                                        Было:
+                                      </span>
+                                      <span className="text-sm font-bold text-slate-400 line-through decoration-slate-300">
+                                        {formatDuration(
+                                          Math.round(optimizationResults.metrics.originalHours * 3600),
+                                        )}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-black text-brand-blue uppercase tracking-widest">
+                                        Стало:
+                                      </span>
+                                      <span className="text-xl font-black text-slate-700 tabular-nums">
+                                        {formatDuration(
+                                          Math.round(optimizationResults.metrics.newHours * 3600),
+                                        )}
+                                      </span>
+                                    </div>
+                                  </div>
                                 </div>
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
-                                  Расстояние
-                                </span>
+
+                                <div className="group bg-slate-50/50 p-6 rounded-3xl border border-slate-100 hover:border-emerald-500/30 transition-all duration-300">
+                                  <div className="flex items-center gap-3 mb-6">
+                                    <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-slate-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                      <RouteIcon size={16} className="text-emerald-500" />
+                                    </div>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                                      Расстояние
+                                    </span>
+                                  </div>
+                                  <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                                        Было:
+                                      </span>
+                                      <span className="text-sm font-bold text-slate-400 line-through decoration-slate-300">
+                                        {optimizationResults.metrics.originalKm.toFixed(1)} км
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
+                                        Стало:
+                                      </span>
+                                      <span className="text-xl font-black text-slate-700 tabular-nums">
+                                        {optimizationResults.metrics.newKm.toFixed(1)}{' '}
+                                        <span className="text-sm text-slate-400">км</span>
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
                               </div>
-                              <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
-                                    Было:
-                                  </span>
-                                  <span className="text-sm font-bold text-slate-400 line-through decoration-slate-300">
-                                    {optimizationResults.metrics.originalKm.toFixed(1)} км
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
-                                    Стало:
-                                  </span>
-                                  <span className="text-xl font-black text-slate-700 tabular-nums">
-                                    {optimizationResults.metrics.newKm.toFixed(1)}{' '}
-                                    <span className="text-sm text-slate-400">км</span>
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
