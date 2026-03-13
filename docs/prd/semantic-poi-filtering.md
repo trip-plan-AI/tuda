@@ -67,7 +67,7 @@ Semantic Filter остаётся этапом интеллектуального
 - `deterministic_planner_shadow`
 - `mutation_applied`, `mutation_type`, `mutation_fallback_reason`
 
-Дополнительные поля при включённом расширенном контракте:
+Always-on дополнительные поля контракта:
 - `planner_version`
 - `pipeline_status`
 - `yandex_batch_refinement`
@@ -98,4 +98,4 @@ Semantic Filter остаётся этапом интеллектуального
 
 ### 6.3 Контракт ответа
 - В QA окружении подтверждено присутствие `meta` и `route_plan`.
-- Для расширенной диагностики включён `FF_PLANNER_V2_CONTRACT_FIELDS=true`.
+- Расширенная диагностика контрактных полей работает в always-on режиме (без feature-flag gate).
