@@ -444,7 +444,7 @@ export class SchedulerService {
 
     // Greedy TSP: visit nearest unvisited cluster
     while (visitedKeys.size < clusterCenters.length) {
-      let nearestCluster = null;
+      let nearestCluster: (typeof clusterCenters)[number] | null = null;
       let minDistance = Infinity;
 
       for (const cluster of clusterCenters) {
@@ -456,7 +456,7 @@ export class SchedulerService {
         }
       }
 
-      if (nearestCluster) {
+      if (nearestCluster !== null) {
         sortedClusters.push(nearestCluster);
         visitedKeys.add(nearestCluster.key);
         currentLat = nearestCluster.lat;

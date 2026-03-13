@@ -114,6 +114,8 @@ export class ProviderSearchService {
     );
 
     let photonRaw: PoiItem[] = [];
+    let aiGeneratedFood: PoiItem[] = [];
+
     if (hasFoodFocus && foodCount < 2) {
       this.logger.log(
         `[ProviderSearch] TRI-108-6 TRIGGERED: Food focus detected with only ${foodCount} food POIs. Searching Photon for city: ${intent.city}`,
@@ -132,9 +134,31 @@ export class ProviderSearchService {
         providerStats.photon.failed = true;
         providerStats.photon.fail_reason =
           error instanceof Error ? error.message : String(error);
-        this.logger.error(
-          `[ProviderSearch] ❌ Photon food search failed: ${providerStats.photon.fail_reason}`,
+        this.logger.warn(
+          `[ProviderSearch] ⚠️ Photon food search failed: ${providerStats.photon.fail_reason}`,
         );
+      }
+
+      // TRI-108-6 Extended: If still no food, use AI to generate user-specific recommendations
+      const foodAfterPhoton = [...kudagoRaw, ...overpassRaw, ...photonRaw].filter(
+        (p) => p.category === 'restaurant' || p.category === 'cafe',
+      ).length;
+
+      if (foodAfterPhoton < 2) {
+        this.logger.log(
+          `[ProviderSearch] TRI-108-6 AI FALLBACK: Still only ${foodAfterPhoton} food POIs. Generating AI recommendations for "${intent.preferences_text}"`,
+        );
+        try {
+          aiGeneratedFood = await this.generateFoodVenuesWithAI(intent);
+          this.logger.log(
+            `[ProviderSearch] ✨ AI generated ${aiGeneratedFood.length} food venues: [${aiGeneratedFood.map(p => `${p.name}(AI)`).join(', ')}]`,
+          );
+          fallbacks.push('AI_GENERATED_FOOD_RECOMMENDATIONS');
+        } catch (error: unknown) {
+          this.logger.warn(
+            `[ProviderSearch] ⚠️ AI food generation failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
       }
     } else {
       this.logger.log(
@@ -143,7 +167,7 @@ export class ProviderSearchService {
     }
 
     // 3a) Объединяем и дедуплицируем
-    pois = [...kudagoRaw, ...overpassRaw, ...photonRaw];
+    pois = [...kudagoRaw, ...overpassRaw, ...photonRaw, ...aiGeneratedFood];
 
     // Если после объединения все еще мало POI, пробуем расширить радиус поиска Overpass
     if (pois.length < 3) {
@@ -496,5 +520,149 @@ export class ProviderSearchService {
       `[Photon] ✅ Search complete. Total results: ${results.length}`,
     );
     return results;
+  }
+
+  // TRI-108-6 Extended: Generate AI-recommended food venues based on user preferences
+  private async generateFoodVenuesWithAI(
+    intent: ParsedIntent,
+  ): Promise<PoiItem[]> {
+    const preferences = intent.preferences_text.toLowerCase();
+
+    // Detect cuisine/atmosphere preferences from user text
+    let cuisineHints = 'diverse, popular local cuisine';
+    if (/местн|аутентич|традиц|оригинальн/.test(preferences))
+      cuisineHints = 'local authentic traditional cuisine';
+    if (/паста|итальян|пицц/.test(preferences)) cuisineHints = 'Italian';
+    if (/азиат|вьетнам|тайск|китай|суши/.test(preferences))
+      cuisineHints = 'Asian (Vietnamese, Thai, Chinese, Japanese)';
+    if (/франц|фран|европей/.test(preferences)) cuisineHints = 'French European';
+    if (/мекс|испан/.test(preferences)) cuisineHints = 'Mexican Spanish';
+
+    let atmosphereHints = 'popular, well-reviewed';
+    if (/круты|премиум|люкс|дорог|изыск/.test(preferences))
+      atmosphereHints = 'upscale, fine dining, sophisticated';
+    if (/бюджет|дешев|недорог|просто|сэкономить/.test(preferences))
+      atmosphereHints = 'budget-friendly, casual, no frills';
+    if (/модн|тренд|молод|hip|cool|стильн/.test(preferences))
+      atmosphereHints = 'trendy, modern, stylish, Instagram-worthy';
+    if (/уютн|комфорт|домашн|семей/.test(preferences))
+      atmosphereHints = 'cozy, comfortable, family-friendly';
+
+    let priceGuidance = 'mid-range (moderate price)';
+    if (intent.budget_per_day && intent.budget_per_day < 30)
+      priceGuidance = 'budget (cheap, street food, casual)';
+    if (intent.budget_per_day && intent.budget_per_day > 100)
+      priceGuidance = 'upscale (premium, fine dining)';
+
+    let contextGuidance = 'popular tourist favorites';
+    if (/культур|музе|театр|памятник|архитектур|историч/.test(preferences))
+      contextGuidance =
+        'match cultural vibe - elegant, sophisticated, classical cuisine';
+    if (/развлечени|ночн|клуб|вечер|весели|танц/.test(preferences))
+      contextGuidance =
+        'match nightlife vibe - fun, lively, good cocktails/wine, energetic';
+    if (/природ|парк|пешком|актив|спорт/.test(preferences))
+      contextGuidance = 'match outdoor activity vibe - casual, comfortable, energy-boosting';
+    if (/семья|дети|малыш/.test(preferences))
+      contextGuidance =
+        'family-friendly - diverse menu, accommodating for kids, relaxed';
+    if (/романт|свидани|влюблен|пара/.test(preferences))
+      contextGuidance = 'romantic - intimate, candle-lit, special occasion vibe';
+
+    const restaurantCount = Math.min(
+      5,
+      Math.max(2, Math.ceil(intent.days * 1.5)),
+    );
+
+    const prompt = `Generate ${restaurantCount} realistic, popular restaurant recommendations in ${intent.city}.
+
+USER PREFERENCES:
+- Cuisine style: ${cuisineHints}
+- Atmosphere: ${atmosphereHints}
+- Price range: ${priceGuidance}
+- Context: ${contextGuidance}
+- Trip type: ${intent.party_type} (${intent.party_size} people, ${intent.days} day(s))
+- Budget: ${intent.budget_total ? `${intent.budget_total} total` : 'not specified'}
+
+IMPORTANT: Generate ONLY realistic, actual-sounding restaurants that match the city and preferences. No fictional places.
+
+Return ONLY valid JSON (no markdown):
+{
+  "restaurants": [
+    {
+      "name": "Restaurant Name",
+      "cuisine": "Cuisine Type",
+      "atmosphere": "brief atmosphere description",
+      "price_segment": "budget|mid|luxury",
+      "rating": 4.2,
+      "why_recommended": "1-2 sentences explaining why this matches user preferences"
+    }
+  ]
+}`;
+
+    try {
+      const response = await this.llmClientService.client.chat.completions.create(
+        {
+          model: this.llmClientService.model,
+          response_format: { type: 'json_object' },
+          temperature: 0.7,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You are a local food expert and travel guide. Generate realistic restaurant recommendations that perfectly match user preferences and city characteristics. Every restaurant must be realistic and sound authentic to the city.',
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+        },
+      );
+
+      const rawText = response.choices[0]?.message?.content ?? '{}';
+      const parsed = JSON.parse(rawText) as {
+        restaurants?: Array<{
+          name: string;
+          cuisine: string;
+          atmosphere: string;
+          price_segment: string;
+          rating: number;
+          why_recommended: string;
+        }>;
+      };
+
+      const restaurants = parsed.restaurants ?? [];
+      this.logger.log(
+        `[AI_FOOD] Generated ${restaurants.length} recommendations for ${intent.city}`,
+      );
+
+      return restaurants.map((r, idx) => {
+        // Map AI price_segment to valid PriceSegment values
+        let priceSegment: 'free' | 'budget' | 'mid' | 'premium' = 'mid';
+        if (r.price_segment === 'budget') priceSegment = 'budget';
+        if (r.price_segment === 'luxury' || r.price_segment === 'premium')
+          priceSegment = 'premium';
+
+        return {
+          id: `ai-food-${intent.city.replace(/\s+/g, '-')}-${idx}`,
+          name: r.name,
+          address: `${intent.city}, ${r.cuisine} restaurant`,
+          category: 'restaurant' as const,
+          coordinates: { lat: 0, lon: 0 }, // Will be geocoded later
+          price_segment: priceSegment,
+          rating: r.rating || 4.2,
+          website: undefined,
+          description: r.why_recommended,
+        };
+      });
+    } catch (error: unknown) {
+      const errorMsg =
+        error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `[AI_FOOD] ❌ Food generation error: ${errorMsg}`,
+      );
+      throw error;
+    }
   }
 }
