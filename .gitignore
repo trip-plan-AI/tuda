@@ -44,4 +44,6 @@ feedbackFrontend/
 GlobalAgentRules.txt
 .kilocode
 .claude
+.kilocodeignore
+CLAUDE.md
 
