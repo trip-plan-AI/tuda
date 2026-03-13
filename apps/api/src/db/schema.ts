@@ -154,6 +154,35 @@ export const popularDestinations = pgTable('popular_destinations', {
   index('popular_destinations_country_idx').on(t.countryCode),
 ]);
 
+// cities — Tier 0.5 геосёрч (100k городов с предпереводом на русский)
+export const cities = pgTable('cities', {
+  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+  // Название на английском (из GeoNames)
+  name: text('name').notNull(),
+  // Название на русском (предпереводное)
+  nameRu: text('name_ru').notNull(),
+  // Транслитерация (русский → английский)
+  nameTransliterated: text('name_transliterated').notNull(),
+  // ISO 3166-1 alpha-2 код страны
+  countryCode: text('country_code').notNull(),
+  // Страна на русском
+  countryNameRu: text('country_name_ru'),
+  // Населённый пункт / регион на русском
+  adminNameRu: text('admin_name_ru'),
+  // Координаты
+  latitude: doublePrecision('latitude').notNull(),
+  longitude: doublePrecision('longitude').notNull(),
+  // Население (для ранжирования)
+  population: integer('population'),
+  // GeoNames Place ID (для дедупликации)
+  placeId: text('place_id'),
+}, (t) => [
+  index('cities_name_transliterated_idx').on(t.nameTransliterated),
+  index('cities_name_ru_idx').on(t.nameRu),
+  index('cities_country_code_idx').on(t.countryCode),
+  index('cities_population_idx').on(t.population),
+]);
+
 // ai_sessions
 export const aiSessions = pgTable('ai_sessions', {
   id: uuid('id').primaryKey().defaultRandom(),

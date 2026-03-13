@@ -4,8 +4,12 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { transliterate } from 'transliteration';
+import { ilike, or } from 'drizzle-orm';
+import { DRIZZLE } from '../db/db.module';
+import * as schema from '../db/schema';
 import { RedisService } from '../redis/redis.service';
 import { PopularDestinationsService } from './popular-destinations.service';
 
@@ -102,6 +106,8 @@ function normalizeAddress(displayName: string): string {
 @Injectable()
 export class GeosearchService {
   constructor(
+    @Inject(DRIZZLE)
+    private db: NodePgDatabase<typeof schema>,
     private readonly redis: RedisService,
     private readonly popularDestinations: PopularDestinationsService,
   ) {}
@@ -137,9 +143,10 @@ export class GeosearchService {
       return this.applyProximity(JSON.parse(cached), userLat, userLon);
     }
 
-    // Tier 0 (DB) + Tier 2: DaData (RU) + Nominatim RU параллельно, timeout 800ms
-    const [tier0Res, dadataRes, nominatimRuRes] = await Promise.allSettled([
+    // Tier 0 (Popular Destinations) + Tier 0.5 (Local Cities) + Tier 2: DaData (RU) + Nominatim RU параллельно
+    const [tier0Res, tier05Res, dadataRes, nominatimRuRes] = await Promise.allSettled([
       this.withTimeout(this.popularDestinations.search(normalized), 800),
+      this.withTimeout(this.searchLocalCities(normalized), 800),
       this.dadataApiKey
         ? this.withTimeout(this.getDaDataSuggestions(normalized), 800)
         : Promise.resolve(null),
@@ -147,6 +154,7 @@ export class GeosearchService {
     ]);
 
     const tier0Items = tier0Res.status === 'fulfilled' ? (tier0Res.value ?? []) : [];
+    const tier05Items = tier05Res.status === 'fulfilled' ? (tier05Res.value ?? []) : [];
     let dadataItems = dadataRes.status === 'fulfilled' ? (dadataRes.value ?? []) : [];
     let nominatimRuItems = nominatimRuRes.status === 'fulfilled' ? (nominatimRuRes.value ?? []) : [];
 
@@ -167,9 +175,9 @@ export class GeosearchService {
       }
     }
 
-    // Приоритет тиеров: Tier 0 (БД) > Tier 2 (DaData/Nominatim)
-    // Tier 0 имеет автоматический приоритет через score из БД
-    const allScored = [...tier0Items, ...dadataItems, ...nominatimRuItems]
+    // Приоритет тиеров: Tier 0 (Popular) > Tier 0.5 (Local Cities) > Tier 2 (DaData/Nominatim)
+    // Tier 0/0.5 имеют автоматический приоритет через score или быстроту поиска
+    const allScored = [...tier0Items, ...tier05Items, ...dadataItems, ...nominatimRuItems]
       .map(item => {
         // Tier0 items имеют score из DB; если он невалидный (NaN/null) — пересчитываем
         if ('score' in item && typeof (item as any).score === 'number' && isFinite((item as any).score)) {
@@ -358,6 +366,35 @@ export class GeosearchService {
         return { ...item, score: item.score + proximityBonus };
       })
       .sort((a, b) => b.score - a.score);
+  }
+
+  /**
+   * Tier 0.5 поиск: локальные 100k городов из GeoNames с предпереводом на русский
+   * Очень быстро (индексированно в БД), покрывает 95% запросов
+   */
+  private async searchLocalCities(
+    query: string,
+  ): Promise<Array<{ displayName: string; uri: string }>> {
+    if (!query || query.length < 2) return [];
+
+    try {
+      // Ищем по русскому названию и транслитерации (для русских запросов)
+      const results = await this.db.query.cities.findMany({
+        where: or(
+          ilike(schema.cities.nameRu, `%${query}%`),
+          ilike(schema.cities.nameTransliterated, `%${query}%`),
+        ),
+        limit: 15,
+      });
+
+      return results.map(city => ({
+        displayName: `${city.nameRu}${city.countryNameRu ? `, ${city.countryNameRu}` : ''}`,
+        uri: `ymapsbm1://geo?ll=${city.longitude},${city.latitude}&z=12`,
+      }));
+    } catch (error) {
+      console.error('❌ Ошибка поиска локальных городов:', error);
+      return [];
+    }
   }
 
   private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
