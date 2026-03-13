@@ -11,6 +11,8 @@ services:
       - '5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Database initialization scripts (GeoNames dump, etc.)
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d
 
   redis:
     image: redis:7-alpine

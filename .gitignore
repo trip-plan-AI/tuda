@@ -46,3 +46,14 @@ GlobalAgentRules.txt
 .claude
 .kilocodeignore
 CLAUDE.md
+
+# Database dumps (large files, should not be committed)
+docker/postgres-init/*.dump
+docker/postgres-init/*.sql
+*.pgdump
+cities500.txt
+cities500.zip
+
+# Temporary files
+/tmp
+*.tmp
