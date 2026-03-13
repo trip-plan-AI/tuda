@@ -45,7 +45,7 @@
 6. `logical_id_shadow` формирует диагностику дублей.
 7. `vector_prefilter_shadow` делает KNN prefilter через Redis/RediSearch или fallback.
 8. `logical_selector` выбирает целевой пул кандидатов.
-9. Semantic Filter и опциональный batch refinement.
+9. Semantic Filter и always-on batch refinement (с fallback при ошибке refinement).
 10. Scheduler строит план:
     - `targeted_mutation` при точечных командах;
     - `full_rebuild` при NEW_ROUTE или fallback-условиях.
@@ -64,6 +64,7 @@
 - при `NEW_ROUTE` -> `route_mode=full_rebuild`;
 - при confidence `< 0.7` для мутаций -> fallback в `full_rebuild` с `fallback_reason=LOW_CONFIDENCE`;
 - при валидной уверенной точечной команде -> `route_mode=targeted_mutation`.
+- если в сессии нет текущего маршрута (`currentRoutePois` пуст), мутационные action_type нормализуются в `NEW_ROUTE`.
 
 ### 3.3 Policy Snapshot: always-on
 
@@ -132,10 +133,10 @@
 - `deterministic_planner_shadow`
 - `mass_collection_shadow`
 
-Дополнительно при `FF_PLANNER_V2_CONTRACT_FIELDS=true`:
+Always-on поля контрактной диагностики:
 - `planner_version`
 - `pipeline_status`
-- `yandex_batch_refinement` (если включён refinement)
+- `yandex_batch_refinement`
 
 ---
 
@@ -194,8 +195,8 @@
 - Для batch refinement корректно заданы `YANDEX_BATCH_SIZE`, `YANDEX_BATCH_TIMEOUT_MS`.
 
 ### 7.3 Planner Contract
-- При необходимости расширенного контракта включён `FF_PLANNER_V2_CONTRACT_FIELDS=true`.
-- Проверено наличие `planner_version` и `pipeline_status` в `meta`.
+- Расширенный контракт работает в always-on режиме (без feature-flag gate).
+- Проверено наличие `planner_version`, `pipeline_status` и `yandex_batch_refinement` в `meta`.
 
 ---
 
