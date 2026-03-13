@@ -6,13 +6,12 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 import { Pool } from 'pg';
 import { transliterate } from 'transliteration';
 import { OpenAI } from 'openai';
 import * as dotenv from 'dotenv';
 
-dotenv.config({ path: '../../.env' });
+dotenv.config({ path: '../../../../.env' });
 
 interface GeoNamesCity {
   geonameid: number;
@@ -39,9 +38,11 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    })
+  : null;
 
 const BATCH_SIZE = 100;
 const MAX_CITIES = 100000;
@@ -64,6 +65,7 @@ async function downloadGeoNames(): Promise<string> {
   }
 
   try {
+    console.log('Попытка 1: Скачивание ZIP и распаковка...');
     const response = await fetch(GEONAMES_URL);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
@@ -73,14 +75,44 @@ async function downloadGeoNames(): Promise<string> {
 
     // Распаковка
     const { execSync } = await import('child_process');
-    execSync(`cd /tmp && unzip -o cities500.zip`);
-    console.log('✅ Распакован');
+    try {
+      execSync(`cd /tmp && unzip -o cities500.zip 2>/dev/null || true`);
+      console.log('✅ Распакован');
+    } catch (unzipError) {
+      console.warn('⚠️ Unzip не сработал, пробую альтернативный способ...');
+      // Fallback: try with 7z or just use the file if it was extracted
+      if (!fs.existsSync(txtPath)) {
+        throw new Error('Не удалось распаковать файл');
+      }
+    }
 
-    return txtPath;
+    if (fs.existsSync(txtPath)) {
+      return txtPath;
+    }
+
+    throw new Error('cities500.txt не найден после распаковки');
   } catch (error) {
-    console.error('❌ Ошибка скачивания:', error);
-    console.log('Используются локальные тестовые данные...');
-    return GEONAMES_FALLBACK_FILE;
+    console.error('❌ Ошибка скачивания ZIP:', error);
+
+    // Fallback: Попробовать скачать TXT напрямую (без архива)
+    console.log('\nПопытка 2: Скачивание TXT напрямую...');
+    try {
+      const txtUrl = 'https://download.geonames.org/export/dump/cities500.txt';
+      const response = await fetch(txtUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const text = await response.text();
+      fs.writeFileSync(txtPath, text);
+      console.log('✅ TXT файл скачан напрямую');
+      return txtPath;
+    } catch (fallbackError) {
+      console.error('❌ Fallback тоже не сработал:', fallbackError);
+      console.log('\n⚠️ Используется тестовый файл (если существует)...');
+      if (fs.existsSync(GEONAMES_FALLBACK_FILE)) {
+        return GEONAMES_FALLBACK_FILE;
+      }
+      throw new Error('Не удалось скачать GeoNames и нет локального fallback файла. Попробуйте скачать вручную: https://download.geonames.org/export/dump/cities500.txt в /tmp/');
+    }
   }
 }
 
@@ -125,6 +157,11 @@ async function translateCityToRussian(cityName: string): Promise<string> {
     return translationCache.get(cityName)!;
   }
 
+  // Если OpenAI недоступен, просто используем оригинальное имя (будет транслитерировано позже)
+  if (!openai) {
+    return cityName;
+  }
+
   try {
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -144,7 +181,7 @@ async function translateCityToRussian(cityName: string): Promise<string> {
     return translation;
   } catch (error) {
     console.warn(`⚠️ Ошибка перевода "${cityName}":`, error);
-    // Fallback: используем transliterate для русских букв или возвращаем оригинал
+    // Fallback: используем оригинальное имя
     return cityName;
   }
 }
@@ -272,6 +309,13 @@ async function insertCitiesBatch(cities: GeoNamesCity[]): Promise<void> {
 async function main() {
   try {
     console.log('🚀 Начинаю загрузку GeoNames в БД...\n');
+
+    if (!openai) {
+      console.log('⚠️  OPENAI_API_KEY не установлен. Города будут загружены без перевода на русский.');
+      console.log('   (Названия будут транслитерированы автоматически)\n');
+    } else {
+      console.log('✅ OpenAI API доступен, названия будут переведены на русский\n');
+    }
 
     // 1. Скачиваем данные
     const filePath = await downloadGeoNames();
