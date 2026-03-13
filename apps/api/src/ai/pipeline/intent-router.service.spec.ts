@@ -37,7 +37,9 @@ describe('IntentRouterService', () => {
       }),
     );
 
-    const result = await service.route('Удали точку', []);
+    const result = await service.route('Удали точку', [], [
+      { poi_id: 'poi-123', title: 'Точка 123' },
+    ]);
 
     expect(result).toEqual({
       action_type: 'REMOVE_POI',
@@ -57,7 +59,9 @@ describe('IntentRouterService', () => {
       }),
     );
 
-    const result = await service.route('удали эту точку из маршрута', []);
+    const result = await service.route('удали эту точку из маршрута', [], [
+      { poi_id: 'poi-9', title: 'Точка 9' },
+    ]);
 
     expect(result).toMatchObject({
       action_type: 'REMOVE_POI',
@@ -94,7 +98,9 @@ describe('IntentRouterService', () => {
       }),
     );
 
-    const result = await service.route('замени точку poi_id:poi-from-user', []);
+    const result = await service.route('замени точку poi_id:poi-from-user', [], [
+      { poi_id: 'poi-from-user', title: 'Точка пользователя' },
+    ]);
 
     expect(result.target_poi_id).toBe('poi-from-user');
   });

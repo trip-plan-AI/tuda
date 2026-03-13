@@ -31,6 +31,8 @@ Rules:
 - confidence must be a number between 0 and 1.
 - target_poi_id must be a string ID or null.
 - Use NEW_ROUTE when intent is broad or unrelated to mutation.
+- If currentRoutePois is empty (no existing route in this session), treat the request as NEW_ROUTE.
+- First message like "<city> <N> days" or "маршрут в <city>" is NEW_ROUTE, not ADD_DAYS.
 - For REMOVE_POI/REPLACE_POI set target_poi_id if clearly identifiable.`;
 
 @Injectable()
@@ -74,11 +76,16 @@ export class IntentRouterService {
         parsed.target_poi_id,
         currentRoutePois,
       );
+      const hasCurrentRoute = (currentRoutePois?.length ?? 0) > 0;
+      const normalizedActionType = this.normalizeActionTypeForSessionState(
+        parsed.action_type,
+        hasCurrentRoute,
+      );
 
       return this.applyDeterministicPostProcessing({
-        action_type: parsed.action_type,
+        action_type: normalizedActionType,
         confidence: parsed.confidence,
-        target_poi_id: targetPoiId,
+        target_poi_id: normalizedActionType === 'NEW_ROUTE' ? null : targetPoiId,
         route_mode: 'full_rebuild',
       });
     } catch (error) {
@@ -138,6 +145,26 @@ export class IntentRouterService {
         decision.action_type === 'NEW_ROUTE' ? 'full_rebuild' : 'targeted_mutation',
       fallback_reason: undefined,
     };
+  }
+
+  private normalizeActionTypeForSessionState(
+    actionType: IntentRouterActionType,
+    hasCurrentRoute: boolean,
+  ): IntentRouterActionType {
+    if (hasCurrentRoute) {
+      return actionType;
+    }
+
+    if (
+      actionType === 'REMOVE_POI' ||
+      actionType === 'REPLACE_POI' ||
+      actionType === 'ADD_DAYS' ||
+      actionType === 'APPLY_GLOBAL_FILTER'
+    ) {
+      return 'NEW_ROUTE';
+    }
+
+    return actionType;
   }
 
   private resolveTargetPoiId(
