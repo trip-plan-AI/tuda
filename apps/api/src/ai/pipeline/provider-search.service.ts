@@ -109,29 +109,37 @@ export class ProviderSearchService {
       (p) => p.category === 'restaurant' || p.category === 'cafe',
     ).length;
 
+    this.logger.log(
+      `[ProviderSearch] TRI-108-6 DEBUG: hasFoodFocus=${hasFoodFocus}, foodCount=${foodCount}, intent.categories=[${intent.categories.join(', ')}]`,
+    );
+
     let photonRaw: PoiItem[] = [];
     if (hasFoodFocus && foodCount < 2) {
       this.logger.log(
-        `[ProviderSearch] TRI-108-6: Food focus detected but only ${foodCount} food POIs found. Searching Photon for food venues...`,
+        `[ProviderSearch] TRI-108-6 TRIGGERED: Food focus detected with only ${foodCount} food POIs. Searching Photon for city: ${intent.city}`,
       );
       providerStats.photon = this.buildEmptyProviderStat('photon');
       providerStats.photon.attempted = true;
       try {
-        photonRaw = await this.searchPhotonForFood(intent.city, intent.radius_km);
+        photonRaw = await this.searchPhotonForFood(intent.city);
         providerStats.photon.raw_count = photonRaw.length;
         providerStats.photon.used_count = photonRaw.length;
         this.logger.log(
-          `[ProviderSearch] Photon returned ${photonRaw.length} food venues.`,
+          `[ProviderSearch] ✅ Photon returned ${photonRaw.length} food venues: [${photonRaw.map(p => `${p.name}(${p.category})`).join(', ')}]`,
         );
         fallbacks.push('PHOTON_FOOD_SEARCH_SUPPLEMENT');
       } catch (error: unknown) {
         providerStats.photon.failed = true;
         providerStats.photon.fail_reason =
           error instanceof Error ? error.message : String(error);
-        this.logger.warn(
-          `[ProviderSearch] Photon food search failed: ${providerStats.photon.fail_reason}`,
+        this.logger.error(
+          `[ProviderSearch] ❌ Photon food search failed: ${providerStats.photon.fail_reason}`,
         );
       }
+    } else {
+      this.logger.log(
+        `[ProviderSearch] TRI-108-6 SKIP: hasFoodFocus=${hasFoodFocus}, foodCount=${foodCount} (need both true and < 2)`,
+      );
     }
 
     // 3a) Объединяем и дедуплицируем
@@ -254,12 +262,21 @@ export class ProviderSearchService {
     this.logger.log(
       `[ProviderSearch] Final pre-filter complete. Kept ${topNonFood.length} non-food and ${topFood.length} food points (Total: ${result.length}) for Semantic Filter.`,
     );
+    const finalFood = result.filter(
+      (p) => p.category === 'restaurant' || p.category === 'cafe',
+    );
+
+    this.logger.log(
+      `[ProviderSearch] FINAL: ${result.length} POIs (${finalFood.length} food) | Providers: K=${providerStats.kudago.raw_count} O=${providerStats.overpass.raw_count} P=${providerStats.photon.raw_count} L=${providerStats.llm_fill.raw_count}`,
+    );
+
     return {
       pois: result,
       shadowDiagnostics: {
         provider_stats: [
           providerStats.kudago,
           providerStats.overpass,
+          providerStats.photon,
           providerStats.llm_fill,
         ],
         totals: {
@@ -405,6 +422,7 @@ export class ProviderSearchService {
 
   // TRI-108-6: Search Photon API for food venues (cafes, restaurants)
   private async searchPhotonForFood(city: string): Promise<PoiItem[]> {
+    this.logger.log(`[Photon] Starting food venue search for city: ${city}`);
     const results: PoiItem[] = [];
 
     // Search for "кафе" and "ресторан" in the city
@@ -417,23 +435,32 @@ export class ProviderSearchService {
         url.searchParams.set('limit', '10');
         url.searchParams.set('lang', 'ru');
 
+        this.logger.log(`[Photon] Fetching: ${url.toString()}`);
         const response = await fetch(url.toString());
 
         if (!response.ok) {
-          this.logger.warn(
-            `[Photon] Search failed for "${query}": HTTP ${response.status}`,
+          this.logger.error(
+            `[Photon] ❌ HTTP ${response.status} for query "${query}"`,
           );
           continue;
         }
 
         const data = (await response.json()) as any;
         const features = data.features || [];
+        this.logger.log(
+          `[Photon] Query "${query}" returned ${features.length} features`,
+        );
 
         for (const feature of features) {
           const props = feature.properties || {};
           const coords = feature.geometry?.coordinates;
 
-          if (!coords || coords.length < 2) continue;
+          if (!coords || coords.length < 2) {
+            this.logger.warn(
+              `[Photon] Skipped ${props.name} - invalid coordinates`,
+            );
+            continue;
+          }
 
           // Determine if it's a cafe or restaurant
           const name = props.name || 'Unnamed Food Venue';
@@ -451,19 +478,23 @@ export class ProviderSearchService {
             category,
             coordinates: { lat: coords[1], lon: coords[0] },
             price_segment: 'mid',
-            rating: 4.2, // Default rating for Photon results
+            rating: 4.2,
             website: props.website || undefined,
           };
 
           results.push(poi);
+          this.logger.log(`[Photon] ✅ Added ${name} (${category})`);
         }
       } catch (error) {
-        this.logger.warn(
-          `[Photon] Search error for "${query}": ${error instanceof Error ? error.message : String(error)}`,
+        this.logger.error(
+          `[Photon] ❌ Error for "${query}": ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
 
+    this.logger.log(
+      `[Photon] ✅ Search complete. Total results: ${results.length}`,
+    );
     return results;
   }
 }
