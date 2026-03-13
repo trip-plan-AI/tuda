@@ -1,5 +1,4 @@
 import { AiController } from './ai.controller';
-import { NotFoundException } from '@nestjs/common';
 import { firstValueFrom } from 'rxjs';
 import type { AiPlanRequestDto } from './dto/ai-plan-request.dto';
 import type {
@@ -71,7 +70,7 @@ describe('AiController plan contract fields', () => {
     },
     user_persona_summary:
       'solo, 2 дн.; бюджет ~5000/день; еда: default; исторические места',
-    policy_version: 'v2-shadow',
+    policy_version: 'v2',
   };
 
   const massCollectionShadow: MassCollectionShadowMeta = {
@@ -241,35 +240,17 @@ describe('AiController plan contract fields', () => {
   };
 
   afterEach(() => {
-    delete process.env.FF_PLANNER_V2_CONTRACT_FIELDS;
-    delete process.env.FF_PLANNER_V2_ENABLED;
-    delete process.env.FF_PLANNER_SSE_ENABLED;
     delete process.env.FF_INTENT_ROUTER_V2;
     delete process.env.FF_POLICY_CALC_V2;
     delete process.env.FF_LOGICAL_ID_FILTER_V2;
     delete process.env.FF_VECTOR_PREFILTER_REDIS;
     delete process.env.FF_DETERMINISTIC_PLANNER_V2;
     delete process.env.FF_MASS_COLLECTION_V2;
-    delete process.env.FF_YANDEX_BATCH_REFINEMENT;
     delete process.env.AI_VECTOR_TOPK;
     jest.clearAllMocks();
   });
 
-  it('plan stream is unavailable when FF_PLANNER_SSE_ENABLED is false', () => {
-    process.env.FF_PLANNER_SSE_ENABLED = 'false';
-    const { controller } = createController();
-
-    const reqMock = {
-      on: jest.fn(),
-      off: jest.fn(),
-    } as never;
-
-    expect(() => controller.planStream(reqMock)).toThrow(NotFoundException);
-  });
-
-  it('plan stream emits plan_started as first event when FF_PLANNER_SSE_ENABLED is true', async () => {
-    process.env.FF_PLANNER_SSE_ENABLED = 'true';
-    process.env.FF_PLANNER_V2_ENABLED = 'false';
+  it('plan stream emits plan_started as first event', async () => {
     const { controller } = createController();
 
     const handlers = new Map<string, () => void>();
@@ -292,7 +273,7 @@ describe('AiController plan contract fields', () => {
     expect(firstEvent).toMatchObject({
       type: 'plan_started',
       data: {
-        planner_version: 'v2-shadow',
+        planner_version: 'v2',
       },
     });
     expect((firstEvent.data as { request_id?: string }).request_id).toEqual(
@@ -351,7 +332,7 @@ describe('AiController plan contract fields', () => {
           food_mode: 'default',
           food_interval_hours: 4,
         },
-        policy_version: 'v2-shadow',
+        policy_version: 'v2',
       },
     });
   });
@@ -423,14 +404,11 @@ describe('AiController plan contract fields', () => {
     });
   });
 
-  it('includes yandex_batch_refinement meta only when both FF_PLANNER_V2_CONTRACT_FIELDS and FF_YANDEX_BATCH_REFINEMENT are true', async () => {
-    process.env.FF_PLANNER_V2_CONTRACT_FIELDS = 'true';
-    process.env.FF_YANDEX_BATCH_REFINEMENT = 'true';
-
+  it('always includes yandex_batch_refinement meta', async () => {
     const { controller } = createController();
-    const enabledResult = await controller.plan(dto, user);
+    const result = await controller.plan(dto, user);
 
-    expect(enabledResult.meta).toMatchObject({
+    expect(result.meta).toMatchObject({
       yandex_batch_refinement: {
         status: 'ok',
         batch_count: 1,
@@ -438,19 +416,9 @@ describe('AiController plan contract fields', () => {
         fallback_reasons: [],
       },
     });
-
-    process.env.FF_PLANNER_V2_CONTRACT_FIELDS = 'false';
-    process.env.FF_YANDEX_BATCH_REFINEMENT = 'true';
-
-    const { controller: controllerWithoutContract } = createController();
-    const disabledResult = await controllerWithoutContract.plan(dto, user);
-
-    expect(disabledResult.meta).not.toHaveProperty('yandex_batch_refinement');
   });
 
   it('falls back to original selected when yandex batch refinement service throws', async () => {
-    process.env.FF_YANDEX_BATCH_REFINEMENT = 'true';
-
     const { controller, schedulerService, selectedPois } = createController({
       yandexBatchRefinementError: new Error('refinement-down'),
     });
@@ -541,7 +509,7 @@ describe('AiController targeted mutations (phase 3)', () => {
     required_capacity: 10,
     food_policy: { food_mode: 'default', food_interval_hours: 4 },
     user_persona_summary: 'solo, культурная программа',
-    policy_version: 'v2-shadow',
+    policy_version: 'v2',
   };
 
   const massCollectionShadow: MassCollectionShadowMeta = {
@@ -697,7 +665,6 @@ describe('AiController targeted mutations (phase 3)', () => {
   };
 
   afterEach(() => {
-    delete process.env.FF_YANDEX_BATCH_REFINEMENT;
     jest.clearAllMocks();
   });
 

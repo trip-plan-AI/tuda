@@ -74,24 +74,6 @@ export class AiController {
   private readonly needCityMessage =
     'Недостаточно данных для построения маршрута. Укажите, пожалуйста, город.';
 
-  private parseBooleanEnv(value: string | undefined): boolean {
-    if (!value) return false;
-    const normalized = value.trim().toLowerCase();
-    return ['1', 'true', 'yes', 'on'].includes(normalized);
-  }
-
-  private isPlannerContractFieldsEnabled(): boolean {
-    return this.parseBooleanEnv(process.env.FF_PLANNER_V2_CONTRACT_FIELDS);
-  }
-
-  private isPlannerSseEnabled(): boolean {
-    return this.parseBooleanEnv(process.env.FF_PLANNER_SSE_ENABLED);
-  }
-
-  private isYandexBatchRefinementEnabled(): boolean {
-    return this.parseBooleanEnv(process.env.FF_YANDEX_BATCH_REFINEMENT);
-  }
-
   private resolveVectorTopK(): number {
     const fallbackTopK = 200;
     const rawValue = Number.parseInt(process.env.AI_VECTOR_TOPK ?? '', 10);
@@ -101,13 +83,6 @@ export class AiController {
     }
 
     return rawValue;
-  }
-
-  private resolvePlannerVersion(): PlannerVersion {
-    const plannerV2Enabled = this.parseBooleanEnv(
-      process.env.FF_PLANNER_V2_ENABLED,
-    );
-    return plannerV2Enabled ? 'v2' : 'v2-shadow';
   }
 
   private buildPipelineStatus(fallbacks: string[]): PipelineStatus {
@@ -482,12 +457,12 @@ ${JSON.stringify(points)}
     }
 
     const orchestratorDuration = Date.now() - orchestratorStart;
-    const plannerVersion = this.resolvePlannerVersion();
+    const plannerVersion: PlannerVersion = 'v2';
     const policySnapshot: PolicySnapshot =
       this.policyService.calculatePolicySnapshot(
         intent,
         llmContext,
-        plannerVersion as 'v2' | 'v2-shadow',
+        'v2',
       );
 
     const providerStart = Date.now();
@@ -550,35 +525,32 @@ ${JSON.stringify(points)}
       fallbacks,
     );
 
-    const yandexBatchRefinementEnabled = this.isYandexBatchRefinementEnabled();
     const yandexPersonaSummary =
       policySnapshot.user_persona_summary ?? dto.user_query;
     let selectedForScheduler = selected;
     let yandexBatchRefinementDiagnostics: YandexBatchRefinementDiagnostics | null =
       null;
 
-    if (yandexBatchRefinementEnabled) {
-      try {
-        const refinementResult =
-          await this.yandexBatchRefinementService.refineSelectedInBatches(
-            selected,
-            yandexPersonaSummary,
-            { intent },
-          );
-        selectedForScheduler = refinementResult.refined;
-        yandexBatchRefinementDiagnostics = refinementResult.diagnostics;
-      } catch (error) {
-        const reason =
-          error instanceof Error && typeof error.message === 'string'
-            ? error.message
-            : 'UNKNOWN';
-        fallbacks.push(`YANDEX_BATCH_REFINEMENT_FAILED:${reason}`);
-        yandexBatchRefinementDiagnostics = {
-          batch_count: 0,
-          failed_batches: 1,
-          fallback_reasons: [`service_error:${reason}`],
-        };
-      }
+    try {
+      const refinementResult =
+        await this.yandexBatchRefinementService.refineSelectedInBatches(
+          selected,
+          yandexPersonaSummary,
+          { intent },
+        );
+      selectedForScheduler = refinementResult.refined;
+      yandexBatchRefinementDiagnostics = refinementResult.diagnostics;
+    } catch (error) {
+      const reason =
+        error instanceof Error && typeof error.message === 'string'
+          ? error.message
+          : 'UNKNOWN';
+      fallbacks.push(`YANDEX_BATCH_REFINEMENT_FAILED:${reason}`);
+      yandexBatchRefinementDiagnostics = {
+        batch_count: 0,
+        failed_batches: 1,
+        fallback_reasons: [`service_error:${reason}`],
+      };
     }
 
     const semanticDuration = Date.now() - semanticStart;
@@ -860,13 +832,10 @@ ${JSON.stringify(points)}
       ...mutationMeta,
     };
 
-    const contractMeta: PlanResponseContractMeta | Record<string, never> =
-      this.isPlannerContractFieldsEnabled()
-        ? {
-            planner_version: plannerVersion,
-            pipeline_status: this.buildPipelineStatus(fallbacks),
-          }
-        : {};
+    const contractMeta: PlanResponseContractMeta = {
+      planner_version: plannerVersion,
+      pipeline_status: this.buildPipelineStatus(fallbacks),
+    };
 
     const policyMeta = { policy_snapshot: policySnapshot };
 
@@ -896,20 +865,17 @@ ${JSON.stringify(points)}
       mass_collection_shadow: massCollectionShadowMeta,
     };
 
-    const yandexBatchRefinementMeta =
-      this.isPlannerContractFieldsEnabled() &&
-      yandexBatchRefinementEnabled &&
-      yandexBatchRefinementDiagnostics
-        ? {
-            yandex_batch_refinement: {
-              status:
-                yandexBatchRefinementDiagnostics.failed_batches > 0
-                  ? 'fallback'
-                  : 'ok',
-              ...yandexBatchRefinementDiagnostics,
-            },
-          }
-        : {};
+    const yandexBatchRefinementMeta = yandexBatchRefinementDiagnostics
+      ? {
+          yandex_batch_refinement: {
+            status:
+              yandexBatchRefinementDiagnostics.failed_batches > 0
+                ? 'fallback'
+                : 'ok',
+            ...yandexBatchRefinementDiagnostics,
+          },
+        }
+      : {};
 
     return {
       session_id: session.id,
@@ -931,15 +897,11 @@ ${JSON.stringify(points)}
 
   @Sse('plan/stream')
   planStream(@Req() req: Request): Observable<MessageEvent> {
-    if (!this.isPlannerSseEnabled()) {
-      throw new NotFoundException('Not Found');
-    }
-
     req.socket?.setKeepAlive?.(true);
     req.socket?.setTimeout?.(0);
 
     const requestId = randomUUID();
-    const plannerVersion = this.resolvePlannerVersion();
+    const plannerVersion: PlannerVersion = 'v2';
     const heartbeatIntervalMs = 3_000;
 
     return new Observable<MessageEvent>((subscriber) => {
