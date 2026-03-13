@@ -49,6 +49,7 @@ import { useTripStore, tripsApi, type CreateTripPayload, type Trip } from '@/ent
 import { useUserStore } from '@/entities/user';
 import { usePointCrud } from '@/features/route-create';
 import { pointsApi } from '@/entities/route-point';
+import { useAiQueryStore } from '@/features/ai-query';
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
 import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point';
@@ -653,6 +654,7 @@ export function PlannerPage() {
   const { geoDenied, setGeoDenied } = useUserStore();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { openOrCreateSessionFromTrip } = useAiQueryStore();
   const initialTab = searchParams.get('tab') === 'popular' ? 'popular' : 'my';
   const [activeTab, setActiveTab] = useState<'my' | 'popular'>(initialTab);
   const [searchInput, setSearchInput] = useState('');
@@ -662,6 +664,11 @@ export function PlannerPage() {
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const justMigratedRef = useRef(false);
+  // feature/TRI-104-ai-planner-interaction: idempotency-guard для обработки applyTripId.
+  // Потребность: чтобы не срабатывали повторные toasts/загрузки при re-render и router.replace.
+  const handledApplyTripIdRef = useRef<string | null>(null);
+  // TRI-104: принудительный remount карты после подмены маршрута из AI.
+  const [lastMapRenderAt, setLastMapRenderAt] = useState<number>(Date.now());
   const userLocationRef = useRef<{ lat: number; lon: number } | null>(null);
   const prevLegsCountRef = useRef(0);
   const prevLegsDurationsRef = useRef<string>('');
@@ -1404,6 +1411,52 @@ export function PlannerPage() {
     }
   };
 
+  // feature/TRI-104-ai-planner-interaction: централизованное применение tripId из query-параметра applyTripId.
+  // Потребность: загрузить маршрут из AI чата в UI без перезагрузки страницы.
+  // Если убрать: маршруты из AI чата не будут переноситься в Planner.
+  const applyIncomingTrip = useCallback(
+    async (tripId: string) => {
+      const all = await tripsApi.getAll();
+      const target = all.find((trip) => trip.id === tripId);
+      if (!target) return;
+
+      const targetPoints = await pointsApi.getAll(tripId);
+      setCurrentTrip({ ...target, points: targetPoints });
+      setSaved();
+      // TRI-104: принудительный remount карты после подмены маршрута из AI.
+      setLastMapRenderAt(Date.now());
+
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('applyTripId');
+      params.delete('draftMessageId');
+      const nextQuery = params.toString();
+      router.replace(nextQuery ? `/planner?${nextQuery}` : '/planner');
+
+      toast.success('Маршрут из AI чата открыт в Planner');
+      // Открываем связанный AI-чат для контекста
+      void openOrCreateSessionFromTrip(tripId);
+    },
+    [router, searchParams, setCurrentTrip, setSaved, openOrCreateSessionFromTrip],
+  );
+
+  useEffect(() => {
+    // feature/TRI-104-ai-planner-interaction: IDEMPOTENCY GUARD
+    // Потребность: исключить зацикливание подгрузки маршрута при ре-рендерах.
+    const incomingTripId = searchParams.get('applyTripId');
+    const draftMessageId = searchParams.get('draftMessageId');
+
+    if (!incomingTripId || incomingTripId.startsWith('guest-')) {
+      handledApplyTripIdRef.current = null;
+      return;
+    }
+
+    const currentKey = `${incomingTripId}-${draftMessageId || 'nodraft'}`;
+    if (handledApplyTripIdRef.current === currentKey) return;
+
+    handledApplyTripIdRef.current = currentKey;
+    void applyIncomingTrip(incomingTripId);
+  }, [applyIncomingTrip, searchParams]);
+
   return (
     <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
       <div className="w-full mx-auto px-4 md:px-8 py-6 md:py-10 flex-1 flex flex-col relative">
@@ -1695,6 +1748,7 @@ export function PlannerPage() {
 
             <div className="w-full max-w-7xl mx-auto aspect-[4/3] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden relative z-0 border border-slate-200 shadow-inner bg-slate-50 group">
               <RouteMap
+                key={`route-map-${currentTrip?.id ?? 'none'}-${lastMapRenderAt}`}
                 points={points}
                 focusCoords={focusCoords}
                 onPointDragEnd={handlePointDragEnd}
