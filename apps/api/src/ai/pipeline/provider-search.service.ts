@@ -100,69 +100,66 @@ export class ProviderSearchService {
       );
     }
 
-    // 3) TRI-108-6: If food focus detected and food POI count is low, search via Photon
+    // 3) TRI-108-6: If food focus detected, supplement with Photon + AI
     const hasFoodFocus = intent.categories.some(
       (cat) =>
         /cafe|кафе|restaurant|ресторан|bar|бар|food|еда|coffee|кофе/i.test(cat),
-    );
-    const foodCount = [...kudagoRaw, ...overpassRaw].filter(
-      (p) => p.category === 'restaurant' || p.category === 'cafe',
-    ).length;
-
-    this.logger.log(
-      `[ProviderSearch] TRI-108-6 DEBUG: hasFoodFocus=${hasFoodFocus}, foodCount=${foodCount}, intent.categories=[${intent.categories.join(', ')}]`,
     );
 
     let photonRaw: PoiItem[] = [];
     let aiGeneratedFood: PoiItem[] = [];
 
-    if (hasFoodFocus && foodCount < 2) {
+    if (hasFoodFocus) {
       this.logger.log(
-        `[ProviderSearch] TRI-108-6 TRIGGERED: Food focus detected with only ${foodCount} food POIs. Searching Photon for city: ${intent.city}`,
+        `[ProviderSearch] TRI-108-6: Food focus detected. Attempting Photon + AI supplements for ${intent.city}...`,
       );
+
+      // Try Photon first (real data from OSM)
       providerStats.photon = this.buildEmptyProviderStat('photon');
       providerStats.photon.attempted = true;
       try {
         photonRaw = await this.searchPhotonForFood(intent.city);
         providerStats.photon.raw_count = photonRaw.length;
         providerStats.photon.used_count = photonRaw.length;
-        this.logger.log(
-          `[ProviderSearch] ✅ Photon returned ${photonRaw.length} food venues: [${photonRaw.map(p => `${p.name}(${p.category})`).join(', ')}]`,
-        );
-        fallbacks.push('PHOTON_FOOD_SEARCH_SUPPLEMENT');
+        if (photonRaw.length > 0) {
+          this.logger.log(
+            `[ProviderSearch] ✅ Photon returned ${photonRaw.length} food venues`,
+          );
+          fallbacks.push('PHOTON_FOOD_SEARCH_SUPPLEMENT');
+        }
       } catch (error: unknown) {
         providerStats.photon.failed = true;
         providerStats.photon.fail_reason =
           error instanceof Error ? error.message : String(error);
         this.logger.warn(
-          `[ProviderSearch] ⚠️ Photon food search failed: ${providerStats.photon.fail_reason}`,
+          `[ProviderSearch] ⚠️ Photon search failed: ${providerStats.photon.fail_reason}`,
         );
       }
 
-      // TRI-108-6 Extended: If still no food, use AI to generate user-specific recommendations
-      const foodAfterPhoton = [...kudagoRaw, ...overpassRaw, ...photonRaw].filter(
+      // If Photon returned < 2 food POIs, use AI as fallback
+      const allFood = [...kudagoRaw, ...overpassRaw, ...photonRaw].filter(
         (p) => p.category === 'restaurant' || p.category === 'cafe',
       ).length;
 
-      if (foodAfterPhoton < 2) {
+      if (allFood < 2) {
         this.logger.log(
-          `[ProviderSearch] TRI-108-6 AI FALLBACK: Still only ${foodAfterPhoton} food POIs. Generating AI recommendations for "${intent.preferences_text}"`,
+          `[ProviderSearch] TRI-108-6 AI FALLBACK: Only ${allFood} food POIs found. Generating AI recommendations...`,
         );
         try {
           aiGeneratedFood = await this.generateFoodVenuesWithAI(intent);
           this.logger.log(
-            `[ProviderSearch] ✨ AI generated ${aiGeneratedFood.length} food venues: [${aiGeneratedFood.map(p => `${p.name}(AI)`).join(', ')}]`,
+            `[ProviderSearch] ✨ AI generated ${aiGeneratedFood.length} food venues`,
           );
           fallbacks.push('AI_GENERATED_FOOD_RECOMMENDATIONS');
         } catch (error: unknown) {
           this.logger.warn(
-            `[ProviderSearch] ⚠️ AI food generation failed: ${error instanceof Error ? error.message : String(error)}`,
+            `[ProviderSearch] ⚠️ AI generation failed: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
       }
     } else {
       this.logger.log(
-        `[ProviderSearch] TRI-108-6 SKIP: hasFoodFocus=${hasFoodFocus}, foodCount=${foodCount} (need both true and < 2)`,
+        `[ProviderSearch] TRI-108-6 SKIPPED: Food focus not detected`,
       );
     }
 
