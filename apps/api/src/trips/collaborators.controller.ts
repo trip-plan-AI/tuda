@@ -39,7 +39,11 @@ export class CollaboratorsController {
     if (trip.ownerId !== req.user.id) {
       throw new ForbiddenException('Only trip owner can invite collaborators');
     }
-    const result = await this.collaboratorsService.add(tripId, dto.userId, dto.role ?? 'editor');
+    const result = await this.collaboratorsService.add(
+      tripId,
+      dto.userId,
+      dto.role ?? 'editor',
+    );
     // Push the trip to the invited user's profile in real-time
     this.collabGateway.notifyTripShared(dto.userId, trip);
     return result;

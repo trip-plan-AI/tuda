@@ -13,6 +13,66 @@ interface RefineSelectedOptions {
 export class YandexBatchRefinementService {
   private readonly logger = new Logger('AI_PIPELINE:YandexBatchRefinement');
 
+  async chooseReplacementAlternative(
+    candidates: FilteredPoi[],
+    userPersonaSummary: string,
+    context?: { city?: string; targetName?: string },
+  ): Promise<FilteredPoi | null> {
+    if (candidates.length === 0) return null;
+
+    const apiKey = process.env.YANDEX_GPT_API_KEY;
+    const folderId = process.env.YANDEX_FOLDER_ID;
+    if (!apiKey || !folderId) {
+      return candidates[0];
+    }
+
+    const prompt = this.buildReplacementPrompt(candidates, userPersonaSummary, context);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.resolveTimeoutMs());
+
+    try {
+      const response = await fetch(
+        'https://llm.api.cloud.yandex.net/foundationModels/v1/completion',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Api-Key ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            modelUri: `gpt://${folderId}/yandexgpt-lite`,
+            completionOptions: {
+              stream: false,
+              temperature: 0.1,
+              maxTokens: 300,
+            },
+            messages: [{ role: 'user', text: prompt }],
+          }),
+          signal: controller.signal,
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(`YANDEX_HTTP_${response.status}`);
+      }
+
+      const payload = (await response.json()) as {
+        result?: { alternatives?: Array<{ message?: { text?: string } }> };
+      };
+      const rawText = payload.result?.alternatives?.[0]?.message?.text ?? '{}';
+      const jsonText = rawText.replace(/```json\n?|\n?```/g, '').trim();
+      const parsed = JSON.parse(jsonText) as { id?: string };
+      const resolved = this.resolvePoiByModelId(candidates, parsed.id ?? '');
+      return resolved ?? candidates[0];
+    } catch (error) {
+      this.logger.warn(`Replacement alternative selection fallback: ${String(error)}`);
+      return candidates[0];
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+    }
+  }
+
   async refineSelectedInBatches(
     selectedPois: FilteredPoi[],
     userPersonaSummary: string,
@@ -240,6 +300,36 @@ export class YandexBatchRefinementService {
 Список POI:
 ${JSON.stringify(
   batch.map((poi, index) => ({
+    id: String(index + 1),
+    source_id: poi.id,
+    name: poi.name,
+    category: poi.category,
+    description: poi.description,
+  })),
+)}`;
+  }
+
+  private buildReplacementPrompt(
+    candidates: FilteredPoi[],
+    userPersonaSummary: string,
+    context?: { city?: string; targetName?: string },
+  ): string {
+    const cityHint = context?.city ? `Город: ${context.city}.` : '';
+    const targetHint = context?.targetName
+      ? `Нужно заменить точку: ${context.targetName}.`
+      : '';
+
+    return `Ты выбираешь одну лучшую альтернативу POI для маршрута. ${cityHint} ${targetHint}
+Контекст пользователя: ${userPersonaSummary}
+
+Верни только JSON без markdown в формате:
+{
+  "id": "1"
+}
+
+Выбирай только id из списка ниже:
+${JSON.stringify(
+  candidates.map((poi, index) => ({
     id: String(index + 1),
     source_id: poi.id,
     name: poi.name,

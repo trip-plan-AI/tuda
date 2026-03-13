@@ -36,6 +36,11 @@ export class UsersService {
       where: eq(schema.users.email, email),
     });
     if (!user) return null;
-    return { id: user.id, name: user.name, email: user.email, photo: user.photo };
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      photo: user.photo,
+    };
   }
 }

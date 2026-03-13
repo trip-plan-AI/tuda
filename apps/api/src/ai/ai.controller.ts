@@ -33,10 +33,12 @@ import { LogicalIdFilterService } from './pipeline/logical-id-filter.service';
 import { VectorPrefilterService } from './pipeline/vector-prefilter.service';
 import { DeterministicPlannerService } from './pipeline/deterministic-planner.service';
 import { YandexBatchRefinementService } from './pipeline/yandex-batch-refinement.service';
+import { LogicalIdSelectorService } from './pipeline/logical-id-selector.service';
 import type { SessionMessage } from './types/pipeline.types';
 import type { RoutePlan } from './types/pipeline.types';
 import type { ParsedIntent } from './types/pipeline.types';
 import type {
+  IntentRouterActionType,
   DeterministicPlannerShadowMeta,
   IntentRouterDecision,
   LogicalIdShadowMeta,
@@ -48,6 +50,7 @@ import type {
   VectorPrefilterShadowMeta,
   YandexBatchRefinementDiagnostics,
 } from './types/pipeline.types';
+import type { FilteredPoi, PoiItem } from './types/poi.types';
 import type {
   HeartbeatSseEvent,
   PlanStartedSseEvent,
@@ -79,30 +82,6 @@ export class AiController {
 
   private isPlannerContractFieldsEnabled(): boolean {
     return this.parseBooleanEnv(process.env.FF_PLANNER_V2_CONTRACT_FIELDS);
-  }
-
-  private isIntentRouterV2Enabled(): boolean {
-    return this.parseBooleanEnv(process.env.FF_INTENT_ROUTER_V2);
-  }
-
-  private isPolicyCalcV2Enabled(): boolean {
-    return this.parseBooleanEnv(process.env.FF_POLICY_CALC_V2);
-  }
-
-  private isLogicalIdFilterV2Enabled(): boolean {
-    return this.parseBooleanEnv(process.env.FF_LOGICAL_ID_FILTER_V2);
-  }
-
-  private isVectorPrefilterRedisEnabled(): boolean {
-    return this.parseBooleanEnv(process.env.FF_VECTOR_PREFILTER_REDIS);
-  }
-
-  private isDeterministicPlannerV2Enabled(): boolean {
-    return this.parseBooleanEnv(process.env.FF_DETERMINISTIC_PLANNER_V2);
-  }
-
-  private isMassCollectionV2Enabled(): boolean {
-    return this.parseBooleanEnv(process.env.FF_MASS_COLLECTION_V2);
   }
 
   private isPlannerSseEnabled(): boolean {
@@ -156,6 +135,7 @@ export class AiController {
     private readonly vectorPrefilterService: VectorPrefilterService,
     private readonly deterministicPlannerService: DeterministicPlannerService,
     private readonly yandexBatchRefinementService: YandexBatchRefinementService,
+    private readonly logicalIdSelectorService: LogicalIdSelectorService,
   ) {}
 
   private isNeedCityError(error: unknown): boolean {
@@ -194,6 +174,99 @@ export class AiController {
     } catch {
       return null;
     }
+  }
+
+  private extractCurrentRoutePois(
+    history: SessionMessage[],
+  ): Array<{ poi_id: string; title?: string | null }> {
+    const latestRoutePlan = history
+      .slice()
+      .reverse()
+      .find((message) => this.tryParseRoutePlan(message));
+
+    if (!latestRoutePlan) {
+      return [];
+    }
+
+    const parsed = this.tryParseRoutePlan(latestRoutePlan);
+    if (!parsed) {
+      return [];
+    }
+
+    return parsed.days.flatMap((day) =>
+      day.points
+        .filter((point) => typeof point.poi_id === 'string' && point.poi_id.trim())
+        .map((point) => ({
+          poi_id: point.poi_id,
+          title: point.poi?.name ?? null,
+        })),
+    );
+  }
+
+  private extractCurrentRoutePlan(history: SessionMessage[]): RoutePlan | null {
+    const latestRoutePlanMessage = history
+      .slice()
+      .reverse()
+      .find((message) => this.tryParseRoutePlan(message));
+
+    if (!latestRoutePlanMessage) return null;
+    return this.tryParseRoutePlan(latestRoutePlanMessage);
+  }
+
+  private toFilteredPoi(poi: PoiItem, descriptionFallback = ''): FilteredPoi {
+    return {
+      ...poi,
+      description: (descriptionFallback || `Интересное место: ${poi.name}.`).trim(),
+    };
+  }
+
+  private addDaysToIsoDate(baseDate: string, offsetDays: number): string {
+    const parsed = new Date(baseDate);
+    if (Number.isNaN(parsed.getTime())) return baseDate;
+    parsed.setDate(parsed.getDate() + offsetDays);
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  private parseTimeToMinutes(value: string): number {
+    const [hours, minutes] = value.split(':').map(Number);
+    return hours * 60 + minutes;
+  }
+
+  private isWorkingHoursAllowed(workingHours: string | undefined, time: string): boolean {
+    if (!workingHours || typeof workingHours !== 'string') return true;
+
+    const normalized = workingHours.toLowerCase();
+    if (normalized.includes('круглосуточно') || normalized.includes('24/7')) {
+      return true;
+    }
+
+    const rangeMatch = normalized.match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
+    if (!rangeMatch) return true;
+
+    const current = this.parseTimeToMinutes(time);
+    const start = this.parseTimeToMinutes(rangeMatch[1]);
+    const end = this.parseTimeToMinutes(rangeMatch[2]);
+
+    if (end >= start) {
+      return current >= start && current <= end;
+    }
+
+    return current >= start || current <= end;
+  }
+
+  private haversineKm(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
+    const toRad = (value: number) => (value * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   private async enrichDescriptions(
@@ -362,15 +435,13 @@ ${JSON.stringify(points)}
     const history = session.messages;
     const llmContext = history.slice(-10);
     const orchestratorStart = Date.now();
-    const intentRouterEnabled = this.isIntentRouterV2Enabled();
-
-    let intentRouterDecision: IntentRouterDecision | null = null;
-    if (intentRouterEnabled) {
-      intentRouterDecision = this.intentRouterService.route(
+    const currentRoutePois = this.extractCurrentRoutePois(history);
+    const intentRouterDecision: IntentRouterDecision =
+      await this.intentRouterService.route(
         dto.user_query,
         llmContext,
+        currentRoutePois,
       );
-    }
 
     let intent: ParsedIntent;
     try {
@@ -411,15 +482,13 @@ ${JSON.stringify(points)}
     }
 
     const orchestratorDuration = Date.now() - orchestratorStart;
-    const policyCalcEnabled = this.isPolicyCalcV2Enabled();
     const plannerVersion = this.resolvePlannerVersion();
-    const policySnapshot: PolicySnapshot | null = policyCalcEnabled
-      ? this.policyService.calculatePolicySnapshot(
-          intent,
-          llmContext,
-          plannerVersion,
-        )
-      : null;
+    const policySnapshot: PolicySnapshot =
+      this.policyService.calculatePolicySnapshot(
+        intent,
+        llmContext,
+        plannerVersion as 'v2' | 'v2-shadow',
+      );
 
     const providerStart = Date.now();
     const fallbacks: string[] = [];
@@ -428,55 +497,62 @@ ${JSON.stringify(points)}
       fallbacks,
     );
     const rawPoi = providerResult.pois;
-    const massCollectionShadowMeta: MassCollectionShadowMeta | null =
-      providerResult.shadowDiagnostics ?? null;
+    const massCollectionShadowMeta: MassCollectionShadowMeta =
+      providerResult.shadowDiagnostics ?? {
+        provider_stats: [],
+        totals: {
+          before_dedup: rawPoi.length,
+          after_dedup: rawPoi.length,
+          returned: rawPoi.length,
+        },
+      };
     const providerDuration = Date.now() - providerStart;
 
-    const vectorPrefilterRedisEnabled = this.isVectorPrefilterRedisEnabled();
-    let vectorPrefilterShadowMeta: VectorPrefilterShadowMeta | null = null;
+    const personaSummary = policySnapshot.user_persona_summary ?? dto.user_query;
+    const vectorPrefilterShadowMeta: VectorPrefilterShadowMeta =
+      await this.vectorPrefilterService.runShadowPrefilter(
+        personaSummary,
+        rawPoi,
+        this.resolveVectorTopK(),
+      );
 
-    if (vectorPrefilterRedisEnabled) {
-      const personaSummary =
-        policySnapshot?.user_persona_summary ?? dto.user_query;
-      vectorPrefilterShadowMeta =
-        await this.vectorPrefilterService.runShadowPrefilter(
-          personaSummary,
-          rawPoi,
-          this.resolveVectorTopK(),
-        );
-    }
+    const logicalSelectorResult = await this.logicalIdSelectorService.selectIds({
+      candidates: rawPoi.map((poi) => ({
+        id: poi.id,
+        name: poi.name,
+        category: poi.category,
+      })),
+      required_capacity: policySnapshot.required_capacity,
+      food_policy: policySnapshot.food_policy,
+    });
+    const selectedIdSet = new Set(logicalSelectorResult.selected_ids);
+    const logicalSelectedPool = rawPoi.filter((poi) => selectedIdSet.has(poi.id));
 
-    const logicalIdFilterEnabled = this.isLogicalIdFilterV2Enabled();
-    let logicalIdShadowMeta: LogicalIdShadowMeta | null = null;
+    const enrichedWithLogicalIds = this.logicalIdFilterService.attachLogicalIds(
+      rawPoi,
+      intent.city,
+    );
+    const duplicateGroups =
+      this.logicalIdFilterService.analyzeDuplicatesByLogicalId(
+        enrichedWithLogicalIds,
+      );
 
-    if (logicalIdFilterEnabled) {
-      const enrichedWithLogicalIds =
-        this.logicalIdFilterService.attachLogicalIds(rawPoi, intent.city);
-      const duplicateGroups =
-        this.logicalIdFilterService.analyzeDuplicatesByLogicalId(
-          enrichedWithLogicalIds,
-        );
-
-      logicalIdShadowMeta = {
-        total_candidates: enrichedWithLogicalIds.length,
-        duplicates_groups: duplicateGroups.length,
-        duplicates_total: duplicateGroups.reduce(
-          (sum, group) => sum + group.count,
-          0,
-        ),
-      };
-    }
+    const logicalIdShadowMeta: LogicalIdShadowMeta = {
+      total_candidates: enrichedWithLogicalIds.length,
+      duplicates_groups: duplicateGroups.length,
+      duplicates_total: duplicateGroups.reduce((sum, group) => sum + group.count, 0),
+    };
 
     const semanticStart = Date.now();
     const selected = await this.semanticFilterService.select(
-      rawPoi,
+      logicalSelectedPool,
       intent,
       fallbacks,
     );
 
     const yandexBatchRefinementEnabled = this.isYandexBatchRefinementEnabled();
-    const personaSummary =
-      policySnapshot?.user_persona_summary ?? dto.user_query;
+    const yandexPersonaSummary =
+      policySnapshot.user_persona_summary ?? dto.user_query;
     let selectedForScheduler = selected;
     let yandexBatchRefinementDiagnostics: YandexBatchRefinementDiagnostics | null =
       null;
@@ -486,7 +562,7 @@ ${JSON.stringify(points)}
         const refinementResult =
           await this.yandexBatchRefinementService.refineSelectedInBatches(
             selected,
-            personaSummary,
+            yandexPersonaSummary,
             { intent },
           );
         selectedForScheduler = refinementResult.refined;
@@ -508,36 +584,237 @@ ${JSON.stringify(points)}
     const semanticDuration = Date.now() - semanticStart;
 
     const schedulerStart = Date.now();
-    const routePlan = this.schedulerService.buildPlan(
-      selectedForScheduler,
-      intent,
-    );
+    const existingRoutePlan = this.extractCurrentRoutePlan(history);
+    const mutationMeta: {
+      mutation_applied?: boolean;
+      mutation_type?: IntentRouterActionType;
+      mutation_fallback_reason?: string;
+    } = {
+      mutation_applied: false,
+    };
+
+    const buildRoutePlanFromDays = (city: string, days: RoutePlan['days']): RoutePlan => ({
+      city,
+      days,
+      total_budget_estimated: days.reduce(
+        (sum, day) => sum + (day.day_budget_estimated ?? 0),
+        0,
+      ),
+    });
+
+    const buildFullRebuild = (): RoutePlan =>
+      this.schedulerService.buildPlan(selectedForScheduler, intent);
+
+    let routePlan: RoutePlan;
+
+    if (intentRouterDecision.route_mode !== 'targeted_mutation') {
+      routePlan = buildFullRebuild();
+    } else if (!existingRoutePlan) {
+      mutationMeta.mutation_type = intentRouterDecision.action_type;
+      mutationMeta.mutation_fallback_reason = 'NO_CURRENT_ROUTE_PLAN';
+      fallbacks.push('TARGETED_MUTATION_FALLBACK:NO_CURRENT_ROUTE_PLAN');
+      routePlan = buildFullRebuild();
+    } else {
+      mutationMeta.mutation_type = intentRouterDecision.action_type;
+
+      switch (intentRouterDecision.action_type) {
+        case 'REMOVE_POI': {
+          const targetPoiId = intentRouterDecision.target_poi_id;
+          const targetExists =
+            !!targetPoiId &&
+            existingRoutePlan.days.some((day) =>
+              day.points.some((point) => point.poi_id === targetPoiId),
+            );
+
+          if (!targetPoiId || !targetExists) {
+            mutationMeta.mutation_fallback_reason = 'TARGET_NOT_FOUND';
+            fallbacks.push('TARGETED_MUTATION_REMOVE_FALLBACK:TARGET_NOT_FOUND');
+            routePlan = buildFullRebuild();
+            break;
+          }
+
+          const rebuiltDays = existingRoutePlan.days.map((day) => {
+            const dayPois = day.points
+              .filter((point) => point.poi_id !== targetPoiId)
+              .map((point) =>
+                this.toFilteredPoi(
+                  point.poi,
+                  (point.poi as FilteredPoi).description,
+                ),
+              );
+
+            return this.schedulerService.rebuildSingleDayPlan(dayPois, intent, {
+              day_number: day.day_number,
+              date: day.date,
+            });
+          });
+
+          routePlan = buildRoutePlanFromDays(existingRoutePlan.city, rebuiltDays);
+          mutationMeta.mutation_applied = true;
+          break;
+        }
+
+        case 'ADD_DAYS': {
+          const daysToAdd = Math.max(0, intent.days);
+          const usedPoiIds = new Set(
+            existingRoutePlan.days.flatMap((day) => day.points.map((point) => point.poi_id)),
+          );
+
+          const additionalCandidates = selectedForScheduler.filter(
+            (poi) => !usedPoiIds.has(poi.id),
+          );
+          const addDaysIntent: ParsedIntent = {
+            ...intent,
+            days: daysToAdd,
+          };
+          const newDaysPlan =
+            daysToAdd > 0
+              ? this.schedulerService.buildPlan(additionalCandidates, addDaysIntent)
+              : { city: existingRoutePlan.city, total_budget_estimated: 0, days: [] };
+
+          const lastExistingDate =
+            existingRoutePlan.days[existingRoutePlan.days.length - 1]?.date ??
+            new Date().toISOString().slice(0, 10);
+          const normalizedNewDays = newDaysPlan.days.map((day, index) => ({
+            ...day,
+            day_number: existingRoutePlan.days.length + index + 1,
+            date: this.addDaysToIsoDate(lastExistingDate, index + 1),
+          }));
+
+          routePlan = buildRoutePlanFromDays(existingRoutePlan.city, [
+            ...existingRoutePlan.days,
+            ...normalizedNewDays,
+          ]);
+          mutationMeta.mutation_applied = true;
+          break;
+        }
+
+        case 'REPLACE_POI': {
+          const targetPoiId = intentRouterDecision.target_poi_id;
+          const dayIndex = existingRoutePlan.days.findIndex((day) =>
+            day.points.some((point) => point.poi_id === targetPoiId),
+          );
+
+          if (!targetPoiId || dayIndex === -1) {
+            mutationMeta.mutation_fallback_reason = 'TARGET_NOT_FOUND';
+            fallbacks.push('TARGETED_MUTATION_REPLACE_FALLBACK:TARGET_NOT_FOUND');
+            routePlan = buildFullRebuild();
+            break;
+          }
+
+          const targetDay = existingRoutePlan.days[dayIndex];
+          const pointIndex = targetDay.points.findIndex(
+            (point) => point.poi_id === targetPoiId,
+          );
+          const targetPoint = targetDay.points[pointIndex];
+          const usedPoiIds = new Set(
+            existingRoutePlan.days.flatMap((day) => day.points.map((point) => point.poi_id)),
+          );
+
+          const poolFromRaw = rawPoi.map((poi) => this.toFilteredPoi(poi));
+          const candidatePool =
+            selectedForScheduler.length > 0 ? selectedForScheduler : poolFromRaw;
+          const nearestSameCategory = candidatePool
+            .filter(
+              (poi) =>
+                poi.id !== targetPoiId &&
+                !usedPoiIds.has(poi.id) &&
+                poi.category === targetPoint.poi.category,
+            )
+            .map((poi) => ({
+              poi,
+              distance: this.haversineKm(
+                targetPoint.poi.coordinates.lat,
+                targetPoint.poi.coordinates.lon,
+                poi.coordinates.lat,
+                poi.coordinates.lon,
+              ),
+            }))
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, 5)
+            .map((entry) => entry.poi)
+            .filter((poi) =>
+              this.isWorkingHoursAllowed(poi.working_hours, targetPoint.arrival_time),
+            );
+
+          if (nearestSameCategory.length === 0) {
+            mutationMeta.mutation_fallback_reason = 'NO_ALTERNATIVES';
+            fallbacks.push('TARGETED_MUTATION_REPLACE_FALLBACK:NO_ALTERNATIVES');
+            routePlan = buildFullRebuild();
+            break;
+          }
+
+          const replacement = await this.yandexBatchRefinementService.chooseReplacementAlternative(
+            nearestSameCategory,
+            yandexPersonaSummary,
+            {
+              city: intent.city,
+              targetName: targetPoint.poi.name,
+            },
+          );
+
+          if (!replacement) {
+            mutationMeta.mutation_fallback_reason = 'REPLACEMENT_SELECTION_FAILED';
+            fallbacks.push(
+              'TARGETED_MUTATION_REPLACE_FALLBACK:REPLACEMENT_SELECTION_FAILED',
+            );
+            routePlan = buildFullRebuild();
+            break;
+          }
+
+          const replacedDayPois = targetDay.points.map((point, index) =>
+            index === pointIndex
+              ? replacement
+              : this.toFilteredPoi(
+                  point.poi,
+                  (point.poi as FilteredPoi).description,
+                ),
+          );
+          const rebuiltTargetDay = this.schedulerService.rebuildSingleDayPlan(
+            replacedDayPois,
+            intent,
+            {
+              day_number: targetDay.day_number,
+              date: targetDay.date,
+            },
+          );
+
+          const mergedDays = existingRoutePlan.days.map((day, index) =>
+            index === dayIndex ? rebuiltTargetDay : day,
+          );
+          routePlan = buildRoutePlanFromDays(existingRoutePlan.city, mergedDays);
+          mutationMeta.mutation_applied = true;
+          break;
+        }
+
+        default:
+          routePlan = buildFullRebuild();
+          break;
+      }
+    }
+
     const schedulerDuration = Date.now() - schedulerStart;
 
-    const deterministicPlannerEnabled = this.isDeterministicPlannerV2Enabled();
-    let deterministicPlannerShadowMeta: DeterministicPlannerShadowMeta | null =
-      null;
+    let deterministicPlannerShadowMeta: DeterministicPlannerShadowMeta;
 
-    if (deterministicPlannerEnabled) {
-      try {
-        deterministicPlannerShadowMeta = {
-          status: 'ok',
-          input_hash: this.deterministicPlannerService.buildInputHash(
-            intent,
-            selectedForScheduler,
-          ),
-          decision_summary:
-            this.deterministicPlannerService.buildDecisionLogSummary(routePlan),
-          deterministic_mode: 'shadow',
-        };
-      } catch {
-        deterministicPlannerShadowMeta = {
-          status: 'fallback',
-          input_hash: null,
-          decision_summary: null,
-          deterministic_mode: 'shadow',
-        };
-      }
+    try {
+      deterministicPlannerShadowMeta = {
+        status: 'ok',
+        input_hash: this.deterministicPlannerService.buildInputHash(
+          intent,
+          selectedForScheduler,
+        ),
+        decision_summary:
+          this.deterministicPlannerService.buildDecisionLogSummary(routePlan),
+        deterministic_mode: 'shadow',
+      };
+    } catch {
+      deterministicPlannerShadowMeta = {
+        status: 'fallback',
+        input_hash: null,
+        decision_summary: null,
+        deterministic_mode: 'shadow',
+      };
     }
 
     const newMessages: SessionMessage[] = [
@@ -576,9 +853,11 @@ ${JSON.stringify(points)}
       },
       poi_counts: {
         yandex_raw: rawPoi.length, // Оставляем старый ключ
+        after_logical_selector: logicalSelectedPool.length,
         after_semantic: selected.length,
       },
       fallbacks_triggered: fallbacks,
+      ...mutationMeta,
     };
 
     const contractMeta: PlanResponseContractMeta | Record<string, never> =
@@ -589,43 +868,33 @@ ${JSON.stringify(points)}
           }
         : {};
 
-    const policyMeta =
-      this.isPlannerContractFieldsEnabled() && policySnapshot
-        ? { policy_snapshot: policySnapshot }
-        : {};
+    const policyMeta = { policy_snapshot: policySnapshot };
 
-    const intentRouterMeta =
-      this.isPlannerContractFieldsEnabled() && intentRouterDecision
-        ? { intent_router: intentRouterDecision }
-        : {};
+    const intentRouterMeta = { intent_router: intentRouterDecision };
 
-    const logicalIdMeta =
-      this.isPlannerContractFieldsEnabled() &&
-      logicalIdFilterEnabled &&
-      logicalIdShadowMeta
-        ? { logical_id_shadow: logicalIdShadowMeta }
-        : {};
+    const logicalIdMeta = { logical_id_shadow: logicalIdShadowMeta };
 
-    const vectorPrefilterMeta =
-      this.isPlannerContractFieldsEnabled() &&
-      vectorPrefilterRedisEnabled &&
-      vectorPrefilterShadowMeta
-        ? { vector_prefilter_shadow: vectorPrefilterShadowMeta }
-        : {};
+    const logicalSelectorMeta = {
+      logical_selector: {
+        target: logicalSelectorResult.target,
+        selected_count: logicalSelectorResult.selected_count,
+        ...(logicalSelectorResult.fallback_reason
+          ? { fallback_reason: logicalSelectorResult.fallback_reason }
+          : {}),
+      },
+    };
 
-    const deterministicPlannerMeta =
-      this.isPlannerContractFieldsEnabled() &&
-      deterministicPlannerEnabled &&
-      deterministicPlannerShadowMeta
-        ? { deterministic_planner_shadow: deterministicPlannerShadowMeta }
-        : {};
+    const vectorPrefilterMeta = {
+      vector_prefilter_shadow: vectorPrefilterShadowMeta,
+    };
 
-    const massCollectionMeta =
-      this.isPlannerContractFieldsEnabled() &&
-      this.isMassCollectionV2Enabled() &&
-      massCollectionShadowMeta
-        ? { mass_collection_shadow: massCollectionShadowMeta }
-        : {};
+    const deterministicPlannerMeta = {
+      deterministic_planner_shadow: deterministicPlannerShadowMeta,
+    };
+
+    const massCollectionMeta = {
+      mass_collection_shadow: massCollectionShadowMeta,
+    };
 
     const yandexBatchRefinementMeta =
       this.isPlannerContractFieldsEnabled() &&
@@ -651,6 +920,7 @@ ${JSON.stringify(points)}
         ...intentRouterMeta,
         ...policyMeta,
         ...logicalIdMeta,
+        ...logicalSelectorMeta,
         ...vectorPrefilterMeta,
         ...deterministicPlannerMeta,
         ...massCollectionMeta,
@@ -665,9 +935,12 @@ ${JSON.stringify(points)}
       throw new NotFoundException('Not Found');
     }
 
+    req.socket?.setKeepAlive?.(true);
+    req.socket?.setTimeout?.(0);
+
     const requestId = randomUUID();
     const plannerVersion = this.resolvePlannerVersion();
-    const heartbeatIntervalMs = 10_000;
+    const heartbeatIntervalMs = 3_000;
 
     return new Observable<MessageEvent>((subscriber) => {
       const startedEvent: PlanStartedSseEvent = {
@@ -683,7 +956,7 @@ ${JSON.stringify(points)}
         data: startedEvent.data,
       } satisfies PlannerSseEvent);
 
-      const intervalId = setInterval(() => {
+      const emitHeartbeat = () => {
         const heartbeatEvent: HeartbeatSseEvent = {
           event: 'heartbeat',
           data: {
@@ -696,7 +969,13 @@ ${JSON.stringify(points)}
           type: heartbeatEvent.event,
           data: heartbeatEvent.data,
         } satisfies PlannerSseEvent);
-      }, heartbeatIntervalMs);
+      };
+
+      // Отправляем первый heartbeat сразу, чтобы соединение не выглядело "зависшим"
+      // для клиентов/прокси с агрессивными idle/read timeout.
+      emitHeartbeat();
+
+      const intervalId = setInterval(emitHeartbeat, heartbeatIntervalMs);
 
       const handleClose = () => {
         clearInterval(intervalId);
@@ -704,10 +983,12 @@ ${JSON.stringify(points)}
       };
 
       req.on('close', handleClose);
+      req.on('aborted', handleClose);
 
       return () => {
         clearInterval(intervalId);
         req.off('close', handleClose);
+        req.off('aborted', handleClose);
       };
     });
   }

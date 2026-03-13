@@ -75,6 +75,9 @@ export interface PlanResponseContractMeta {
   policy_snapshot?: PolicySnapshot;
   mass_collection_shadow?: MassCollectionShadowMeta;
   yandex_batch_refinement?: YandexBatchRefinementMeta;
+  mutation_applied?: boolean;
+  mutation_type?: IntentRouterActionType;
+  mutation_fallback_reason?: string;
 }
 
 export type YandexBatchRefinementStatus = 'ok' | 'fallback';
