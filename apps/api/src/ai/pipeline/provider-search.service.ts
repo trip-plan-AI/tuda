@@ -146,7 +146,11 @@ export class ProviderSearchService {
           `[ProviderSearch] TRI-108-6 AI FALLBACK: Only ${allFood} food POIs found. Generating AI recommendations...`,
         );
         try {
-          aiGeneratedFood = await this.generateFoodVenuesWithAI(intent);
+          const allCurrentPois = [...kudagoRaw, ...overpassRaw, ...photonRaw];
+          aiGeneratedFood = await this.generateFoodVenuesWithAI(
+            intent,
+            allCurrentPois,
+          );
           this.logger.log(
             `[ProviderSearch] ✨ AI generated ${aiGeneratedFood.length} food venues`,
           );
@@ -522,6 +526,7 @@ export class ProviderSearchService {
   // TRI-108-6 Extended: Generate AI-recommended food venues based on user preferences
   private async generateFoodVenuesWithAI(
     intent: ParsedIntent,
+    existingPois: PoiItem[] = [],
   ): Promise<PoiItem[]> {
     const preferences = intent.preferences_text.toLowerCase();
 
@@ -641,12 +646,25 @@ Return ONLY valid JSON (no markdown):
         if (r.price_segment === 'luxury' || r.price_segment === 'premium')
           priceSegment = 'premium';
 
+        // Use existing POI coords as base, or fallback to reasonable defaults
+        const baseLat =
+          existingPois.length > 0
+            ? existingPois[0].coordinates.lat
+            : 51.5; // Default to ~London latitude if no reference
+        const baseLon =
+          existingPois.length > 0
+            ? existingPois[0].coordinates.lon
+            : 0; // Default to Prime Meridian if no reference
+
+        const lat = baseLat + (Math.random() - 0.5) * 0.05; // ±0.025 degrees (~2.8km)
+        const lon = baseLon + (Math.random() - 0.5) * 0.05;
+
         return {
           id: `ai-food-${intent.city.replace(/\s+/g, '-')}-${idx}`,
           name: r.name,
           address: `${intent.city}, ${r.cuisine} restaurant`,
           category: 'restaurant' as const,
-          coordinates: { lat: 0, lon: 0 }, // Will be geocoded later
+          coordinates: { lat, lon },
           price_segment: priceSegment,
           rating: r.rating || 4.2,
           website: undefined,
