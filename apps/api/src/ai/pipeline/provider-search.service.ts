@@ -8,7 +8,7 @@ import type { PoiItem } from '../types/poi.types';
 import { KudagoClientService } from './kudago-client.service';
 import { OverpassClientService } from './overpass-client.service';
 import { LlmClientService } from './llm-client.service';
-import { GeosearchService } from '../geosearch/geosearch.service';
+import { GeosearchService } from '../../geosearch/geosearch.service';
 import { randomUUID } from 'crypto';
 
 @Injectable()
@@ -448,15 +448,25 @@ export class ProviderSearchService {
     this.logger.log(`[Photon] Starting food venue search for city: ${city}`);
     const results: PoiItem[] = [];
 
-    // Search for "кафе" and "ресторан" in the city
-    const queries = [`кафе ${city}`, `ресторан ${city}`];
+    // Detect if city is Russian (Cyrillic) or foreign
+    const isCyrillicCity = /[а-яА-ЯёЁ]/.test(city);
+    const searchLang = isCyrillicCity ? 'ru' : 'en';
+
+    // TRI-108-6 Extended: Multi-language queries
+    const queries = isCyrillicCity
+      ? [`кафе ${city}`, `ресторан ${city}`]
+      : [
+          `restaurant ${city}`,
+          `cafe ${city}`,
+          `食肆 ${city}`, // For Chinese cities
+        ];
 
     for (const query of queries) {
       try {
         const url = new URL('https://photon.komoot.io/api/');
         url.searchParams.set('q', query);
         url.searchParams.set('limit', '10');
-        url.searchParams.set('lang', 'ru');
+        url.searchParams.set('lang', searchLang);
 
         this.logger.log(`[Photon] Fetching: ${url.toString()}`);
         const response = await fetch(url.toString());
@@ -583,13 +593,16 @@ USER PREFERENCES:
 - Trip type: ${intent.party_type} (${intent.party_size} people, ${intent.days} day(s))
 - Budget: ${intent.budget_total ? `${intent.budget_total} total` : 'not specified'}
 
-IMPORTANT: Generate ONLY realistic, actual-sounding restaurants that match the city and preferences. No fictional places.
+IMPORTANT:
+- Generate ONLY realistic, actual-sounding restaurants that match the city and preferences. No fictional places.
+- If restaurant name is in a foreign language (non-Cyrillic), include Russian transliteration or translation in parentheses.
+- Example: "Café de Paris (Кафе де Пари)" or "Schönbrunn Restaurant (Шёнбрунн)"
 
 Return ONLY valid JSON (no markdown):
 {
   "restaurants": [
     {
-      "name": "Restaurant Name",
+      "name": "Restaurant Name (Russian Transliteration if foreign)",
       "cuisine": "Cuisine Type",
       "atmosphere": "brief atmosphere description",
       "price_segment": "budget|mid|luxury",
@@ -636,15 +649,37 @@ Return ONLY valid JSON (no markdown):
         `[AI_FOOD] Generated ${restaurants.length} recommendations for ${intent.city}`,
       );
 
-      // TRI-108-6: Geocode each AI restaurant to get real coordinates
+      // TRI-108-6 Extended: Geocode each AI restaurant with fuzzy matching + transliteration
       const results: PoiItem[] = [];
 
       for (const r of restaurants) {
         try {
-          const query = `${r.name}, ${intent.city}`;
-          this.logger.log(`[AI_FOOD_GEOCODE] Searching: "${query}"`);
+          let suggestions = null;
 
-          const suggestions = await this.geosearch.suggest(query);
+          // Strategy 1: Exact name search
+          const exactQuery = `${r.name}, ${intent.city}`;
+          this.logger.log(
+            `[AI_FOOD_GEOCODE] Strategy 1 (exact): "${exactQuery}"`,
+          );
+          suggestions = await this.geosearch.suggest(exactQuery);
+
+          // Strategy 2: Fuzzy matching by cuisine type (if exact didn't work well)
+          if (!suggestions || suggestions.length === 0) {
+            const fuzzyQuery = `${r.cuisine} restaurant, ${intent.city}`;
+            this.logger.log(
+              `[AI_FOOD_GEOCODE] Strategy 2 (fuzzy): "${fuzzyQuery}"`,
+            );
+            suggestions = await this.geosearch.suggest(fuzzyQuery);
+          }
+
+          // Strategy 3: Generic restaurant search for the city
+          if (!suggestions || suggestions.length === 0) {
+            const genericQuery = `restaurant, ${intent.city}`;
+            this.logger.log(
+              `[AI_FOOD_GEOCODE] Strategy 3 (generic): "${genericQuery}"`,
+            );
+            suggestions = await this.geosearch.suggest(genericQuery);
+          }
 
           if (suggestions && suggestions.length > 0) {
             const best = suggestions[0];
@@ -661,7 +696,7 @@ Return ONLY valid JSON (no markdown):
             const poi: PoiItem = {
               id: `ai-food-${intent.city.replace(/\s+/g, '-')}-${randomUUID().slice(0, 8)}`,
               name: r.name,
-              address: best.address || query,
+              address: best.address || exactQuery,
               category: 'restaurant',
               coordinates: {
                 lat: best.lat,
@@ -670,6 +705,7 @@ Return ONLY valid JSON (no markdown):
               price_segment: priceSegment,
               rating: r.rating || 4.2,
               website: undefined,
+              ai_generated: true,
             };
 
             results.push(poi);
@@ -678,7 +714,7 @@ Return ONLY valid JSON (no markdown):
             );
           } else {
             this.logger.warn(
-              `[AI_FOOD_GEOCODE] ⚠️ No geocoding results for "${query}"`,
+              `[AI_FOOD_GEOCODE] ⚠️ All strategies failed for "${r.name}"`,
             );
           }
         } catch (error) {
