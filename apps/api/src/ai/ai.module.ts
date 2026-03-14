@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { AiSessionsService } from './ai-sessions.service';
 import { AiController } from './ai.controller';
 import { PointsModule } from '../points/points.module';
@@ -30,7 +30,12 @@ import { CollaborationModule } from '../collaboration/collaboration.module';
   // MERGE-NOTE: при выносе сервисов в другие модули не забудьте обновить imports,
   // иначе DI упадёт на AiController.
   // TRI-108-6: Added GeosearchModule for food POI geocoding
-  imports: [TripsModule, PointsModule, GeosearchModule, CollaborationModule],
+  imports: [
+    TripsModule,
+    PointsModule,
+    GeosearchModule,
+    forwardRef(() => CollaborationModule),
+  ],
   controllers: [AiController],
   providers: [
     AiSessionsService,

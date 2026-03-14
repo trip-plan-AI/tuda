@@ -92,7 +92,8 @@ export class PointMutationService {
         .where(eq(schema.trips.id, tripId));
 
       // 7. Broadcast update
-      this.collaborationGateway.server.to(`trip_${tripId}`).emit('trip_version_updated', {
+      this.logger.log(`Broadcasting trip_version_updated for trip ${tripId}, version ${newVersion}, points: ${updatedPoints.length}`);
+      this.collaborationGateway.emitTripVersionUpdated(tripId, {
         version: newVersion,
         mutations: resolvedMutations,
         points: updatedPoints
@@ -139,16 +140,27 @@ export class PointMutationService {
         const significantWords = queryWords.filter(w => w.length >= 4);
 
         const matches = points.filter(p => {
-          const titleNormJoined = p.title.toLowerCase().replace(/[^а-яёa-z0-9]/g, '');
-          // 1. Substring-match (быстрый путь, работает для точных коротких запросов)
-          if (titleNormJoined.includes(queryNormJoined) || queryNormJoined.includes(titleNormJoined)) return true;
-          // 2. Word-overlap: считаем значимые слова запроса, найденные в title
+          const titleLow = p.title.toLowerCase().trim();
+          const queryLow = mutation.query.toLowerCase().trim();
+
+          // 1. Exact match (case insensitive) - highest priority
+          if (titleLow === queryLow) return true;
+
+          const titleNormJoined = titleLow.replace(/[^а-яёa-z0-9]/g, '');
+          
+          // 2. Exact match after normalization
+          if (titleNormJoined === queryNormJoined && queryNormJoined.length > 0) return true;
+
+          // 3. Word-overlap: count significant query words found in title
           if (significantWords.length === 0) return false;
           const titleWords = toWords(p.title);
+          
+          // Use strict word comparison to avoid "2" matching "22"
           const overlap = significantWords.filter(qw =>
-            titleWords.some(tw => tw.includes(qw) || qw.includes(tw)),
+            titleWords.some(tw => tw === qw),
           );
-          // Порог: ≥ 50% значимых слов найдены И минимум одно
+          
+          // Threshold: at least 50% of significant words must match exactly
           return overlap.length >= Math.ceil(significantWords.length * 0.5);
         });
         

@@ -216,7 +216,7 @@ async function insertCitiesBatch(cities: GeoNamesCity[]): Promise<void> {
     IN: 'Индия',
     BR: 'Бразилия',
     MX: 'Мексика',
-    AU: 'Австралия',
+    AU: 'Астралия',
     TR: 'Турция',
     TH: 'Таиланд',
     AE: 'ОАЭ',
@@ -277,26 +277,24 @@ async function insertCitiesBatch(cities: GeoNamesCity[]): Promise<void> {
   };
 
   try {
-    const valuesToInsert: any[] = [];
-    for (const city of cities) {
-      // Переводим на русский
-      const nameRu = await translateCityToRussian(city.name);
+    // Параллельный перевод внутри батча для скорости
+    const valuesToInsert = await Promise.all(
+      cities.map(async (city) => {
+        const nameRu = await translateCityToRussian(city.name);
+        const countryNameRu = countryTranslations[city.countrycode] || '';
 
-      // Транслитерируем
-      const nameTransliterated = transliterate(nameRu);
-      const countryNameRu = countryTranslations[city.countrycode] || '';
-
-      valuesToInsert.push({
-        nameRu,
-        aliases: city.name,
-        type: 'city',
-        countryCode: city.countrycode,
-        displayName: `${city.name}, ${countryNameRu}`,
-        lat: city.latitude,
-        lon: city.longitude,
-        popularity: Math.min(10, (city.population || 0) / 1000000), // Нормализуем популярность по населению
-      });
-    }
+        return {
+          nameRu,
+          aliases: city.name,
+          type: 'city',
+          countryCode: city.countrycode,
+          displayName: `${city.name}, ${countryNameRu}`,
+          lat: city.latitude,
+          lon: city.longitude,
+          popularity: Math.min(10, (city.population || 0) / 1000000),
+        };
+      })
+    );
 
     // Вставляем через Drizzle (автоматически пропускает дубли)
     if (valuesToInsert.length > 0) {
@@ -327,16 +325,18 @@ async function main() {
     // 2. Парсим
     const cities = await parseGeoNamesFile(filePath);
 
-    // 3. Вставляем батчами с переводом
-    console.log('\n🌍 Переводу и вставляю города...');
-    for (let i = 0; i < cities.length; i += BATCH_SIZE) {
-      const batch = cities.slice(i, i + BATCH_SIZE);
+    // 3. Вставляем батчами с параллельным переводом
+    const PARALLEL_BATCH_SIZE = 50; // Оптимально для OpenAI rate-limits
+    console.log(`\n🌍 Перевожу и вставляю города (батчами по ${PARALLEL_BATCH_SIZE})...`);
+    
+    for (let i = 0; i < cities.length; i += PARALLEL_BATCH_SIZE) {
+      const batch = cities.slice(i, i + PARALLEL_BATCH_SIZE);
       await insertCitiesBatch(batch);
-      console.log(`   [${i + batch.length}/${cities.length}]`);
+      console.log(`   [${Math.min(i + PARALLEL_BATCH_SIZE, cities.length)}/${cities.length}]`);
 
-      // API rate limiting
-      if (i + BATCH_SIZE < cities.length) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Небольшая пауза, чтобы не забить Rate Limit
+      if (i + PARALLEL_BATCH_SIZE < cities.length) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
       }
     }
 

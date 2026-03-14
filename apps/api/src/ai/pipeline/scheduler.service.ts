@@ -151,29 +151,33 @@ export class SchedulerService {
             poi.coordinates.lon,
           );
           // TRI-108-2: Realistic travel time calculation
-          // < 1km: walking at 5km/h
-          // >= 1km: metro/taxi at 25km/h + 10min for waiting/walking to station
           const rawMinutes =
             dist < 1.0
               ? (dist / 5) * 60
-              : (dist / 25) * 60 + 10; // +10 min for station/waiting
-          // TRI-108-2: No artificial cap at 45min - allow 5-90min based on distance
+              : (dist / 25) * 60 + 10;
           transitTime = Math.max(5, Math.min(90, Math.round(rawMinutes)));
         } else {
-          transitTime = 0; // Первая точка дня
+          transitTime = 0;
         }
 
         const arrival = customStart ?? currentTime + transitTime;
-        // TRI-108-2: Use realistic visit durations, don't artificially shorten them
         const baseDuration = VISIT_DURATION[poi.category] ?? 90;
-        const visitDuration = Math.max(30, baseDuration); // No 0.8 multiplier - respect realistic times!
+        const visitDuration = Math.max(30, baseDuration);
         const leaveTime = arrival + visitDuration;
 
-        // TRI-108-2: Allow reasonable overflow (up to 2 hours) if POI is that important
-        // Better to show fewer items with realistic times than many unrealistic ones
         if (leaveTime > endMinutes + 120) return false;
 
         const pointCost = this.estimatePointCost(poi, dayBudget);
+
+        // BUDGET GUARD (TRI-104-BUDGET): Prevent adding points that would exceed budget significantly.
+        // We allow 10% overflow to handle rounding and essential points.
+        if (dayBudget > 0 && points.length > 0 && dayCost + pointCost > dayBudget * 1.1) {
+          this.logger.debug(
+            `Skipping point ${poi.name} (cost ${pointCost}) - day budget reached (${dayCost}/${dayBudget})`,
+          );
+          return false;
+        }
+
         points.push({
           poi_id: poi.id,
           poi,
@@ -271,9 +275,16 @@ export class SchedulerService {
             ? (points[points.length - 1].poi as FilteredPoi)
             : undefined;
         const optimizedOrder = this.optimizeRouteOrder(validCandidates, lastPoi);
-        const next = optimizedOrder[0];
+        
+        let added = false;
+        for (const next of optimizedOrder) {
+          if (tryAddPoint(next)) {
+            added = true;
+            break;
+          }
+        }
 
-        if (!next || !tryAddPoint(next)) {
+        if (!added) {
           break;
         }
       }
@@ -362,13 +373,17 @@ export class SchedulerService {
 
   private estimatePointCost(poi: FilteredPoi, dayBudget: number): number {
     if (poi.price_segment === 'free') return 0;
+    
+    // If budget is not specified (0), use reasonable defaults
+    const budget = dayBudget > 0 ? dayBudget : 5000;
+    
     if (poi.price_segment === 'budget')
-      return Math.max(300, Math.round(dayBudget * 0.1));
+      return Math.max(150, Math.round(budget * 0.1));
     if (poi.price_segment === 'mid')
-      return Math.max(700, Math.round(dayBudget * 0.2));
+      return Math.max(400, Math.round(budget * 0.2));
     if (poi.price_segment === 'premium')
-      return Math.max(1500, Math.round(dayBudget * 0.35));
-    return Math.max(400, Math.round(dayBudget * 0.12));
+      return Math.max(1000, Math.round(budget * 0.35));
+    return Math.max(300, Math.round(budget * 0.12));
   }
 
   private timeToMinutes(value: string): number {

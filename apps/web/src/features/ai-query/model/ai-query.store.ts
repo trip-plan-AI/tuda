@@ -610,12 +610,12 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       if (Array.isArray(response.points)) {
         const tripState = useTripStore.getState();
         if (tripState.currentTrip?.id === tripId) {
-          useTripStore.setState({
-            currentTrip: {
-              ...tripState.currentTrip,
+          useTripStore.setState((s) => ({
+            currentTrip: s.currentTrip ? {
+              ...s.currentTrip,
               points: response.points,
-            },
-          });
+            } : null,
+          }));
         }
       }
 
@@ -789,7 +789,10 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
             tripId: response.trip_id,
             sessionId: response.session_id,
             messages: mappedMessages,
-            updatedAt: new Date().toISOString(),
+            // updatedAt обновляем только если сообщения действительно изменились
+            updatedAt: JSON.stringify(baseSession.messages) !== JSON.stringify(mappedMessages) 
+              ? new Date().toISOString() 
+              : baseSession.updatedAt,
           },
         };
 
@@ -910,17 +913,37 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     const activeSession = activeId ? get().sessions[activeId] : null;
     if (!activeId || !activeSession?.sessionId) return;
 
+    // TRI-104: Если в маршруте есть точки, просим бэкенд оставить последнее сообщение с планом.
+    // Если точек нет — чистим всё.
+    const tripState = useTripStore.getState();
+    const hasPoints = (tripState.currentTrip?.points?.length ?? 0) > 0;
+
     try {
       // Вызываем бэкенд для очистки сообщений
-      await api.post(`/ai/sessions/${activeSession.sessionId}/clear`, {});
+      const res = await api.post<{ success: boolean; kept?: boolean }>(
+        `/ai/sessions/${activeSession.sessionId}/clear`,
+        { keep_last_plan: hasPoints },
+      );
 
       // Очищаем локальное состояние
       set((state) => {
+        const session = state.sessions[activeId];
+        if (!session) return {};
+
+        let newMessages: ChatMessage[] = [];
+        if (res.kept) {
+          // Ищем последнее сообщение ассистента с планом для сохранения в локальном стейте
+          const lastPlan = [...session.messages]
+            .reverse()
+            .find((m) => m.role === 'assistant' && !!m.routePlan);
+          if (lastPlan) newMessages = [lastPlan];
+        }
+
         const nextSessions = {
           ...state.sessions,
           [activeId]: {
-            ...activeSession,
-            messages: [],
+            ...session,
+            messages: newMessages,
           },
         };
 

@@ -90,6 +90,10 @@ export function useCollaborationSocket(tripId: string) {
       }
     });
 
+    socket.on('trip:refresh', () => {
+      loadTripData();
+    });
+
     socket.on('trip_version_updated', (data: { version: number; points: any[] }) => {
       try {
         useTripStore.setState((state) => {

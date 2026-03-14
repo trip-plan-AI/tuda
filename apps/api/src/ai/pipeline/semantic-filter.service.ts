@@ -609,19 +609,20 @@ ${JSON.stringify(
     }
 
     const budgetPerPerson = Math.round(budgetTotal / partySize);
-    const budgetPerPoi = Math.round(budgetTotal / minPlaces);
-    const isTightBudget = budgetPerPoi < 1000; // < 1000 per POI = tight
+    // Calculate how much we have per POI per PERSON
+    const budgetPerPersonPerPoi = Math.round(budgetPerPerson / minPlaces);
 
     const priceSegmentGuidance =
-      budgetPerPoi < 500
-        ? '🔴 ОЧЕНЬ ОГРАНИЧЕННЫЙ БЮДЖЕТ - выбирай только FREE и BUDGET места (парки, бесплатные музеи, уличная еда)'
-        : budgetPerPoi < 1000
-          ? '🟡 ОГРАНИЧЕННЫЙ БЮДЖЕТ - приоритизируй BUDGET и MID-RANGE места (дешевые рестораны, галереи, парки)'
-          : budgetPerPoi < 2000
-            ? '🟢 СРЕДНИЙ БЮДЖЕТ - выбирай MID-RANGE и немного PREMIUM (нормальные рестораны, музеи)'
+      budgetPerPersonPerPoi < 300
+        ? '🔴 ОЧЕНЬ ОГРАНИЧЕННЫЙ БЮДЖЕТ - выбирай только FREE и самые дешевые BUDGET места. Рестораны только фастфуд.'
+        : budgetPerPersonPerPoi < 700
+          ? '🟡 ОГРАНИЧЕННЫЙ БЮДЖЕТ - приоритизируй BUDGET и MID-RANGE места (недорогие кафе, парки)'
+          : budgetPerPersonPerPoi < 1500
+            ? '🟢 СРЕДНИЙ БЮДЖЕТ - выбирай MID-RANGE и немного PREMIUM (музеи, нормальные рестораны)'
             : '🟢🟢 ХОРОШИЙ БЮДЖЕТ - можно выбирать PREMIUM места без ограничений';
 
-    const instructions = `${budgetTotal} руб. на ${partySize} чел. (${budgetPerPerson}₽ на чел, ${budgetPerPoi}₽ на место).
+    const instructions = `${budgetTotal} руб. на ${partySize} чел. (${budgetPerPerson}₽ на чел).
+В среднем ${budgetPerPersonPerPoi}₽ на человека на одно место.
 ${priceSegmentGuidance}
 ⚠️ КРИТИЧНО: Убедись, что выбранные места в сумме НЕ ПРЕВЫШАЮТ ${budgetTotal}₽.
 Если нужно выбрать рестораны - бери дешевые и середину по цене, избегай дорогих.`;
