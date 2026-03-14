@@ -20,6 +20,9 @@ import { YandexFetchService } from './pipeline/yandex-fetch.service';
 import { DeterministicPlannerService } from './pipeline/deterministic-planner.service';
 import { YandexBatchRefinementService } from './pipeline/yandex-batch-refinement.service';
 import { LogicalIdSelectorService } from './pipeline/logical-id-selector.service';
+import { MutationParserService } from './services/mutation-parser.service';
+import { PointMutationService } from './services/point-mutation.service';
+import { CollaborationModule } from '../collaboration/collaboration.module';
 
 @Module({
   // TRI-104: AI контроллер теперь использует Trips/Points для сценариев
@@ -27,7 +30,7 @@ import { LogicalIdSelectorService } from './pipeline/logical-id-selector.service
   // MERGE-NOTE: при выносе сервисов в другие модули не забудьте обновить imports,
   // иначе DI упадёт на AiController.
   // TRI-108-6: Added GeosearchModule for food POI geocoding
-  imports: [TripsModule, PointsModule, GeosearchModule],
+  imports: [TripsModule, PointsModule, GeosearchModule, CollaborationModule],
   controllers: [AiController],
   providers: [
     AiSessionsService,
@@ -47,6 +50,8 @@ import { LogicalIdSelectorService } from './pipeline/logical-id-selector.service
     DeterministicPlannerService,
     YandexBatchRefinementService,
     LogicalIdSelectorService,
+    MutationParserService,
+    PointMutationService,
   ],
   exports: [
     AiSessionsService,

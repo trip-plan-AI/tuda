@@ -51,6 +51,7 @@ import { usePointCrud } from '@/features/route-create';
 import { pointsApi } from '@/entities/route-point';
 import { useAiQueryStore } from '@/features/ai-query';
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
+import { useCollaborationSocket, CollaboratorsAvatarGroup } from '@/features/route-collaborate';
 import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point';
 import { toast } from 'sonner';
@@ -311,7 +312,6 @@ function SortablePointRow({
           lon: coords.lon,
           title: cityName,
         });
-        onFocusPoint(coords);
       }
     } finally {
       setIsSearching(false);
@@ -441,23 +441,21 @@ function SortablePointRow({
           >
             <GripVertical size={16} />
           </button>
-          <button
-            onClick={() => onFocusPoint({ lon: point.lon, lat: point.lat })}
-            className="w-5 h-5 md:w-6 md:h-6 shrink-0 rounded-full bg-brand-blue text-white font-bold hidden lg:flex items-center justify-center text-[10px] shadow-sm cursor-pointer hover:bg-brand-blue-hover transition-colors"
+          <div
+            className="w-5 h-5 md:w-6 md:h-6 shrink-0 rounded-full bg-brand-blue text-white font-bold hidden lg:flex items-center justify-center text-[10px] shadow-sm transition-colors"
           >
             {index + 1}
-          </button>
+          </div>
         </div>
 
         <div className="flex-1 flex flex-col items-start gap-2 min-w-0 pr-10 w-full">
           <div className="flex flex-col lg:flex-row lg:items-center gap-2 min-w-0 w-full items-start">
             <div className="flex-1 min-w-0 flex items-center justify-start gap-2 w-full">
-              <button
-                onClick={() => onFocusPoint({ lon: point.lon, lat: point.lat })}
-                className="w-5 h-5 shrink-0 rounded-full bg-brand-blue text-white font-bold flex lg:hidden items-center justify-center text-[10px] shadow-sm cursor-pointer hover:bg-brand-blue-hover transition-colors"
+              <div
+                className="w-5 h-5 shrink-0 rounded-full bg-brand-blue text-white font-bold flex lg:hidden items-center justify-center text-[10px] shadow-sm transition-colors"
               >
                 {index + 1}
-              </button>
+              </div>
 
               {editingPointId === point.id ? (
                 <input
@@ -732,6 +730,7 @@ export function PlannerPage() {
   const points = currentTrip?.points || [];
   const { isAuthenticated } = useAuthStore();
   const crud = usePointCrud(currentTrip?.id);
+  useCollaborationSocket(currentTrip?.id || '');
 
   const [routeInfo, setRouteInfo] = useState<{
     duration: number;
@@ -1239,7 +1238,6 @@ export function PlannerPage() {
       setSearchInput('');
       setShowDropdown(false);
       setSuggestions([]);
-      setFocusCoords({ lon: coords.lon, lat: coords.lat });
     } finally {
       setIsSearching(false);
     }
@@ -1328,7 +1326,13 @@ export function PlannerPage() {
     toast.info('Конструктор очищен', { id: 'planner-status' });
   };
 
-  const handleEditWithAi = () => {
+  const handleEditWithAi = async () => {
+    // Если trip гостевой — сохраняем в DB перед открытием AI-чата,
+    // иначе AIAssistantPage не сможет найти точки и создать сессию.
+    const tripId = await ensureTripId();
+    if (tripId && !tripId.startsWith('guest-')) {
+      await openOrCreateSessionFromTrip(tripId);
+    }
     router.push('/ai-assistant');
   };
 
@@ -1357,7 +1361,6 @@ export function PlannerPage() {
         lon: coords.lon,
         address: s.displayName,
       });
-      setFocusCoords({ lon: coords.lon, lat: coords.lat });
     } catch (e) {
       console.error('Не удалось добавить точку:', e);
     } finally {
@@ -1573,15 +1576,20 @@ export function PlannerPage() {
     const first = points[0];
     if (!first) return;
     setFocusCoords({ lon: first.lon, lat: first.lat });
-  }, [activeTab, points]);
+  }, [activeTab]);
 
   return (
     <div className="bg-white min-h-screen md:min-h-0 md:h-[calc(100vh-64px)] md:overflow-hidden w-full max-w-full flex flex-col">
       <div className="w-full mx-auto px-4 md:px-8 py-6 md:py-8 flex-1 flex flex-col relative min-h-0">
         <div className="mb-8 bg-white md:p-0 rounded-none w-full max-w-7xl mx-auto shrink-0">
-          <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight mb-6 text-left">
-            Маршруты
-          </h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight text-left">
+              Маршруты
+            </h2>
+            {currentTrip?.id && !currentTrip.id.startsWith('guest-') && (
+              <CollaboratorsAvatarGroup tripId={currentTrip.id} />
+            )}
+          </div>
           <SegmentedControl
             options={[
               { label: 'Конструктор', value: 'my' },

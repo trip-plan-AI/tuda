@@ -30,10 +30,12 @@ Rules:
 - action_type must be one of allowed values.
 - confidence must be a number between 0 and 1.
 - target_poi_id must be a string ID or null.
-- Use NEW_ROUTE when intent is broad or unrelated to mutation.
+- Use NEW_ROUTE when user wants to create a COMPLETELY new trip or start over.
+- Use REMOVE_POI when user wants to delete a specific place from the CURRENT route.
+- If the user says "Удали точку X" or "Убери X", and X is in currentRoutePois, it is ALWAYS REMOVE_POI.
 - If currentRoutePois is empty (no existing route in this session), treat the request as NEW_ROUTE.
-- First message like "<city> <N> days" or "маршрут в <city>" is NEW_ROUTE, not ADD_DAYS.
-- For REMOVE_POI/REPLACE_POI set target_poi_id if clearly identifiable.`;
+- For REMOVE_POI/REPLACE_POI, target_poi_id is the ID from currentRoutePois that best matches the user's request.
+- Be biased towards mutations (REMOVE/REPLACE) if the user mentions something that sounds like an existing point.`;
 
 @Injectable()
 export class IntentRouterService {
@@ -143,7 +145,7 @@ export class IntentRouterService {
   private applyDeterministicPostProcessing(
     decision: IntentRouterDecision,
   ): IntentRouterDecision {
-    if (decision.action_type !== 'NEW_ROUTE' && decision.confidence < 0.7) {
+    if (decision.action_type !== 'NEW_ROUTE' && decision.confidence < 0.4) {
       return {
         ...decision,
         route_mode: 'full_rebuild',

@@ -4,6 +4,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  Patch,
   MessageEvent,
   NotFoundException,
   Param,
@@ -36,7 +37,7 @@ import { DeterministicPlannerService } from './pipeline/deterministic-planner.se
 import { YandexBatchRefinementService } from './pipeline/yandex-batch-refinement.service';
 import { LogicalIdSelectorService } from './pipeline/logical-id-selector.service';
 import type { SessionMessage } from './types/pipeline.types';
-import type { RoutePlan } from './types/pipeline.types';
+import type { RoutePlan, PlanDay } from './types/pipeline.types';
 import type { ParsedIntent } from './types/pipeline.types';
 import type {
   IntentRouterActionType,
@@ -59,6 +60,10 @@ import type {
 } from './types/ai-stream-event.types';
 import { TripsService } from '../trips/trips.service';
 import { PointsService } from '../points/points.service';
+
+import { MutationParserService } from './services/mutation-parser.service';
+import { PointMutationService } from './services/point-mutation.service';
+import { PointMutation } from './types/mutations';
 
 @Controller('ai')
 @UseGuards(JwtAuthGuard)
@@ -112,6 +117,8 @@ export class AiController {
     private readonly deterministicPlannerService: DeterministicPlannerService,
     private readonly yandexBatchRefinementService: YandexBatchRefinementService,
     private readonly logicalIdSelectorService: LogicalIdSelectorService,
+    private readonly mutationParser: MutationParserService,
+    private readonly pointMutationService: PointMutationService,
   ) {}
 
   private isNeedCityError(error: unknown): boolean {
@@ -141,6 +148,12 @@ export class AiController {
     // поддержите валидацию здесь, иначе apply/from-trip начнут отбрасывать валидные сообщения.
     if (message.role !== 'assistant') return null;
 
+    // 1. Check structured route_plan field from DB/Store
+    if (message.route_plan && typeof message.route_plan === 'object') {
+      return message.route_plan;
+    }
+
+    // 2. Legacy fallback: try to parse content
     try {
       const parsed = JSON.parse(message.content) as Partial<RoutePlan>;
       if (!parsed || typeof parsed !== 'object') return null;
@@ -155,16 +168,22 @@ export class AiController {
   private extractCurrentRoutePois(
     history: SessionMessage[],
   ): Array<{ poi_id: string; title?: string | null }> {
-    const latestRoutePlan = history
+    this.logger.debug(`Extracting POIs from history of ${history.length} messages`);
+    const latestRoutePlanMessage = history
       .slice()
       .reverse()
-      .find((message) => this.tryParseRoutePlan(message));
+      .find((message) => {
+        const p = this.tryParseRoutePlan(message);
+        if (p) this.logger.debug(`Found route plan in message: ${message.content.slice(0, 50)}...`);
+        return !!p;
+      });
 
-    if (!latestRoutePlan) {
+    if (!latestRoutePlanMessage) {
+      this.logger.debug('No route plan found in history');
       return [];
     }
 
-    const parsed = this.tryParseRoutePlan(latestRoutePlan);
+    const parsed = this.tryParseRoutePlan(latestRoutePlanMessage);
     if (!parsed) {
       return [];
     }
@@ -197,6 +216,56 @@ export class AiController {
       description: (
         descriptionFallback || `Интересное место: ${poi.name}.`
       ).trim(),
+    };
+  }
+
+  private buildRoutePlanFromPoints(city: string, points: any[]): RoutePlan {
+    const daysMap = new Map<string, any[]>();
+    points.forEach((p) => {
+      const dateKey = p.visitDate || 'default';
+      if (!daysMap.has(dateKey)) daysMap.set(dateKey, []);
+      daysMap.get(dateKey)!.push({
+        poi_id: p.id,
+        order: p.order,
+        estimated_cost: Number(p.budget) || 0,
+        arrival_time: '10:00',
+        departure_time: '11:00',
+        visit_duration_min: 60,
+        poi: {
+          id: p.id,
+          name: p.title,
+          address: p.address,
+          coordinates: { lat: p.lat, lon: p.lon },
+          image_url: p.imageUrl,
+        },
+      });
+    });
+
+    const days: PlanDay[] = Array.from(daysMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, dayPoints], idx) => {
+        const dayBudget = dayPoints.reduce(
+          (sum, p) => sum + (p.estimated_cost || 0),
+          0,
+        );
+        return {
+          day_number: idx + 1,
+          date:
+            date === 'default' ? new Date().toISOString().split('T')[0] : date,
+          day_budget_estimated: dayBudget,
+          day_start_time: '10:00',
+          day_end_time: '20:00',
+          points: dayPoints.sort((a, b) => a.order - b.order),
+        };
+      });
+
+    return {
+      city,
+      total_budget_estimated: days.reduce(
+        (acc, d) => acc + d.day_budget_estimated,
+        0,
+      ),
+      days,
     };
   }
 
@@ -366,6 +435,20 @@ ${JSON.stringify(points)}
     };
   }
 
+  @Patch('sessions/:id')
+  @UseGuards(JwtAuthGuard)
+  async renameSession(
+    @Param('id') sessionId: string,
+    @Body('title') title: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    if (!title || !title.trim()) {
+      throw new BadRequestException('title is required');
+    }
+    await this.aiSessionsService.renameSession(sessionId, user.id, title.trim());
+    return { success: true };
+  }
+
   @Delete('sessions/:id')
   async deleteSession(
     @Param('id') sessionId: string,
@@ -381,6 +464,22 @@ ${JSON.stringify(points)}
     }
 
     return { ok: true };
+  }
+
+  @Post('sessions/:id/clear')
+  @UseGuards(JwtAuthGuard)
+  async clearSessionMessages(
+    @Param('id') sessionId: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    const session = await this.aiSessionsService.getByIdForUser(sessionId, user.id);
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
+    // Очищаем все сообщения
+    await this.aiSessionsService.saveMessages(sessionId, []);
+    return { success: true };
   }
 
   @Post('sessions')
@@ -421,12 +520,14 @@ ${JSON.stringify(points)}
     const llmContext = history.slice(-10);
     const orchestratorStart = Date.now();
     const currentRoutePois = this.extractCurrentRoutePois(history);
+    this.logger.log(`Current route POIs for router: ${JSON.stringify(currentRoutePois)}`);
     const intentRouterDecision: IntentRouterDecision =
       await this.intentRouterService.route(
         dto.user_query,
         llmContext,
         currentRoutePois,
       );
+    this.logger.log(`Intent router decision: ${JSON.stringify(intentRouterDecision)}`);
 
     let intent: ParsedIntent;
     try {
@@ -620,24 +721,98 @@ ${JSON.stringify(points)}
             fallbacks.push(
               'TARGETED_MUTATION_REMOVE_FALLBACK:TARGET_NOT_FOUND',
             );
-            routePlan = buildFullRebuild();
+
+            // Fallback: пробуем найти лучшее совпадение через нечёткий поиск
+            const allPoints = existingRoutePlan.days.flatMap(day => day.points);
+            const userQuery = dto.user_query.toLowerCase();
+
+            // Находим точку с наибольшим совпадением по названию
+            let bestMatch: typeof allPoints[0] | null = null;
+            let bestScore = 0;
+
+            for (const point of allPoints) {
+              const poiName = (point.poi?.name ?? '').toLowerCase();
+              // Простой подсчёт совпадений символов
+              const matches = userQuery.split(' ').filter(word => poiName.includes(word)).length;
+              if (matches > bestScore) {
+                bestScore = matches;
+                bestMatch = point;
+              }
+            }
+
+            if (bestMatch && bestScore > 0) {
+              // Удаляем точку и пересчитываем времена остальных (без пересортировки)
+              const targetPoiId = bestMatch.poi_id;
+              const rebuiltDays = existingRoutePlan.days.map((day) => {
+                const filteredPoints = day.points.filter((point) => point.poi_id !== targetPoiId);
+
+                // Пересчитываем времена оставшихся точек чтобы не было дыр
+                let currentTime = this.schedulerService['timeToMinutes'](day.day_start_time);
+                const rescheduledPoints = filteredPoints.map((point) => {
+                  const durationMinutes = this.schedulerService['timeToMinutes'](point.departure_time) -
+                                          this.schedulerService['timeToMinutes'](point.arrival_time);
+                  const arrival = this.schedulerService['minutesToTime'](currentTime);
+                  const departure = this.schedulerService['minutesToTime'](currentTime + durationMinutes);
+                  currentTime += durationMinutes;
+
+                  return {
+                    ...point,
+                    arrival_time: arrival,
+                    departure_time: departure,
+                  };
+                });
+
+                return {
+                  ...day,
+                  points: rescheduledPoints,
+                  day_budget_estimated: rescheduledPoints.reduce(
+                    (sum, p) => sum + (p.estimated_cost ?? 0),
+                    0,
+                  ),
+                };
+              });
+              routePlan = buildRoutePlanFromDays(
+                existingRoutePlan.city,
+                rebuiltDays,
+              );
+              mutationMeta.mutation_applied = true;
+              break;
+            }
+
+            // Если нечёткий поиск не помог, показываем ошибку
+            mutationMeta.mutation_fallback_reason = 'POINT_NOT_FOUND_IN_ROUTE';
+            routePlan = existingRoutePlan;
             break;
           }
 
           const rebuiltDays = existingRoutePlan.days.map((day) => {
-            const dayPois = day.points
-              .filter((point) => point.poi_id !== targetPoiId)
-              .map((point) =>
-                this.toFilteredPoi(
-                  point.poi,
-                  (point.poi as FilteredPoi).description,
-                ),
-              );
+            // Удаляем точку и пересчитываем времена оставшихся (без пересортировки)
+            const filteredPoints = day.points.filter((point) => point.poi_id !== targetPoiId);
 
-            return this.schedulerService.rebuildSingleDayPlan(dayPois, intent, {
-              day_number: day.day_number,
-              date: day.date,
+            // Пересчитываем времена оставшихся точек чтобы не было дыр
+            let currentTime = this.schedulerService['timeToMinutes'](day.day_start_time);
+            const rescheduledPoints = filteredPoints.map((point) => {
+              const durationMinutes = this.schedulerService['timeToMinutes'](point.departure_time) -
+                                      this.schedulerService['timeToMinutes'](point.arrival_time);
+              const arrival = this.schedulerService['minutesToTime'](currentTime);
+              const departure = this.schedulerService['minutesToTime'](currentTime + durationMinutes);
+              currentTime += durationMinutes;
+
+              return {
+                ...point,
+                arrival_time: arrival,
+                departure_time: departure,
+              };
             });
+
+            return {
+              ...day,
+              points: rescheduledPoints,
+              day_budget_estimated: rescheduledPoints.reduce(
+                (sum, p) => sum + (p.estimated_cost ?? 0),
+                0,
+              ),
+            };
           });
 
           routePlan = buildRoutePlanFromDays(
@@ -836,10 +1011,27 @@ ${JSON.stringify(points)}
       };
     }
 
+    // Если точка не найдена, добавляем сообщение об ошибке
+    const assistantMessages: SessionMessage[] = [
+      { role: 'user' as const, content: dto.user_query },
+    ];
+
+    if (mutationMeta.mutation_fallback_reason === 'POINT_NOT_FOUND_IN_ROUTE') {
+      assistantMessages.push({
+        role: 'assistant' as const,
+        content: '⚠️ Такая точка в маршруте не найдена. Вот текущий маршрут:',
+      });
+    }
+
+    assistantMessages.push({
+      role: 'assistant' as const,
+      content: 'Маршрут готов',
+      route_plan: routePlan,
+    });
+
     const newMessages: SessionMessage[] = [
       ...history,
-      { role: 'user' as const, content: dto.user_query },
-      { role: 'assistant' as const, content: JSON.stringify(routePlan) },
+      ...assistantMessages,
     ];
 
     await this.aiSessionsService.saveMessages(session.id, newMessages);
@@ -1066,6 +1258,8 @@ ${JSON.stringify(points)}
       Array<
         (typeof enriched)[number] & {
           budget: number;
+          lat?: number | null;
+          lon?: number | null;
         }
       >
     >();
@@ -1084,6 +1278,8 @@ ${JSON.stringify(points)}
           address: point.address,
           description,
           budget: typeof point.budget === 'number' ? point.budget : 0,
+          lat: point.lat,
+          lon: point.lon,
         });
         dateMap.set(date, bucket);
       });
@@ -1111,7 +1307,7 @@ ${JSON.stringify(points)}
             name: point.title,
             address: point.address ?? 'Адрес не указан',
             description: point.description,
-            coordinates: { lat: 0, lon: 0 },
+            coordinates: { lat: point.lat ?? 0, lon: point.lon ?? 0 },
             category: 'attraction' as const,
           },
         })),
@@ -1131,11 +1327,25 @@ ${JSON.stringify(points)}
       user.id,
       tripId,
     );
-    const existingHasRoute = session.messages.some((message) =>
-      this.tryParseRoutePlan(message),
-    );
+    const lastRoutePlanMessage = session.messages
+      .slice()
+      .reverse()
+      .find((message) => this.tryParseRoutePlan(message));
+    const lastRoutePlan = lastRoutePlanMessage
+      ? this.tryParseRoutePlan(lastRoutePlanMessage)
+      : null;
 
-    if (!existingHasRoute) {
+    const currentTitles = new Set(points.map((p) => p.title.toLowerCase().trim()));
+    const lastTitles = new Set(
+      (lastRoutePlan?.days ?? [])
+        .flatMap((d) => d.points)
+        .map((p) => (p.poi?.name ?? '').toLowerCase().trim()),
+    );
+    const routeChanged =
+      currentTitles.size !== lastTitles.size ||
+      [...currentTitles].some((t) => !lastTitles.has(t));
+
+    if (!lastRoutePlan) {
       await this.aiSessionsService.appendMessages(session.id, [
         {
           role: 'assistant',
@@ -1145,7 +1355,16 @@ ${JSON.stringify(points)}
         },
         {
           role: 'assistant',
-          content: JSON.stringify(routePlan),
+          content: 'Маршрут готов',
+          route_plan: routePlan,
+        },
+      ]);
+    } else if (routeChanged) {
+      await this.aiSessionsService.appendMessages(session.id, [
+        {
+          role: 'assistant',
+          content: `Маршрут обновлён в Planner. Актуальный состав точек:`,
+          route_plan: routePlan,
         },
       ]);
     }
@@ -1338,5 +1557,154 @@ ${JSON.stringify(points)}
         rating: p.rating,
       })),
     };
+  }
+
+  @Post('mutations/parse')
+  async parseMutations(
+    @Body() body: { query: string; tripContext?: string },
+  ) {
+    return this.mutationParser.parseMutations(body.query, body.tripContext);
+  }
+
+  @Post('mutations/:tripId/apply')
+  async applyMutations(
+    @Param('tripId') tripId: string,
+    @CurrentUser() user: { id: string },
+    @Body() body: { mutations: any[]; ifMatch: number; sessionId?: string },
+  ) {
+    const trip = await this.tripsService.findByIdWithAccess(tripId, user.id);
+    const dbPointsCount = (trip as any)?.points?.length ?? 0;
+
+    // Chat-only режим: точки ещё не сохранены в DB (только в route_plan сессии)
+    if (dbPointsCount === 0 && body.sessionId) {
+      const session = await this.aiSessionsService.getByIdForUser(body.sessionId, user.id);
+      const lastRoutePlan = session ? this.extractCurrentRoutePlan(session.messages) : null;
+
+      this.logger.debug(
+        `applyMutations chat-only START: sessionId=${body.sessionId}, ` +
+        `messages.length=${session?.messages.length ?? 0}, mutations=${JSON.stringify(body.mutations.map((m: any) => m.type))}`
+      );
+
+      if (lastRoutePlan) {
+        // Работаем напрямую с route_plan в чате (без конвертации в DB points)
+        // Применяем мутации к структуре route_plan, сохраняя времена и порядок
+
+        // Парсим mutations (они могут быть REMOVE_BY_QUERY или REMOVE_BY_ID)
+        const removeQueries = body.mutations
+          .filter((m: any) => m.type === 'REMOVE_BY_QUERY')
+          .map((m: any) => m.query.toLowerCase());
+
+        this.logger.debug(
+          `applyMutations chat-only: removeQueries=${JSON.stringify(removeQueries)}, ` +
+          `currentPoints=${lastRoutePlan.days.flatMap(d => d.points.map(p => p.poi?.name)).join(', ')}`
+        );
+
+        // Удаляем точки по названию
+        const updatedDays = lastRoutePlan.days.map((day) => {
+          const filteredPoints = day.points.filter((point) => {
+            const poiName = (point.poi?.name ?? '').toLowerCase();
+            const shouldKeep = !removeQueries.some(q => poiName.includes(q) || q.includes(poiName.split(' ')[0]));
+            if (!shouldKeep) {
+              this.logger.debug(`Removing point: "${point.poi?.name}" (matching query)`);
+            }
+            return shouldKeep;
+          });
+
+          this.logger.debug(`Day: kept ${filteredPoints.length}/${day.points.length} points`);
+
+          // Пересчитываем времена оставшихся точек
+          let currentTime = this.schedulerService['timeToMinutes'](day.day_start_time);
+          const rescheduledPoints = filteredPoints.map((point) => {
+            const durationMinutes = this.schedulerService['timeToMinutes'](point.departure_time) -
+                                    this.schedulerService['timeToMinutes'](point.arrival_time);
+            const arrival = this.schedulerService['minutesToTime'](currentTime);
+            const departure = this.schedulerService['minutesToTime'](currentTime + durationMinutes);
+            currentTime += durationMinutes;
+
+            return {
+              ...point,
+              arrival_time: arrival,
+              departure_time: departure,
+            };
+          });
+
+          return {
+            ...day,
+            points: rescheduledPoints,
+            day_budget_estimated: rescheduledPoints.reduce((sum, p) => sum + (p.estimated_cost ?? 0), 0),
+          };
+        }).filter(day => day.points.length > 0);
+
+        const messageContent = updatedDays.length === 0 || updatedDays.every(d => d.points.length === 0)
+          ? 'Маршрут очищен.'
+          : 'Я обновил маршрут.';
+
+        if (updatedDays.length === 0 || updatedDays.every(d => d.points.length === 0)) {
+          // Маршрут очищен — просто отправляем текстовое сообщение без карточки
+          await this.aiSessionsService.appendMessages(body.sessionId, [
+            { role: 'assistant', content: messageContent },
+          ]);
+          return { success: true, route_plan: undefined, points: [], version: 0 };
+        }
+
+        const updatedRoutePlan: RoutePlan = {
+          ...lastRoutePlan,
+          days: updatedDays,
+          total_budget_estimated: updatedDays.reduce((sum, d) => sum + (d.day_budget_estimated ?? 0), 0),
+        };
+
+        this.logger.debug(
+          `Final updatedRoutePlan points: ${updatedRoutePlan.days.flatMap(d => d.points.map(p => p.poi?.name)).join(', ')}`
+        );
+
+        await this.aiSessionsService.appendMessages(body.sessionId, [
+          { role: 'assistant', content: messageContent, route_plan: updatedRoutePlan },
+        ]);
+
+        this.logger.debug(`appendMessages completed for session ${body.sessionId}`);
+
+        return { success: true, route_plan: updatedRoutePlan, points: [], version: 0 };
+      }
+    }
+
+    // DB-backed режим (стандартный)
+    const result = await this.pointMutationService.applyMutations(
+      tripId,
+      user.id,
+      body.mutations,
+      body.ifMatch,
+    );
+
+    if (result.success) {
+      const messageContent = result.points.length === 0
+        ? 'Маршрут очищен.'
+        : 'Я обновил маршрут.';
+
+      if (result.points.length === 0) {
+        // Маршрут очищен — только текстовое сообщение без карточки
+        if (body.sessionId) {
+          await this.aiSessionsService.appendMessages(body.sessionId, [
+            { role: 'assistant', content: messageContent },
+          ]);
+        }
+        return { ...result, route_plan: undefined };
+      }
+
+      // Есть точки — отправляем с обновлённым маршрутом
+      const routePlan = this.buildRoutePlanFromPoints(
+        trip?.title || 'Маршрут',
+        result.points,
+      );
+
+      if (body.sessionId) {
+        await this.aiSessionsService.appendMessages(body.sessionId, [
+          { role: 'assistant', content: messageContent, route_plan: routePlan },
+        ]);
+      }
+
+      return { ...result, route_plan: routePlan };
+    }
+
+    return result;
   }
 }

@@ -14,6 +14,7 @@ interface AiChatProps {
   onSend: (query: string) => void | Promise<void>;
   onApplyPlan?: (messageId: string) => void;
   lastAppliedPlanMessageId?: string | null;
+  lastPlanMessageId?: string | null;
   quickActions?: string[];
   // TRI-104: флаги, влияющие на CTA внутри MessageBubble:
   // "Применить" vs "Обновить" + deep-link в Planner по tripId.
@@ -21,6 +22,7 @@ interface AiChatProps {
   hasLinkedTrip?: boolean;
   appliedTripId?: string | null;
   onOpenPlanner?: (tripId: string | null, messageId?: string) => void;
+  onDeletePoint?: (pointName: string) => Promise<void>;
 }
 
 const DEFAULT_QUICK_ACTIONS = [
@@ -60,10 +62,12 @@ export function AiChat({
   onSend,
   onApplyPlan,
   lastAppliedPlanMessageId = null,
+  lastPlanMessageId = null,
   quickActions = DEFAULT_QUICK_ACTIONS,
   hasLinkedTrip = false,
   appliedTripId = null,
   onOpenPlanner,
+  onDeletePoint,
 }: AiChatProps) {
   const [query, setQuery] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -129,6 +133,8 @@ export function AiChat({
                 hasLinkedTrip={hasLinkedTrip}
                 appliedTripId={appliedTripId}
                 onOpenPlanner={onOpenPlanner}
+                onDeletePoint={onDeletePoint}
+                isLatestRoutePlan={lastPlanMessageId === message.id}
               />
             ))}
 

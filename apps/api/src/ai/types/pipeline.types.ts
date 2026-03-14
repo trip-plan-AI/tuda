@@ -5,6 +5,7 @@ import type { PoiItem } from './poi.types';
 export interface SessionMessage {
   role: ChatRole;
   content: string;
+  route_plan?: RoutePlan;
 }
 
 export type PoiCategory =
