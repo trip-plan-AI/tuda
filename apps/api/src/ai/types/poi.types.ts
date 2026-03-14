@@ -18,6 +18,7 @@ export interface PoiItem {
   phone?: string;
   website?: string;
   image_url?: string;
+  ai_generated?: boolean; // TRI-108-6: Mark AI-generated food POIs
 }
 
 export interface FilteredPoiResponse {
