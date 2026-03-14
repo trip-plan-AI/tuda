@@ -168,7 +168,6 @@ export function AIAssistantPage() {
     // sessions намеренно НЕ в deps (см. ниже), поэтому эффект не срабатывает
     // после удаления сессии — только при смене trip или завершении загрузки.
     void openOrCreateSessionFromTrip(tripId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrip?.id, isSessionsLoading]);
 
   const handleCreateSession = () => {
