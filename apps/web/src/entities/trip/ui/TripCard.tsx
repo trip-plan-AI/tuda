@@ -194,10 +194,10 @@ export function TripCard({
         }`}
     >
       {/* ── HEADER: Owner + Invite button ── */}
-      <div className="px-4 py-3 flex items-center justify-between border-b border-slate-100">
+      <div className="px-3 py-2 flex items-center justify-between border-b border-slate-100">
         {/* Owner info */}
         {owner ? (
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
             <div
               className="w-10 h-10 rounded-full border-2 border-slate-200 overflow-hidden
                             bg-brand-indigo/10 flex items-center justify-center text-[12px] font-bold text-brand-indigo shrink-0"
@@ -240,7 +240,7 @@ export function TripCard({
       </div>
 
       {/* ── COLLABORATORS: Owner + Others with slots ── */}
-      <div className="px-4 py-3 flex items-center justify-between border-b border-slate-100">
+      <div className="px-3 py-2 flex items-center justify-between border-b border-slate-100">
         <div className="flex items-center gap-4">
           {/* Owner */}
           {owner && (
@@ -351,7 +351,7 @@ export function TripCard({
       </div>
 
       {/* ── Cover image ── */}
-      <div className="relative w-full aspect-[4/3] overflow-hidden bg-slate-100">
+      <div className="relative w-full h-32 overflow-hidden bg-slate-100">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={coverSrc}
@@ -404,9 +404,9 @@ export function TripCard({
       </div>
 
       {/* ── Card body ── */}
-      <div className="px-4 pt-3 pb-3 flex flex-col gap-1.5">
+      <div className="px-3 pt-2 pb-2 flex flex-col gap-1">
         {/* Title */}
-        <p className="font-bold text-[17px] leading-snug text-brand-indigo line-clamp-2">
+        <p className="font-bold text-[14px] leading-snug text-brand-indigo line-clamp-2">
           {trip.title}
         </p>
 
@@ -418,12 +418,12 @@ export function TripCard({
         </p>
 
         {/* Budget summary */}
-        <div className="mt-1 pt-2 border-t border-slate-100">
+        <div className="pt-1.5 border-t border-slate-100">
           <BudgetSummary plannedBudget={trip.budget} totalBudget={pointsBudgetTotal} />
         </div>
 
         {/* Bottom row: arrow button */}
-        <div className="flex items-center justify-end mt-1">
+        <div className="flex items-center justify-end mt-0.5">
           {/* Arrow → go to planner */}
           <button
             onClick={(e) => {

@@ -483,18 +483,18 @@ export function ProfilePage() {
       />
 
       {/* ── ШАПКА ПРОФИЛЯ ── */}
-      <div className="w-full shrink-0 bg-white border-b border-slate-100 px-6 py-6">
-        <div className="flex items-center gap-5">
+      <div className="w-full shrink-0 bg-white border-b border-slate-100 px-4 py-3">
+        <div className="flex items-center gap-3">
           <div
             onClick={handleAvatarClick}
-            className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center
+            className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center
                        border-4 border-white shadow-lg overflow-hidden cursor-pointer group relative shrink-0"
           >
             {user?.photo ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={user.photo} className="w-full h-full object-cover" alt={user.name} />
             ) : user?.name ? (
-              <span className="text-2xl font-bold text-slate-400 uppercase">
+              <span className="text-lg font-bold text-slate-400 uppercase">
                 {user.name.substring(0, 2)}
               </span>
             ) : (
@@ -516,7 +516,7 @@ export function ProfilePage() {
                     onChange={(e) => setTempName(e.target.value)}
                     onBlur={handleSaveName}
                     onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
-                    className="text-2xl font-black text-brand-indigo border-b-2 border-brand-sky
+                    className="text-xl font-black text-brand-indigo border-b-2 border-brand-sky
                                outline-none bg-transparent w-full"
                   />
                   <button
@@ -529,7 +529,7 @@ export function ProfilePage() {
                 </div>
               ) : (
                 <>
-                  <h2 className="text-2xl font-black text-brand-indigo leading-tight truncate">
+                  <h2 className="text-xl font-black text-brand-indigo leading-tight truncate">
                     {user?.name}
                   </h2>
                   <button
@@ -554,56 +554,56 @@ export function ProfilePage() {
         </div>
 
         {/* Stats row */}
-        <div className="flex items-center gap-6 mt-5 pt-5 border-t border-slate-100">
+        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-100">
           <div className="flex flex-col items-center">
-            <span className="text-xl font-black text-brand-indigo leading-none">
+            <span className="text-base font-black text-brand-indigo leading-none">
               {allTrips.length}
             </span>
-            <span className="text-[11px] text-slate-400 font-semibold mt-0.5">Поездок</span>
+            <span className="text-[10px] text-slate-400 font-semibold mt-0.5">Поездок</span>
           </div>
-          <div className="w-px h-8 bg-slate-100" />
+          <div className="w-px h-6 bg-slate-100" />
           <div className="flex flex-col items-center">
-            <span className="text-xl font-black text-brand-indigo leading-none">
+            <span className="text-base font-black text-brand-indigo leading-none">
               {allTrips.reduce((acc, t) => acc + (t.points?.length ?? 0), 0)}
             </span>
-            <span className="text-[11px] text-slate-400 font-semibold mt-0.5">Точек</span>
+            <span className="text-[10px] text-slate-400 font-semibold mt-0.5">Точек</span>
           </div>
-          <div className="w-px h-8 bg-slate-100" />
+          <div className="w-px h-6 bg-slate-100" />
           <div className="flex flex-col items-center">
-            <span className="text-xl font-black text-brand-indigo leading-none">
+            <span className="text-base font-black text-brand-indigo leading-none">
               {travelTrips.length}
             </span>
-            <span className="text-[11px] text-slate-400 font-semibold mt-0.5">С датами</span>
+            <span className="text-[10px] text-slate-400 font-semibold mt-0.5">С датами</span>
           </div>
         </div>
       </div>
 
       {/* ── ТАБЫ ── */}
-      <div className="px-6 pt-4 pb-0 shrink-0 bg-white border-b border-slate-100">
-        <div className="flex gap-6">
+      <div className="px-4 pt-2.5 pb-0 shrink-0 bg-white border-b border-slate-100">
+        <div className="flex gap-4">
           <button
             onClick={() => setActiveTab('routes')}
             className={cn(
-              'pb-3 text-[13px] font-bold tracking-wide border-b-2 transition-all',
+              'pb-2 text-[12px] font-bold tracking-wide border-b-2 transition-all',
               activeTab === 'routes'
                 ? 'border-brand-sky text-brand-sky'
                 : 'border-transparent text-slate-400 hover:text-slate-600',
             )}
           >
             Путешествия
-            <span className="ml-1.5 text-[11px] font-black opacity-60">{travelTrips.length}</span>
+            <span className="ml-1.5 text-[10px] font-black opacity-60">{travelTrips.length}</span>
           </button>
           <button
             onClick={() => setActiveTab('saved')}
             className={cn(
-              'pb-3 text-[13px] font-bold tracking-wide border-b-2 transition-all',
+              'pb-2 text-[12px] font-bold tracking-wide border-b-2 transition-all',
               activeTab === 'saved'
                 ? 'border-brand-sky text-brand-sky'
                 : 'border-transparent text-slate-400 hover:text-slate-600',
             )}
           >
             Сохранено
-            <span className="ml-1.5 text-[11px] font-black opacity-60">{savedTrips.length}</span>
+            <span className="ml-1.5 text-[10px] font-black opacity-60">{savedTrips.length}</span>
           </button>
         </div>
       </div>
@@ -639,7 +639,7 @@ export function ProfilePage() {
         </div>
 
         {/* Sub-header: count + create button */}
-        <div className="flex items-center justify-between px-6 py-4 shrink-0 border-b border-slate-100 bg-white">
+        <div className="flex items-center justify-between px-4 py-2 shrink-0 border-b border-slate-100 bg-white">
           <span className="text-[13px] font-bold text-slate-500">
             {activeTab === 'routes'
               ? `${travelTrips.length} путешествий`
@@ -658,7 +658,7 @@ export function ProfilePage() {
         <div className="flex-1 min-h-0 flex flex-col">
           {activeTab === 'routes' ? (
             isLoadingTrips ? (
-              <div className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto">
+              <div className="px-4 space-y-3 pb-4 pt-3 flex-1 overflow-y-auto">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
                 ))}
@@ -667,7 +667,7 @@ export function ProfilePage() {
               <div
                 ref={routePointsScrollRef}
                 onScroll={handleContentScroll}
-                className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto
+                className="px-4 space-y-3 pb-4 pt-3 flex-1 overflow-y-auto
                   [&::-webkit-scrollbar]:w-1.5
                   [&::-webkit-scrollbar-track]:bg-transparent
                   [&::-webkit-scrollbar-thumb]:bg-slate-200
@@ -692,14 +692,14 @@ export function ProfilePage() {
                 ))}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center text-slate-300 text-center px-6 py-16 flex-1">
+              <div className="flex flex-col items-center justify-center text-slate-300 text-center px-4 py-10 flex-1">
                 <MapIcon size={40} className="mb-3 opacity-20" />
                 <p className="text-sm font-semibold text-slate-400">Путешествий пока нет</p>
                 <p className="text-xs text-slate-300 mt-1">Создайте первую поездку с датами</p>
               </div>
             )
           ) : isLoadingTrips ? (
-            <div className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto">
+            <div className="px-4 space-y-3 pb-4 pt-3 flex-1 overflow-y-auto">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
               ))}
@@ -708,7 +708,7 @@ export function ProfilePage() {
             <div
               ref={savedListScrollRef}
               onScroll={handleContentScroll}
-              className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto
+              className="px-4 space-y-3 pb-4 pt-3 flex-1 overflow-y-auto
                 [&::-webkit-scrollbar]:w-1.5
                 [&::-webkit-scrollbar-track]:bg-transparent
                 [&::-webkit-scrollbar-thumb]:bg-slate-200
@@ -731,7 +731,7 @@ export function ProfilePage() {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center text-slate-300 text-center px-6 py-16 flex-1">
+            <div className="flex flex-col items-center justify-center text-slate-300 text-center px-4 py-10 flex-1">
               <MapIcon size={40} className="mb-3 opacity-20" />
               <p className="text-sm font-semibold text-slate-400">Список пуст</p>
             </div>

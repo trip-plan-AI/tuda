@@ -23,10 +23,10 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         <div className="flex flex-1 min-h-0 overflow-hidden w-full">
           <Sidebar />
           <div className="flex flex-1 min-h-0 overflow-hidden min-w-0">
-            <main className="w-full md:w-[600px] lg:w-[680px] flex-shrink-0 min-h-0 flex flex-col overflow-hidden">
+            <main className="w-full md:w-1/2 flex-shrink-0 min-h-0 flex flex-col overflow-hidden">
               {children}
             </main>
-            <aside className="hidden md:flex flex-1 min-h-0 border-l border-slate-200 bg-slate-50">
+            <aside className="hidden md:flex md:w-1/2 min-h-0 border-l border-slate-200 bg-slate-50">
               <PersistentMapShell />
             </aside>
           </div>
