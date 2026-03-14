@@ -36,6 +36,7 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+secrets/.htpasswd-dozzle
 
 # Dev notes (personal, not for repo)
 docs/dev-notes/
