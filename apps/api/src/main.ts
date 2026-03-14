@@ -26,8 +26,14 @@ async function runMigrations() {
 }
 
 async function bootstrap() {
-  // Run migrations before app initialization
-  await runMigrations();
+  // В production миграции применяются на этапе деплоя (db:push/db:seed в CI),
+  // поэтому при старте API не запускаем migrate(), чтобы избежать конфликтов
+  // с уже существующей схемой и дублирующими migration-файлами.
+  if (process.env.NODE_ENV !== 'production') {
+    await runMigrations();
+  } else {
+    logger.log('Skip runtime migrations in production');
+  }
 
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
