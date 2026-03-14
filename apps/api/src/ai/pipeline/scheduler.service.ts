@@ -386,12 +386,15 @@ export class SchedulerService {
     return Math.max(300, Math.round(budget * 0.12));
   }
 
-  private timeToMinutes(value: string): number {
-    const [h, m] = value.split(':').map(Number);
+  public timeToMinutes(value: string | undefined | null): number {
+    if (!value || typeof value !== 'string') return 0;
+    const parts = value.split(':').map(Number);
+    const h = parts[0] || 0;
+    const m = parts[1] || 0;
     return h * 60 + m;
   }
 
-  private minutesToTime(total: number): string {
+  public minutesToTime(total: number): string {
     const normalized = Math.max(0, Math.min(total, 23 * 60 + 59));
     const h = String(Math.floor(normalized / 60)).padStart(2, '0');
     const m = String(normalized % 60).padStart(2, '0');

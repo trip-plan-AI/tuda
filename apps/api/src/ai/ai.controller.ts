@@ -553,11 +553,6 @@ ${JSON.stringify(points)}
       );
     } catch (error) {
       // TRI-106 / MERGE-GUARD
-      // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
-      // 2) Потребность: при NEED_CITY сохранять user+assistant clarify-сообщения в ту же сессию,
-      //    чтобы follow-up пользователя продолжал диалог, а не стартовал новый маршрут.
-      // 3) Если убрать: история чата будет рваться, и повторный запрос может снова привести к неверному городу.
-      // 4) Возможен конфликт с ветками, где 422 обрабатывается глобально без локального saveMessages.
       if (!this.isNeedCityError(error)) {
         throw error;
       }
@@ -584,6 +579,14 @@ ${JSON.stringify(points)}
         code: 'NEED_CITY',
         message: this.needCityMessage,
         session_id: session.id,
+      });
+    }
+
+    if (!intent.city) {
+      // TRI-106 / MERGE-GUARD
+      throw new UnprocessableEntityException({
+        code: 'NEED_CITY',
+        message: this.needCityMessage,
       });
     }
 
@@ -787,19 +790,19 @@ ${JSON.stringify(points)}
               }
             }
 
-            if (bestMatch && bestScore > 0) {
+            if (bestMatch && bestScore > 0 && existingRoutePlan) {
               // Удаляем точку и пересчитываем времена остальных (без пересортировки)
               const targetPoiId = bestMatch.poi_id;
               const rebuiltDays = existingRoutePlan.days.map((day) => {
                 const filteredPoints = day.points.filter((point) => point.poi_id !== targetPoiId);
 
                 // Пересчитываем времена оставшихся точек чтобы не было дыр
-                let currentTime = this.schedulerService['timeToMinutes'](day.day_start_time);
+                let currentTime = this.schedulerService.timeToMinutes(day.day_start_time);
                 const rescheduledPoints = filteredPoints.map((point) => {
-                  const durationMinutes = this.schedulerService['timeToMinutes'](point.departure_time) -
-                                          this.schedulerService['timeToMinutes'](point.arrival_time);
-                  const arrival = this.schedulerService['minutesToTime'](currentTime);
-                  const departure = this.schedulerService['minutesToTime'](currentTime + durationMinutes);
+                  const durationMinutes = this.schedulerService.timeToMinutes(point.departure_time) -
+                                          this.schedulerService.timeToMinutes(point.arrival_time);
+                  const arrival = this.schedulerService.minutesToTime(currentTime);
+                  const departure = this.schedulerService.minutesToTime(currentTime + durationMinutes);
                   currentTime += durationMinutes;
 
                   return {
@@ -828,21 +831,21 @@ ${JSON.stringify(points)}
 
             // Если нечёткий поиск не помог, показываем ошибку
             mutationMeta.mutation_fallback_reason = 'POINT_NOT_FOUND_IN_ROUTE';
-            routePlan = existingRoutePlan;
+            routePlan = existingRoutePlan!;
             break;
           }
 
-          const rebuiltDays = existingRoutePlan.days.map((day) => {
+          const rebuiltDays = existingRoutePlan!.days.map((day) => {
             // Удаляем точку и пересчитываем времена оставшихся (без пересортировки)
             const filteredPoints = day.points.filter((point) => point.poi_id !== targetPoiId);
 
             // Пересчитываем времена оставшихся точек чтобы не было дыр
-            let currentTime = this.schedulerService['timeToMinutes'](day.day_start_time);
+            let currentTime = this.schedulerService.timeToMinutes(day.day_start_time);
             const rescheduledPoints = filteredPoints.map((point) => {
-              const durationMinutes = this.schedulerService['timeToMinutes'](point.departure_time) -
-                                      this.schedulerService['timeToMinutes'](point.arrival_time);
-              const arrival = this.schedulerService['minutesToTime'](currentTime);
-              const departure = this.schedulerService['minutesToTime'](currentTime + durationMinutes);
+              const durationMinutes = this.schedulerService.timeToMinutes(point.departure_time) -
+                                      this.schedulerService.timeToMinutes(point.arrival_time);
+              const arrival = this.schedulerService.minutesToTime(currentTime);
+              const departure = this.schedulerService.minutesToTime(currentTime + durationMinutes);
               currentTime += durationMinutes;
 
               return {
@@ -863,7 +866,7 @@ ${JSON.stringify(points)}
           });
 
           routePlan = buildRoutePlanFromDays(
-            existingRoutePlan.city,
+            existingRoutePlan!.city,
             rebuiltDays,
           );
           mutationMeta.mutation_applied = true;
@@ -1709,6 +1712,7 @@ ${JSON.stringify(points)}
           const filteredPoints = day.points.filter((point) => {
             const poiName = (point.poi?.name ?? '').toLowerCase();
             const shouldKeep = !removeQueries.some((q) => {
+              if (typeof q !== 'string') return false;
               const matches = poiName.includes(q) || q.includes(poiName.split(' ')[0]);
               if (matches) {
                 this.logger.debug(
@@ -1727,12 +1731,12 @@ ${JSON.stringify(points)}
           this.logger.debug(`Day ${dayIdx}: kept ${filteredPoints.length}/${day.points.length} points`);
 
           // Пересчитываем времена оставшихся точек
-          let currentTime = this.schedulerService['timeToMinutes'](day.day_start_time);
+          let currentTime = this.schedulerService.timeToMinutes(day.day_start_time);
           const rescheduledPoints = filteredPoints.map((point) => {
-            const durationMinutes = this.schedulerService['timeToMinutes'](point.departure_time) -
-                                    this.schedulerService['timeToMinutes'](point.arrival_time);
-            const arrival = this.schedulerService['minutesToTime'](currentTime);
-            const departure = this.schedulerService['minutesToTime'](currentTime + durationMinutes);
+            const durationMinutes = this.schedulerService.timeToMinutes(point.departure_time) -
+                                    this.schedulerService.timeToMinutes(point.arrival_time);
+            const arrival = this.schedulerService.minutesToTime(currentTime);
+            const departure = this.schedulerService.minutesToTime(currentTime + durationMinutes);
             currentTime += durationMinutes;
 
             return {
