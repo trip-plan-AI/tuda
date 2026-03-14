@@ -530,4 +530,36 @@ ${JSON.stringify(
   ]
 }`;
   }
+
+  private buildBudgetInstructions(
+    budgetTotal: number | null,
+    budgetPerDay: number | null,
+    days: number,
+    partySize: number,
+    minPlaces: number,
+  ): string {
+    if (!budgetTotal) {
+      return 'не указан';
+    }
+
+    const budgetPerPerson = Math.round(budgetTotal / partySize);
+    const budgetPerPoi = Math.round(budgetTotal / minPlaces);
+    const isTightBudget = budgetPerPoi < 1000; // < 1000 per POI = tight
+
+    const priceSegmentGuidance =
+      budgetPerPoi < 500
+        ? '🔴 ОЧЕНЬ ОГРАНИЧЕННЫЙ БЮДЖЕТ - выбирай только FREE и BUDGET места (парки, бесплатные музеи, уличная еда)'
+        : budgetPerPoi < 1000
+          ? '🟡 ОГРАНИЧЕННЫЙ БЮДЖЕТ - приоритизируй BUDGET и MID-RANGE места (дешевые рестораны, галереи, парки)'
+          : budgetPerPoi < 2000
+            ? '🟢 СРЕДНИЙ БЮДЖЕТ - выбирай MID-RANGE и немного PREMIUM (нормальные рестораны, музеи)'
+            : '🟢🟢 ХОРОШИЙ БЮДЖЕТ - можно выбирать PREMIUM места без ограничений';
+
+    const instructions = `${budgetTotal} руб. на ${partySize} чел. (${budgetPerPerson}₽ на чел, ${budgetPerPoi}₽ на место).
+${priceSegmentGuidance}
+⚠️ КРИТИЧНО: Убедись, что выбранные места в сумме НЕ ПРЕВЫШАЮТ ${budgetTotal}₽.
+Если нужно выбрать рестораны - бери дешевые и середину по цене, избегай дорогих.`;
+
+    return instructions;
+  }
 }
