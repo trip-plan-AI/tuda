@@ -601,7 +601,7 @@ export function ProfilePage() {
         <div
           className={cn(
             'flex flex-col bg-white overflow-hidden',
-            'flex-1 md:flex-none w-full md:w-1/2 lg:w-1/2 xl:w-1/2 shrink-0 md:border-r md:border-slate-200',
+            'flex-1 w-full md:w-full shrink-0',
           )}
         >
           <div className="px-3 md:px-4 pt-3 md:pt-4 shrink-0 bg-white z-20">
@@ -708,10 +708,6 @@ export function ProfilePage() {
                           ИЗМЕНИТЬ
                         </Button>
                       </div>
-                    </div>
-
-                    <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                      Карта вынесена в сквозной layout
                     </div>
 
                     <div className="bg-white p-3 md:p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col">
