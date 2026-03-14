@@ -32,6 +32,7 @@ export interface PersistentMapConfig {
   onAffectedSegmentsChange?: (indices: Set<number>) => void;
   source: string;
   priority: number;
+  fitKey?: string;
 }
 
 type InternalConfig = PersistentMapConfig & { updatedAt: number };

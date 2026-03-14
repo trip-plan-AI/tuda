@@ -196,6 +196,7 @@ export function ProfilePage() {
       readonly: true,
       draggable: false,
       routeProfile: 'driving',
+      fitKey: selectedTrip?.id,
     });
     return () => {
       clearConfig('profile-page');

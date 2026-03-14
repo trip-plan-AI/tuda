@@ -1,5 +1,5 @@
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   MapPin,
   Moon,
@@ -141,10 +141,10 @@ export function TripCard({
 }: TripCardProps) {
   const router = useRouter();
   const nights = calcNights(trip.startDate, trip.endDate);
-  const [dateFromOpen, setDateFromOpen] = useState(false);
-  const [dateToOpen, setDateToOpen] = useState(false);
-  const [tempDateFrom, setTempDateFrom] = useState<string>('');
-  const [tempDateTo, setTempDateTo] = useState<string>('');
+  const [dateStep, setDateStep] = useState<'from' | 'to' | null>(null);
+  const [tempFrom, setTempFrom] = useState<Date | undefined>(undefined);
+  const [hoverDate, setHoverDate] = useState<Date | undefined>(undefined);
+  const calendarToRef = useRef<HTMLDivElement>(null);
   const pointsCount = trip.points?.length ?? 0;
   const pointsBudgetTotal = trip.points?.reduce((sum, p) => sum + (p.budget || 0), 0) ?? 0;
   const coverSrc = trip.img || COVER_FALLBACK;
@@ -158,6 +158,52 @@ export function TripCard({
       .then(setParticipants)
       .catch(() => {});
   }, [trip.id]);
+
+  // Track hover dates in calendar for range preview
+  useEffect(() => {
+    if (dateStep !== 'to' || !calendarToRef.current || !tempFrom) return;
+
+    const handleDayHover = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const dayButton = target.closest('button[role="button"]');
+      if (!dayButton) return;
+
+      const ariaLabel = dayButton.getAttribute('aria-label');
+      if (!ariaLabel) return;
+
+      try {
+        // Parse date from aria-label like "14 марта 2026"
+        const parts = ariaLabel.split(' ');
+        if (parts.length >= 2) {
+          const day = parseInt(parts[0]);
+          const monthStr = parts[1];
+          const year = parts[2] ? parseInt(parts[2]) : new Date().getFullYear();
+
+          const monthMap: Record<string, number> = {
+            'января': 0, 'февраля': 1, 'марта': 2, 'апреля': 3, 'мая': 4, 'июня': 5,
+            'июля': 6, 'августа': 7, 'сентября': 8, 'октября': 9, 'ноября': 10, 'декабря': 11,
+          };
+
+          const month = monthMap[monthStr];
+          if (month !== undefined && !isNaN(day) && !isNaN(year)) {
+            const hovered = new Date(year, month, day);
+            if (hovered >= tempFrom) {
+              setHoverDate(hovered);
+            }
+          }
+        }
+      } catch {
+        // Ignore parsing errors
+      }
+    };
+
+    const container = calendarToRef.current;
+    container.addEventListener('mouseover', handleDayHover);
+
+    return () => {
+      container.removeEventListener('mouseover', handleDayHover);
+    };
+  }, [dateStep, tempFrom]);
 
   // ── Real-time sync: collaborator added / removed ──
   useEffect(() => {
@@ -422,86 +468,88 @@ export function TripCard({
         </p>
 
         {/* Dates */}
-        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          {/* "От" popover */}
-          <Popover open={dateFromOpen} onOpenChange={setDateFromOpen}>
+        <div onClick={(e) => e.stopPropagation()}>
+          <Popover
+            open={dateStep !== null}
+            onOpenChange={(open) => { if (!open) { setDateStep(null); setTempFrom(undefined); } }}
+          >
             <PopoverTrigger asChild>
-              {trip.startDate ? (
-                <button className="flex items-center gap-1 px-2 py-1 text-[12px] font-semibold text-slate-500
-                                   hover:text-brand-sky hover:bg-slate-100 rounded-md transition-colors">
-                  <CalendarIcon size={11} className="text-slate-400" />
-                  {format(new Date(trip.startDate), 'd MMM yyyy', { locale: ru })}
-                </button>
-              ) : (
-                <button className="flex items-center gap-1.5 px-2 py-1 text-[12px] font-semibold
-                                   text-brand-sky hover:bg-slate-100 rounded-md transition-colors">
-                  <CalendarIcon size={11} />
-                  Указать даты
-                </button>
-              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); setDateStep('from'); }}
+                className="flex items-center gap-1.5 px-2 py-1 text-[12px] font-semibold rounded-md transition-colors
+                           text-slate-500 hover:text-brand-sky hover:bg-slate-100"
+              >
+                <CalendarIcon size={11} className="shrink-0" />
+                {trip.startDate && trip.endDate ? (
+                  <>
+                    {format(new Date(trip.startDate), 'd MMM', { locale: ru })}
+                    {' – '}
+                    {format(new Date(trip.endDate), 'd MMM yyyy', { locale: ru })}
+                  </>
+                ) : (
+                  <span className="text-brand-sky">Указать даты</span>
+                )}
+              </button>
             </PopoverTrigger>
+
             <PopoverContent
               className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl"
               align="start"
               onClick={(e) => e.stopPropagation()}
             >
-              <Calendar
-                mode="single"
-                selected={tempDateFrom ? new Date(tempDateFrom) : trip.startDate ? new Date(trip.startDate) : undefined}
-                disabled={(date) => date < startOfToday()}
-                onSelect={(date) => {
-                  const iso = date?.toISOString() || '';
-                  setTempDateFrom(iso);
-                  setDateFromOpen(false);
-                  setDateToOpen(true);
-                }}
-                locale={ru}
-                captionLayout="dropdown"
-                startMonth={startOfMonth(startOfToday())}
-                endMonth={new Date(2035, 11)}
-                classNames={{ caption_label: 'hidden' }}
-              />
-            </PopoverContent>
-          </Popover>
-
-          {(trip.startDate || tempDateFrom) && (
-            <>
-              <span className="text-slate-300 font-bold text-[12px]">—</span>
-
-              {/* "До" popover */}
-              <Popover open={dateToOpen} onOpenChange={setDateToOpen}>
-                <PopoverTrigger asChild>
-                  <button className="flex items-center gap-1 px-2 py-1 text-[12px] font-semibold text-slate-500
-                                     hover:text-brand-sky hover:bg-slate-100 rounded-md transition-colors">
-                    <CalendarIcon size={11} className="text-slate-400" />
-                    {trip.endDate
-                      ? format(new Date(trip.endDate), 'd MMM yyyy', { locale: ru })
-                      : <span className="text-slate-400 font-normal">До</span>}
+              {/* Step header */}
+              <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+                {dateStep === 'to' && (
+                  <button
+                    onClick={() => { setDateStep('from'); setTempFrom(undefined); }}
+                    className="text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    ← Назад
                   </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl"
-                  align="start"
-                  onClick={(e) => e.stopPropagation()}
-                >
+                )}
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  {dateStep === 'from' ? 'Дата начала' : 'Дата окончания'}
+                </p>
+                {tempFrom && dateStep === 'to' && (
+                  <span className="ml-auto text-[11px] text-brand-sky font-semibold">
+                    {format(tempFrom, 'd MMM', { locale: ru })} →
+                  </span>
+                )}
+              </div>
+
+              {dateStep === 'from' && (
+                <Calendar
+                  mode="single"
+                  selected={tempFrom ?? (trip.startDate ? new Date(trip.startDate) : undefined)}
+                  disabled={(date) => date < startOfToday()}
+                  onSelect={(date) => {
+                    if (!date) return;
+                    setTempFrom(date);
+                    setDateStep('to');
+                  }}
+                  locale={ru}
+                  captionLayout="dropdown"
+                  startMonth={startOfMonth(startOfToday())}
+                  endMonth={new Date(2035, 11)}
+                  classNames={{ caption_label: 'hidden' }}
+                />
+              )}
+
+              {dateStep === 'to' && (
+                <div ref={calendarToRef} className="calendar-to-wrapper">
                   <Calendar
                     mode="single"
-                    selected={tempDateTo ? new Date(tempDateTo) : trip.endDate ? new Date(trip.endDate) : undefined}
-                    disabled={(date) => {
-                      const from = tempDateFrom || trip.startDate;
-                      return date < startOfToday() || (!!from && date < new Date(from));
-                    }}
+                    selected={trip.endDate ? new Date(trip.endDate) : undefined}
+                    disabled={(date) => date < startOfToday() || (!!tempFrom && date < tempFrom)}
                     onSelect={(date) => {
-                      if (!date) return;
-                      const endIso = date.toISOString();
-                      const startIso = tempDateFrom || trip.startDate || '';
-                      setTempDateTo(endIso);
-                      setDateToOpen(false);
-                      if (onDatesUpdate && startIso) {
-                        onDatesUpdate(trip.id, { startDate: startIso, endDate: endIso });
-                      }
-                      setTempDateFrom('');
-                      setTempDateTo('');
+                      if (!date || !tempFrom) return;
+                      onDatesUpdate?.(trip.id, {
+                        startDate: tempFrom.toISOString(),
+                        endDate: date.toISOString(),
+                      });
+                      setDateStep(null);
+                      setTempFrom(undefined);
+                      setHoverDate(undefined);
                     }}
                     locale={ru}
                     captionLayout="dropdown"
@@ -509,10 +557,15 @@ export function TripCard({
                     endMonth={new Date(2035, 11)}
                     classNames={{ caption_label: 'hidden' }}
                   />
-                </PopoverContent>
-              </Popover>
-            </>
-          )}
+                  {hoverDate && tempFrom && (
+                    <div className="px-4 pb-3 text-center text-[11px] font-semibold text-brand-sky border-t border-slate-100 pt-2">
+                      📅 {Math.ceil((hoverDate.getTime() - tempFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1} дней
+                    </div>
+                  )}
+                </div>
+              )}
+            </PopoverContent>
+          </Popover>
         </div>
 
         {/* Budget summary */}

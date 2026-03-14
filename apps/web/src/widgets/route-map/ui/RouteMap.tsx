@@ -30,6 +30,7 @@ interface RouteMapProps {
   onRouteInfoLoading?: (loading: boolean) => void;
   onAffectedSegmentsChange?: (indices: Set<number>) => void;
   readonly?: boolean;
+  fitKey?: string;
 }
 
 declare const ymaps3: any;
@@ -86,6 +87,7 @@ export function RouteMap({
   onRouteInfoLoading,
   onAffectedSegmentsChange,
   readonly = false,
+  fitKey,
 }: RouteMapProps) {
   console.log('[RouteMap] Render. isAddPointMode:', isAddPointMode, 'hasOnMapClick:', !!onMapClick, 'points:', points.length);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -904,32 +906,39 @@ export function RouteMap({
     }
   }, [isAddPointMode]);
 
+  // Сбрасываем флаг fit при смене набора точек (например, выбор другого маршрута на профиле)
+  useEffect(() => {
+    if (fitKey !== undefined) {
+      hasInitialFitPerformed.current = false;
+    }
+  }, [fitKey]);
+
   useEffect(() => {
     if (!mapRef.current || !mapReady || points.length === 0 || hasInitialFitPerformed.current) return;
-    
+
     const lons = points.map(p => p.lon);
     const lats = points.map(p => p.lat);
-    
+
     const minLon = Math.min(...lons);
     const maxLon = Math.max(...lons);
     const minLat = Math.min(...lats);
     const maxLat = Math.max(...lats);
-    
+
     // Вычисляем охват и добавляем 10% запас с каждой стороны
     const lonSpan = maxLon - minLon;
     const latSpan = maxLat - minLat;
-    
+
     const marginLon = Math.max(lonSpan * 0.1, 0.01);
     const marginLat = Math.max(latSpan * 0.1, 0.01);
-    
+
     const bounds = [
-      [minLon - marginLon, minLat - marginLat], 
+      [minLon - marginLon, minLat - marginLat],
       [maxLon + marginLon, maxLat + marginLat]
     ];
-    
+
     mapRef.current.update({ location: { bounds, duration: 500 } });
     hasInitialFitPerformed.current = true;
-  }, [points.length > 0, mapReady]);
+  }, [points.length > 0, mapReady, fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cleanup: удаляем cursor indicator при размонтировании
   useEffect(() => {
