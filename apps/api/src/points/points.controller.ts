@@ -16,6 +16,7 @@ import { ReorderPointsDto } from './dto/reorder-points.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { TripsService } from '../trips/trips.service';
+import { CollaborationEventsService } from '../collaboration/collaboration-events.service';
 
 @Controller('trips/:tripId/points')
 @UseGuards(JwtAuthGuard)
@@ -23,6 +24,7 @@ export class PointsController {
   constructor(
     private readonly pointsService: PointsService,
     private readonly tripsService: TripsService,
+    private readonly eventsService: CollaborationEventsService,
   ) {}
 
   @Get()
@@ -44,7 +46,9 @@ export class PointsController {
     if (trip.ownerId !== user.id && !trip.ownerIsActive) {
       throw new ForbiddenException('Route editing is disabled by the owner');
     }
-    return this.pointsService.create(tripId, dto);
+    const result = await this.pointsService.create(tripId, dto);
+    this.eventsService.emitTripRefresh(tripId);
+    return result;
   }
 
   @Patch('reorder')
@@ -57,7 +61,9 @@ export class PointsController {
     if (trip.ownerId !== user.id && !trip.ownerIsActive) {
       throw new ForbiddenException('Route editing is disabled by the owner');
     }
-    return this.pointsService.reorder(tripId, dto);
+    const result = await this.pointsService.reorder(tripId, dto);
+    this.eventsService.emitTripRefresh(tripId);
+    return result;
   }
 
   @Patch(':id')
@@ -71,7 +77,9 @@ export class PointsController {
     if (trip.ownerId !== user.id && !trip.ownerIsActive) {
       throw new ForbiddenException('Route editing is disabled by the owner');
     }
-    return this.pointsService.update(id, tripId, dto);
+    const result = await this.pointsService.update(id, tripId, dto);
+    this.eventsService.emitTripRefresh(tripId);
+    return result;
   }
 
   @Delete(':id')
@@ -84,6 +92,8 @@ export class PointsController {
     if (trip.ownerId !== user.id && !trip.ownerIsActive) {
       throw new ForbiddenException('Route editing is disabled by the owner');
     }
-    return this.pointsService.remove(id, tripId);
+    const result = await this.pointsService.remove(id, tripId);
+    this.eventsService.emitTripRefresh(tripId);
+    return result;
   }
 }

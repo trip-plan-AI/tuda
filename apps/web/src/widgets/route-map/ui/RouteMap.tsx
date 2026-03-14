@@ -543,7 +543,14 @@ export function RouteMap({
       const results = await Promise.all(promises);
       if (!isCancelled) {
         // Обновляем только затронутые сегменты
-        const updatedSegments = prevSegmentsRef.current ? [...prevSegmentsRef.current] : new Array(points.length - 1);
+        let updatedSegments = prevSegmentsRef.current ? [...prevSegmentsRef.current] : new Array(points.length - 1);
+        
+        // TRI-104: Если количество точек уменьшилось, обрезаем массив сегментов,
+        // иначе на карте остаются старые "хвосты" маршрутных линий.
+        if (updatedSegments.length > points.length - 1) {
+          updatedSegments = updatedSegments.slice(0, Math.max(0, points.length - 1));
+        }
+
         results.forEach(result => {
           updatedSegments[result.index] = result.data;
         });

@@ -63,6 +63,7 @@ export const trips = pgTable('trips', {
   temp: text('temp'),
   startDate: text('start_date'),
   endDate: text('end_date'),
+  version: integer('version').notNull().default(0),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
@@ -181,5 +182,6 @@ export const aiSessions = pgTable('ai_sessions', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   messages: jsonb('messages').notNull().default('[]'),
+  title: text('title'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });

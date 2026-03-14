@@ -90,6 +90,28 @@ export function useCollaborationSocket(tripId: string) {
       }
     });
 
+    socket.on('trip:refresh', () => {
+      loadTripData();
+    });
+
+    socket.on('trip_version_updated', (data: { version: number; points: any[] }) => {
+      try {
+        useTripStore.setState((state) => {
+          if (!state.currentTrip) return state;
+          return {
+            ...state,
+            currentTrip: {
+              ...state.currentTrip,
+              version: data.version,
+              points: data.points,
+            },
+          };
+        });
+      } catch (e) {
+        console.error('Failed to sync trip version from socket:', e);
+      }
+    });
+
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       socket.emit('leave:trip', { trip_id: tripId });
@@ -103,6 +125,7 @@ export function useCollaborationSocket(tripId: string) {
       socket.off('point:updated');
       socket.off('point:reorder');
       socket.off('trip:update');
+      socket.off('trip_version_updated');
     };
   }, [tripId]);
 }

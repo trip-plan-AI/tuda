@@ -5,6 +5,7 @@ import type { PoiItem } from './poi.types';
 export interface SessionMessage {
   role: ChatRole;
   content: string;
+  route_plan?: RoutePlan;
 }
 
 export type PoiCategory =
@@ -172,6 +173,7 @@ export interface PolicySnapshot {
 export type IntentRouterActionType =
   | 'REMOVE_POI'
   | 'REPLACE_POI'
+  | 'ADD_POI'
   | 'ADD_DAYS'
   | 'APPLY_GLOBAL_FILTER'
   | 'NEW_ROUTE';

@@ -6,7 +6,9 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
 } from '@nestjs/websockets';
+import { OnModuleInit } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { CollaborationService } from './collaboration.service';
@@ -14,6 +16,7 @@ import { PointsService } from '../points/points.service';
 import { TripsService } from '../trips/trips.service';
 import { ForbiddenException } from '@nestjs/common';
 import { CreatePointDto } from '../points/dto/create-point.dto';
+import { CollaborationEventsService } from './collaboration-events.service';
 
 interface SocketData {
   userId: string;
@@ -30,7 +33,7 @@ type TypedSocket = Socket<
 
 @WebSocketGateway({ namespace: '/collaboration', cors: { origin: '*' } })
 export class CollaborationGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit
 {
   @WebSocketServer() server: Server;
 
@@ -39,7 +42,27 @@ export class CollaborationGateway
     private jwtService: JwtService,
     private pointsService: PointsService,
     private tripsService: TripsService,
+    private eventsService: CollaborationEventsService,
   ) {}
+
+  onModuleInit() {
+    this.eventsService.events$.subscribe((event) => {
+      console.log(`[CollaborationGateway] Received internal event: ${event.type} for trip ${event.tripId}`);
+      if (!this.server) {
+        console.warn(`[CollaborationGateway] WebSocket server not initialized, cannot broadcast event ${event.type}`);
+        return;
+      }
+
+      if (event.type === 'trip:refresh') {
+        this.server.to(`trip_${event.tripId}`).emit('trip:refresh', { trip_id: event.tripId });
+      } else if (event.type === 'ai:update') {
+        this.server.to(`trip_${event.tripId}`).emit('ai:update', {
+          trip_id: event.tripId,
+          session_id: event.payload?.session_id,
+        });
+      }
+    });
+  }
 
   async checkAccess(userId: string, tripId: string) {
     const trip = await this.tripsService.findByIdWithAccess(tripId, userId);
@@ -214,6 +237,28 @@ export class CollaborationGateway
     const { trip_id, ...patch } = data;
     // DB already saved via HTTP PATCH — just broadcast to other collaborators
     client.to(`trip_${trip_id}`).emit('trip:update', { trip_id, ...patch });
+  }
+
+  emitTripUpdate(tripId: string, patch: Record<string, unknown> = {}) {
+    if (!this.server) return;
+    this.server.to(`trip_${tripId}`).emit('trip:update', { trip_id: tripId, ...patch });
+  }
+
+  emitTripVersionUpdated(tripId: string, data: { version: number; points: any[]; mutations?: any[] }) {
+    if (!this.server) return;
+    this.server.to(`trip_${tripId}`).emit('trip_version_updated', data);
+  }
+
+  emitTripRefresh(tripId: string) {
+    console.log(`[CollaborationGateway] Emitting trip:refresh for trip ${tripId}, server initialized: ${!!this.server}`);
+    if (!this.server) return;
+    this.server.to(`trip_${tripId}`).emit('trip:refresh', { trip_id: tripId });
+  }
+
+  emitAiUpdate(tripId: string, sessionId: string) {
+    console.log(`[CollaborationGateway] Emitting ai:update for trip ${tripId}, session ${sessionId}`);
+    if (!this.server) return;
+    this.server.to(`trip_${tripId}`).emit('ai:update', { trip_id: tripId, session_id: sessionId });
   }
 
   @SubscribeMessage('cursor:move')
