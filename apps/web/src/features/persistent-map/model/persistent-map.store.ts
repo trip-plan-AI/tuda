@@ -46,6 +46,7 @@ interface PersistentMapStore {
 }
 
 const registry = new Map<string, InternalConfig>();
+let cachedActiveConfig: PersistentMapConfig | null = null;
 
 function pickActiveConfig(): PersistentMapConfig | null {
   const entries = Array.from(registry.values());
@@ -64,16 +65,38 @@ function pickActiveConfig(): PersistentMapConfig | null {
   return config;
 }
 
-export const usePersistentMapStore = create<PersistentMapStore>((set) => ({
+function getActiveConfigWithCache(): PersistentMapConfig | null {
+  const nextConfig = pickActiveConfig();
+  // Return cached config if content is the same source and priority (prevent reference changes)
+  if (cachedActiveConfig && nextConfig) {
+    if (
+      cachedActiveConfig.source === nextConfig.source &&
+      cachedActiveConfig.priority === nextConfig.priority
+    ) {
+      return cachedActiveConfig;
+    }
+  }
+  cachedActiveConfig = nextConfig;
+  return nextConfig;
+}
+
+export const usePersistentMapStore = create<PersistentMapStore>((set, get) => ({
   config: null,
   sheetState: 'medium',
   setConfig: (config) => {
     registry.set(config.source, { ...config, updatedAt: Date.now() });
-    set({ config: pickActiveConfig() });
+    const nextConfig = getActiveConfigWithCache();
+    // Avoid unnecessary re-renders by comparing reference equality
+    if (nextConfig !== get().config) {
+      set({ config: nextConfig });
+    }
   },
   clearConfig: (source) => {
     registry.delete(source);
-    set({ config: pickActiveConfig() });
+    const nextConfig = getActiveConfigWithCache();
+    if (nextConfig !== get().config) {
+      set({ config: nextConfig });
+    }
   },
   setSheetState: (sheetState) => set({ sheetState }),
 }));
