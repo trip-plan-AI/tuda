@@ -6,11 +6,10 @@ import { CollaboratorsService } from './collaborators.service';
 import { InvitationsController } from './invitations.controller';
 import { InvitationsService } from './invitations.service';
 import { CollaborationModule } from '../collaboration/collaboration.module';
-import { GeosearchModule } from '../geosearch/geosearch.module';
 import { TripImageService } from './trip-image.service';
 
 @Module({
-  imports: [forwardRef(() => CollaborationModule), GeosearchModule],
+  imports: [forwardRef(() => CollaborationModule)],
   controllers: [
     TripsController,
     CollaboratorsController,

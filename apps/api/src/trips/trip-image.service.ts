@@ -3,7 +3,6 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { asc, eq } from 'drizzle-orm';
 import { DRIZZLE } from '../db/db.module';
 import * as schema from '../db/schema';
-import { GeosearchService } from '../geosearch/geosearch.service';
 import { RedisService } from '../redis/redis.service';
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
@@ -17,12 +16,6 @@ type ReverseAddress = {
   suburb?: string;
   state_district?: string;
   state?: string;
-};
-
-type ReverseResult = {
-  address?: ReverseAddress;
-  title?: string;
-  displayName?: string;
 };
 
 type PixabayHit = {
@@ -47,7 +40,6 @@ export class TripImageService implements OnModuleInit {
   constructor(
     @Inject(DRIZZLE)
     private readonly db: NodePgDatabase<typeof schema>,
-    private readonly geosearchService: GeosearchService,
     private readonly redisService: RedisService,
   ) {}
 
@@ -58,43 +50,67 @@ export class TripImageService implements OnModuleInit {
 
   async resolveTripCover(tripId: string): Promise<void> {
     const unlock = await this.acquireLock(tripId);
-    if (!unlock) return;
+    if (!unlock) {
+      this.logger.debug(`[${tripId}] lock not acquired — skipping`);
+      return;
+    }
 
     try {
       const trip = await this.db.query.trips.findFirst({
         where: eq(schema.trips.id, tripId),
       });
-      if (!trip) return;
+      if (!trip) {
+        this.logger.warn(`[${tripId}] trip not found`);
+        return;
+      }
 
       const points = await this.db.query.routePoints.findMany({
         where: eq(schema.routePoints.tripId, tripId),
         orderBy: [asc(schema.routePoints.order)],
       });
-      if (points.length === 0) return;
+      if (points.length === 0) {
+        this.logger.debug(`[${tripId}] no points — skip`);
+        return;
+      }
 
       const selectedPoint = this.pickPoint(points, tripId);
       if (!selectedPoint) return;
 
-      const reverse = (await this.geosearchService.reverse(
+      this.logger.debug(
+        `[${tripId}] selected point lat=${selectedPoint.lat} lon=${selectedPoint.lon}`,
+      );
+
+      const address = await this.fetchCityFromCoords(
         selectedPoint.lat,
         selectedPoint.lon,
-      )) as ReverseResult | null;
+      );
 
-      const city = this.extractCity(reverse);
-      if (!city) return;
+      const city = this.extractCity(address);
+      if (!city) {
+        this.logger.warn(
+          `[${tripId}] could not extract city from address: ${JSON.stringify(address)}`,
+        );
+        return;
+      }
 
       const slug = this.toSlug(city);
+      this.logger.debug(`[${tripId}] city="${city}" slug="${slug}"`);
       if (!slug) return;
 
       const localPath = await this.findLocalImage(slug);
       if (localPath) {
+        this.logger.debug(`[${tripId}] local image found: ${localPath}`);
         await this.updateTripImageIfChanged(tripId, localPath);
         return;
       }
 
+      this.logger.debug(`[${tripId}] no local image, querying Pixabay`);
       const downloaded = await this.downloadFromPixabay(slug, city);
       if (downloaded) {
+        this.logger.debug(`[${tripId}] Pixabay downloaded: ${downloaded}`);
         await this.updateTripImageIfChanged(tripId, downloaded);
+      } else {
+        this.logger.warn(`[${tripId}] Pixabay returned nothing for "${slug}"`);
       }
     } finally {
       await unlock();
@@ -116,15 +132,41 @@ export class TripImageService implements OnModuleInit {
     return points[index] ?? points[1] ?? null;
   }
 
-  private extractCity(reverse: ReverseResult | null): string | null {
-    const addr = reverse?.address;
-    if (!addr) {
-      const fallbackText = reverse?.title ?? reverse?.displayName;
-      if (!fallbackText) return null;
-      const firstToken = fallbackText.split(',')[0]?.trim() ?? '';
-      return firstToken || null;
-    }
+  private async fetchCityFromCoords(
+    lat: number,
+    lon: number,
+  ): Promise<ReverseAddress | null> {
+    const params = new URLSearchParams({
+      lat: lat.toString(),
+      lon: lon.toString(),
+      format: 'json',
+      'accept-language': 'ru',
+      zoom: '10',
+    });
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?${params}`,
+        {
+          headers: { 'User-Agent': 'TravelPlanner/1.0' },
+          signal: controller.signal,
+        },
+      );
+      if (!res.ok) return null;
+      const data = (await res.json()) as { address?: ReverseAddress };
+      return data?.address ?? null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private extractCity(addr: ReverseAddress | null): string | null {
+    if (!addr) return null;
     return (
       addr.city ??
       addr.town ??
