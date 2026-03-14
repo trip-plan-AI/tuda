@@ -162,9 +162,17 @@ jobs:
 
           echo "[deploy][step] docker up started"
           if ! docker compose -f docker-compose.prod.yml up -d --wait; then
-            echo "[deploy][error] docker up failed — dumping api logs"
+            echo "[deploy][error] docker up failed — extended diagnostics"
+            echo "[debug] compose ps"
+            docker compose -f docker-compose.prod.yml ps || true
+            echo "[debug] api logs"
             docker compose -f docker-compose.prod.yml logs --no-color --tail=200 api || true
-            docker inspect travel-planner-api | python3 -c "import sys,json;d=json.load(sys.stdin)[0];[print(l.get('Output','')) for l in d.get('State',{}).get('Health',{}).get('Log',[])]" || true
+            echo "[debug] nginx logs"
+            docker compose -f docker-compose.prod.yml logs --no-color --tail=120 nginx || true
+            echo "[debug] api inspect summary"
+            docker inspect travel-planner-api --format "name={{.Name}} state={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}" || true
+            echo "[debug] api health log"
+            docker inspect travel-planner-api | python3 -c "import sys,json;d=json.load(sys.stdin)[0];h=d.get('State',{}).get('Health',{});print('health=',h.get('Status'));[print((x.get('Start','')+' '+x.get('ExitCode','').__str__()+': '+x.get('Output','')).strip()) for x in h.get('Log',[])]" || true
             exit 1
           fi
           echo "[deploy][step] docker up finished"
