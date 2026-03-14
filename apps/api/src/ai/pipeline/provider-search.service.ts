@@ -586,10 +586,14 @@ export class ProviderSearchService {
       atmosphereHints = 'cozy, comfortable, family-friendly';
 
     let priceGuidance = 'mid-range (moderate price)';
-    if (intent.budget_per_day && intent.budget_per_day < 30)
-      priceGuidance = 'budget (cheap, street food, casual)';
-    if (intent.budget_per_day && intent.budget_per_day > 100)
-      priceGuidance = 'upscale (premium, fine dining)';
+    const perPersonPerDay = (intent.budget_per_day ?? 0) / (intent.party_size || 1);
+    
+    if (perPersonPerDay > 0) {
+      if (perPersonPerDay < 1500)
+        priceGuidance = 'budget (cheap, street food, casual)';
+      else if (perPersonPerDay > 5000)
+        priceGuidance = 'upscale (premium, fine dining)';
+    }
 
     let contextGuidance = 'popular tourist favorites';
     if (/культур|музе|театр|памятник|архитектур|историч/.test(preferences))

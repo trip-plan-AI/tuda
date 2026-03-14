@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useAiQueryStore } from '@/features/ai-query';
 import { useTripStore } from '@/entities/trip';
+import { useCollaborationSocket, CollaboratorsAvatarGroup } from '@/features/route-collaborate';
 import { AiChat } from '@/widgets/ai-chat';
 import { Button } from '@/shared/ui/button';
 import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
@@ -49,15 +50,19 @@ export function AIAssistantPage() {
   } = useAiQueryStore();
   const currentTrip = useTripStore((state) => state.currentTrip);
 
+  const activeSession = activeSessionId ? sessions[activeSessionId] : null;
+
   useEffect(() => {
     void loadSessions();
   }, [loadSessions]);
 
   const sessionsList = useMemo(
     () =>
-      Object.values(sessions).sort(
-        (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
-      ),
+      Object.values(sessions).sort((left, right) => {
+        const diff = new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+        // Если время обновления совпадает, сортируем по ID для стабильности
+        return diff !== 0 ? diff : right.id.localeCompare(left.id);
+      }),
     [sessions],
   );
 
@@ -74,8 +79,6 @@ export function AIAssistantPage() {
       },
     ];
   }, [messages]);
-
-  const activeSession = activeSessionId ? sessions[activeSessionId] : null;
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -280,13 +283,32 @@ export function AIAssistantPage() {
     );
   }, [lastPlanMessage?.routePlan, currentTrip?.id]);
 
+  const displayPoints = useMemo(() => {
+    const lastMessage = messages[messages.length - 1];
+    const hasPlan = !!lastMessage?.routePlan;
+    // Предложение считается "новым" (черновиком), только если оно еще не было применено в этот трип
+    const isNewAIProposal = hasPlan && lastMessage.id !== lastAppliedPlanMessageId;
+
+    // Если чат связан с маршрутом, и мы не смотрим на свежее (непримененное) предложение ИИ,
+    // то показываем актуальное состояние маршрута из базы (синхронизируется сокетами).
+    if (activeSession?.tripId && !isNewAIProposal) {
+      return currentTrip?.points || [];
+    }
+    
+    // В противном случае показываем черновик ИИ из истории чата
+    return aiPoints;
+  }, [activeSession?.tripId, currentTrip?.points, aiPoints, messages, lastAppliedPlanMessageId]);
+
+  const socketTripId = activeSession?.tripId || '';
+  useCollaborationSocket(socketTripId);
+
   useEffect(() => {
-    // Показываем только точки из route_plan чата.
-    // Если чат пустой — карта тоже пустая (нет fallback на currentTrip.points).
+    // Показываем точки согласно логике displayPoints.
+    // Принудительно передаем новый массив [...displayPoints] для сброса кеша реактивности в мапе
     setConfig({
       source: 'ai-assistant-page',
       priority: 40,
-      points: aiPoints,
+      points: [...displayPoints],
       readonly: true,
       draggable: false,
       routeProfile: 'driving',
@@ -295,12 +317,19 @@ export function AIAssistantPage() {
     return () => {
       clearConfig('ai-assistant-page');
     };
-  }, [aiPoints]);
+  }, [displayPoints]);
 
   return (
     <div className="min-h-full w-full">
       <div className="mx-auto flex w-full max-w-6xl gap-4 px-4 py-6 md:px-6 md:py-10">
         <aside className="hidden w-72 flex-col rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:flex">
+          {activeSession?.tripId && (
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-brand-indigo">Кто в маршруте</h3>
+              <CollaboratorsAvatarGroup tripId={activeSession.tripId} />
+            </div>
+          )}
+
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-sm font-bold text-brand-indigo">Чаты маршрутов</h3>
             <Button type="button" size="sm" variant="outline" onClick={handleCreateSession}>

@@ -173,6 +173,7 @@ export interface PolicySnapshot {
 export type IntentRouterActionType =
   | 'REMOVE_POI'
   | 'REPLACE_POI'
+  | 'ADD_POI'
   | 'ADD_DAYS'
   | 'APPLY_GLOBAL_FILTER'
   | 'NEW_ROUTE';

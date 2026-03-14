@@ -230,6 +230,9 @@ describe('AiController plan contract fields', () => {
       deterministicPlannerService,
       yandexBatchRefinementService as never,
       logicalIdSelectorService as never,
+      {} as never, // mutationParser
+      {} as never, // pointMutationService
+      {} as never, // collaborationGateway
     );
 
     return {
@@ -667,6 +670,9 @@ describe('AiController targeted mutations (phase 3)', () => {
       deterministicPlannerService,
       yandexBatchRefinementService as never,
       logicalIdSelectorService as never,
+      {} as never, // mutationParser
+      {} as never, // pointMutationService
+      {} as never, // collaborationGateway
     );
 
     return {

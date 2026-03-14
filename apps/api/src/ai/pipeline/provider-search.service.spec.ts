@@ -106,6 +106,7 @@ describe('ProviderSearchService mass collection shadow diagnostics', () => {
         client: { chat: { completions: { create: jest.fn() } } },
         model: 'test',
       } as never,
+      { search: jest.fn() } as never,
     );
 
     const result = await service.fetchAndFilter({ ...baseIntent }, fallbacks);
@@ -148,7 +149,7 @@ describe('ProviderSearchService mass collection shadow diagnostics', () => {
     );
 
     jest
-      .spyOn(service as never, 'generateMissingPois')
+      .spyOn(service as any, 'generateMissingPois')
       .mockResolvedValue([
         buildPoi('l-1', 'cafe', 55.81),
         buildPoi('l-2', 'restaurant', 55.83),

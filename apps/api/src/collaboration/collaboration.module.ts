@@ -4,6 +4,7 @@ import { PointsModule } from '../points/points.module';
 import { TripsModule } from '../trips/trips.module';
 import { CollaborationGateway } from './collaboration.gateway';
 import { CollaborationService } from './collaboration.service';
+import { CollaborationEventsService } from './collaboration-events.service';
 
 @Module({
   imports: [
@@ -11,7 +12,15 @@ import { CollaborationService } from './collaboration.service';
     forwardRef(() => PointsModule),
     forwardRef(() => TripsModule),
   ],
-  providers: [CollaborationGateway, CollaborationService],
-  exports: [CollaborationService, CollaborationGateway],
+  providers: [
+    CollaborationGateway,
+    CollaborationService,
+    CollaborationEventsService,
+  ],
+  exports: [
+    CollaborationService,
+    CollaborationGateway,
+    CollaborationEventsService,
+  ],
 })
 export class CollaborationModule {}
