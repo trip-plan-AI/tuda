@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { User as UserIcon, Pencil, Map as MapIcon, ArrowUp } from 'lucide-react';
-import dynamic from 'next/dynamic';
 import { useUserStore, usersApi } from '@/entities/user';
 import { useTripStore, type Trip } from '@/entities/trip';
 import { useAuthStore } from '@/features/auth';
@@ -20,13 +19,9 @@ import {
   CollaboratorsModal,
 } from '@/features/route-collaborate';
 import { getSocket } from '@/shared/socket/socket-client';
+import { setConfig, clearConfig } from '@/features/persistent-map';
 import { TripCard } from '@/entities/trip/ui/TripCard';
 import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
-
-const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-slate-50 animate-pulse rounded-2xl" />,
-});
 
 export function ProfilePage() {
   const router = useRouter();
@@ -44,6 +39,9 @@ export function ProfilePage() {
   const [tempName, setTempName] = useState(user?.name || '');
   const [allTrips, setAllTrips] = useState<Trip[]>([]);
   const [isLoadingTrips, setIsLoadingTrips] = useState(true);
+  const [showPlannerConflictModal, setShowPlannerConflictModal] = useState(false);
+  const [pendingPlannerTripId, setPendingPlannerTripId] = useState<string | null>(null);
+  const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -52,7 +50,6 @@ export function ProfilePage() {
   const [inviteTripId, setInviteTripId] = useState<string | null>(null);
   const [collaboratorsTripId, setCollaboratorsTripId] = useState<string | null>(null);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
-  const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const { setCollaborators } = useCollaborateStore();
 
   // Sync local allTrips into the Zustand store so selectors/filtered arrays stay up-to-date
@@ -155,8 +152,7 @@ export function ProfilePage() {
 
   const activeRoute = allTrips.find((t) => t.isActive);
 
-  // Sync activeRoute into the trip store so WS point events (addPoint/updatePoint/removePoint)
-  // update currentTrip.points, which we then use for real-time display.
+  // Sync activeRoute into the trip store so WS point events update currentTrip.points
   useEffect(() => {
     if (activeRoute && currentTrip?.id !== activeRoute.id) {
       setCurrentTrip(activeRoute);
@@ -175,8 +171,27 @@ export function ProfilePage() {
 
   useCollaborationSocket(activeRoute?.id ?? '');
 
-  // Подключаемся по сокетам ко ВСЕМ маршрутам из списка, чтобы видеть обновления
-  // (например, "Итог по точкам") в реальном времени, даже если маршрут не активен.
+  // Selected trip for map display
+  const selectedTrip = selectedTripId
+    ? (allTrips.find((t) => t.id === selectedTripId) ?? null)
+    : (displayedActiveRoute ?? travelTrips[0] ?? null);
+
+  // Feed points to PersistentMapShell (right aside in layout)
+  useEffect(() => {
+    setConfig({
+      source: 'profile-page',
+      priority: 80,
+      points: selectedTrip?.points || [],
+      readonly: true,
+      draggable: false,
+      routeProfile: 'driving',
+    });
+    return () => {
+      clearConfig('profile-page');
+    };
+  }, [selectedTrip?.id, selectedTrip?.points]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Join all trip sockets for real-time card updates
   useEffect(() => {
     const socket = getSocket();
     const joinedIds = allTrips.map((t) => t.id).filter(Boolean);
@@ -196,8 +211,7 @@ export function ProfilePage() {
     };
   }, [allTrips, activeRoute?.id]);
 
-  // When the current user is invited to a trip, add it to the list in real-time
-  // When the current user is removed from a trip, remove it from the list in real-time
+  // When the current user is invited to / removed from a trip
   useEffect(() => {
     const socket = getSocket();
     socket.on('trip:shared', (trip: Trip) => {
@@ -406,24 +420,34 @@ export function ProfilePage() {
     }
   };
 
+  // Open edit conflict modal for switching to a different route in planner
   const handleEditRoute = (trip: Trip) => {
-    setCurrentTrip(trip);
-    router.push('/planner');
+    setPendingPlannerTripId(trip.id);
+    setShowPlannerConflictModal(true);
   };
 
+  const handleConfirmPlannerReplace = () => {
+    const targetTripId = pendingPlannerTripId;
+    setShowPlannerConflictModal(false);
+    setPendingPlannerTripId(null);
+    if (!targetTripId) {
+      router.push('/planner');
+      return;
+    }
+    router.push(`/planner?applyTripId=${encodeURIComponent(targetTripId)}`);
+  };
+
+  // Open create conflict modal when creating a new trip with unsaved changes
   const handleCreateTrip = () => {
-    // If there's a current trip with unsaved changes, show conflict modal
     if (currentTrip && isDirty) {
       setConflictModalOpen(true);
     } else {
-      // No conflict, clear planner and go to new trip
       clearPlanner();
       router.push('/planner');
     }
   };
 
   const handleConflictSaveAndReplace = async () => {
-    // Save current trip and go to new planner
     try {
       if (currentTrip) {
         await tripsApi.update(currentTrip.id, currentTrip);
@@ -438,26 +462,18 @@ export function ProfilePage() {
   };
 
   const handleConflictGoToPlannerOnly = () => {
-    // Just go to planner without clearing
     setConflictModalOpen(false);
     router.push('/planner');
   };
 
   const handleConflictReplaceWithoutSave = () => {
-    // Clear planner and go to new trip
     clearPlanner();
     setConflictModalOpen(false);
     router.push('/planner');
   };
 
-  // Map: selected card → active route (with live WS points) → first travel trip
-  const selectedTrip = selectedTripId
-    ? (allTrips.find((t) => t.id === selectedTripId) ?? null)
-    : (displayedActiveRoute ?? travelTrips[0] ?? null);
-  const mapPoints = selectedTrip?.points ?? [];
-
   return (
-    <div className="flex-1 min-h-0 flex overflow-hidden bg-[#f0f4f8]">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[#f0f4f8]">
       <input
         type="file"
         ref={fileInputRef}
@@ -466,236 +482,190 @@ export function ProfilePage() {
         className="hidden"
       />
 
-      {/* ── ЛЕВАЯ КОЛОНКА: Профиль + Табы + Карточки ── */}
-      <div className="w-full md:w-[600px] lg:w-[680px] flex-shrink-0 flex flex-col overflow-hidden z-10 bg-white shadow-[2px_0_24px_0_rgba(0,0,0,0.08)]">
-        {/* ── ШАПКА ПРОФИЛЯ ── */}
-        <div className="w-full shrink-0 bg-white border-b border-slate-100 px-6 py-6">
-          {/* Avatar + name row */}
-          <div className="flex items-center gap-5">
-            <div
-              onClick={handleAvatarClick}
-              className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center
-                         border-4 border-white shadow-lg overflow-hidden cursor-pointer group relative shrink-0"
-            >
-              {user?.photo ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={user.photo} className="w-full h-full object-cover" alt={user.name} />
-              ) : user?.name ? (
-                <span className="text-2xl font-bold text-slate-400 uppercase">
-                  {user.name.substring(0, 2)}
-                </span>
-              ) : (
-                <UserIcon size={36} className="text-slate-300" />
-              )}
-              <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
-                <Pencil size={20} className="text-white" />
-              </div>
-            </div>
-
-            <div className="flex-1 min-w-0">
-              {/* Name + edit */}
-              <div className="flex items-center gap-2 mb-0.5">
-                {isEditingName ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      autoFocus
-                      type="text"
-                      value={tempName}
-                      onChange={(e) => setTempName(e.target.value)}
-                      onBlur={handleSaveName}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
-                      className="text-2xl font-black text-brand-indigo border-b-2 border-brand-sky
-                                 outline-none bg-transparent w-full"
-                    />
-                    <button
-                      onClick={handleSaveName}
-                      className="p-1.5 hover:scale-110 active:scale-90 transition-all"
-                      aria-label="Сохранить имя"
-                    >
-                      <span className="text-lg leading-none">💾</span>
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <h2 className="text-2xl font-black text-brand-indigo leading-tight truncate">
-                      {user?.name}
-                    </h2>
-                    <button
-                      onClick={() => {
-                        setTempName(user?.name || '');
-                        setIsEditingName(true);
-                      }}
-                      className="p-1 hover:scale-110 active:scale-90 transition-all opacity-40 hover:opacity-100 shrink-0"
-                      aria-label="Редактировать имя"
-                    >
-                      <Pencil size={14} className="text-slate-500" />
-                    </button>
-                  </>
-                )}
-              </div>
-
-              {/* Tagline */}
-              <p className="text-[13px] text-slate-400 font-medium">
-                Путешественник с {user?.createdAt ? new Date(user.createdAt).getFullYear() : '2026'}{' '}
-                года
-              </p>
-            </div>
-          </div>
-
-          {/* Stats row */}
-          <div className="flex items-center gap-6 mt-5 pt-5 border-t border-slate-100">
-            <div className="flex flex-col items-center">
-              <span className="text-xl font-black text-brand-indigo leading-none">
-                {allTrips.length}
-              </span>
-              <span className="text-[11px] text-slate-400 font-semibold mt-0.5">Поездок</span>
-            </div>
-            <div className="w-px h-8 bg-slate-100" />
-            <div className="flex flex-col items-center">
-              <span className="text-xl font-black text-brand-indigo leading-none">
-                {allTrips.reduce((acc, t) => acc + (t.points?.length ?? 0), 0)}
-              </span>
-              <span className="text-[11px] text-slate-400 font-semibold mt-0.5">Точек</span>
-            </div>
-            <div className="w-px h-8 bg-slate-100" />
-            <div className="flex flex-col items-center">
-              <span className="text-xl font-black text-brand-indigo leading-none">
-                {travelTrips.length}
-              </span>
-              <span className="text-[11px] text-slate-400 font-semibold mt-0.5">С датами</span>
-            </div>
-          </div>
-        </div>
-
-        {/* ── ТАБЫ ── */}
-        <div className="px-6 pt-4 pb-0 shrink-0 bg-white border-b border-slate-100">
-          <div className="flex gap-6">
-            <button
-              onClick={() => setActiveTab('routes')}
-              className={cn(
-                'pb-3 text-[13px] font-bold tracking-wide border-b-2 transition-all',
-                activeTab === 'routes'
-                  ? 'border-brand-sky text-brand-sky'
-                  : 'border-transparent text-slate-400 hover:text-slate-600',
-              )}
-            >
-              Путешествия
-              <span className="ml-1.5 text-[11px] font-black opacity-60">{travelTrips.length}</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('saved')}
-              className={cn(
-                'pb-3 text-[13px] font-bold tracking-wide border-b-2 transition-all',
-                activeTab === 'saved'
-                  ? 'border-brand-sky text-brand-sky'
-                  : 'border-transparent text-slate-400 hover:text-slate-600',
-              )}
-            >
-              Сохранено
-              <span className="ml-1.5 text-[11px] font-black opacity-60">{savedTrips.length}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* ── КОНТЕНТ ТАБОВ ── */}
-        <div className="flex-1 relative min-h-0 overflow-hidden flex flex-col">
-          {/* Scroll-to-top button */}
+      {/* ── ШАПКА ПРОФИЛЯ ── */}
+      <div className="w-full shrink-0 bg-white border-b border-slate-100 px-6 py-6">
+        <div className="flex items-center gap-5">
           <div
+            onClick={handleAvatarClick}
+            className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center
+                       border-4 border-white shadow-lg overflow-hidden cursor-pointer group relative shrink-0"
+          >
+            {user?.photo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={user.photo} className="w-full h-full object-cover" alt={user.name} />
+            ) : user?.name ? (
+              <span className="text-2xl font-bold text-slate-400 uppercase">
+                {user.name.substring(0, 2)}
+              </span>
+            ) : (
+              <UserIcon size={36} className="text-slate-300" />
+            )}
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
+              <Pencil size={20} className="text-white" />
+            </div>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              {isEditingName ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={tempName}
+                    onChange={(e) => setTempName(e.target.value)}
+                    onBlur={handleSaveName}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
+                    className="text-2xl font-black text-brand-indigo border-b-2 border-brand-sky
+                               outline-none bg-transparent w-full"
+                  />
+                  <button
+                    onClick={handleSaveName}
+                    className="p-1.5 hover:scale-110 active:scale-90 transition-all"
+                    aria-label="Сохранить имя"
+                  >
+                    <span className="text-lg leading-none">💾</span>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <h2 className="text-2xl font-black text-brand-indigo leading-tight truncate">
+                    {user?.name}
+                  </h2>
+                  <button
+                    onClick={() => {
+                      setTempName(user?.name || '');
+                      setIsEditingName(true);
+                    }}
+                    className="p-1 hover:scale-110 active:scale-90 transition-all opacity-40 hover:opacity-100 shrink-0"
+                    aria-label="Редактировать имя"
+                  >
+                    <Pencil size={14} className="text-slate-500" />
+                  </button>
+                </>
+              )}
+            </div>
+
+            <p className="text-[13px] text-slate-400 font-medium">
+              Путешественник с {user?.createdAt ? new Date(user.createdAt).getFullYear() : '2026'}{' '}
+              года
+            </p>
+          </div>
+        </div>
+
+        {/* Stats row */}
+        <div className="flex items-center gap-6 mt-5 pt-5 border-t border-slate-100">
+          <div className="flex flex-col items-center">
+            <span className="text-xl font-black text-brand-indigo leading-none">
+              {allTrips.length}
+            </span>
+            <span className="text-[11px] text-slate-400 font-semibold mt-0.5">Поездок</span>
+          </div>
+          <div className="w-px h-8 bg-slate-100" />
+          <div className="flex flex-col items-center">
+            <span className="text-xl font-black text-brand-indigo leading-none">
+              {allTrips.reduce((acc, t) => acc + (t.points?.length ?? 0), 0)}
+            </span>
+            <span className="text-[11px] text-slate-400 font-semibold mt-0.5">Точек</span>
+          </div>
+          <div className="w-px h-8 bg-slate-100" />
+          <div className="flex flex-col items-center">
+            <span className="text-xl font-black text-brand-indigo leading-none">
+              {travelTrips.length}
+            </span>
+            <span className="text-[11px] text-slate-400 font-semibold mt-0.5">С датами</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── ТАБЫ ── */}
+      <div className="px-6 pt-4 pb-0 shrink-0 bg-white border-b border-slate-100">
+        <div className="flex gap-6">
+          <button
+            onClick={() => setActiveTab('routes')}
             className={cn(
-              'absolute right-3 bottom-3 md:right-4 md:bottom-4 z-30',
-              'transition-all duration-300',
-              showScrollTop
-                ? 'opacity-100 translate-y-0 visible'
-                : 'opacity-0 translate-y-2 invisible pointer-events-none',
+              'pb-3 text-[13px] font-bold tracking-wide border-b-2 transition-all',
+              activeTab === 'routes'
+                ? 'border-brand-sky text-brand-sky'
+                : 'border-transparent text-slate-400 hover:text-slate-600',
             )}
           >
-            <button
-              type="button"
-              onClick={handleScrollToTop}
-              className="relative h-10 w-10 rounded-full shadow-md transition-transform hover:scale-105 active:scale-95"
-            >
-              <span
-                className="absolute inset-0 rounded-full"
-                style={{
-                  background: `conic-gradient(${progressColor} ${progressDegrees}deg, ${progressTrackColor} ${progressDegrees}deg)`,
-                }}
-              />
-              <span className="absolute inset-[2px] rounded-full bg-white" />
-              <span className="relative z-10 flex h-full w-full items-center justify-center text-brand-indigo">
-                <ArrowUp size={14} />
-              </span>
-            </button>
-          </div>
+            Путешествия
+            <span className="ml-1.5 text-[11px] font-black opacity-60">{travelTrips.length}</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('saved')}
+            className={cn(
+              'pb-3 text-[13px] font-bold tracking-wide border-b-2 transition-all',
+              activeTab === 'saved'
+                ? 'border-brand-sky text-brand-sky'
+                : 'border-transparent text-slate-400 hover:text-slate-600',
+            )}
+          >
+            Сохранено
+            <span className="ml-1.5 text-[11px] font-black opacity-60">{savedTrips.length}</span>
+          </button>
+        </div>
+      </div>
 
-          {/* Sub-header: count + create button - FIXED */}
-          <div className="flex items-center justify-between px-6 py-4 shrink-0 border-b border-slate-100">
-            <span className="text-[13px] font-bold text-slate-500">
-              {activeTab === 'routes'
-                ? `${travelTrips.length} путешествий`
-                : `${savedTrips.length} сохранено`}
+      {/* ── КОНТЕНТ ТАБОВ ── */}
+      <div className="flex-1 relative min-h-0 overflow-hidden flex flex-col">
+        {/* Scroll-to-top button */}
+        <div
+          className={cn(
+            'absolute right-3 bottom-3 md:right-4 md:bottom-4 z-30',
+            'transition-all duration-300',
+            showScrollTop
+              ? 'opacity-100 translate-y-0 visible'
+              : 'opacity-0 translate-y-2 invisible pointer-events-none',
+          )}
+        >
+          <button
+            type="button"
+            onClick={handleScrollToTop}
+            className="relative h-10 w-10 rounded-full shadow-md transition-transform hover:scale-105 active:scale-95"
+          >
+            <span
+              className="absolute inset-0 rounded-full"
+              style={{
+                background: `conic-gradient(${progressColor} ${progressDegrees}deg, ${progressTrackColor} ${progressDegrees}deg)`,
+              }}
+            />
+            <span className="absolute inset-[2px] rounded-full bg-white" />
+            <span className="relative z-10 flex h-full w-full items-center justify-center text-brand-indigo">
+              <ArrowUp size={14} />
             </span>
-            <Button
-              onClick={handleCreateTrip}
-              variant="brand"
-              className="h-8 px-4 rounded-xl text-[12px] font-bold"
-            >
-              + Создать поездку
-            </Button>
-          </div>
+          </button>
+        </div>
 
-          {/* Cards area - SCROLLABLE */}
-          <div className="flex-1 min-h-0 flex flex-col">
-            {activeTab === 'routes' ? (
-              isLoadingTrips ? (
-                <div className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
-                  ))}
-                </div>
-              ) : travelTrips.length > 0 ? (
-                <div
-                  ref={routePointsScrollRef}
-                  onScroll={handleContentScroll}
-                  className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto
-                    [&::-webkit-scrollbar]:w-1.5
-                    [&::-webkit-scrollbar-track]:bg-transparent
-                    [&::-webkit-scrollbar-thumb]:bg-slate-200
-                    [&::-webkit-scrollbar-thumb]:rounded-full
-                    [&::-webkit-scrollbar-thumb:hover]:bg-slate-300"
-                >
-                  {travelTrips.map((trip) => (
-                    <TripCard
-                      key={trip.id}
-                      trip={trip}
-                      isSelected={selectedTripId === trip.id}
-                      onCardClick={setSelectedTripId}
-                      onInvite={() => {
-                        setInviteTripId(trip.id);
-                        setInviteModalOpen(true);
-                      }}
-                      onCollaboratorsClick={() => {
-                        setCollaboratorsTripId(trip.id);
-                        setCollaboratorsModalOpen(true);
-                      }}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center text-slate-300 text-center px-6 py-16 flex-1">
-                  <MapIcon size={40} className="mb-3 opacity-20" />
-                  <p className="text-sm font-semibold text-slate-400">Путешествий пока нет</p>
-                  <p className="text-xs text-slate-300 mt-1">Создайте первую поездку с датами</p>
-                </div>
-              )
-            ) : isLoadingTrips ? (
+        {/* Sub-header: count + create button */}
+        <div className="flex items-center justify-between px-6 py-4 shrink-0 border-b border-slate-100 bg-white">
+          <span className="text-[13px] font-bold text-slate-500">
+            {activeTab === 'routes'
+              ? `${travelTrips.length} путешествий`
+              : `${savedTrips.length} сохранено`}
+          </span>
+          <Button
+            onClick={handleCreateTrip}
+            variant="brand"
+            className="h-8 px-4 rounded-xl text-[12px] font-bold"
+          >
+            + Создать поездку
+          </Button>
+        </div>
+
+        {/* Cards area - SCROLLABLE */}
+        <div className="flex-1 min-h-0 flex flex-col">
+          {activeTab === 'routes' ? (
+            isLoadingTrips ? (
               <div className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
                 ))}
               </div>
-            ) : savedTrips.length > 0 ? (
+            ) : travelTrips.length > 0 ? (
               <div
-                ref={savedListScrollRef}
+                ref={routePointsScrollRef}
                 onScroll={handleContentScroll}
                 className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto
                   [&::-webkit-scrollbar]:w-1.5
@@ -704,10 +674,12 @@ export function ProfilePage() {
                   [&::-webkit-scrollbar-thumb]:rounded-full
                   [&::-webkit-scrollbar-thumb:hover]:bg-slate-300"
               >
-                {savedTrips.map((trip) => (
+                {travelTrips.map((trip) => (
                   <TripCard
                     key={trip.id}
                     trip={trip}
+                    isSelected={selectedTripId === trip.id}
+                    onCardClick={setSelectedTripId}
                     onInvite={() => {
                       setInviteTripId(trip.id);
                       setInviteModalOpen(true);
@@ -722,29 +694,49 @@ export function ProfilePage() {
             ) : (
               <div className="flex flex-col items-center justify-center text-slate-300 text-center px-6 py-16 flex-1">
                 <MapIcon size={40} className="mb-3 opacity-20" />
-                <p className="text-sm font-semibold text-slate-400">Список пуст</p>
+                <p className="text-sm font-semibold text-slate-400">Путешествий пока нет</p>
+                <p className="text-xs text-slate-300 mt-1">Создайте первую поездку с датами</p>
               </div>
-            )}
-          </div>
+            )
+          ) : isLoadingTrips ? (
+            <div className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
+              ))}
+            </div>
+          ) : savedTrips.length > 0 ? (
+            <div
+              ref={savedListScrollRef}
+              onScroll={handleContentScroll}
+              className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto
+                [&::-webkit-scrollbar]:w-1.5
+                [&::-webkit-scrollbar-track]:bg-transparent
+                [&::-webkit-scrollbar-thumb]:bg-slate-200
+                [&::-webkit-scrollbar-thumb]:rounded-full
+                [&::-webkit-scrollbar-thumb:hover]:bg-slate-300"
+            >
+              {savedTrips.map((trip) => (
+                <TripCard
+                  key={trip.id}
+                  trip={trip}
+                  onInvite={() => {
+                    setInviteTripId(trip.id);
+                    setInviteModalOpen(true);
+                  }}
+                  onCollaboratorsClick={() => {
+                    setCollaboratorsTripId(trip.id);
+                    setCollaboratorsModalOpen(true);
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center text-slate-300 text-center px-6 py-16 flex-1">
+              <MapIcon size={40} className="mb-3 opacity-20" />
+              <p className="text-sm font-semibold text-slate-400">Список пуст</p>
+            </div>
+          )}
         </div>
-      </div>
-
-      {/* ── ПРАВАЯ КОЛОНКА: Карта edge-to-edge ── */}
-      <div className="flex-1 relative z-0 hidden md:flex overflow-hidden">
-        {mapPoints.length > 0 ? (
-          <RouteMap
-            key={`profile-map-${selectedTrip?.id ?? 'empty'}`}
-            points={mapPoints}
-            onPointDragEnd={() => {}}
-          />
-        ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 gap-3">
-            <MapIcon size={56} className="text-slate-200" />
-            <p className="text-sm font-semibold text-slate-300">
-              Выберите поездку, чтобы увидеть маршрут
-            </p>
-          </div>
-        )}
       </div>
 
       {inviteTripId && (
@@ -769,6 +761,40 @@ export function ProfilePage() {
         />
       )}
 
+      {/* Conflict modal: switching to a different trip in planner */}
+      <PlannerConflictModal
+        open={showPlannerConflictModal}
+        onOpenChange={setShowPlannerConflictModal}
+        conflictType="different_route"
+        currentRouteTitle={currentTrip?.title?.trim() || 'без названия'}
+        onCancel={() => {
+          setShowPlannerConflictModal(false);
+          setPendingPlannerTripId(null);
+        }}
+        onReplaceWithoutSave={handleConfirmPlannerReplace}
+        onSaveAndReplace={async () => {
+          try {
+            if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+              await tripsApi.update(currentTrip.id, {
+                title: currentTrip.title,
+                description: currentTrip.description ?? undefined,
+                budget: currentTrip.budget ?? undefined,
+              });
+            }
+          } catch (e) {
+            console.error('Failed to save current trip before replace:', e);
+            toast.error('Не удалось сохранить текущий маршрут');
+          }
+          handleConfirmPlannerReplace();
+        }}
+        onGoToPlannerOnly={() => {
+          setShowPlannerConflictModal(false);
+          setPendingPlannerTripId(null);
+          router.push('/planner');
+        }}
+      />
+
+      {/* Conflict modal: creating a new trip with unsaved changes */}
       <PlannerConflictModal
         open={conflictModalOpen}
         onOpenChange={setConflictModalOpen}

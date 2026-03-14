@@ -6,7 +6,9 @@ import * as schema from '../db/schema';
 function levenshtein(a: string, b: string): number {
   if (a.length === 0) return b.length;
   if (b.length === 0) return a.length;
-  const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
+  const matrix = Array(b.length + 1)
+    .fill(null)
+    .map(() => Array(a.length + 1).fill(null));
   for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
   for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
   for (let j = 1; j <= b.length; j++) {
@@ -15,7 +17,7 @@ function levenshtein(a: string, b: string): number {
       matrix[j][i] = Math.min(
         matrix[j][i - 1] + 1,
         matrix[j - 1][i] + 1,
-        matrix[j - 1][i - 1] + indicator
+        matrix[j - 1][i - 1] + indicator,
       );
       if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
         matrix[j][i] = Math.min(matrix[j][i], matrix[j - 2][i - 2] + indicator);
@@ -29,17 +31,17 @@ function fuzzySubstringMatch(query: string, target: string): number {
   const q = query.toLowerCase().replace(/[^a-zа-яё0-9]/g, '');
   const t = target.toLowerCase().replace(/[^a-zа-яё0-9]/g, '');
   if (t.includes(q)) return 100;
-  
+
   let bestScore = 0;
   const qLen = q.length;
   if (qLen === 0) return 0;
-  
+
   for (let i = 0; i <= t.length - qLen; i++) {
     const sub = t.substring(i, i + qLen);
     const dist = levenshtein(q, sub);
-    const maxEdits = qLen >= 5 ? 2 : (qLen >= 3 ? 1 : 0);
+    const maxEdits = qLen >= 5 ? 2 : qLen >= 3 ? 1 : 0;
     if (dist <= maxEdits) {
-      const score = 80 - (dist * 10);
+      const score = 80 - dist * 10;
       if (score > bestScore) bestScore = score;
     }
   }
@@ -70,15 +72,19 @@ export class PopularDestinationsService implements OnModuleInit {
       await this.loadCache();
     }
 
-    const scored = this.cache.map(dest => {
-      const nameScore = fuzzySubstringMatch(normalized, dest.nameRu);
-      const aliasScore = dest.aliases ? fuzzySubstringMatch(normalized, dest.aliases) : 0;
-      
-      return {
-        ...dest,
-        matchScore: Math.max(nameScore, aliasScore)
-      };
-    }).filter(d => d.matchScore > 0);
+    const scored = this.cache
+      .map((dest) => {
+        const nameScore = fuzzySubstringMatch(normalized, dest.nameRu);
+        const aliasScore = dest.aliases
+          ? fuzzySubstringMatch(normalized, dest.aliases)
+          : 0;
+
+        return {
+          ...dest,
+          matchScore: Math.max(nameScore, aliasScore),
+        };
+      })
+      .filter((d) => d.matchScore > 0);
 
     scored.sort((a, b) => {
       if (b.matchScore !== a.matchScore) {
@@ -91,7 +97,7 @@ export class PopularDestinationsService implements OnModuleInit {
       displayName: dest.displayName,
       uri: `ymapsbm1://geo?ll=${dest.lon},${dest.lat}&z=12`,
       // Add standard score for tier 0 (higher than standard geosearch results)
-      score: 5.0 + dest.popularity + (dest.matchScore / 100), // ensure it's high enough to be at the top
+      score: 5.0 + dest.popularity + dest.matchScore / 100, // ensure it's high enough to be at the top
       type: dest.type, // to differentiate on frontend if needed
     }));
   }

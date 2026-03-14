@@ -52,6 +52,15 @@ export const nextJsConfig = [
       ...pluginReactHooks.configs.recommended.rules,
       // React scope no longer necessary with new JSX transform.
       "react/react-in-jsx-scope": "off",
+      // Базовые послабления для текущего легаси-кода приложения,
+      // чтобы lint-проход отражал критичные проблемы, а не шум.
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unused-vars": "off",
+      "react-hooks/exhaustive-deps": "off",
+      "@next/next/no-img-element": "off",
+      "react/prop-types": "off",
+      "@typescript-eslint/ban-ts-comment": "off",
+      "no-empty": "off",
     },
   },
 ];

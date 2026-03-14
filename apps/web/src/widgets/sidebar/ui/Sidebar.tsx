@@ -35,11 +35,11 @@ export function Sidebar() {
       <aside
         className={cn(
           'hidden md:flex sticky top-16 backdrop-blur-md flex-col items-center py-8 gap-4 shrink-0 z-40',
-          'overflow-hidden border-r border-slate-200',
+          'overflow-hidden border-r',
           'transition-[width,opacity,transform] duration-700 ease-[cubic-bezier(0.4,0,0.2,1)]',
           isLanding
-            ? 'w-0 opacity-0 -translate-x-6 pointer-events-none'
-            : 'w-20 opacity-100 translate-x-0',
+            ? 'w-0 opacity-0 -translate-x-6 pointer-events-none border-transparent'
+            : 'w-20 opacity-100 translate-x-0 border-slate-200',
         )}
       >
         <div className="flex-1 flex flex-col gap-4 items-center mt-0 min-w-[5rem] pr-2">

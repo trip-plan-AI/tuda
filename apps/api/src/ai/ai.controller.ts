@@ -4,14 +4,21 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  MessageEvent,
   NotFoundException,
   Param,
   Logger,
   Post,
   BadRequestException,
+  Req,
+  Sse,
   UnprocessableEntityException,
   UseGuards,
 } from '@nestjs/common';
+import { SetMetadata } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import type { Request } from 'express';
+import { Observable } from 'rxjs';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AiSessionsService } from './ai-sessions.service';
@@ -21,9 +28,35 @@ import { OrchestratorService } from './pipeline/orchestrator.service';
 import { ProviderSearchService } from './pipeline/provider-search.service';
 import { SchedulerService } from './pipeline/scheduler.service';
 import { SemanticFilterService } from './pipeline/semantic-filter.service';
+import { IntentRouterService } from './pipeline/intent-router.service';
+import { PolicyService } from './pipeline/policy.service';
+import { LogicalIdFilterService } from './pipeline/logical-id-filter.service';
+import { VectorPrefilterService } from './pipeline/vector-prefilter.service';
+import { DeterministicPlannerService } from './pipeline/deterministic-planner.service';
+import { YandexBatchRefinementService } from './pipeline/yandex-batch-refinement.service';
+import { LogicalIdSelectorService } from './pipeline/logical-id-selector.service';
 import type { SessionMessage } from './types/pipeline.types';
 import type { RoutePlan } from './types/pipeline.types';
 import type { ParsedIntent } from './types/pipeline.types';
+import type {
+  IntentRouterActionType,
+  DeterministicPlannerShadowMeta,
+  IntentRouterDecision,
+  LogicalIdShadowMeta,
+  MassCollectionShadowMeta,
+  PipelineStatus,
+  PlannerVersion,
+  PlanResponseContractMeta,
+  PolicySnapshot,
+  VectorPrefilterShadowMeta,
+  YandexBatchRefinementDiagnostics,
+} from './types/pipeline.types';
+import type { FilteredPoi, PoiItem } from './types/poi.types';
+import type {
+  HeartbeatSseEvent,
+  PlanStartedSseEvent,
+  PlannerSseEvent,
+} from './types/ai-stream-event.types';
 import { TripsService } from '../trips/trips.service';
 import { PointsService } from '../points/points.service';
 
@@ -42,6 +75,28 @@ export class AiController {
   private readonly needCityMessage =
     'Недостаточно данных для построения маршрута. Укажите, пожалуйста, город.';
 
+  private resolveVectorTopK(): number {
+    const fallbackTopK = 200;
+    const rawValue = Number.parseInt(process.env.AI_VECTOR_TOPK ?? '', 10);
+
+    if (!Number.isFinite(rawValue) || rawValue <= 0) {
+      return fallbackTopK;
+    }
+
+    return rawValue;
+  }
+
+  private buildPipelineStatus(fallbacks: string[]): PipelineStatus {
+    const hasFallbacks = fallbacks.length > 0;
+
+    return {
+      intent: 'ok',
+      provider: hasFallbacks ? 'fallback' : 'ok',
+      semantic: hasFallbacks ? 'fallback' : 'ok',
+      scheduler: 'ok',
+    };
+  }
+
   constructor(
     private readonly aiSessionsService: AiSessionsService,
     private readonly tripsService: TripsService,
@@ -50,6 +105,13 @@ export class AiController {
     private readonly providerSearchService: ProviderSearchService,
     private readonly semanticFilterService: SemanticFilterService,
     private readonly schedulerService: SchedulerService,
+    private readonly intentRouterService: IntentRouterService,
+    private readonly policyService: PolicyService,
+    private readonly logicalIdFilterService: LogicalIdFilterService,
+    private readonly vectorPrefilterService: VectorPrefilterService,
+    private readonly deterministicPlannerService: DeterministicPlannerService,
+    private readonly yandexBatchRefinementService: YandexBatchRefinementService,
+    private readonly logicalIdSelectorService: LogicalIdSelectorService,
   ) {}
 
   private isNeedCityError(error: unknown): boolean {
@@ -88,6 +150,108 @@ export class AiController {
     } catch {
       return null;
     }
+  }
+
+  private extractCurrentRoutePois(
+    history: SessionMessage[],
+  ): Array<{ poi_id: string; title?: string | null }> {
+    const latestRoutePlan = history
+      .slice()
+      .reverse()
+      .find((message) => this.tryParseRoutePlan(message));
+
+    if (!latestRoutePlan) {
+      return [];
+    }
+
+    const parsed = this.tryParseRoutePlan(latestRoutePlan);
+    if (!parsed) {
+      return [];
+    }
+
+    return parsed.days.flatMap((day) =>
+      day.points
+        .filter(
+          (point) => typeof point.poi_id === 'string' && point.poi_id.trim(),
+        )
+        .map((point) => ({
+          poi_id: point.poi_id,
+          title: point.poi?.name ?? null,
+        })),
+    );
+  }
+
+  private extractCurrentRoutePlan(history: SessionMessage[]): RoutePlan | null {
+    const latestRoutePlanMessage = history
+      .slice()
+      .reverse()
+      .find((message) => this.tryParseRoutePlan(message));
+
+    if (!latestRoutePlanMessage) return null;
+    return this.tryParseRoutePlan(latestRoutePlanMessage);
+  }
+
+  private toFilteredPoi(poi: PoiItem, descriptionFallback = ''): FilteredPoi {
+    return {
+      ...poi,
+      description: (
+        descriptionFallback || `Интересное место: ${poi.name}.`
+      ).trim(),
+    };
+  }
+
+  private addDaysToIsoDate(baseDate: string, offsetDays: number): string {
+    const parsed = new Date(baseDate);
+    if (Number.isNaN(parsed.getTime())) return baseDate;
+    parsed.setDate(parsed.getDate() + offsetDays);
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  private parseTimeToMinutes(value: string): number {
+    const [hours, minutes] = value.split(':').map(Number);
+    return hours * 60 + minutes;
+  }
+
+  private isWorkingHoursAllowed(
+    workingHours: string | undefined,
+    time: string,
+  ): boolean {
+    if (!workingHours || typeof workingHours !== 'string') return true;
+
+    const normalized = workingHours.toLowerCase();
+    if (normalized.includes('круглосуточно') || normalized.includes('24/7')) {
+      return true;
+    }
+
+    const rangeMatch = normalized.match(
+      /(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/,
+    );
+    if (!rangeMatch) return true;
+
+    const current = this.parseTimeToMinutes(time);
+    const start = this.parseTimeToMinutes(rangeMatch[1]);
+    const end = this.parseTimeToMinutes(rangeMatch[2]);
+
+    if (end >= start) {
+      return current >= start && current <= end;
+    }
+
+    return current >= start || current <= end;
+  }
+
+  private haversineKm(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
+    const toRad = (value: number) => (value * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   private async enrichDescriptions(
@@ -256,6 +420,13 @@ ${JSON.stringify(points)}
     const history = session.messages;
     const llmContext = history.slice(-10);
     const orchestratorStart = Date.now();
+    const currentRoutePois = this.extractCurrentRoutePois(history);
+    const intentRouterDecision: IntentRouterDecision =
+      await this.intentRouterService.route(
+        dto.user_query,
+        llmContext,
+        currentRoutePois,
+      );
 
     let intent: ParsedIntent;
     try {
@@ -296,26 +467,374 @@ ${JSON.stringify(points)}
     }
 
     const orchestratorDuration = Date.now() - orchestratorStart;
+    const plannerVersion: PlannerVersion = 'v2';
+    const policySnapshot: PolicySnapshot =
+      this.policyService.calculatePolicySnapshot(intent, llmContext, 'v2');
 
     const providerStart = Date.now();
     const fallbacks: string[] = [];
-    const rawPoi = await this.providerSearchService.fetchAndFilter(
+    const providerResult = await this.providerSearchService.fetchAndFilter(
       intent,
       fallbacks,
     );
+    const rawPoi = providerResult.pois;
+    const massCollectionShadowMeta: MassCollectionShadowMeta =
+      providerResult.shadowDiagnostics ?? {
+        provider_stats: [],
+        totals: {
+          before_dedup: rawPoi.length,
+          after_dedup: rawPoi.length,
+          returned: rawPoi.length,
+        },
+      };
     const providerDuration = Date.now() - providerStart;
 
-    const semanticStart = Date.now();
-    const filteredPoi = await this.semanticFilterService.select(
+    const personaSummary =
+      policySnapshot.user_persona_summary ?? dto.user_query;
+    const vectorPrefilterShadowMeta: VectorPrefilterShadowMeta =
+      await this.vectorPrefilterService.runShadowPrefilter(
+        personaSummary,
+        rawPoi,
+        this.resolveVectorTopK(),
+      );
+
+    const logicalSelectorResult = await this.logicalIdSelectorService.selectIds(
+      {
+        candidates: rawPoi.map((poi) => ({
+          id: poi.id,
+          name: poi.name,
+          category: poi.category,
+        })),
+        required_capacity: policySnapshot.required_capacity,
+        food_policy: policySnapshot.food_policy,
+      },
+    );
+    const selectedIdSet = new Set(logicalSelectorResult.selected_ids);
+    const logicalSelectedPool = rawPoi.filter((poi) =>
+      selectedIdSet.has(poi.id),
+    );
+
+    const enrichedWithLogicalIds = this.logicalIdFilterService.attachLogicalIds(
       rawPoi,
+      intent.city,
+    );
+    const duplicateGroups =
+      this.logicalIdFilterService.analyzeDuplicatesByLogicalId(
+        enrichedWithLogicalIds,
+      );
+
+    const logicalIdShadowMeta: LogicalIdShadowMeta = {
+      total_candidates: enrichedWithLogicalIds.length,
+      duplicates_groups: duplicateGroups.length,
+      duplicates_total: duplicateGroups.reduce(
+        (sum, group) => sum + group.count,
+        0,
+      ),
+    };
+
+    const semanticStart = Date.now();
+    const selected = await this.semanticFilterService.select(
+      logicalSelectedPool,
       intent,
       fallbacks,
     );
+
+    const yandexPersonaSummary =
+      policySnapshot.user_persona_summary ?? dto.user_query;
+    let selectedForScheduler = selected;
+    let yandexBatchRefinementDiagnostics: YandexBatchRefinementDiagnostics | null =
+      null;
+
+    try {
+      const refinementResult =
+        await this.yandexBatchRefinementService.refineSelectedInBatches(
+          selected,
+          yandexPersonaSummary,
+          { intent },
+        );
+      selectedForScheduler = refinementResult.refined;
+      yandexBatchRefinementDiagnostics = refinementResult.diagnostics;
+    } catch (error) {
+      const reason =
+        error instanceof Error && typeof error.message === 'string'
+          ? error.message
+          : 'UNKNOWN';
+      fallbacks.push(`YANDEX_BATCH_REFINEMENT_FAILED:${reason}`);
+      yandexBatchRefinementDiagnostics = {
+        batch_count: 0,
+        failed_batches: 1,
+        fallback_reasons: [`service_error:${reason}`],
+      };
+    }
+
     const semanticDuration = Date.now() - semanticStart;
 
     const schedulerStart = Date.now();
-    const routePlan = this.schedulerService.buildPlan(filteredPoi, intent);
+    const existingRoutePlan = this.extractCurrentRoutePlan(history);
+    const mutationMeta: {
+      mutation_applied?: boolean;
+      mutation_type?: IntentRouterActionType;
+      mutation_fallback_reason?: string;
+    } = {
+      mutation_applied: false,
+    };
+
+    const buildRoutePlanFromDays = (
+      city: string,
+      days: RoutePlan['days'],
+    ): RoutePlan => ({
+      city,
+      days,
+      total_budget_estimated: days.reduce(
+        (sum, day) => sum + (day.day_budget_estimated ?? 0),
+        0,
+      ),
+    });
+
+    const buildFullRebuild = (): RoutePlan =>
+      this.schedulerService.buildPlan(selectedForScheduler, intent);
+
+    let routePlan: RoutePlan;
+
+    if (intentRouterDecision.route_mode !== 'targeted_mutation') {
+      routePlan = buildFullRebuild();
+    } else if (!existingRoutePlan) {
+      mutationMeta.mutation_type = intentRouterDecision.action_type;
+      mutationMeta.mutation_fallback_reason = 'NO_CURRENT_ROUTE_PLAN';
+      fallbacks.push('TARGETED_MUTATION_FALLBACK:NO_CURRENT_ROUTE_PLAN');
+      routePlan = buildFullRebuild();
+    } else {
+      mutationMeta.mutation_type = intentRouterDecision.action_type;
+
+      switch (intentRouterDecision.action_type) {
+        case 'REMOVE_POI': {
+          const targetPoiId = intentRouterDecision.target_poi_id;
+          const targetExists =
+            !!targetPoiId &&
+            existingRoutePlan.days.some((day) =>
+              day.points.some((point) => point.poi_id === targetPoiId),
+            );
+
+          if (!targetPoiId || !targetExists) {
+            mutationMeta.mutation_fallback_reason = 'TARGET_NOT_FOUND';
+            fallbacks.push(
+              'TARGETED_MUTATION_REMOVE_FALLBACK:TARGET_NOT_FOUND',
+            );
+            routePlan = buildFullRebuild();
+            break;
+          }
+
+          const rebuiltDays = existingRoutePlan.days.map((day) => {
+            const dayPois = day.points
+              .filter((point) => point.poi_id !== targetPoiId)
+              .map((point) =>
+                this.toFilteredPoi(
+                  point.poi,
+                  (point.poi as FilteredPoi).description,
+                ),
+              );
+
+            return this.schedulerService.rebuildSingleDayPlan(dayPois, intent, {
+              day_number: day.day_number,
+              date: day.date,
+            });
+          });
+
+          routePlan = buildRoutePlanFromDays(
+            existingRoutePlan.city,
+            rebuiltDays,
+          );
+          mutationMeta.mutation_applied = true;
+          break;
+        }
+
+        case 'ADD_DAYS': {
+          const daysToAdd = Math.max(0, intent.days);
+          const usedPoiIds = new Set(
+            existingRoutePlan.days.flatMap((day) =>
+              day.points.map((point) => point.poi_id),
+            ),
+          );
+
+          const additionalCandidates = selectedForScheduler.filter(
+            (poi) => !usedPoiIds.has(poi.id),
+          );
+          const addDaysIntent: ParsedIntent = {
+            ...intent,
+            days: daysToAdd,
+          };
+          const newDaysPlan =
+            daysToAdd > 0
+              ? this.schedulerService.buildPlan(
+                  additionalCandidates,
+                  addDaysIntent,
+                )
+              : {
+                  city: existingRoutePlan.city,
+                  total_budget_estimated: 0,
+                  days: [],
+                };
+
+          const lastExistingDate =
+            existingRoutePlan.days[existingRoutePlan.days.length - 1]?.date ??
+            new Date().toISOString().slice(0, 10);
+          const normalizedNewDays = newDaysPlan.days.map((day, index) => ({
+            ...day,
+            day_number: existingRoutePlan.days.length + index + 1,
+            date: this.addDaysToIsoDate(lastExistingDate, index + 1),
+          }));
+
+          routePlan = buildRoutePlanFromDays(existingRoutePlan.city, [
+            ...existingRoutePlan.days,
+            ...normalizedNewDays,
+          ]);
+          mutationMeta.mutation_applied = true;
+          break;
+        }
+
+        case 'REPLACE_POI': {
+          const targetPoiId = intentRouterDecision.target_poi_id;
+          const dayIndex = existingRoutePlan.days.findIndex((day) =>
+            day.points.some((point) => point.poi_id === targetPoiId),
+          );
+
+          if (!targetPoiId || dayIndex === -1) {
+            mutationMeta.mutation_fallback_reason = 'TARGET_NOT_FOUND';
+            fallbacks.push(
+              'TARGETED_MUTATION_REPLACE_FALLBACK:TARGET_NOT_FOUND',
+            );
+            routePlan = buildFullRebuild();
+            break;
+          }
+
+          const targetDay = existingRoutePlan.days[dayIndex];
+          const pointIndex = targetDay.points.findIndex(
+            (point) => point.poi_id === targetPoiId,
+          );
+          const targetPoint = targetDay.points[pointIndex];
+          const usedPoiIds = new Set(
+            existingRoutePlan.days.flatMap((day) =>
+              day.points.map((point) => point.poi_id),
+            ),
+          );
+
+          const poolFromRaw = rawPoi.map((poi) => this.toFilteredPoi(poi));
+          const candidatePool =
+            selectedForScheduler.length > 0
+              ? selectedForScheduler
+              : poolFromRaw;
+          const nearestSameCategory = candidatePool
+            .filter(
+              (poi) =>
+                poi.id !== targetPoiId &&
+                !usedPoiIds.has(poi.id) &&
+                poi.category === targetPoint.poi.category,
+            )
+            .map((poi) => ({
+              poi,
+              distance: this.haversineKm(
+                targetPoint.poi.coordinates.lat,
+                targetPoint.poi.coordinates.lon,
+                poi.coordinates.lat,
+                poi.coordinates.lon,
+              ),
+            }))
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, 5)
+            .map((entry) => entry.poi)
+            .filter((poi) =>
+              this.isWorkingHoursAllowed(
+                poi.working_hours,
+                targetPoint.arrival_time,
+              ),
+            );
+
+          if (nearestSameCategory.length === 0) {
+            mutationMeta.mutation_fallback_reason = 'NO_ALTERNATIVES';
+            fallbacks.push(
+              'TARGETED_MUTATION_REPLACE_FALLBACK:NO_ALTERNATIVES',
+            );
+            routePlan = buildFullRebuild();
+            break;
+          }
+
+          const replacement =
+            await this.yandexBatchRefinementService.chooseReplacementAlternative(
+              nearestSameCategory,
+              yandexPersonaSummary,
+              {
+                city: intent.city,
+                targetName: targetPoint.poi.name,
+              },
+            );
+
+          if (!replacement) {
+            mutationMeta.mutation_fallback_reason =
+              'REPLACEMENT_SELECTION_FAILED';
+            fallbacks.push(
+              'TARGETED_MUTATION_REPLACE_FALLBACK:REPLACEMENT_SELECTION_FAILED',
+            );
+            routePlan = buildFullRebuild();
+            break;
+          }
+
+          const replacedDayPois = targetDay.points.map((point, index) =>
+            index === pointIndex
+              ? replacement
+              : this.toFilteredPoi(
+                  point.poi,
+                  (point.poi as FilteredPoi).description,
+                ),
+          );
+          const rebuiltTargetDay = this.schedulerService.rebuildSingleDayPlan(
+            replacedDayPois,
+            intent,
+            {
+              day_number: targetDay.day_number,
+              date: targetDay.date,
+            },
+          );
+
+          const mergedDays = existingRoutePlan.days.map((day, index) =>
+            index === dayIndex ? rebuiltTargetDay : day,
+          );
+          routePlan = buildRoutePlanFromDays(
+            existingRoutePlan.city,
+            mergedDays,
+          );
+          mutationMeta.mutation_applied = true;
+          break;
+        }
+
+        default:
+          routePlan = buildFullRebuild();
+          break;
+      }
+    }
+
     const schedulerDuration = Date.now() - schedulerStart;
+
+    let deterministicPlannerShadowMeta: DeterministicPlannerShadowMeta;
+
+    try {
+      deterministicPlannerShadowMeta = {
+        status: 'ok',
+        input_hash: this.deterministicPlannerService.buildInputHash(
+          intent,
+          selectedForScheduler,
+        ),
+        decision_summary:
+          this.deterministicPlannerService.buildDecisionLogSummary(routePlan),
+        deterministic_mode: 'shadow',
+      };
+    } catch {
+      deterministicPlannerShadowMeta = {
+        status: 'fallback',
+        input_hash: null,
+        decision_summary: null,
+        deterministic_mode: 'shadow',
+      };
+    }
 
     const newMessages: SessionMessage[] = [
       ...history,
@@ -338,29 +857,149 @@ ${JSON.stringify(points)}
       });
     }
 
+    const baseMeta = {
+      parsed_intent: intent,
+      steps_duration_ms: {
+        orchestrator: orchestratorDuration,
+        yandex_fetch: providerDuration, // Для обратной совместимости клиента оставляем ключ
+        semantic_filter: semanticDuration,
+        scheduler: schedulerDuration,
+        total:
+          orchestratorDuration +
+          providerDuration +
+          semanticDuration +
+          schedulerDuration,
+      },
+      poi_counts: {
+        yandex_raw: rawPoi.length, // Оставляем старый ключ
+        after_logical_selector: logicalSelectedPool.length,
+        after_semantic: selected.length,
+      },
+      fallbacks_triggered: fallbacks,
+      ...mutationMeta,
+    };
+
+    const contractMeta: PlanResponseContractMeta = {
+      planner_version: plannerVersion,
+      pipeline_status: this.buildPipelineStatus(fallbacks),
+    };
+
+    const policyMeta = { policy_snapshot: policySnapshot };
+
+    const intentRouterMeta = { intent_router: intentRouterDecision };
+
+    const logicalIdMeta = { logical_id_shadow: logicalIdShadowMeta };
+
+    const logicalSelectorMeta = {
+      logical_selector: {
+        target: logicalSelectorResult.target,
+        selected_count: logicalSelectorResult.selected_count,
+        ...(logicalSelectorResult.fallback_reason
+          ? { fallback_reason: logicalSelectorResult.fallback_reason }
+          : {}),
+      },
+    };
+
+    const vectorPrefilterMeta = {
+      vector_prefilter_shadow: vectorPrefilterShadowMeta,
+    };
+
+    const deterministicPlannerMeta = {
+      deterministic_planner_shadow: deterministicPlannerShadowMeta,
+    };
+
+    const massCollectionMeta = {
+      mass_collection_shadow: massCollectionShadowMeta,
+    };
+
+    const yandexBatchRefinementMeta = yandexBatchRefinementDiagnostics
+      ? {
+          yandex_batch_refinement: {
+            status:
+              yandexBatchRefinementDiagnostics.failed_batches > 0
+                ? 'fallback'
+                : 'ok',
+            ...yandexBatchRefinementDiagnostics,
+          },
+        }
+      : {};
+
     return {
       session_id: session.id,
       route_plan: routePlan,
       meta: {
-        parsed_intent: intent,
-        steps_duration_ms: {
-          orchestrator: orchestratorDuration,
-          yandex_fetch: providerDuration, // Для обратной совместимости клиента оставляем ключ
-          semantic_filter: semanticDuration,
-          scheduler: schedulerDuration,
-          total:
-            orchestratorDuration +
-            providerDuration +
-            semanticDuration +
-            schedulerDuration,
-        },
-        poi_counts: {
-          yandex_raw: rawPoi.length, // Оставляем старый ключ
-          after_semantic: filteredPoi.length,
-        },
-        fallbacks_triggered: fallbacks,
+        ...baseMeta,
+        ...contractMeta,
+        ...intentRouterMeta,
+        ...policyMeta,
+        ...logicalIdMeta,
+        ...logicalSelectorMeta,
+        ...vectorPrefilterMeta,
+        ...deterministicPlannerMeta,
+        ...massCollectionMeta,
+        ...yandexBatchRefinementMeta,
       },
     };
+  }
+
+  @Sse('plan/stream')
+  planStream(@Req() req: Request): Observable<MessageEvent> {
+    req.socket?.setKeepAlive?.(true);
+    req.socket?.setTimeout?.(0);
+
+    const requestId = randomUUID();
+    const plannerVersion: PlannerVersion = 'v2';
+    const heartbeatIntervalMs = 3_000;
+
+    return new Observable<MessageEvent>((subscriber) => {
+      const startedEvent: PlanStartedSseEvent = {
+        event: 'plan_started',
+        data: {
+          request_id: requestId,
+          planner_version: plannerVersion,
+        },
+      };
+
+      subscriber.next({
+        type: startedEvent.event,
+        data: startedEvent.data,
+      } satisfies PlannerSseEvent);
+
+      const emitHeartbeat = () => {
+        const heartbeatEvent: HeartbeatSseEvent = {
+          event: 'heartbeat',
+          data: {
+            request_id: requestId,
+            timestamp: new Date().toISOString(),
+          },
+        };
+
+        subscriber.next({
+          type: heartbeatEvent.event,
+          data: heartbeatEvent.data,
+        } satisfies PlannerSseEvent);
+      };
+
+      // Отправляем первый heartbeat сразу, чтобы соединение не выглядело "зависшим"
+      // для клиентов/прокси с агрессивными idle/read timeout.
+      emitHeartbeat();
+
+      const intervalId = setInterval(emitHeartbeat, heartbeatIntervalMs);
+
+      const handleClose = () => {
+        clearInterval(intervalId);
+        subscriber.complete();
+      };
+
+      req.on('close', handleClose);
+      req.on('aborted', handleClose);
+
+      return () => {
+        clearInterval(intervalId);
+        req.off('close', handleClose);
+        req.off('aborted', handleClose);
+      };
+    });
   }
 
   @Post('sessions/:id/apply')
@@ -512,5 +1151,192 @@ ${JSON.stringify(points)}
     }
 
     return { session_id: session.id, trip_id: tripId };
+  }
+
+  @Post('test/compare-providers')
+  @SetMetadata('isPublic', true)
+  async compareProviders(
+    @Body()
+    body: {
+      query: string;
+    },
+  ) {
+    const { query } = body;
+
+    const fallbacks: string[] = [];
+    const intent = await this.orchestratorService.parseIntent(query, []);
+
+    const { pois: poisRaw } = await this.providerSearchService.fetchAndFilter(
+      intent,
+      fallbacks,
+    );
+
+    const pois = poisRaw.slice(0, 20);
+
+    if (pois.length === 0) {
+      return {
+        error: 'No POI found for query. For foreign cities, check Overpass API status.',
+        city: intent.city || 'unknown',
+        query,
+        input_poi_count: 0,
+      };
+    }
+
+    const comparison = await this.semanticFilterService.compareProviders(pois, intent);
+
+    return {
+      city: intent.city || 'unknown',
+      query,
+      input_poi_count: pois.length,
+      fallbacks: fallbacks.length > 0 ? fallbacks : undefined,
+      yandex: {
+        count: comparison.yandex.pois.length,
+        duration_ms: comparison.yandex.duration_ms,
+        error: comparison.yandex.error,
+        pois: comparison.yandex.pois.map((p) => ({
+          name: p.name,
+          category: p.category,
+          rating: p.rating,
+          description: p.description,
+        })),
+      },
+      openrouter: {
+        count: comparison.openrouter.pois.length,
+        duration_ms: comparison.openrouter.duration_ms,
+        error: comparison.openrouter.error,
+        pois: comparison.openrouter.pois.map((p) => ({
+          name: p.name,
+          category: p.category,
+          rating: p.rating,
+          description: p.description,
+        })),
+      },
+    };
+  }
+
+  @Post('test/strategy/llm-only')
+  @SetMetadata('isPublic', true)
+  async testLlmOnly(
+    @Body() body: { query: string },
+  ) {
+    const { query } = body;
+    const intent = await this.orchestratorService.parseIntent(query, []);
+
+    const t0 = Date.now();
+    const pois = await this.semanticFilterService.generatePoiFromScratch(intent);
+    const duration = Date.now() - t0;
+
+    return {
+      strategy: 'llm-only',
+      city: intent.city || 'unknown',
+      query,
+      poi_count: pois.length,
+      duration_ms: duration,
+      pois: pois.map((p) => ({
+        name: p.name,
+        category: p.category,
+        rating: p.rating,
+        description: p.description,
+      })),
+    };
+  }
+
+  @Post('test/strategy/provider-only')
+  @SetMetadata('isPublic', true)
+  async testProviderOnly(
+    @Body() body: { query: string },
+  ) {
+    const { query } = body;
+    const fallbacks: string[] = [];
+    const intent = await this.orchestratorService.parseIntent(query, []);
+
+    const t0 = Date.now();
+    const { pois: poisRaw } = await this.providerSearchService.fetchAndFilter(
+      intent,
+      fallbacks,
+    );
+    const duration = Date.now() - t0;
+
+    const pois = poisRaw.slice(0, 20);
+
+    return {
+      strategy: 'provider-only',
+      city: intent.city || 'unknown',
+      query,
+      poi_count: pois.length,
+      duration_ms: duration,
+      fallbacks: fallbacks.length > 0 ? fallbacks : undefined,
+      pois: pois.map((p) => ({
+        name: p.name,
+        category: p.category,
+        rating: p.rating,
+      })),
+    };
+  }
+
+  @Post('test/strategy/hybrid')
+  @SetMetadata('isPublic', true)
+  async testHybrid(
+    @Body() body: { query: string },
+  ) {
+    const { query } = body;
+    const fallbacks: string[] = [];
+    const intent = await this.orchestratorService.parseIntent(query, []);
+
+    // Step 1: Try provider search first
+    const t0 = Date.now();
+    const { pois: poisRaw } = await this.providerSearchService.fetchAndFilter(
+      intent,
+      fallbacks,
+    );
+    const providerDuration = Date.now() - t0;
+
+    let pois = poisRaw.slice(0, 20);
+
+    // Step 2: If provider returned too few POI, supplement with LLM
+    if (pois.length < 10) {
+      const t1 = Date.now();
+      const llmPois = await this.semanticFilterService.selectWithOpenRouter(
+        pois,
+        intent,
+      );
+      const llmDuration = Date.now() - t1;
+      pois = llmPois;
+
+      return {
+        strategy: 'hybrid',
+        city: intent.city || 'unknown',
+        query,
+        poi_count: pois.length,
+        provider_duration_ms: providerDuration,
+        llm_supplement_duration_ms: llmDuration,
+        total_duration_ms: providerDuration + llmDuration,
+        fallbacks: fallbacks.length > 0 ? fallbacks : undefined,
+        used_llm_supplement: true,
+        pois: (pois as FilteredPoi[]).map((p) => ({
+          name: p.name,
+          category: p.category,
+          rating: p.rating,
+          description: p.description,
+        })),
+      };
+    }
+
+    return {
+      strategy: 'hybrid',
+      city: intent.city || 'unknown',
+      query,
+      poi_count: pois.length,
+      provider_duration_ms: providerDuration,
+      llm_supplement_duration_ms: 0,
+      total_duration_ms: providerDuration,
+      fallbacks: fallbacks.length > 0 ? fallbacks : undefined,
+      used_llm_supplement: false,
+      pois: pois.map((p) => ({
+        name: p.name,
+        category: p.category,
+        rating: p.rating,
+      })),
+    };
   }
 }

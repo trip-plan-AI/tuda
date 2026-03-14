@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import dynamic from 'next/dynamic';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Search,
@@ -22,6 +21,7 @@ import {
   CloudSun,
   Sun,
   Wind,
+  ChevronDown,
 } from 'lucide-react';
 import {
   DndContext,
@@ -49,6 +49,7 @@ import { useTripStore, tripsApi, type CreateTripPayload, type Trip } from '@/ent
 import { useUserStore } from '@/entities/user';
 import { usePointCrud } from '@/features/route-create';
 import { pointsApi } from '@/entities/route-point';
+import { useAiQueryStore } from '@/features/ai-query';
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
 import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point';
@@ -69,19 +70,9 @@ import {
   PopoverTrigger,
   Calendar,
 } from '@/shared/ui';
-
-const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
-  ssr: false,
-  loading: () => <MapSkeleton />,
-});
-
-function MapSkeleton() {
-  return (
-    <div className="w-full h-full rounded-[2.5rem] bg-gray-100 animate-pulse flex items-center justify-center">
-      <p className="text-sm text-gray-400">Загрузка карты...</p>
-    </div>
-  );
-}
+import { clearConfig, setConfig } from '@/features/persistent-map';
+import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
+import type { PlannerConflictType } from '@/widgets/planner-conflict-modal';
 
 interface GeoSuggestion {
   displayName: string;
@@ -331,6 +322,8 @@ function SortablePointRow({
     <div
       ref={setNodeRef}
       style={style}
+      data-testid="planner-point-row"
+      data-point-id={point.id}
       className={cn('flex flex-col gap-3 group', showDropdownState && 'z-50')}
     >
       {index > 0 && (leg || isRouteLoading) && (
@@ -653,6 +646,7 @@ export function PlannerPage() {
   const { geoDenied, setGeoDenied } = useUserStore();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { openOrCreateSessionFromTrip } = useAiQueryStore();
   const initialTab = searchParams.get('tab') === 'popular' ? 'popular' : 'my';
   const [activeTab, setActiveTab] = useState<'my' | 'popular'>(initialTab);
   const [searchInput, setSearchInput] = useState('');
@@ -662,6 +656,9 @@ export function PlannerPage() {
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const justMigratedRef = useRef(false);
+  // feature/TRI-104-ai-planner-interaction: idempotency-guard для обработки applyTripId.
+  // Потребность: чтобы не срабатывали повторные toasts/загрузки при re-render и router.replace.
+  const handledApplyTripIdRef = useRef<string | null>(null);
   const userLocationRef = useRef<{ lat: number; lon: number } | null>(null);
   const prevLegsCountRef = useRef(0);
   const prevLegsDurationsRef = useRef<string>('');
@@ -678,7 +675,11 @@ export function PlannerPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [modal, setModal] = useState<'login' | 'register' | null>(null);
   const [isAddPointMode, setIsAddPointMode] = useState(false);
-  const [showOptimizationResults, setShowOptimizationResults] = useState(true);
+  const [isOptimizationExpanded, setIsOptimizationExpanded] = useState(true);
+  const [showPlannerConflictModal, setShowPlannerConflictModal] = useState(false);
+  const [pendingApplyTripId, setPendingApplyTripId] = useState<string | null>(null);
+  const [pendingDraftMessageId, setPendingDraftMessageId] = useState<string | null>(null);
+  const [conflictType, setConflictType] = useState<PlannerConflictType>('different_route');
   const addPointStartCountRef = useRef(0);
 
   useEffect(() => {
@@ -870,7 +871,7 @@ export function PlannerPage() {
       prevLegsCountRef.current = legsCount;
       prevLegsDurationsRef.current = legsDurationsKey;
     }
-  }, [routeInfo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [routeInfo]);
 
   useEffect(() => {
     useTripStore.getState().setCachedRouteInfo(null);
@@ -908,6 +909,11 @@ export function PlannerPage() {
   useEffect(() => {
     if (!_hasHydrated) return; // Wait for store to hydrate
     if (currentTrip) return;
+
+    // Если есть входящий applyTripId, не подставляем маршрут автоматически,
+    // чтобы конфликтный guard отработал корректно и не было «тихой» замены.
+    const incomingTripId = searchParams.get('applyTripId');
+    if (incomingTripId) return;
 
     if (!isAuthenticated) {
       const guestTrip: Trip = {
@@ -955,7 +961,7 @@ export function PlannerPage() {
         }
       })
       .catch(console.error);
-  }, [currentTrip, setCurrentTrip, isAuthenticated, _hasHydrated]);
+  }, [currentTrip, setCurrentTrip, isAuthenticated, _hasHydrated, searchParams]);
 
   // Загружаем предзаданные туры для вкладки «Популярные»
   useEffect(() => {
@@ -1382,13 +1388,54 @@ export function PlannerPage() {
           setIsAddPointMode(false);
         }
       } catch (e) {
+        // Фолбэк: даже при ошибке reverse geocode сохраняем точку по координатам,
+        // чтобы интерактив карты не ломался в оффлайн/нестабильной среде.
         console.error('Не удалось добавить точку с карты:', e);
+        await addPoint_({
+          title: `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`,
+          lat: coords.lat,
+          lon: coords.lon,
+          address: `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`,
+        });
       } finally {
         setIsSearching(false);
       }
     },
     [addPoint_, resolveMapCoords],
   );
+
+  useEffect(() => {
+    setConfig({
+      source: 'planner-page',
+      priority: 100,
+      points,
+      focusCoords,
+      draggable: true,
+      readonly: false,
+      routeProfile,
+      isDropdownOpen: showDropdown,
+      isAddPointMode,
+      onPointDragEnd: handlePointDragEnd,
+      onMapClick: handleMapClick,
+      onAddPointModeChange: handleAddPointModeChange,
+      onRouteInfoUpdate: setRouteInfo,
+      onRouteInfoLoading: setIsRouteLoading,
+      onAffectedSegmentsChange: setAffectedSegments,
+    });
+
+    return () => {
+      clearConfig('planner-page');
+    };
+  }, [
+    points,
+    focusCoords,
+    routeProfile,
+    showDropdown,
+    isAddPointMode,
+    handlePointDragEnd,
+    handleMapClick,
+    handleAddPointModeChange,
+  ]);
 
   const handleUpdatePlannedBudget = async (val: number) => {
     const newBudget = Math.max(0, val);
@@ -1404,10 +1451,134 @@ export function PlannerPage() {
     }
   };
 
+  const clearApplyTripParams = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('applyTripId');
+    params.delete('draftMessageId');
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `/planner?${nextQuery}` : '/planner');
+  }, [router, searchParams]);
+
+  const finalizeApplyFlow = useCallback(
+    (clearQuery = true) => {
+      setShowPlannerConflictModal(false);
+      setPendingApplyTripId(null);
+      setPendingDraftMessageId(null);
+      if (clearQuery) {
+        clearApplyTripParams();
+      }
+    },
+    [clearApplyTripParams],
+  );
+
+  // feature/TRI-104-ai-planner-interaction: централизованное применение tripId из query-параметра applyTripId.
+  // Потребность: загрузить маршрут из AI чата в UI без перезагрузки страницы.
+  // Если убрать: маршруты из AI чата не будут переноситься в Planner.
+  const applyIncomingTrip = useCallback(
+    async (tripId: string) => {
+      const all = await tripsApi.getAll();
+      const target = all.find((trip) => trip.id === tripId);
+      if (!target) return;
+
+      const targetPoints = await pointsApi.getAll(tripId);
+      setCurrentTrip({ ...target, points: targetPoints });
+      setSaved();
+
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('applyTripId');
+      params.delete('draftMessageId');
+      const nextQuery = params.toString();
+      router.replace(nextQuery ? `/planner?${nextQuery}` : '/planner');
+
+      toast.success('Маршрут из AI чата открыт в Planner');
+      // Открываем связанный AI-чат для контекста
+      void openOrCreateSessionFromTrip(tripId);
+    },
+    [router, searchParams, setCurrentTrip, setSaved, openOrCreateSessionFromTrip],
+  );
+
+  const handleConfirmPlannerReplace = useCallback(() => {
+    const targetTripId = pendingApplyTripId;
+    finalizeApplyFlow(false);
+
+    if (!targetTripId) {
+      clearApplyTripParams();
+      return;
+    }
+
+    if (targetTripId.startsWith('guest-')) {
+      clearApplyTripParams();
+      return;
+    }
+
+    void applyIncomingTrip(targetTripId);
+  }, [
+    pendingApplyTripId,
+    applyIncomingTrip,
+    clearApplyTripParams,
+    finalizeApplyFlow,
+  ]);
+
+  useEffect(() => {
+    if (!_hasHydrated) return;
+
+    // feature/TRI-104-ai-planner-interaction: IDEMPOTENCY GUARD
+    // Потребность: исключить зацикливание подгрузки маршрута при ре-рендерах.
+    const incomingTripId = searchParams.get('applyTripId');
+    const draftMessageId = searchParams.get('draftMessageId');
+
+    if (!incomingTripId || incomingTripId.startsWith('guest-')) {
+      handledApplyTripIdRef.current = null;
+      return;
+    }
+
+    const currentKey = `${incomingTripId}-${draftMessageId || 'nodraft'}`;
+    if (handledApplyTripIdRef.current === currentKey) return;
+
+    const hasPlannerContent = (currentTrip?.points?.length ?? 0) > 0 || isDirty;
+    const isDifferentRoute = currentTrip?.id !== incomingTripId;
+    const hasIncomingDraftVersion = Boolean(draftMessageId);
+
+    if (!hasPlannerContent || !currentTrip) {
+      handledApplyTripIdRef.current = currentKey;
+      void applyIncomingTrip(incomingTripId);
+      return;
+    }
+
+    if (!isDifferentRoute && !hasIncomingDraftVersion) {
+      handledApplyTripIdRef.current = currentKey;
+      clearApplyTripParams();
+      return;
+    }
+
+    handledApplyTripIdRef.current = currentKey;
+    setPendingApplyTripId(incomingTripId);
+    setPendingDraftMessageId(draftMessageId);
+    setConflictType(hasIncomingDraftVersion ? 'same_route' : 'different_route');
+    setShowPlannerConflictModal(true);
+  }, [
+    _hasHydrated,
+    applyIncomingTrip,
+    searchParams,
+    points.length,
+    currentTrip?.id,
+    currentTrip?.points,
+    isDirty,
+    clearApplyTripParams,
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== 'my') return;
+    if (points.length === 0) return;
+    const first = points[0];
+    if (!first) return;
+    setFocusCoords({ lon: first.lon, lat: first.lat });
+  }, [activeTab, points]);
+
   return (
-    <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
-      <div className="w-full mx-auto px-4 md:px-8 py-6 md:py-10 flex-1 flex flex-col relative">
-        <div className="mb-8 bg-white md:p-0 rounded-none w-full max-w-7xl mx-auto">
+    <div className="bg-white min-h-screen md:min-h-0 md:h-[calc(100vh-64px)] md:overflow-hidden w-full max-w-full flex flex-col">
+      <div className="w-full mx-auto px-4 md:px-8 py-6 md:py-8 flex-1 flex flex-col relative min-h-0">
+        <div className="mb-8 bg-white md:p-0 rounded-none w-full max-w-7xl mx-auto shrink-0">
           <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight mb-6 text-left">
             Маршруты
           </h2>
@@ -1424,9 +1595,10 @@ export function PlannerPage() {
           />
         </div>
 
-        {activeTab === 'my' ? (
-          <div className="animate-in fade-in duration-500 w-full relative">
-            <div className="mb-10 w-full max-w-7xl mx-auto">
+        <div className="flex-1 min-h-0 md:overflow-y-auto no-scrollbar md:pr-1">
+          {activeTab === 'my' ? (
+            <div className="animate-in fade-in duration-500 w-full relative">
+              <div className="mb-10 w-full max-w-7xl mx-auto">
               {isBudgetExceeded && showBudgetWarning && (
                 <div className="fixed right-4 bottom-20 md:bottom-6 z-40 animate-in slide-in-from-right-4 duration-300">
                   <div className="relative group flex items-start gap-2 rounded-2xl border border-red-200 bg-white/95 backdrop-blur px-3 py-2 shadow-lg max-w-[300px]">
@@ -1662,7 +1834,10 @@ export function PlannerPage() {
               </div>
 
               {(routeInfo || isRouteLoading) && (
-                <div className="flex items-center justify-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 animate-in fade-in zoom-in-95 relative overflow-hidden transition-all duration-300 w-full lg:w-96 lg:h-16">
+                <div
+                  data-testid="planner-route-info"
+                  className="flex items-center justify-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 animate-in fade-in zoom-in-95 relative overflow-hidden transition-all duration-300 w-full lg:w-96 lg:h-16"
+                >
                   {isRouteLoading && (
                     <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10 animate-in fade-in duration-200">
                       <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
@@ -1691,39 +1866,6 @@ export function PlannerPage() {
                   </div>
                 </div>
               )}
-            </div>
-
-            <div className="w-full max-w-7xl mx-auto aspect-[4/3] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden relative z-0 border border-slate-200 shadow-inner bg-slate-50 group">
-              <RouteMap
-                points={points}
-                focusCoords={focusCoords}
-                onPointDragEnd={handlePointDragEnd}
-                isDropdownOpen={showDropdown}
-                onMapClick={handleMapClick}
-                isAddPointMode={isAddPointMode}
-                onAddPointModeChange={handleAddPointModeChange}
-                routeProfile={routeProfile}
-                onRouteInfoUpdate={setRouteInfo}
-                onRouteInfoLoading={setIsRouteLoading}
-                onAffectedSegmentsChange={setAffectedSegments}
-              />
-              {/* Кнопка добавления точек — над зумом слева */}
-              <button
-                title={
-                  isAddPointMode ? 'Выйти из режима добавления' : 'Добавить точку кликом на карту'
-                }
-                className={cn(
-                  'absolute left-3 top-3 md:top-16 z-10',
-                  'w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center',
-                  'shadow-lg transition-all active:scale-95 border-2',
-                  isAddPointMode
-                    ? 'bg-brand-sky text-white border-brand-sky'
-                    : 'bg-white text-slate-600 border-transparent hover:border-brand-sky/30',
-                )}
-                onClick={() => handleAddPointModeChange(!isAddPointMode)}
-              >
-                <MapPin size={22} />
-              </button>
             </div>
 
             <div className="max-w-7xl mx-auto w-full mt-8">
@@ -1792,12 +1934,12 @@ export function PlannerPage() {
                             status: 'success',
                             metrics: result.metrics || null,
                           });
-                          setShowOptimizationResults(true);
+                          setIsOptimizationExpanded(true);
                         } else {
                           setLastOptimizedPoints([...points]);
                           setLastOptimizedProfile(routeProfile);
                           setOptimizationResults({ status: 'optimal', metrics: null });
-                          setShowOptimizationResults(true);
+                          setIsOptimizationExpanded(true);
                         }
                       }
                     } catch (error) {
@@ -1877,45 +2019,64 @@ export function PlannerPage() {
               </div>
 
               {/* Optimization Results Block moved here, right under buttons */}
-              {optimizationResults.status !== 'idle' && showOptimizationResults && (
+              {optimizationResults.status !== 'idle' && (
                 <div className="mt-8 p-0 bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/20 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500 relative group/opt">
-                  <button
-                    onClick={() => setShowOptimizationResults(false)}
-                    className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all z-10"
-                    title="Закрыть"
-                  >
-                    <X size={16} />
-                  </button>
-
                   {optimizationResults.status === 'optimal' ||
                   (optimizationResults.status === 'success' &&
                     routeProfile !== lastOptimizedProfile) ? (
-                    <div className="p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 bg-slate-50/50">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center shrink-0">
-                          <MapPin size={22} className="text-emerald-500" />
+                    <div className="flex flex-col">
+                      <div
+                        className={cn(
+                          "p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-slate-50/50 cursor-pointer transition-colors hover:bg-slate-100/50",
+                          isOptimizationExpanded ? "border-b border-slate-100" : ""
+                        )}
+                        onClick={() => setIsOptimizationExpanded(!isOptimizationExpanded)}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center shrink-0">
+                            <MapPin size={22} className="text-emerald-500" />
+                          </div>
+                          <div>
+                            <h4 className="text-brand-indigo font-black uppercase tracking-widest text-sm md:text-base mb-1">
+                              Маршрут оптимален
+                            </h4>
+                            <p className="text-slate-400 text-xs md:text-sm font-bold uppercase tracking-wider">
+                              {routeProfile !== lastOptimizedProfile
+                                ? `Порядок точек идеален для режима «${routeProfile === 'driving' ? 'Авто' : routeProfile === 'foot' ? 'Пешком' : routeProfile === 'bike' ? 'Вело' : 'Прямой'}»`
+                                : 'Текущий порядок точек — самый эффективный'}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <h4 className="text-brand-indigo font-black uppercase tracking-widest text-sm md:text-base mb-1">
-                            Маршрут оптимален
-                          </h4>
-                          <p className="text-slate-400 text-xs md:text-sm font-bold uppercase tracking-wider">
-                            {routeProfile !== lastOptimizedProfile
-                              ? `Порядок точек идеален для режима «${routeProfile === 'driving' ? 'Авто' : routeProfile === 'foot' ? 'Пешком' : routeProfile === 'bike' ? 'Вело' : 'Прямой'}»`
-                              : 'Текущий порядок точек — самый эффективный'}
-                          </p>
+                        <div className="flex items-center gap-4 mt-4 md:mt-0 ml-auto">
+                          <button
+                            className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center transition-transform hover:bg-slate-200"
+                            style={{ transform: isOptimizationExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                          >
+                            <ChevronDown size={20} />
+                          </button>
                         </div>
                       </div>
-                      <div className="px-6 py-3 bg-emerald-50 rounded-xl border border-emerald-100/50 mr-8">
-                        <span className="text-emerald-600 font-black text-xs uppercase tracking-widest flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                          Улучшение не требуется
-                        </span>
-                      </div>
+                      
+                      {isOptimizationExpanded && (
+                        <div className="p-6 md:p-8 bg-white flex justify-start md:justify-end animate-in slide-in-from-top-2 fade-in">
+                          <div className="px-6 py-3 bg-emerald-50 rounded-xl border border-emerald-100/50">
+                            <span className="text-emerald-600 font-black text-xs uppercase tracking-widest flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                              Улучшение не требуется
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="flex flex-col">
-                      <div className="p-6 md:p-8 border-b border-slate-50 bg-gradient-to-r from-brand-indigo/[0.02] to-transparent flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                      <div
+                        className={cn(
+                          "p-6 md:p-8 bg-gradient-to-r from-brand-indigo/[0.02] to-transparent flex flex-col md:flex-row items-start md:items-center justify-between gap-6 cursor-pointer hover:from-brand-indigo/[0.05] transition-colors",
+                          isOptimizationExpanded ? "border-b border-slate-50" : ""
+                        )}
+                        onClick={() => setIsOptimizationExpanded(!isOptimizationExpanded)}
+                      >
                         <div className="flex items-center gap-4">
                           <div className="w-12 h-12 bg-brand-indigo rounded-2xl shadow-lg shadow-brand-indigo/20 flex items-center justify-center shrink-0">
                             <MapPin size={22} className="text-white" />
@@ -1929,97 +2090,136 @@ export function PlannerPage() {
                             </p>
                           </div>
                         </div>
-                        {previousPoints && (
-                          <Button
-                            onClick={() => {
-                              useTripStore.getState().setPoints(previousPoints);
-                              if (currentTrip && !currentTrip.id.startsWith('guest-')) {
-                                const orderedIds = previousPoints.map((p) => p.id);
-                                crud.reorder(orderedIds).catch(console.error);
-                              }
-                              setPreviousPoints(null);
-                              setOptimizationResults({ status: 'idle', metrics: null });
-                              setLastOptimizedPoints(null);
-                              setLastOptimizedProfile(null);
-                              toast.info('Маршрут возвращён к исходному состоянию');
-                            }}
-                            variant="ghost"
-                            shape="xl"
-                            className="text-slate-400 hover:text-brand-indigo hover:bg-brand-indigo/5 font-black uppercase tracking-widest text-[10px] md:text-xs h-10 px-6 border border-slate-200 transition-all active:scale-95 mr-10"
+                        
+                        <div className="flex items-center gap-4 w-full md:w-auto justify-end mt-4 md:mt-0">
+                          {previousPoints && !isOptimizationExpanded && (
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                useTripStore.getState().setPoints(previousPoints);
+                                if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+                                  const orderedIds = previousPoints.map((p) => p.id);
+                                  crud.reorder(orderedIds).catch(console.error);
+                                }
+                                setPreviousPoints(null);
+                                setOptimizationResults({ status: 'idle', metrics: null });
+                                setLastOptimizedPoints(null);
+                                setLastOptimizedProfile(null);
+                                toast.info('Маршрут возвращён к исходному состоянию');
+                              }}
+                              variant="ghost"
+                              shape="xl"
+                              className="text-slate-400 hover:text-brand-indigo hover:bg-brand-indigo/5 font-black uppercase tracking-widest text-[10px] md:text-xs h-10 px-6 border border-slate-200 transition-all active:scale-95"
+                            >
+                              Вернуть
+                            </Button>
+                          )}
+                          <button
+                            className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center transition-transform hover:bg-slate-200"
+                            style={{ transform: isOptimizationExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
                           >
-                            Вернуть как было
-                          </Button>
-                        )}
+                            <ChevronDown size={20} />
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="p-6 md:p-8 bg-white">
-                        {optimizationResults.metrics && (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                            <div className="group bg-slate-50/50 p-6 rounded-3xl border border-slate-100 hover:border-emerald-500/30 transition-all duration-300">
-                              <div className="flex items-center gap-3 mb-6">
-                                <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-slate-100 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                  <Clock size={16} className="text-brand-blue" />
-                                </div>
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
-                                  Время в пути
-                                </span>
-                              </div>
-                              <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
-                                    Было:
-                                  </span>
-                                  <span className="text-sm font-bold text-slate-400 line-through decoration-slate-300">
-                                    {formatDuration(
-                                      Math.round(optimizationResults.metrics.originalHours * 3600),
-                                    )}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-black text-brand-blue uppercase tracking-widest">
-                                    Стало:
-                                  </span>
-                                  <span className="text-xl font-black text-slate-700 tabular-nums">
-                                    {formatDuration(
-                                      Math.round(optimizationResults.metrics.newHours * 3600),
-                                    )}
-                                  </span>
-                                </div>
-                              </div>
+                      {isOptimizationExpanded && (
+                        <div className="flex flex-col bg-white animate-in slide-in-from-top-2 fade-in">
+                          {previousPoints && (
+                            <div className="px-6 md:px-8 pt-6 flex justify-end">
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  useTripStore.getState().setPoints(previousPoints);
+                                  if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+                                    const orderedIds = previousPoints.map((p) => p.id);
+                                    crud.reorder(orderedIds).catch(console.error);
+                                  }
+                                  setPreviousPoints(null);
+                                  setOptimizationResults({ status: 'idle', metrics: null });
+                                  setLastOptimizedPoints(null);
+                                  setLastOptimizedProfile(null);
+                                  toast.info('Маршрут возвращён к исходному состоянию');
+                                }}
+                                variant="ghost"
+                                shape="xl"
+                                className="text-slate-400 hover:text-brand-indigo hover:bg-brand-indigo/5 font-black uppercase tracking-widest text-[10px] md:text-xs h-10 px-6 border border-slate-200 transition-all active:scale-95"
+                              >
+                                Вернуть как было
+                              </Button>
                             </div>
+                          )}
 
-                            <div className="group bg-slate-50/50 p-6 rounded-3xl border border-slate-100 hover:border-emerald-500/30 transition-all duration-300">
-                              <div className="flex items-center gap-3 mb-6">
-                                <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-slate-100 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                  <RouteIcon size={16} className="text-emerald-500" />
+                          <div className="p-6 md:p-8">
+                            {optimizationResults.metrics && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                                <div className="group bg-slate-50/50 p-6 rounded-3xl border border-slate-100 hover:border-emerald-500/30 transition-all duration-300">
+                                  <div className="flex items-center gap-3 mb-6">
+                                    <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-slate-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                      <Clock size={16} className="text-brand-blue" />
+                                    </div>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                                      Время в пути
+                                    </span>
+                                  </div>
+                                  <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                                        Было:
+                                      </span>
+                                      <span className="text-sm font-bold text-slate-400 line-through decoration-slate-300">
+                                        {formatDuration(
+                                          Math.round(optimizationResults.metrics.originalHours * 3600),
+                                        )}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-black text-brand-blue uppercase tracking-widest">
+                                        Стало:
+                                      </span>
+                                      <span className="text-xl font-black text-slate-700 tabular-nums">
+                                        {formatDuration(
+                                          Math.round(optimizationResults.metrics.newHours * 3600),
+                                        )}
+                                      </span>
+                                    </div>
+                                  </div>
                                 </div>
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
-                                  Расстояние
-                                </span>
+
+                                <div className="group bg-slate-50/50 p-6 rounded-3xl border border-slate-100 hover:border-emerald-500/30 transition-all duration-300">
+                                  <div className="flex items-center gap-3 mb-6">
+                                    <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-slate-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                      <RouteIcon size={16} className="text-emerald-500" />
+                                    </div>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                                      Расстояние
+                                    </span>
+                                  </div>
+                                  <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                                        Было:
+                                      </span>
+                                      <span className="text-sm font-bold text-slate-400 line-through decoration-slate-300">
+                                        {optimizationResults.metrics.originalKm.toFixed(1)} км
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
+                                        Стало:
+                                      </span>
+                                      <span className="text-xl font-black text-slate-700 tabular-nums">
+                                        {optimizationResults.metrics.newKm.toFixed(1)}{' '}
+                                        <span className="text-sm text-slate-400">км</span>
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
                               </div>
-                              <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
-                                    Было:
-                                  </span>
-                                  <span className="text-sm font-bold text-slate-400 line-through decoration-slate-300">
-                                    {optimizationResults.metrics.originalKm.toFixed(1)} км
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
-                                    Стало:
-                                  </span>
-                                  <span className="text-xl font-black text-slate-700 tabular-nums">
-                                    {optimizationResults.metrics.newKm.toFixed(1)}{' '}
-                                    <span className="text-sm text-slate-400">км</span>
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2167,11 +2367,11 @@ export function PlannerPage() {
               </div>
             </div>
 
-            {/* Mobile Actions (Fallback for smaller screens) is removed */}
-          </div>
-        ) : (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto w-full">
-            <div className="w-full mb-10">
+              {/* Mobile Actions (Fallback for smaller screens) is removed */}
+            </div>
+          ) : (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto w-full">
+              <div className="w-full mb-10">
               <div className="relative group mb-8">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-blue transition-colors">
                   <Search size={20} />
@@ -2252,9 +2452,10 @@ export function PlannerPage() {
                     </Link>
                   );
                 })}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
@@ -2303,6 +2504,34 @@ export function PlannerPage() {
         open={modal === 'register'}
         onClose={() => setModal(null)}
         onSwitchToLogin={() => setModal('login')}
+      />
+      <PlannerConflictModal
+        open={showPlannerConflictModal}
+        onOpenChange={setShowPlannerConflictModal}
+        conflictType={conflictType}
+        currentRouteTitle={currentTrip?.title?.trim() || 'без названия'}
+        onCancel={() => {
+          finalizeApplyFlow(true);
+        }}
+        onReplaceWithoutSave={handleConfirmPlannerReplace}
+        onSaveAndReplace={async () => {
+          try {
+            if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+              await tripsApi.update(currentTrip.id, {
+                title: currentTrip.title,
+                description: currentTrip.description ?? undefined,
+                budget: currentTrip.budget ?? undefined,
+              });
+            }
+          } catch (e) {
+            console.error('Failed to save current trip before replace:', e);
+            toast.error('Не удалось сохранить текущий маршрут');
+          }
+          handleConfirmPlannerReplace();
+        }}
+        onGoToPlannerOnly={() => {
+          finalizeApplyFlow(true);
+        }}
       />
     </div>
   );

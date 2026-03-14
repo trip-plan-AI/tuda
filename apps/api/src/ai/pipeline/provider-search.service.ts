@@ -1,9 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { ParsedIntent } from '../types/pipeline.types';
+import type {
+  MassCollectionShadowMeta,
+  MassCollectionShadowProviderStat,
+  ParsedIntent,
+} from '../types/pipeline.types';
 import type { PoiItem } from '../types/poi.types';
 import { KudagoClientService } from './kudago-client.service';
 import { OverpassClientService } from './overpass-client.service';
 import { LlmClientService } from './llm-client.service';
+import { GeosearchService } from '../../geosearch/geosearch.service';
 import { randomUUID } from 'crypto';
 
 @Injectable()
@@ -14,21 +19,57 @@ export class ProviderSearchService {
     private readonly kudagoClient: KudagoClientService,
     private readonly overpassClient: OverpassClientService,
     private readonly llmClientService: LlmClientService,
+    private readonly geosearch: GeosearchService,
   ) {}
+
+  private buildEmptyProviderStat(
+    provider: MassCollectionShadowProviderStat['provider'],
+  ): MassCollectionShadowProviderStat {
+    return {
+      provider,
+      attempted: false,
+      raw_count: 0,
+      used_count: 0,
+      failed: false,
+    };
+  }
 
   async fetchAndFilter(
     intent: ParsedIntent,
     fallbacks: string[] = [],
-  ): Promise<PoiItem[]> {
+  ): Promise<{
+    pois: PoiItem[];
+    shadowDiagnostics?: MassCollectionShadowMeta;
+  }> {
     this.logger.log(
       `[ProviderSearch] Started for city: "${intent.city}", categories: [${intent.categories.join(', ')}]`,
     );
 
     let pois: PoiItem[] = [];
+    const providerStats: Record<
+      MassCollectionShadowProviderStat['provider'],
+      MassCollectionShadowProviderStat
+    > = {
+      kudago: this.buildEmptyProviderStat('kudago'),
+      overpass: this.buildEmptyProviderStat('overpass'),
+      llm_fill: this.buildEmptyProviderStat('llm_fill'),
+      photon: this.buildEmptyProviderStat('photon'),
+    };
 
     // 1) Сначала обращаемся к приоритетному источнику (KudaGo)
     this.logger.log(`[ProviderSearch] Requesting KudaGo API...`);
-    const kudagoRaw = await this.kudagoClient.fetchByIntent(intent);
+    providerStats.kudago.attempted = true;
+    let kudagoRaw: PoiItem[] = [];
+    try {
+      kudagoRaw = await this.kudagoClient.fetchByIntent(intent);
+      providerStats.kudago.raw_count = kudagoRaw.length;
+      providerStats.kudago.used_count = kudagoRaw.length;
+    } catch (error: unknown) {
+      providerStats.kudago.failed = true;
+      providerStats.kudago.fail_reason =
+        error instanceof Error ? error.message : String(error);
+      throw error;
+    }
     this.logger.log(
       `[ProviderSearch] KudaGo returned ${kudagoRaw.length} points.`,
     );
@@ -46,29 +87,132 @@ export class ProviderSearchService {
       this.logger.log(
         `[ProviderSearch] KudaGo POIs < 15. Calling Overpass API for supplement...`,
       );
-      overpassRaw = await this.overpassClient.fetchByIntent(intent);
+      providerStats.overpass.attempted = true;
+      try {
+        overpassRaw = await this.overpassClient.fetchByIntent(intent);
+        providerStats.overpass.raw_count += overpassRaw.length;
+      } catch (error: unknown) {
+        providerStats.overpass.failed = true;
+        providerStats.overpass.fail_reason =
+          error instanceof Error ? error.message : String(error);
+        throw error;
+      }
       this.logger.log(
         `[ProviderSearch] Overpass returned ${overpassRaw.length} points.`,
       );
     }
 
-    // 3) Объединяем и дедуплицируем
-    pois = [...kudagoRaw, ...overpassRaw];
+    // 3) TRI-108-6: If food focus detected, supplement with Photon + AI
+    const hasFoodFocus = intent.categories.some(
+      (cat) =>
+        /cafe|кафе|restaurant|ресторан|bar|бар|food|еда|coffee|кофе/i.test(cat),
+    );
+
+    let photonRaw: PoiItem[] = [];
+    let aiGeneratedFood: PoiItem[] = [];
+
+    if (hasFoodFocus) {
+      this.logger.log(
+        `[ProviderSearch] TRI-108-6: Food focus detected. Attempting Photon + AI supplements for ${intent.city}...`,
+      );
+
+      // Try Photon first (real data from OSM)
+      providerStats.photon = this.buildEmptyProviderStat('photon');
+      providerStats.photon.attempted = true;
+      try {
+        photonRaw = await this.searchPhotonForFood(intent.city);
+        providerStats.photon.raw_count = photonRaw.length;
+        providerStats.photon.used_count = photonRaw.length;
+        if (photonRaw.length > 0) {
+          this.logger.log(
+            `[ProviderSearch] ✅ Photon returned ${photonRaw.length} food venues`,
+          );
+          fallbacks.push('PHOTON_FOOD_SEARCH_SUPPLEMENT');
+        }
+      } catch (error: unknown) {
+        providerStats.photon.failed = true;
+        providerStats.photon.fail_reason =
+          error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `[ProviderSearch] ⚠️ Photon search failed: ${providerStats.photon.fail_reason}`,
+        );
+      }
+
+      // If Photon returned < 2 food POIs, use AI as fallback
+      const allFoodPois = [...kudagoRaw, ...overpassRaw, ...photonRaw];
+      const allFood = allFoodPois.filter(
+        (p) => p.category === 'restaurant' || p.category === 'cafe',
+      ).length;
+
+      this.logger.log(
+        `[ProviderSearch] TRI-108-6 DEBUG: Total POIs=${allFoodPois.length}, Food POIs=${allFood}`,
+      );
+      this.logger.log(
+        `[ProviderSearch] TRI-108-6 DEBUG: Breakdown - Kudago food=${kudagoRaw.filter(p => p.category === 'restaurant' || p.category === 'cafe').length}, Overpass food=${overpassRaw.filter(p => p.category === 'restaurant' || p.category === 'cafe').length}, Photon food=${photonRaw.filter(p => p.category === 'restaurant' || p.category === 'cafe').length}`,
+      );
+
+      if (allFood < 2) {
+        this.logger.log(
+          `[ProviderSearch] 🤖 TRI-108-6 AI FALLBACK TRIGGERED: Only ${allFood} food POIs. Intent: "${intent.preferences_text}"`,
+        );
+        try {
+          aiGeneratedFood = await this.generateFoodVenuesWithAI(intent);
+          this.logger.log(
+            `[ProviderSearch] ✨ AI generated ${aiGeneratedFood.length} food venues (before filtering)`,
+          );
+
+          if (aiGeneratedFood.length > 0) {
+            this.logger.log(
+              `[ProviderSearch] ✨ AI VENUES: ${aiGeneratedFood.map(p => `${p.name}(${p.coordinates.lat.toFixed(2)},${p.coordinates.lon.toFixed(2)})`).join(', ')}`,
+            );
+            fallbacks.push('AI_GENERATED_FOOD_RECOMMENDATIONS');
+          } else {
+            this.logger.warn(
+              `[ProviderSearch] ⚠️ AI generation returned 0 venues (geocoding failed?)`,
+            );
+          }
+        } catch (error: unknown) {
+          this.logger.warn(
+            `[ProviderSearch] ⚠️ AI generation failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+    } else {
+      this.logger.log(
+        `[ProviderSearch] TRI-108-6 SKIPPED: Food focus not detected`,
+      );
+    }
+
+    // 3a) Объединяем и дедуплицируем
+    pois = [...kudagoRaw, ...overpassRaw, ...photonRaw, ...aiGeneratedFood];
 
     // Если после объединения все еще мало POI, пробуем расширить радиус поиска Overpass
     if (pois.length < 3) {
       this.logger.warn(
         `[ProviderSearch] Still low on POIs (${pois.length}). Retrying Overpass with radius * 1.3...`,
       );
-      const retryOverpass = await this.overpassClient.fetchByIntent({
-        ...intent,
-        radius_km: intent.radius_km * 1.3,
-      });
+      providerStats.overpass.attempted = true;
+      let retryOverpass: PoiItem[] = [];
+      try {
+        retryOverpass = await this.overpassClient.fetchByIntent({
+          ...intent,
+          radius_km: intent.radius_km * 1.3,
+        });
+        providerStats.overpass.raw_count += retryOverpass.length;
+      } catch (error: unknown) {
+        providerStats.overpass.failed = true;
+        providerStats.overpass.fail_reason =
+          error instanceof Error ? error.message : String(error);
+        throw error;
+      }
       pois = [...kudagoRaw, ...retryOverpass];
+      overpassRaw = retryOverpass;
       this.logger.log(
         `[ProviderSearch] After Overpass retry, total raw points: ${pois.length}`,
       );
     }
+
+    providerStats.overpass.used_count = overpassRaw.length;
 
     const minRequired = intent.days * 2;
 
@@ -78,6 +222,7 @@ export class ProviderSearchService {
         `[ProviderSearch] Only ${pois.length} points found, but ${minRequired} needed for ${intent.days} days. Requesting LLM to generate missing points...`,
       );
       const missingCount = minRequired - pois.length;
+      providerStats.llm_fill.attempted = true;
       try {
         const generatedPois = await this.generateMissingPois(
           intent.city,
@@ -85,6 +230,8 @@ export class ProviderSearchService {
           pois,
         );
         pois = [...pois, ...generatedPois];
+        providerStats.llm_fill.raw_count = generatedPois.length;
+        providerStats.llm_fill.used_count = generatedPois.length;
         fallbacks.push('LLM_GENERATED_MISSING_POIS');
         this.logger.log(
           `[ProviderSearch] Successfully generated ${generatedPois.length} missing points. Total now: ${pois.length}`,
@@ -95,6 +242,8 @@ export class ProviderSearchService {
         this.logger.error(
           `[ProviderSearch] Failed to generate missing points via LLM: ${errorMessage}`,
         );
+        providerStats.llm_fill.failed = true;
+        providerStats.llm_fill.fail_reason = errorMessage;
         fallbacks.push('LLM_POI_GENERATION_FAILED');
       }
     }
@@ -103,7 +252,21 @@ export class ProviderSearchService {
       this.logger.error(
         `[ProviderSearch] ❌ FATAL: 0 points found for ${intent.city} across all providers and generators.`,
       );
-      return [];
+      return {
+        pois: [],
+        shadowDiagnostics: {
+          provider_stats: [
+            providerStats.kudago,
+            providerStats.overpass,
+            providerStats.llm_fill,
+          ],
+          totals: {
+            before_dedup: 0,
+            after_dedup: 0,
+            returned: 0,
+          },
+        },
+      };
     }
 
     this.logger.log(
@@ -114,11 +277,21 @@ export class ProviderSearchService {
       `[ProviderSearch] Deduplication complete. Unique points: ${deduped.length}`,
     );
 
-    // 5) Pre-filter с квотированием:
+    // 5) Pre-filter с квотированием (TRI-108-6 Extended: Dynamic ratio based on hasFoodFocus)
     // Если просто отсортировать по рейтингу, еда (с дефолтом 4.5) вытеснит все музеи (с дефолтом 4.0).
-    // Поэтому мы разделяем точки и берем Топ-50 не-еды и Топ-50 еды.
-    const MAX_NON_FOOD_FOR_LLM = 50;
-    const MAX_FOOD_FOR_LLM = 50;
+    // Поэтому мы разделяем точки и берем топ не-еды и топ еды.
+    // TRI-108-6 Extended: Если hasFoodFocus - даем LLM больше food POI на выбор (80/20 вместо 50/50)
+    const hasFoodFocusForPreFilter =
+      /гастро|ресторан|кафе|с\s+кафе|кофе|еда|дегустац|гурман|булка|пирог|торт|сладкое|кулинарн|фудтур|по\s+кафе|поесть|перекус|пищу/i.test(
+        intent.preferences_text.toLowerCase(),
+      );
+
+    const MAX_NON_FOOD_FOR_LLM = hasFoodFocusForPreFilter ? 20 : 50;
+    const MAX_FOOD_FOR_LLM = hasFoodFocusForPreFilter ? 80 : 50;
+
+    this.logger.log(
+      `[ProviderSearch] TRI-108-6: Pre-filter ratio - Non-food:${MAX_NON_FOOD_FOR_LLM} Food:${MAX_FOOD_FOR_LLM} (hasFoodFocusForPreFilter=${hasFoodFocusForPreFilter})`,
+    );
 
     const nonFood = deduped.filter(
       (p) => p.category !== 'restaurant' && p.category !== 'cafe',
@@ -140,7 +313,30 @@ export class ProviderSearchService {
     this.logger.log(
       `[ProviderSearch] Final pre-filter complete. Kept ${topNonFood.length} non-food and ${topFood.length} food points (Total: ${result.length}) for Semantic Filter.`,
     );
-    return result;
+    const finalFood = result.filter(
+      (p) => p.category === 'restaurant' || p.category === 'cafe',
+    );
+
+    this.logger.log(
+      `[ProviderSearch] FINAL: ${result.length} POIs (${finalFood.length} food) | Providers: K=${providerStats.kudago.raw_count} O=${providerStats.overpass.raw_count} P=${providerStats.photon.raw_count} L=${providerStats.llm_fill.raw_count}`,
+    );
+
+    return {
+      pois: result,
+      shadowDiagnostics: {
+        provider_stats: [
+          providerStats.kudago,
+          providerStats.overpass,
+          providerStats.photon,
+          providerStats.llm_fill,
+        ],
+        totals: {
+          before_dedup: pois.length,
+          after_dedup: deduped.length,
+          returned: result.length,
+        },
+      },
+    };
   }
 
   private deduplicate(pois: PoiItem[]): PoiItem[] {
@@ -273,5 +469,312 @@ export class ProviderSearchService {
           rating: p.rating ?? 4.0,
         };
       });
+  }
+
+  // TRI-108-6: Search Photon API for food venues (cafes, restaurants)
+  private async searchPhotonForFood(city: string): Promise<PoiItem[]> {
+    this.logger.log(`[Photon] Starting food venue search for city: ${city}`);
+    const results: PoiItem[] = [];
+
+    // Detect if city is Russian (Cyrillic) or foreign
+    const isCyrillicCity = /[а-яА-ЯёЁ]/.test(city);
+    const searchLang = isCyrillicCity ? 'ru' : 'en';
+
+    // TRI-108-6 Extended: Multi-language queries
+    const queries = isCyrillicCity
+      ? [`кафе ${city}`, `ресторан ${city}`]
+      : [
+          `restaurant ${city}`,
+          `cafe ${city}`,
+          `食肆 ${city}`, // For Chinese cities
+        ];
+
+    for (const query of queries) {
+      try {
+        const url = new URL('https://photon.komoot.io/api/');
+        url.searchParams.set('q', query);
+        url.searchParams.set('limit', '10');
+        url.searchParams.set('lang', searchLang);
+
+        this.logger.log(`[Photon] Fetching: ${url.toString()}`);
+        const response = await fetch(url.toString());
+
+        if (!response.ok) {
+          this.logger.error(
+            `[Photon] ❌ HTTP ${response.status} for query "${query}"`,
+          );
+          continue;
+        }
+
+        const data = (await response.json()) as any;
+        const features = data.features || [];
+        this.logger.log(
+          `[Photon] Query "${query}" returned ${features.length} features`,
+        );
+
+        for (const feature of features) {
+          const props = feature.properties || {};
+          const coords = feature.geometry?.coordinates;
+
+          if (!coords || coords.length < 2) {
+            this.logger.warn(
+              `[Photon] Skipped ${props.name} - invalid coordinates`,
+            );
+            continue;
+          }
+
+          // Determine if it's a cafe or restaurant
+          const name = props.name || 'Unnamed Food Venue';
+          const amenity = props.amenity || '';
+
+          let category: 'cafe' | 'restaurant' = 'cafe';
+          if (/ресторан|rstoran|rest/i.test(name) || amenity === 'restaurant') {
+            category = 'restaurant';
+          }
+
+          const poi: PoiItem = {
+            id: `photon-${props.osm_id || randomUUID()}`,
+            name,
+            address: props.address || city,
+            category,
+            coordinates: { lat: coords[1], lon: coords[0] },
+            price_segment: 'mid',
+            rating: 4.2,
+            website: props.website || undefined,
+          };
+
+          results.push(poi);
+          this.logger.log(`[Photon] ✅ Added ${name} (${category})`);
+        }
+      } catch (error) {
+        this.logger.error(
+          `[Photon] ❌ Error for "${query}": ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    this.logger.log(
+      `[Photon] ✅ Search complete. Total results: ${results.length}`,
+    );
+    return results;
+  }
+
+  // TRI-108-6 Extended: Generate AI-recommended food venues based on user preferences + geocode them
+  private async generateFoodVenuesWithAI(
+    intent: ParsedIntent,
+  ): Promise<PoiItem[]> {
+    const preferences = intent.preferences_text.toLowerCase();
+
+    // Detect cuisine/atmosphere preferences from user text
+    let cuisineHints = 'diverse, popular local cuisine';
+    if (/местн|аутентич|традиц|оригинальн/.test(preferences))
+      cuisineHints = 'local authentic traditional cuisine';
+    if (/паста|итальян|пицц/.test(preferences)) cuisineHints = 'Italian';
+    if (/азиат|вьетнам|тайск|китай|суши/.test(preferences))
+      cuisineHints = 'Asian (Vietnamese, Thai, Chinese, Japanese)';
+    if (/франц|фран|европей/.test(preferences)) cuisineHints = 'French European';
+    if (/мекс|испан/.test(preferences)) cuisineHints = 'Mexican Spanish';
+
+    let atmosphereHints = 'popular, well-reviewed';
+    if (/круты|премиум|люкс|дорог|изыск/.test(preferences))
+      atmosphereHints = 'upscale, fine dining, sophisticated';
+    if (/бюджет|дешев|недорог|просто|сэкономить/.test(preferences))
+      atmosphereHints = 'budget-friendly, casual, no frills';
+    if (/модн|тренд|молод|hip|cool|стильн/.test(preferences))
+      atmosphereHints = 'trendy, modern, stylish, Instagram-worthy';
+    if (/уютн|комфорт|домашн|семей/.test(preferences))
+      atmosphereHints = 'cozy, comfortable, family-friendly';
+
+    let priceGuidance = 'mid-range (moderate price)';
+    if (intent.budget_per_day && intent.budget_per_day < 30)
+      priceGuidance = 'budget (cheap, street food, casual)';
+    if (intent.budget_per_day && intent.budget_per_day > 100)
+      priceGuidance = 'upscale (premium, fine dining)';
+
+    let contextGuidance = 'popular tourist favorites';
+    if (/культур|музе|театр|памятник|архитектур|историч/.test(preferences))
+      contextGuidance =
+        'match cultural vibe - elegant, sophisticated, classical cuisine';
+    if (/развлечени|ночн|клуб|вечер|весели|танц/.test(preferences))
+      contextGuidance =
+        'match nightlife vibe - fun, lively, good cocktails/wine, energetic';
+    if (/природ|парк|пешком|актив|спорт/.test(preferences))
+      contextGuidance = 'match outdoor activity vibe - casual, comfortable, energy-boosting';
+    if (/семья|дети|малыш/.test(preferences))
+      contextGuidance =
+        'family-friendly - diverse menu, accommodating for kids, relaxed';
+    if (/романт|свидани|влюблен|пара/.test(preferences))
+      contextGuidance = 'romantic - intimate, candle-lit, special occasion vibe';
+
+    const restaurantCount = Math.min(
+      5,
+      Math.max(2, Math.ceil(intent.days * 1.5)),
+    );
+
+    const prompt = `Generate ${restaurantCount} realistic, popular restaurant recommendations in ${intent.city}.
+
+USER PREFERENCES:
+- Cuisine style: ${cuisineHints}
+- Atmosphere: ${atmosphereHints}
+- Price range: ${priceGuidance}
+- Context: ${contextGuidance}
+- Trip type: ${intent.party_type} (${intent.party_size} people, ${intent.days} day(s))
+- Budget: ${intent.budget_total ? `${intent.budget_total} total` : 'not specified'}
+
+IMPORTANT:
+- Generate ONLY realistic, actual-sounding restaurants that match the city and preferences. No fictional places.
+- If restaurant name is in a foreign language (non-Cyrillic), include Russian transliteration or translation in parentheses.
+- Example: "Café de Paris (Кафе де Пари)" or "Schönbrunn Restaurant (Шёнбрунн)"
+
+Return ONLY valid JSON (no markdown):
+{
+  "restaurants": [
+    {
+      "name": "Restaurant Name (Russian Transliteration if foreign)",
+      "cuisine": "Cuisine Type",
+      "atmosphere": "brief atmosphere description",
+      "price_segment": "budget|mid|luxury",
+      "rating": 4.2,
+      "why_recommended": "1-2 sentences explaining why this matches user preferences"
+    }
+  ]
+}`;
+
+    try {
+      const response = await this.llmClientService.client.chat.completions.create(
+        {
+          model: this.llmClientService.model,
+          response_format: { type: 'json_object' },
+          temperature: 0.7,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You are a local food expert and travel guide. Generate realistic restaurant recommendations that perfectly match user preferences and city characteristics. Every restaurant must be realistic and sound authentic to the city.',
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+        },
+      );
+
+      const rawText = response.choices[0]?.message?.content ?? '{}';
+      const parsed = JSON.parse(rawText) as {
+        restaurants?: Array<{
+          name: string;
+          cuisine: string;
+          atmosphere: string;
+          price_segment: string;
+          rating: number;
+          why_recommended: string;
+        }>;
+      };
+
+      const restaurants = parsed.restaurants ?? [];
+      this.logger.log(
+        `[AI_FOOD] 🤖 LLM Generated ${restaurants.length} recommendations for ${intent.city}`,
+      );
+      if (restaurants.length > 0) {
+        this.logger.log(
+          `[AI_FOOD] LLM Suggestions: ${restaurants.map(r => `${r.name}(${r.cuisine})`).join(', ')}`,
+        );
+      }
+
+      // TRI-108-6 Extended: Geocode each AI restaurant with fuzzy matching + transliteration
+      const results: PoiItem[] = [];
+
+      for (const r of restaurants) {
+        try {
+          let suggestions: any = null;
+          let successStrategy: 'exact' | 'fuzzy' | 'generic' | null = null;
+
+          // Strategy 1: Exact name search
+          const exactQuery = `${r.name}, ${intent.city}`;
+          this.logger.debug(
+            `[AI_FOOD_GEOCODE] Strategy 1: "${exactQuery}"`,
+          );
+          suggestions = await this.geosearch.suggest(exactQuery);
+          if (suggestions && suggestions.length > 0) {
+            successStrategy = 'exact';
+          }
+
+          // Strategy 2: Fuzzy matching by cuisine type (if exact didn't work well)
+          if (!suggestions || suggestions.length === 0) {
+            const fuzzyQuery = `${r.cuisine} restaurant, ${intent.city}`;
+            this.logger.debug(
+              `[AI_FOOD_GEOCODE] Strategy 2: "${fuzzyQuery}"`,
+            );
+            suggestions = await this.geosearch.suggest(fuzzyQuery);
+            if (suggestions && suggestions.length > 0) {
+              successStrategy = 'fuzzy';
+            }
+          }
+
+          // Strategy 3: Generic restaurant search for the city
+          if (!suggestions || suggestions.length === 0) {
+            const genericQuery = `restaurant, ${intent.city}`;
+            this.logger.debug(
+              `[AI_FOOD_GEOCODE] Strategy 3: "${genericQuery}"`,
+            );
+            suggestions = await this.geosearch.suggest(genericQuery);
+            if (suggestions && suggestions.length > 0) {
+              successStrategy = 'generic';
+            }
+          }
+
+          if (suggestions && suggestions.length > 0) {
+            const best = suggestions[0];
+
+            // Map price_segment to valid PriceSegment
+            let priceSegment: 'free' | 'budget' | 'mid' | 'premium' = 'mid';
+            if (r.price_segment === 'budget') priceSegment = 'budget';
+            if (
+              r.price_segment === 'luxury' ||
+              r.price_segment === 'premium'
+            )
+              priceSegment = 'premium';
+
+            const poi: PoiItem = {
+              id: `ai-food-${intent.city.replace(/\s+/g, '-')}-${randomUUID().slice(0, 8)}`,
+              name: r.name,
+              address: best.address || exactQuery,
+              category: 'restaurant',
+              coordinates: {
+                lat: best.lat,
+                lon: best.lon,
+              },
+              price_segment: priceSegment,
+              rating: r.rating || 4.2,
+              website: undefined,
+              ai_generated: true,
+            };
+
+            results.push(poi);
+            this.logger.log(
+              `[AI_FOOD_GEOCODE] ✅ ${r.name} → (${best.lat.toFixed(2)}, ${best.lon.toFixed(2)})`,
+            );
+          } else {
+            this.logger.warn(
+              `[AI_FOOD_GEOCODE] ⚠️ All strategies failed for "${r.name}"`,
+            );
+          }
+        } catch (error) {
+          this.logger.warn(
+            `[AI_FOOD_GEOCODE] Error: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+
+      return results;
+    } catch (error: unknown) {
+      const errorMsg =
+        error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `[AI_FOOD] ❌ Food generation error: ${errorMsg}`,
+      );
+      throw error;
+    }
   }
 }

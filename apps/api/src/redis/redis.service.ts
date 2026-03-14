@@ -1,4 +1,9 @@
-import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+  Logger,
+} from '@nestjs/common';
 import Redis from 'ioredis';
 
 @Injectable()
@@ -63,5 +68,16 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     } catch {
       // ignore
     }
+  }
+
+  async executeCommand(
+    command: string,
+    ...args: (string | number | Buffer)[]
+  ): Promise<unknown> {
+    if (!this.available) {
+      throw new Error('REDIS_UNAVAILABLE');
+    }
+
+    return this.client!.call(command, ...args);
   }
 }

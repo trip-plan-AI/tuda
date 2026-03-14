@@ -6,6 +6,7 @@ export interface PoiItem {
   id: string;
   name: string;
   address: string;
+  logical_id?: string;
   coordinates: {
     lat: number;
     lon: number;
@@ -17,11 +18,22 @@ export interface PoiItem {
   phone?: string;
   website?: string;
   image_url?: string;
+  ai_generated?: boolean; // TRI-108-6: Mark AI-generated food POIs
 }
 
 export interface FilteredPoiResponse {
   selected: Array<{
     id: string;
+    description: string;
+  }>;
+}
+
+export interface LlmGeneratedPoiResponse {
+  selected: Array<{
+    id: string;
+    name: string;
+    category: PoiCategory;
+    rating?: number;
     description: string;
   }>;
 }

@@ -13,7 +13,11 @@ export class GeosearchController {
   ) {
     const userLat = lat ? parseFloat(lat) : undefined;
     const userLon = lon ? parseFloat(lon) : undefined;
-    const results = await this.geosearchService.suggest(query ?? '', userLat, userLon);
+    const results = await this.geosearchService.suggest(
+      query ?? '',
+      userLat,
+      userLon,
+    );
     return { results };
   }
 
