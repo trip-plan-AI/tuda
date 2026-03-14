@@ -143,6 +143,8 @@ services:
   dozzle:
     image: amir20/dozzle:latest
     restart: unless-stopped
+    environment:
+      DOZZLE_BASE: /dozzle
     expose:
       - '8080'
     volumes:
