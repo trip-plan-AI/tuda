@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
-// Simulating the budget extraction logic
+// Simulating the budget extraction logic (with improved regex)
 
 function extractPoiCount(text) {
-  const matches = text.match(/(\d+)\s+(мест|место|places?|достопримечательностей?|points?|point)/i);
+  // Matches "3 места", "3 интересных места", "find 5 places" (supports Cyrillic words)
+  const matches = text.match(/(\d+)\s+(?:[а-яёa-z]+\s+)*(мест|место|places?|достопримечательностей?|points?|point)/i);
   return matches ? Math.max(1, Math.min(20, parseInt(matches[1], 10))) : null;
 }
 
