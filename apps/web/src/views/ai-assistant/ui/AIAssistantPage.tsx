@@ -161,10 +161,13 @@ export function AIAssistantPage() {
     const tripId = currentTrip?.id;
     if (!tripId || tripId.startsWith('guest-')) return;
 
-    // Если активная сессия уже связана с этим tripId — не дёргаем from-trip повторно.
+    // Если активная сессия уже связана с этим tripId и синхронизирована с бэком (sessionId есть) —
+    // не дёргаем from-trip повторно.
     // Иначе каждый trip:refresh → loadTripData → openOrCreateSessionFromTrip → trip:refresh...
+    // ВАЖНО: проверяем sessionId, а не messages.length — при switchSession messages = [] временно,
+    // что ломало защиту и вызывало бесконечный цикл при переключении чатов.
     const currentActiveSession = activeSessionId ? sessions[activeSessionId] : null;
-    if (currentActiveSession?.tripId === tripId && currentActiveSession.messages.length > 0) return;
+    if (currentActiveSession?.tripId === tripId && currentActiveSession.sessionId) return;
 
     void openOrCreateSessionFromTrip(tripId);
   }, [currentTrip?.id, isSessionsLoading]);
