@@ -14,6 +14,83 @@ export class SemanticFilterService {
 
   constructor(private readonly llmClientService: LlmClientService) {}
 
+  async compareProviders(
+    pois: PoiItem[],
+    intent: ParsedIntent,
+  ): Promise<{
+    yandex: { pois: FilteredPoi[]; error?: string; duration_ms: number };
+    openrouter: { pois: FilteredPoi[]; error?: string; duration_ms: number };
+  }> {
+    const [yandexResult, openrouterResult] = await Promise.allSettled([
+      (async () => {
+        const t0 = Date.now();
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15_000);
+        try {
+          const apiKey = process.env.YANDEX_GPT_API_KEY;
+          const folderId = process.env.YANDEX_FOLDER_ID;
+          if (!apiKey || !folderId) throw new Error('Missing YandexGPT env');
+
+          const prompt = this.buildPrompt(pois, intent);
+          const response = await fetch(
+            'https://llm.api.cloud.yandex.net/foundationModels/v1/completion',
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Api-Key ${apiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                modelUri: `gpt://${folderId}/yandexgpt-lite`,
+                completionOptions: { stream: false, temperature: 0.2, maxTokens: 2000 },
+                messages: [{ role: 'user', text: prompt }],
+              }),
+              signal: controller.signal,
+            },
+          );
+          if (!response.ok) throw new Error(`YandexGPT HTTP ${response.status}`);
+
+          const payload = (await response.json()) as {
+            result?: { alternatives?: Array<{ message?: { text?: string } }> };
+          };
+          const rawText = payload.result?.alternatives?.[0]?.message?.text ?? '{}';
+          const jsonText = rawText.replace(/```json\n?|\n?```/g, '');
+          const parsed = JSON.parse(jsonText) as FilteredPoiResponse;
+          const selectedRaw = Array.isArray(parsed.selected) ? parsed.selected : [];
+          const selected = selectedRaw
+            .map((item) => {
+              const original = this.resolvePoiByModelId(pois, item.id);
+              if (!original) return null;
+              return { ...original, description: item.description };
+            })
+            .filter((item): item is FilteredPoi => item !== null);
+
+          return { pois: selected, duration_ms: Date.now() - t0 };
+        } finally {
+          clearTimeout(timer);
+          controller.abort();
+        }
+      })(),
+      (async () => {
+        const t0 = Date.now();
+        const result = await this.selectWithOpenRouter(pois, intent);
+        return { pois: result, duration_ms: Date.now() - t0 };
+      })(),
+    ]);
+
+    const toResult = (
+      r: PromiseSettledResult<{ pois: FilteredPoi[]; duration_ms: number }>,
+    ) =>
+      r.status === 'fulfilled'
+        ? r.value
+        : { pois: [], error: String((r as PromiseRejectedResult).reason), duration_ms: 0 };
+
+    return {
+      yandex: toResult(yandexResult),
+      openrouter: toResult(openrouterResult),
+    };
+  }
+
   async select(
     pois: PoiItem[],
     intent: ParsedIntent,

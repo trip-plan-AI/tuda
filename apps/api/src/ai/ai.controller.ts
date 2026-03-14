@@ -15,6 +15,7 @@ import {
   UnprocessableEntityException,
   UseGuards,
 } from '@nestjs/common';
+import { SetMetadata } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Request } from 'express';
 import { Observable } from 'rxjs';
@@ -1104,5 +1105,65 @@ ${JSON.stringify(points)}
     }
 
     return { session_id: session.id, trip_id: tripId };
+  }
+
+  @Post('test/compare-providers')
+  @SetMetadata('isPublic', true)
+  async compareProviders(
+    @Body()
+    body: {
+      city: string;
+      preferences?: string;
+      days?: number;
+      pois?: PoiItem[];
+    },
+  ) {
+    const { city, preferences = 'интересные места' } = body;
+
+    const fallbacks: string[] = [];
+    const intent = await this.orchestratorService.parseIntent(
+      `${city}. ${preferences}`,
+      [],
+    );
+
+    let pois: PoiItem[];
+    if (body.pois && body.pois.length > 0) {
+      pois = body.pois.slice(0, 20);
+    } else {
+      const { pois: poisRaw } = await this.providerSearchService.fetchAndFilter(
+        { ...intent, city: intent.city || city },
+        fallbacks,
+      );
+      pois = poisRaw.slice(0, 20);
+    }
+
+    const comparison = await this.semanticFilterService.compareProviders(pois, intent);
+
+    return {
+      city: intent.city || city,
+      input_poi_count: pois.length,
+      yandex: {
+        count: comparison.yandex.pois.length,
+        duration_ms: comparison.yandex.duration_ms,
+        error: comparison.yandex.error,
+        pois: comparison.yandex.pois.map((p) => ({
+          name: p.name,
+          category: p.category,
+          rating: p.rating,
+          description: p.description,
+        })),
+      },
+      openrouter: {
+        count: comparison.openrouter.pois.length,
+        duration_ms: comparison.openrouter.duration_ms,
+        error: comparison.openrouter.error,
+        pois: comparison.openrouter.pois.map((p) => ({
+          name: p.name,
+          category: p.category,
+          rating: p.rating,
+          description: p.description,
+        })),
+      },
+    };
   }
 }
