@@ -11,6 +11,8 @@ interface MessageBubbleProps {
   hasLinkedTrip?: boolean;
   appliedTripId?: string | null;
   onOpenPlanner?: (tripId: string | null, messageId?: string) => void;
+  onDeletePoint?: (pointName: string) => Promise<void>;
+  isLatestRoutePlan?: boolean;
 }
 
 export function MessageBubble({
@@ -20,6 +22,8 @@ export function MessageBubble({
   hasLinkedTrip = false,
   appliedTripId = null,
   onOpenPlanner,
+  onDeletePoint,
+  isLatestRoutePlan = false,
 }: MessageBubbleProps) {
   // TRI-104: bubble знает контекст связки chat<->trip и меняет CTA:
   // "Применить план" только для первого создания trip из чата.
@@ -99,9 +103,19 @@ export function MessageBubble({
                     return (
                       <div
                         key={`${day.day_number}-${poi.poiId}-${point.order}`}
-                        className="rounded-lg border border-slate-100 bg-white p-2"
+                        className="relative rounded-lg border border-slate-100 bg-white p-2"
                       >
-                        <p className="text-sm font-medium text-slate-800">{poi.name}</p>
+                        {onDeletePoint && isLatestRoutePlan && (
+                          <button
+                            type="button"
+                            onClick={() => onDeletePoint(poi.name)}
+                            className="absolute top-1 right-1 text-red-500 hover:text-red-700 text-lg leading-none"
+                            title="Удалить точку"
+                          >
+                            ✕
+                          </button>
+                        )}
+                        <p className="text-sm font-medium text-slate-800 pr-5">{poi.name}</p>
                         <p className="mt-0.5 text-xs text-slate-500">{poi.address}</p>
                         {poi.description && (
                           <p className="mt-1 text-xs text-slate-500">{poi.description}</p>
@@ -148,32 +162,6 @@ export function MessageBubble({
                   </button>
                 )}
 
-                {(wasApplied || hasLinkedTrip) &&
-                  (onOpenPlanner ? (
-                    <button
-                      type="button"
-                      onClick={() => onOpenPlanner(appliedTripId, message.id)}
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-brand-indigo hover:text-brand-indigo"
-                    >
-                      Открыть Planner 🗺️
-                    </button>
-                  ) : (
-                    <Link
-                      href={
-                        // TRI-104 / DRAFT-HANDOFF:
-                        // Задача: передать в Planner факт, что переход идёт из конкретной AI-версии.
-                        // Функция: draftMessageId триггерит сравнение/предупреждение в PlannerPage.
-                        // Если убрать draftMessageId, переход на тот же tripId может выглядеть как
-                        // "ничего нового", и пользователь не увидит предупреждение о замене.
-                        appliedTripId
-                          ? `/planner?applyTripId=${encodeURIComponent(appliedTripId)}&draftMessageId=${encodeURIComponent(message.id)}`
-                          : '/planner'
-                      }
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-brand-indigo hover:text-brand-indigo"
-                    >
-                      Открыть Planner 🗺️
-                    </Link>
-                  ))}
               </div>
             )}
           </div>

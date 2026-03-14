@@ -277,7 +277,7 @@ async function insertCitiesBatch(cities: GeoNamesCity[]): Promise<void> {
   };
 
   try {
-    const valuesToInsert = [];
+    const valuesToInsert: any[] = [];
     for (const city of cities) {
       // Переводим на русский
       const nameRu = await translateCityToRussian(city.name);
