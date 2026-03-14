@@ -854,7 +854,8 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           const nextSession: ChatSession = {
             ...freshTarget,
             messages: mappedMessages,
-            updatedAt: new Date().toISOString(),
+            // Не обновляем updatedAt при загрузке истории —
+            // это вызывало пересортировку sessionsList и визуальное моргание
             justCleared: undefined,
           };
 

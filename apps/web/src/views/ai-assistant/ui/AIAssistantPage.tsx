@@ -161,12 +161,11 @@ export function AIAssistantPage() {
     const tripId = currentTrip?.id;
     if (!tripId || tripId.startsWith('guest-')) return;
 
-    // Всегда вызываем from-trip при смене currentTrip — бэкенд сам определит,
-    // нужно ли добавлять контекст (если маршрут изменился) или нет.
-    // hasTripSession-проверку намеренно убрали: она блокировала синхронизацию
-    // при переходе из Planner в AI-чат с уже существующей сессией.
-    // sessions намеренно НЕ в deps (см. ниже), поэтому эффект не срабатывает
-    // после удаления сессии — только при смене trip или завершении загрузки.
+    // Если активная сессия уже связана с этим tripId — не дёргаем from-trip повторно.
+    // Иначе каждый trip:refresh → loadTripData → openOrCreateSessionFromTrip → trip:refresh...
+    const currentActiveSession = activeSessionId ? sessions[activeSessionId] : null;
+    if (currentActiveSession?.tripId === tripId && currentActiveSession.messages.length > 0) return;
+
     void openOrCreateSessionFromTrip(tripId);
   }, [currentTrip?.id, isSessionsLoading]);
 

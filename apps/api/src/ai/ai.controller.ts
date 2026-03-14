@@ -1464,8 +1464,13 @@ ${JSON.stringify(points)}
       ]);
     }
 
-    this.eventsService.emitTripRefresh(tripId);
-    this.eventsService.emitAiUpdate(tripId, session.id);
+    // Эмитим события только если маршрут реально изменился или сессия новая.
+    // Иначе каждый вход на AI-страницу вызывал trip:refresh → loadTripData() →
+    // openOrCreateSessionFromTrip → бесконечный цикл.
+    if (!lastRoutePlan || routeChanged) {
+      this.eventsService.emitTripRefresh(tripId);
+      this.eventsService.emitAiUpdate(tripId, session.id);
+    }
 
     return { session_id: session.id, trip_id: tripId };
   }
