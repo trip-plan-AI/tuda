@@ -14,7 +14,7 @@ import { calcNights } from '@/shared/lib/formatters';
 import { cn } from '@/shared/lib/utils';
 import type { Trip } from '@/entities/trip/model/trip.types';
 import { useTripStore } from '@/entities/trip/model/trip.store';
-import { collaborateApi } from '@/features/route-collaborate/api/collaborate.api';
+import { collaborateApi, type Collaborator } from '@/features/route-collaborate/api/collaborate.api';
 
 function getInitials(name?: string, email?: string): string {
   const text = name || email || '';
@@ -138,7 +138,7 @@ export function TripCard({
   const coverSrc = trip.img || COVER_FALLBACK;
 
   // ── Загружаем участников через API ──
-  const [participants, setParticipants] = useState<any[]>([]);
+  const [participants, setParticipants] = useState<Collaborator[]>([]);
 
   useEffect(() => {
     collaborateApi
@@ -176,10 +176,10 @@ export function TripCard({
               className="w-10 h-10 rounded-full border-2 border-slate-200 overflow-hidden
                             bg-brand-indigo/10 flex items-center justify-center text-[12px] font-bold text-brand-indigo shrink-0"
             >
-              {owner.avatarUrl ? (
+              {owner.photo ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={owner.avatarUrl}
+                  src={owner.photo}
                   alt={owner.name ?? owner.email}
                   className="w-full h-full object-cover"
                 />
