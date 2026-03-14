@@ -46,6 +46,7 @@ interface PersistentMapStore {
 }
 
 const registry = new Map<string, InternalConfig>();
+
 function pickActiveConfig(): PersistentMapConfig | null {
   const entries = Array.from(registry.values());
   if (entries.length === 0) return null;
@@ -63,12 +64,39 @@ function pickActiveConfig(): PersistentMapConfig | null {
   return config;
 }
 
-export const usePersistentMapStore = create<PersistentMapStore>((set) => ({
+// Ключ из стабильных данных — без колбэков. Используется чтобы не обновлять store
+// когда менялись только функции-колбэки (иначе RouteMap ре-рендерится в цикле).
+function configDataKey(c: PersistentMapConfig): string {
+  const pts = c.points
+    .map((p) => `${p.id}:${p.lon?.toFixed(6)},${p.lat?.toFixed(6)},${p.transportMode ?? ''}`)
+    .join('|');
+  return [
+    c.source,
+    c.priority,
+    c.routeProfile ?? '',
+    String(c.draggable ?? true),
+    String(c.readonly ?? false),
+    String(c.isAddPointMode ?? false),
+    String(c.isDropdownOpen ?? false),
+    c.fitKey ?? '',
+    c.focusCoords ? `${c.focusCoords.lon},${c.focusCoords.lat}` : '',
+    pts,
+  ].join('\x00');
+}
+
+export const usePersistentMapStore = create<PersistentMapStore>((set, get) => ({
   config: null,
   sheetState: 'medium',
   setConfig: (config) => {
     registry.set(config.source, { ...config, updatedAt: Date.now() });
-    set({ config: pickActiveConfig() });
+    const nextConfig = pickActiveConfig();
+    const currentConfig = get().config;
+    // Обновляем store только если изменились данные, а не только колбэки.
+    // Это предотвращает цикл: onRouteInfoUpdate → setRouteInfo → ре-рендер PlannerPage
+    // → новые колбэки → setConfig → ре-рендер RouteMap → onRouteInfoUpdate → ...
+    if (!currentConfig || configDataKey(currentConfig) !== configDataKey(nextConfig!)) {
+      set({ config: nextConfig });
+    }
   },
   clearConfig: (source) => {
     registry.delete(source);
