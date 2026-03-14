@@ -277,11 +277,21 @@ export class ProviderSearchService {
       `[ProviderSearch] Deduplication complete. Unique points: ${deduped.length}`,
     );
 
-    // 5) Pre-filter с квотированием:
+    // 5) Pre-filter с квотированием (TRI-108-6 Extended: Dynamic ratio based on hasFoodFocus)
     // Если просто отсортировать по рейтингу, еда (с дефолтом 4.5) вытеснит все музеи (с дефолтом 4.0).
-    // Поэтому мы разделяем точки и берем Топ-50 не-еды и Топ-50 еды.
-    const MAX_NON_FOOD_FOR_LLM = 50;
-    const MAX_FOOD_FOR_LLM = 50;
+    // Поэтому мы разделяем точки и берем топ не-еды и топ еды.
+    // TRI-108-6 Extended: Если hasFoodFocus - даем LLM больше food POI на выбор (80/20 вместо 50/50)
+    const hasFoodFocusForPreFilter =
+      /гастро|ресторан|кафе|с\s+кафе|кофе|еда|дегустац|гурман|булка|пирог|торт|сладкое|кулинарн|фудтур|по\s+кафе|поесть|перекус|пищу/i.test(
+        intent.preferences_text.toLowerCase(),
+      );
+
+    const MAX_NON_FOOD_FOR_LLM = hasFoodFocusForPreFilter ? 20 : 50;
+    const MAX_FOOD_FOR_LLM = hasFoodFocusForPreFilter ? 80 : 50;
+
+    this.logger.log(
+      `[ProviderSearch] TRI-108-6: Pre-filter ratio - Non-food:${MAX_NON_FOOD_FOR_LLM} Food:${MAX_FOOD_FOR_LLM} (hasFoodFocusForPreFilter=${hasFoodFocusForPreFilter})`,
+    );
 
     const nonFood = deduped.filter(
       (p) => p.category !== 'restaurant' && p.category !== 'cafe',
