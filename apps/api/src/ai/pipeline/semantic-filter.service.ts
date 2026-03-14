@@ -479,15 +479,34 @@ ${hasFoodFocus ? 'ВАЖНО: Включи много мест с едой (ре
       entertainmentCategories,
     );
 
+    // Build budget-aware instructions with price segment guidance
+    const budgetInstructions = this.buildBudgetInstructions(
+      intent.budget_total,
+      intent.budget_per_day,
+      intent.days,
+      intent.party_size,
+      minPlaces,
+    );
+
+    // Add quantitative constraints from user query
+    const quantityConstraints = this.buildQuantityConstraints(
+      intent.poi_count_requested,
+      intent.min_restaurants,
+      intent.min_cafes,
+      intent.max_poi,
+      minPlaces,
+      maxPlaces,
+    );
+
     return `Мы собрали список из ${pois.length} мест вокруг. Выбери из них от ${minPlaces} до ${maxPlaces} самых интересных и подходящих мест для туристического маршрута.
 
 Критерии выбора:
 1. Запрос пользователя: ${intent.preferences_text}
 2. Тип компании: ${intent.party_type}
-3. Бюджет: ${intent.budget_total ?? 'не указан'} руб.
+3. Бюджет: ${budgetInstructions}
 4. Категории: постарайся найти места, соответствующие категориям [${intent.categories.join(', ')}].
 5. Избегай категорий: [${intent.excluded_categories.join(', ')}].
-6. Выбирай разнообразные места, чтобы маршрут был интересным.
+6. ${quantityConstraints || 'Выбирай разнообразные места, чтобы маршрут был интересным.'}
 7. Правила по питанию (гарантия еды в маршруте):
    - Явный гастро-фокус в запросе: ${hasFoodFocus ? 'ДА' : 'НЕТ'}.
    - Обязательные минимумы:
@@ -561,5 +580,35 @@ ${priceSegmentGuidance}
 Если нужно выбрать рестораны - бери дешевые и середину по цене, избегай дорогих.`;
 
     return instructions;
+  }
+
+  private buildQuantityConstraints(
+    poiCountRequested: number | null,
+    minRestaurants: number | null,
+    minCafes: number | null,
+    maxPoi: number | null,
+    minPlaces: number,
+    maxPlaces: number,
+  ): string {
+    const constraints: string[] = [];
+
+    if (poiCountRequested) {
+      constraints.push(`Пользователь просит ровно ${poiCountRequested} мест`);
+    }
+    if (minRestaurants) {
+      constraints.push(`ОБЯЗАТЕЛЬНО включи минимум ${minRestaurants} ресторанов`);
+    }
+    if (minCafes) {
+      constraints.push(`ОБЯЗАТЕЛЬНО включи минимум ${minCafes} кафе`);
+    }
+    if (maxPoi) {
+      constraints.push(`НЕ выбирай больше ${maxPoi} мест`);
+    }
+
+    if (constraints.length === 0) {
+      return 'Выбирай разнообразные места, чтобы маршрут был интересным.';
+    }
+
+    return `КОЛИЧЕСТВЕННЫЕ ОГРАНИЧЕНИЯ: ${constraints.join('. ')}.`;
   }
 }
