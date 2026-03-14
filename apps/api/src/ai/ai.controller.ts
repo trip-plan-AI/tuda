@@ -1167,4 +1167,130 @@ ${JSON.stringify(points)}
       },
     };
   }
+
+  @Post('test/strategy/llm-only')
+  @SetMetadata('isPublic', true)
+  async testLlmOnly(
+    @Body() body: { query: string },
+  ) {
+    const { query } = body;
+    const intent = await this.orchestratorService.parseIntent(query, []);
+
+    const t0 = Date.now();
+    const pois = await this.semanticFilterService.generatePoiFromScratch(intent);
+    const duration = Date.now() - t0;
+
+    return {
+      strategy: 'llm-only',
+      city: intent.city || 'unknown',
+      query,
+      poi_count: pois.length,
+      duration_ms: duration,
+      pois: pois.map((p) => ({
+        name: p.name,
+        category: p.category,
+        rating: p.rating,
+        description: p.description,
+      })),
+    };
+  }
+
+  @Post('test/strategy/provider-only')
+  @SetMetadata('isPublic', true)
+  async testProviderOnly(
+    @Body() body: { query: string },
+  ) {
+    const { query } = body;
+    const fallbacks: string[] = [];
+    const intent = await this.orchestratorService.parseIntent(query, []);
+
+    const t0 = Date.now();
+    const { pois: poisRaw } = await this.providerSearchService.fetchAndFilter(
+      intent,
+      fallbacks,
+    );
+    const duration = Date.now() - t0;
+
+    const pois = poisRaw.slice(0, 20);
+
+    return {
+      strategy: 'provider-only',
+      city: intent.city || 'unknown',
+      query,
+      poi_count: pois.length,
+      duration_ms: duration,
+      fallbacks: fallbacks.length > 0 ? fallbacks : undefined,
+      pois: pois.map((p) => ({
+        name: p.name,
+        category: p.category,
+        rating: p.rating,
+      })),
+    };
+  }
+
+  @Post('test/strategy/hybrid')
+  @SetMetadata('isPublic', true)
+  async testHybrid(
+    @Body() body: { query: string },
+  ) {
+    const { query } = body;
+    const fallbacks: string[] = [];
+    const intent = await this.orchestratorService.parseIntent(query, []);
+
+    // Step 1: Try provider search first
+    const t0 = Date.now();
+    const { pois: poisRaw } = await this.providerSearchService.fetchAndFilter(
+      intent,
+      fallbacks,
+    );
+    const providerDuration = Date.now() - t0;
+
+    let pois = poisRaw.slice(0, 20);
+
+    // Step 2: If provider returned too few POI, supplement with LLM
+    if (pois.length < 10) {
+      const t1 = Date.now();
+      const llmPois = await this.semanticFilterService.selectWithOpenRouter(
+        pois,
+        intent,
+      );
+      const llmDuration = Date.now() - t1;
+      pois = llmPois;
+
+      return {
+        strategy: 'hybrid',
+        city: intent.city || 'unknown',
+        query,
+        poi_count: pois.length,
+        provider_duration_ms: providerDuration,
+        llm_supplement_duration_ms: llmDuration,
+        total_duration_ms: providerDuration + llmDuration,
+        fallbacks: fallbacks.length > 0 ? fallbacks : undefined,
+        used_llm_supplement: true,
+        pois: (pois as FilteredPoi[]).map((p) => ({
+          name: p.name,
+          category: p.category,
+          rating: p.rating,
+          description: p.description,
+        })),
+      };
+    }
+
+    return {
+      strategy: 'hybrid',
+      city: intent.city || 'unknown',
+      query,
+      poi_count: pois.length,
+      provider_duration_ms: providerDuration,
+      llm_supplement_duration_ms: 0,
+      total_duration_ms: providerDuration,
+      fallbacks: fallbacks.length > 0 ? fallbacks : undefined,
+      used_llm_supplement: false,
+      pois: pois.map((p) => ({
+        name: p.name,
+        category: p.category,
+        rating: p.rating,
+      })),
+    };
+  }
 }

@@ -28,6 +28,16 @@ export interface FilteredPoiResponse {
   }>;
 }
 
+export interface LlmGeneratedPoiResponse {
+  selected: Array<{
+    id: string;
+    name: string;
+    category: PoiCategory;
+    rating?: number;
+    description: string;
+  }>;
+}
+
 export interface FilteredPoi extends PoiItem {
   description: string;
 }

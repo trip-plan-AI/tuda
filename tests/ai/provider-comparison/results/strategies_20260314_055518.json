@@ -1,0 +1,938 @@
+{
+  "timestamp": "2026-03-14T05:43:50.832836",
+  "total_queries": 21,
+  "strategies": [
+    "llm-only",
+    "provider-only",
+    "hybrid"
+  ],
+  "tests": [
+    {
+      "query": "Chiang Mai. Вайбовые места, которые мало кто знает, ночная жизнь, локальные барчики, крутое место для фотографий",
+      "city": "Chiang Mai",
+      "category": "vibe",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 3978,
+          "categories": {
+            "attraction": 3,
+            "cafe": 1,
+            "restaurant": 1,
+            "bar": 1
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 6024,
+          "categories": {
+            "attraction": 13,
+            "park": 1,
+            "museum": 4,
+            "shopping": 2
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "attraction": 13,
+            "park": 1,
+            "museum": 4,
+            "shopping": 2
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Tbilisi. Хотим прочувствовать культуру и стиль Грузии, скрытые места, местное вино, грузинская еда. Бюджет 18 тысяч рублей.",
+      "city": "Tbilisi",
+      "category": "budget",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 4657,
+          "categories": {
+            "restaurant": 3,
+            "cafe": 2,
+            "historic": 1
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 18,
+          "duration_ms": 8977,
+          "categories": {
+            "restaurant": 9,
+            "cafe": 9
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "entertainment": 11,
+            "museum": 8,
+            "shopping": 1
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Tirana. Крутые места которые мало кто знает, уличное искусство, молодежная тусовка, граффити. Не более 12 тысяч на весь день.",
+      "city": "Tirana",
+      "category": "budget",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 4359,
+          "categories": {
+            "attraction": 5,
+            "restaurant": 1
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 6423,
+          "categories": {
+            "entertainment": 4,
+            "attraction": 16
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "entertainment": 4,
+            "attraction": 16
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Sofia. Хотим прочувствовать культуру и стиль Болгарии, вкусно и не дорого поесть, посмотреть красоты города. Бюджет 10 тысяч рублей.",
+      "city": "Sofia",
+      "category": "budget",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 18,
+          "duration_ms": 8086,
+          "categories": {
+            "historic": 5,
+            "museum": 3,
+            "attraction": 5,
+            "restaurant": 3,
+            "cafe": 2
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 10475,
+          "categories": {
+            "attraction": 2,
+            "entertainment": 10,
+            "museum": 8
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "restaurant": 10,
+            "cafe": 10
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Split. Ищем пляжные вайбовые места, локальные пивные и барчики, крутые точки на пляжу. Недорого. 15 тысяч на 2 дня.",
+      "city": "Split",
+      "category": "budget",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 12,
+          "duration_ms": 6366,
+          "categories": {
+            "attraction": 6,
+            "cafe": 3,
+            "restaurant": 3
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 8202,
+          "categories": {
+            "restaurant": 11,
+            "cafe": 9
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "entertainment": 3,
+            "attraction": 14,
+            "cafe": 3
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Bangkok. У нас есть ровно 15 тысяч рублей на 3 дня. Нужно уместиться в этот бюджет. Предпочитаем местную еду, храмы, ночной рынок.",
+      "city": "Bangkok",
+      "category": "budget",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 18,
+          "duration_ms": 9183,
+          "categories": {
+            "historic": 6,
+            "attraction": 8,
+            "museum": 2,
+            "restaurant": 2
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 12736,
+          "categories": {
+            "museum": 7,
+            "attraction": 3,
+            "entertainment": 7,
+            "shopping": 3
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "restaurant": 10,
+            "cafe": 10
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Hanoi. На ровно 10 тысяч рублей на 2 дня. Максимум дешевых и бесплатных мест. Не нужны экскурсии - сами гулять будем. Хотим традиционный Ханой, местную еду, старый город.",
+      "city": "Hanoi",
+      "category": "budget",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 12,
+          "duration_ms": 6433,
+          "categories": {
+            "historic": 4,
+            "attraction": 3,
+            "cafe": 2,
+            "museum": 1,
+            "restaurant": 2
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 8606,
+          "categories": {
+            "attraction": 17,
+            "park": 3
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "restaurant": 10,
+            "cafe": 10
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Kyoto. Классические храмы, традиционные сады, дзен-медитация. Ищем спокойное место для размышлений и духовного развития.",
+      "city": "Kyoto",
+      "category": "spiritual",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 3937,
+          "categories": {
+            "historic": 4,
+            "attraction": 2
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 1,
+          "duration_ms": 22395,
+          "categories": {
+            "attraction": 1
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "LLM_GENERATED_MISSING_POIS"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 1,
+          "duration_ms": 0,
+          "categories": {
+            "attraction": 1
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "LLM_GENERATED_MISSING_POIS"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Kraków. Скрытые места Казимежа, еврейская история, локальные бары, пивные. Дешево и атмосферно.",
+      "city": "Kraków",
+      "category": "budget",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 4397,
+          "categories": {
+            "historic": 1,
+            "attraction": 1,
+            "bar": 1,
+            "restaurant": 1,
+            "museum": 1,
+            "brewery": 1
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 9236,
+          "categories": {
+            "restaurant": 10,
+            "cafe": 10
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "restaurant": 10,
+            "cafe": 10
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Kraków. Средневековые замки, историческое наследие, музеи, подземные туры. Хотим прочувствовать польскую историю.",
+      "city": "Kraków",
+      "category": "culture",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 4756,
+          "categories": {
+            "historic": 4,
+            "attraction": 2
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 11606,
+          "categories": {
+            "museum": 13,
+            "entertainment": 6,
+            "attraction": 1
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 1,
+          "duration_ms": 0,
+          "categories": {
+            "attraction": 1
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "LLM_GENERATED_MISSING_POIS"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Kraków. Местные пирожки, традиционные корчмы, пивные на каждом углу, дёшево. Максимум локального вайба на 12 тысяч.",
+      "city": "Kraków",
+      "category": "budget",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 3350,
+          "categories": {
+            "restaurant": 3,
+            "pub": 2,
+            "cafe": 1
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 9266,
+          "categories": {
+            "restaurant": 10,
+            "cafe": 10
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "restaurant": 10,
+            "cafe": 10
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Valencia. Паэлья, пляжные клубы, современная архитектура, средиземноморская еда. Ищем вкусное и красивое.",
+      "city": "Valencia",
+      "category": "food",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 5921,
+          "categories": {
+            "restaurant": 2,
+            "attraction": 2,
+            "cafe": 1,
+            "historic": 1
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 8916,
+          "categories": {
+            "entertainment": 10,
+            "shopping": 1,
+            "museum": 9
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "entertainment": 10,
+            "shopping": 1,
+            "museum": 9
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Hoi An. Уличная еда, вьетнамская кухня, кулинарные мастер-классы, местные рынки. Главное - поесть и попробовать местное.",
+      "city": "Hoi An",
+      "category": "food",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 4419,
+          "categories": {
+            "restaurant": 2,
+            "cafe": 2,
+            "market": 1,
+            "attraction": 1
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 9032,
+          "categories": {
+            "restaurant": 9,
+            "cafe": 11
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "museum": 6,
+            "park": 2,
+            "attraction": 11,
+            "shopping": 1
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Porto. Локальное португальское вино, речные прогулки, уличное искусство, дешево. Ищем аутентичное, не туристическое.",
+      "city": "Porto",
+      "category": "budget",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 6407,
+          "categories": {
+            "attraction": 4,
+            "cafe": 1,
+            "restaurant": 1
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 13226,
+          "categories": {
+            "attraction": 20
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "attraction": 20
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "PHOTON_FOOD_SEARCH_SUPPLEMENT"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Porto. Архитектура, исторические места, музеи. Хотим понять историю города. Бюджет 15 тысяч.",
+      "city": "Porto",
+      "category": "budget",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 5062,
+          "categories": {
+            "historic": 4,
+            "attraction": 1,
+            "museum": 1
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 1,
+          "duration_ms": 17042,
+          "categories": {
+            "attraction": 1
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "LLM_GENERATED_MISSING_POIS"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "entertainment": 2,
+            "shopping": 3,
+            "museum": 8,
+            "attraction": 7
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Москва. Хочу крутые места с едой, атмосфера, не скучно, где можно потусить с друзьями",
+      "city": "Москва",
+      "category": "vibe",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 2983,
+          "categories": {
+            "restaurant": 2,
+            "attraction": 3,
+            "cafe": 1
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 29583,
+          "categories": {
+            "attraction": 4,
+            "entertainment": 10,
+            "museum": 4,
+            "shopping": 2
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 1,
+          "duration_ms": 0,
+          "categories": {
+            "attraction": 1
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "LLM_GENERATED_MISSING_POIS"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Москва. Музеи, выставки, культурные центры, театры. Хотим проникнуться российской культурой.",
+      "city": "Москва",
+      "category": "culture",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 3921,
+          "categories": {
+            "museum": 3,
+            "theater": 2,
+            "cultural center": 1
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 1054,
+          "categories": {
+            "entertainment": 3,
+            "attraction": 13,
+            "museum": 3,
+            "park": 1
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "entertainment": 3,
+            "attraction": 13,
+            "museum": 3,
+            "park": 1
+          },
+          "fallbacks": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Санкт-Петербург. Дворцы, музеи, культура. Хотим прочувствовать петербургскую атмосферу. Бюджет 20 тысяч рублей.",
+      "city": "Санкт-Петербург",
+      "category": "budget",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 3805,
+          "categories": {
+            "museum": 3,
+            "historic": 2,
+            "attraction": 1
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 1045,
+          "categories": {
+            "museum": 8,
+            "attraction": 8,
+            "entertainment": 1,
+            "park": 3
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "museum": 8,
+            "attraction": 8,
+            "entertainment": 1,
+            "park": 3
+          },
+          "fallbacks": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Санкт-Петербург. Альтернативная сцена, уличное искусство, независимые галереи, молодежные места. Крутой Петербург.",
+      "city": "Санкт-Петербург",
+      "category": "general",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 4248,
+          "categories": {
+            "attraction": 3,
+            "museum": 2,
+            "cafe": 1
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 581,
+          "categories": {
+            "museum": 8,
+            "attraction": 8,
+            "entertainment": 1,
+            "park": 3
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "museum": 8,
+            "attraction": 8,
+            "entertainment": 1,
+            "park": 3
+          },
+          "fallbacks": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Ohrid. Старый город у озера, средневековые церкви, скрытые монастыри. Ищем духовность и историю.",
+      "city": "Ohrid",
+      "category": "spiritual",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 4966,
+          "categories": {
+            "historic": 6
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 20,
+          "duration_ms": 4442,
+          "categories": {
+            "museum": 5,
+            "attraction": 13,
+            "shopping": 2
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "museum": 5,
+            "attraction": 13,
+            "shopping": 2
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY"
+          ],
+          "error": null
+        }
+      }
+    },
+    {
+      "query": "Brasov. Трансильванские замки, средневековые города, готическая архитектура. Для любителей истории.",
+      "city": "Brasov",
+      "category": "general",
+      "strategies": {
+        "llm-only": {
+          "poi_count": 6,
+          "duration_ms": 5711,
+          "categories": {
+            "attraction": 3,
+            "historic": 3
+          },
+          "fallbacks": null,
+          "error": null
+        },
+        "provider-only": {
+          "poi_count": 1,
+          "duration_ms": 25384,
+          "categories": {
+            "attraction": 1
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY",
+            "LLM_GENERATED_MISSING_POIS"
+          ],
+          "error": null
+        },
+        "hybrid": {
+          "poi_count": 20,
+          "duration_ms": 0,
+          "categories": {
+            "park": 1,
+            "entertainment": 2,
+            "attraction": 9,
+            "museum": 8
+          },
+          "fallbacks": [
+            "KUDAGO_UNAVAILABLE_OVERPASS_ONLY"
+          ],
+          "error": null
+        }
+      }
+    }
+  ]
+}
