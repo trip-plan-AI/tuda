@@ -457,7 +457,7 @@ export function ProfilePage() {
   const mapPoints = selectedTrip?.points ?? [];
 
   return (
-    <div className="h-[calc(100vh-var(--header-height))] flex overflow-hidden bg-[#f0f4f8]">
+    <div className="flex-1 min-h-0 flex overflow-hidden bg-[#f0f4f8]">
       <input
         type="file"
         ref={fileInputRef}
@@ -656,7 +656,12 @@ export function ProfilePage() {
                 <div
                   ref={routePointsScrollRef}
                   onScroll={handleContentScroll}
-                  className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto"
+                  className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto
+                    [&::-webkit-scrollbar]:w-1.5
+                    [&::-webkit-scrollbar-track]:bg-transparent
+                    [&::-webkit-scrollbar-thumb]:bg-slate-200
+                    [&::-webkit-scrollbar-thumb]:rounded-full
+                    [&::-webkit-scrollbar-thumb:hover]:bg-slate-300"
                 >
                   {travelTrips.map((trip) => (
                     <TripCard
@@ -692,7 +697,12 @@ export function ProfilePage() {
               <div
                 ref={savedListScrollRef}
                 onScroll={handleContentScroll}
-                className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto"
+                className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto
+                  [&::-webkit-scrollbar]:w-1.5
+                  [&::-webkit-scrollbar-track]:bg-transparent
+                  [&::-webkit-scrollbar-thumb]:bg-slate-200
+                  [&::-webkit-scrollbar-thumb]:rounded-full
+                  [&::-webkit-scrollbar-thumb:hover]:bg-slate-300"
               >
                 {savedTrips.map((trip) => (
                   <TripCard
