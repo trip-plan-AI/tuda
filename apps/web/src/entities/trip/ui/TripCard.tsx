@@ -1,5 +1,5 @@
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   MapPin,
   Moon,
@@ -9,7 +9,12 @@ import {
   CheckCircle2,
   MoreVertical,
   Crown,
+  CalendarIcon,
 } from 'lucide-react';
+import { format, startOfToday, startOfMonth } from 'date-fns';
+import { ru } from 'date-fns/locale';
+import { Calendar } from '@/shared/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover';
 import { calcNights } from '@/shared/lib/formatters';
 import { cn } from '@/shared/lib/utils';
 import type { Trip } from '@/entities/trip/model/trip.types';
@@ -112,6 +117,7 @@ interface TripCardProps {
   onCardClick?: (tripId: string) => void;
   onInvite?: (tripId: string) => void;
   onCollaboratorsClick?: (tripId: string) => void;
+  onDatesUpdate?: (tripId: string, dates: { startDate: string; endDate: string }) => void;
 }
 
 const COVER_FALLBACK = 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=800&q=80';
@@ -131,9 +137,14 @@ export function TripCard({
   onCardClick,
   onInvite,
   onCollaboratorsClick,
+  onDatesUpdate,
 }: TripCardProps) {
   const router = useRouter();
   const nights = calcNights(trip.startDate, trip.endDate);
+  const [dateStep, setDateStep] = useState<'from' | 'to' | null>(null);
+  const [tempFrom, setTempFrom] = useState<Date | undefined>(undefined);
+  const [hoverDate, setHoverDate] = useState<Date | undefined>(undefined);
+  const calendarToRef = useRef<HTMLDivElement>(null);
   const pointsCount = trip.points?.length ?? 0;
   const pointsBudgetTotal = trip.points?.reduce((sum, p) => sum + (p.budget || 0), 0) ?? 0;
   const coverSrc = trip.img || COVER_FALLBACK;
@@ -147,6 +158,52 @@ export function TripCard({
       .then(setParticipants)
       .catch(() => {});
   }, [trip.id]);
+
+  // Track hover dates in calendar for range preview
+  useEffect(() => {
+    if (dateStep !== 'to' || !calendarToRef.current || !tempFrom) return;
+
+    const handleDayHover = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const dayButton = target.closest('button[role="button"]');
+      if (!dayButton) return;
+
+      const ariaLabel = dayButton.getAttribute('aria-label');
+      if (!ariaLabel) return;
+
+      try {
+        // Parse date from aria-label like "14 марта 2026"
+        const parts = ariaLabel.split(' ');
+        if (parts.length >= 2) {
+          const day = parseInt(parts[0]);
+          const monthStr = parts[1];
+          const year = parts[2] ? parseInt(parts[2]) : new Date().getFullYear();
+
+          const monthMap: Record<string, number> = {
+            'января': 0, 'февраля': 1, 'марта': 2, 'апреля': 3, 'мая': 4, 'июня': 5,
+            'июля': 6, 'августа': 7, 'сентября': 8, 'октября': 9, 'ноября': 10, 'декабря': 11,
+          };
+
+          const month = monthMap[monthStr];
+          if (month !== undefined && !isNaN(day) && !isNaN(year)) {
+            const hovered = new Date(year, month, day);
+            if (hovered >= tempFrom) {
+              setHoverDate(hovered);
+            }
+          }
+        }
+      } catch {
+        // Ignore parsing errors
+      }
+    };
+
+    const container = calendarToRef.current;
+    container.addEventListener('mouseover', handleDayHover);
+
+    return () => {
+      container.removeEventListener('mouseover', handleDayHover);
+    };
+  }, [dateStep, tempFrom]);
 
   // ── Real-time sync: collaborator added / removed ──
   useEffect(() => {
@@ -411,11 +468,105 @@ export function TripCard({
         </p>
 
         {/* Dates */}
-        <p className="text-[12px] text-slate-400 font-medium">
-          {trip.startDate
-            ? `${formatDate(trip.startDate)} – ${formatDate(trip.endDate)}`
-            : 'Даты не заданы'}
-        </p>
+        <div onClick={(e) => e.stopPropagation()}>
+          <Popover
+            open={dateStep !== null}
+            onOpenChange={(open) => { if (!open) { setDateStep(null); setTempFrom(undefined); } }}
+          >
+            <PopoverTrigger asChild>
+              <button
+                onClick={(e) => { e.stopPropagation(); setDateStep('from'); }}
+                className="flex items-center gap-1.5 px-2 py-1 text-[12px] font-semibold rounded-md transition-colors
+                           text-slate-500 hover:text-brand-sky hover:bg-slate-100"
+              >
+                <CalendarIcon size={11} className="shrink-0" />
+                {trip.startDate && trip.endDate ? (
+                  <>
+                    {format(new Date(trip.startDate), 'd MMM', { locale: ru })}
+                    {' – '}
+                    {format(new Date(trip.endDate), 'd MMM yyyy', { locale: ru })}
+                  </>
+                ) : (
+                  <span className="text-brand-sky">Указать даты</span>
+                )}
+              </button>
+            </PopoverTrigger>
+
+            <PopoverContent
+              className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl"
+              align="start"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Step header */}
+              <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+                {dateStep === 'to' && (
+                  <button
+                    onClick={() => { setDateStep('from'); setTempFrom(undefined); }}
+                    className="text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    ← Назад
+                  </button>
+                )}
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  {dateStep === 'from' ? 'Дата начала' : 'Дата окончания'}
+                </p>
+                {tempFrom && dateStep === 'to' && (
+                  <span className="ml-auto text-[11px] text-brand-sky font-semibold">
+                    {format(tempFrom, 'd MMM', { locale: ru })} →
+                  </span>
+                )}
+              </div>
+
+              {dateStep === 'from' && (
+                <Calendar
+                  mode="single"
+                  selected={tempFrom ?? (trip.startDate ? new Date(trip.startDate) : undefined)}
+                  disabled={(date) => date < startOfToday()}
+                  onSelect={(date) => {
+                    if (!date) return;
+                    setTempFrom(date);
+                    setDateStep('to');
+                  }}
+                  locale={ru}
+                  captionLayout="dropdown"
+                  startMonth={startOfMonth(startOfToday())}
+                  endMonth={new Date(2035, 11)}
+                  classNames={{ caption_label: 'hidden' }}
+                />
+              )}
+
+              {dateStep === 'to' && (
+                <div ref={calendarToRef} className="calendar-to-wrapper">
+                  <Calendar
+                    mode="single"
+                    selected={trip.endDate ? new Date(trip.endDate) : undefined}
+                    disabled={(date) => date < startOfToday() || (!!tempFrom && date < tempFrom)}
+                    onSelect={(date) => {
+                      if (!date || !tempFrom) return;
+                      onDatesUpdate?.(trip.id, {
+                        startDate: tempFrom.toISOString(),
+                        endDate: date.toISOString(),
+                      });
+                      setDateStep(null);
+                      setTempFrom(undefined);
+                      setHoverDate(undefined);
+                    }}
+                    locale={ru}
+                    captionLayout="dropdown"
+                    startMonth={startOfMonth(startOfToday())}
+                    endMonth={new Date(2035, 11)}
+                    classNames={{ caption_label: 'hidden' }}
+                  />
+                  {hoverDate && tempFrom && (
+                    <div className="px-4 pb-3 text-center text-[11px] font-semibold text-brand-sky border-t border-slate-100 pt-2">
+                      📅 {Math.ceil((hoverDate.getTime() - tempFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1} дней
+                    </div>
+                  )}
+                </div>
+              )}
+            </PopoverContent>
+          </Popover>
+        </div>
 
         {/* Budget summary */}
         <div className="pt-1.5 border-t border-slate-100">

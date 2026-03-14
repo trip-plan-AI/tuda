@@ -60,6 +60,17 @@ export function ProfilePage() {
   const travelTrips = trips.filter((t) => t.startDate && t.endDate);
   const savedTrips = trips.filter((t) => !t.startDate || !t.endDate);
 
+  const now = new Date();
+  const currentTrips = travelTrips
+    .filter((t) => new Date(t.startDate!) <= now && new Date(t.endDate!) >= now)
+    .sort((a, b) => new Date(a.endDate!).getTime() - new Date(b.endDate!).getTime());
+  const upcomingTrips = travelTrips
+    .filter((t) => new Date(t.startDate!) > now)
+    .sort((a, b) => new Date(a.startDate!).getTime() - new Date(b.startDate!).getTime());
+  const pastTrips = travelTrips
+    .filter((t) => new Date(t.endDate!) < now)
+    .sort((a, b) => new Date(b.endDate!).getTime() - new Date(a.endDate!).getTime());
+
   const progressColor =
     scrollProgress < 0.4 ? '#0ea5e9' : scrollProgress < 0.8 ? '#4f46e5' : '#9333ea';
   const progressTrackColor = '#e2e8f0';
@@ -185,6 +196,7 @@ export function ProfilePage() {
       readonly: true,
       draggable: false,
       routeProfile: 'driving',
+      fitKey: selectedTrip?.id,
     });
     return () => {
       clearConfig('profile-page');
@@ -437,6 +449,19 @@ export function ProfilePage() {
     router.push(`/planner?applyTripId=${encodeURIComponent(targetTripId)}`);
   };
 
+  const handleDatesUpdate = async (
+    tripId: string,
+    dates: { startDate: string; endDate: string },
+  ) => {
+    try {
+      await tripsApi.update(tripId, dates);
+      setAllTrips((prev) => prev.map((t) => (t.id === tripId ? { ...t, ...dates } : t)));
+      toast.success('Даты сохранены');
+    } catch {
+      toast.error('Не удалось сохранить даты');
+    }
+  };
+
   // Open create conflict modal when creating a new trip with unsaved changes
   const handleCreateTrip = () => {
     if (currentTrip && isDirty) {
@@ -667,29 +692,78 @@ export function ProfilePage() {
               <div
                 ref={routePointsScrollRef}
                 onScroll={handleContentScroll}
-                className="px-4 space-y-3 pb-4 pt-3 flex-1 overflow-y-auto
+                className="px-4 pb-4 pt-3 flex-1 overflow-y-auto
                   [&::-webkit-scrollbar]:w-1.5
                   [&::-webkit-scrollbar-track]:bg-transparent
                   [&::-webkit-scrollbar-thumb]:bg-slate-200
                   [&::-webkit-scrollbar-thumb]:rounded-full
                   [&::-webkit-scrollbar-thumb:hover]:bg-slate-300"
               >
-                {travelTrips.map((trip) => (
-                  <TripCard
-                    key={trip.id}
-                    trip={trip}
-                    isSelected={selectedTripId === trip.id}
-                    onCardClick={setSelectedTripId}
-                    onInvite={() => {
-                      setInviteTripId(trip.id);
-                      setInviteModalOpen(true);
-                    }}
-                    onCollaboratorsClick={() => {
-                      setCollaboratorsTripId(trip.id);
-                      setCollaboratorsModalOpen(true);
-                    }}
-                  />
-                ))}
+                {currentTrips.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-4 my-4">
+                      <hr className="flex-1 border-gray-200" />
+                      <span className="text-xs font-semibold text-gray-400 tracking-wider uppercase">В процессе</span>
+                      <hr className="flex-1 border-gray-200" />
+                    </div>
+                    <div className="space-y-3">
+                      {currentTrips.map((trip) => (
+                        <TripCard
+                          key={trip.id}
+                          trip={trip}
+                          isSelected={selectedTripId === trip.id}
+                          onCardClick={setSelectedTripId}
+                          onInvite={() => { setInviteTripId(trip.id); setInviteModalOpen(true); }}
+                          onCollaboratorsClick={() => { setCollaboratorsTripId(trip.id); setCollaboratorsModalOpen(true); }}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {upcomingTrips.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-4 my-4">
+                      <hr className="flex-1 border-gray-200" />
+                      <span className="text-xs font-semibold text-gray-400 tracking-wider uppercase">Скоро</span>
+                      <hr className="flex-1 border-gray-200" />
+                    </div>
+                    <div className="space-y-3">
+                      {upcomingTrips.map((trip) => (
+                        <TripCard
+                          key={trip.id}
+                          trip={trip}
+                          isSelected={selectedTripId === trip.id}
+                          onCardClick={setSelectedTripId}
+                          onInvite={() => { setInviteTripId(trip.id); setInviteModalOpen(true); }}
+                          onCollaboratorsClick={() => { setCollaboratorsTripId(trip.id); setCollaboratorsModalOpen(true); }}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {pastTrips.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-4 my-4">
+                      <hr className="flex-1 border-gray-200" />
+                      <span className="text-xs font-semibold text-gray-400 tracking-wider uppercase">Завершенные</span>
+                      <hr className="flex-1 border-gray-200" />
+                    </div>
+                    <div className="space-y-3">
+                      {pastTrips.map((trip) => (
+                        <TripCard
+                          key={trip.id}
+                          trip={trip}
+                          isSelected={selectedTripId === trip.id}
+                          onCardClick={setSelectedTripId}
+                          onInvite={() => { setInviteTripId(trip.id); setInviteModalOpen(true); }}
+                          onCollaboratorsClick={() => { setCollaboratorsTripId(trip.id); setCollaboratorsModalOpen(true); }}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center text-slate-300 text-center px-4 py-10 flex-1">
@@ -719,6 +793,7 @@ export function ProfilePage() {
                 <TripCard
                   key={trip.id}
                   trip={trip}
+                  onDatesUpdate={handleDatesUpdate}
                   onInvite={() => {
                     setInviteTripId(trip.id);
                     setInviteModalOpen(true);
