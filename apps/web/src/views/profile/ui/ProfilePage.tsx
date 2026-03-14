@@ -448,6 +448,19 @@ export function ProfilePage() {
     router.push(`/planner?applyTripId=${encodeURIComponent(targetTripId)}`);
   };
 
+  const handleDatesUpdate = async (
+    tripId: string,
+    dates: { startDate: string; endDate: string },
+  ) => {
+    try {
+      await tripsApi.update(tripId, dates);
+      setAllTrips((prev) => prev.map((t) => (t.id === tripId ? { ...t, ...dates } : t)));
+      toast.success('Даты сохранены');
+    } catch {
+      toast.error('Не удалось сохранить даты');
+    }
+  };
+
   // Open create conflict modal when creating a new trip with unsaved changes
   const handleCreateTrip = () => {
     if (currentTrip && isDirty) {
@@ -779,6 +792,7 @@ export function ProfilePage() {
                 <TripCard
                   key={trip.id}
                   trip={trip}
+                  onDatesUpdate={handleDatesUpdate}
                   onInvite={() => {
                     setInviteTripId(trip.id);
                     setInviteModalOpen(true);

@@ -9,7 +9,12 @@ import {
   CheckCircle2,
   MoreVertical,
   Crown,
+  CalendarIcon,
 } from 'lucide-react';
+import { format, startOfToday, startOfMonth } from 'date-fns';
+import { ru } from 'date-fns/locale';
+import { Calendar } from '@/shared/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover';
 import { calcNights } from '@/shared/lib/formatters';
 import { cn } from '@/shared/lib/utils';
 import type { Trip } from '@/entities/trip/model/trip.types';
@@ -112,6 +117,7 @@ interface TripCardProps {
   onCardClick?: (tripId: string) => void;
   onInvite?: (tripId: string) => void;
   onCollaboratorsClick?: (tripId: string) => void;
+  onDatesUpdate?: (tripId: string, dates: { startDate: string; endDate: string }) => void;
 }
 
 const COVER_FALLBACK = 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=800&q=80';
@@ -131,9 +137,14 @@ export function TripCard({
   onCardClick,
   onInvite,
   onCollaboratorsClick,
+  onDatesUpdate,
 }: TripCardProps) {
   const router = useRouter();
   const nights = calcNights(trip.startDate, trip.endDate);
+  const [dateFromOpen, setDateFromOpen] = useState(false);
+  const [dateToOpen, setDateToOpen] = useState(false);
+  const [tempDateFrom, setTempDateFrom] = useState<string>('');
+  const [tempDateTo, setTempDateTo] = useState<string>('');
   const pointsCount = trip.points?.length ?? 0;
   const pointsBudgetTotal = trip.points?.reduce((sum, p) => sum + (p.budget || 0), 0) ?? 0;
   const coverSrc = trip.img || COVER_FALLBACK;
@@ -411,11 +422,98 @@ export function TripCard({
         </p>
 
         {/* Dates */}
-        <p className="text-[12px] text-slate-400 font-medium">
-          {trip.startDate
-            ? `${formatDate(trip.startDate)} – ${formatDate(trip.endDate)}`
-            : 'Даты не заданы'}
-        </p>
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          {/* "От" popover */}
+          <Popover open={dateFromOpen} onOpenChange={setDateFromOpen}>
+            <PopoverTrigger asChild>
+              {trip.startDate ? (
+                <button className="flex items-center gap-1 px-2 py-1 text-[12px] font-semibold text-slate-500
+                                   hover:text-brand-sky hover:bg-slate-100 rounded-md transition-colors">
+                  <CalendarIcon size={11} className="text-slate-400" />
+                  {format(new Date(trip.startDate), 'd MMM yyyy', { locale: ru })}
+                </button>
+              ) : (
+                <button className="flex items-center gap-1.5 px-2 py-1 text-[12px] font-semibold
+                                   text-brand-sky hover:bg-slate-100 rounded-md transition-colors">
+                  <CalendarIcon size={11} />
+                  Указать даты
+                </button>
+              )}
+            </PopoverTrigger>
+            <PopoverContent
+              className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl"
+              align="start"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Calendar
+                mode="single"
+                selected={tempDateFrom ? new Date(tempDateFrom) : trip.startDate ? new Date(trip.startDate) : undefined}
+                disabled={(date) => date < startOfToday()}
+                onSelect={(date) => {
+                  const iso = date?.toISOString() || '';
+                  setTempDateFrom(iso);
+                  setDateFromOpen(false);
+                  setDateToOpen(true);
+                }}
+                locale={ru}
+                captionLayout="dropdown"
+                startMonth={startOfMonth(startOfToday())}
+                endMonth={new Date(2035, 11)}
+                classNames={{ caption_label: 'hidden' }}
+              />
+            </PopoverContent>
+          </Popover>
+
+          {(trip.startDate || tempDateFrom) && (
+            <>
+              <span className="text-slate-300 font-bold text-[12px]">—</span>
+
+              {/* "До" popover */}
+              <Popover open={dateToOpen} onOpenChange={setDateToOpen}>
+                <PopoverTrigger asChild>
+                  <button className="flex items-center gap-1 px-2 py-1 text-[12px] font-semibold text-slate-500
+                                     hover:text-brand-sky hover:bg-slate-100 rounded-md transition-colors">
+                    <CalendarIcon size={11} className="text-slate-400" />
+                    {trip.endDate
+                      ? format(new Date(trip.endDate), 'd MMM yyyy', { locale: ru })
+                      : <span className="text-slate-400 font-normal">До</span>}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-auto p-0 rounded-2xl border-slate-100 shadow-2xl"
+                  align="start"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Calendar
+                    mode="single"
+                    selected={tempDateTo ? new Date(tempDateTo) : trip.endDate ? new Date(trip.endDate) : undefined}
+                    disabled={(date) => {
+                      const from = tempDateFrom || trip.startDate;
+                      return date < startOfToday() || (!!from && date < new Date(from));
+                    }}
+                    onSelect={(date) => {
+                      if (!date) return;
+                      const endIso = date.toISOString();
+                      const startIso = tempDateFrom || trip.startDate || '';
+                      setTempDateTo(endIso);
+                      setDateToOpen(false);
+                      if (onDatesUpdate && startIso) {
+                        onDatesUpdate(trip.id, { startDate: startIso, endDate: endIso });
+                      }
+                      setTempDateFrom('');
+                      setTempDateTo('');
+                    }}
+                    locale={ru}
+                    captionLayout="dropdown"
+                    startMonth={startOfMonth(startOfToday())}
+                    endMonth={new Date(2035, 11)}
+                    classNames={{ caption_label: 'hidden' }}
+                  />
+                </PopoverContent>
+              </Popover>
+            </>
+          )}
+        </div>
 
         {/* Budget summary */}
         <div className="pt-1.5 border-t border-slate-100">
