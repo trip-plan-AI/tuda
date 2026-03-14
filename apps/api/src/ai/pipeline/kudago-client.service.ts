@@ -38,13 +38,21 @@ export class KudagoClientService {
     const timer = setTimeout(() => controller.abort(), 10000);
 
     try {
-      // Ищем места с высоким рейтингом или относящиеся к интересным категориям
+      // TRI-108-1: Request food categories if food intent detected
       const url = new URL(`${this.baseUrl}/places/`);
       url.searchParams.set('location', cityCode);
-      url.searchParams.set('fields', 'id,title,address,coords,is_closed');
+      url.searchParams.set('fields', 'id,title,address,coords,is_closed,categories');
       url.searchParams.set('text_format', 'text');
-      // Пытаемся взять максимум, чтобы потом отфильтровать по категориям и координатам
       url.searchParams.set('page_size', '100');
+
+      // TRI-108-1: If food is in categories, request food-related places
+      const foodCategories = intent.categories.filter(
+        (cat) =>
+          /cafe|кафе|restaurant|ресторан|bar|бар|food|еда|coffee|кофе/i.test(cat),
+      );
+      if (foodCategories.length > 0) {
+        url.searchParams.set('categories', 'cafe,restaurant,bar');
+      }
 
       const response = await fetch(url.toString(), {
         signal: controller.signal,
