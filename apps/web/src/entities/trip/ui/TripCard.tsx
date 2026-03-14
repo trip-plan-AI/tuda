@@ -15,7 +15,7 @@ import { format, startOfToday, startOfMonth } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { Calendar } from '@/shared/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover';
-import { calcNights } from '@/shared/lib/formatters';
+import { calcNights, getEmailPrefix } from '@/shared/lib/formatters';
 import { cn } from '@/shared/lib/utils';
 import type { Trip } from '@/entities/trip/model/trip.types';
 import { useTripStore } from '@/entities/trip/model/trip.store';
@@ -173,19 +173,29 @@ export function TripCard({
 
       try {
         // Parse date from aria-label like "14 марта 2026"
-        const parts = ariaLabel.split(' ');
+        const parts = ariaLabel.trim().split(/\s+/);
         const dayPart = parts[0];
         const monthPart = parts[1];
         const yearPart = parts[2];
 
         if (dayPart && monthPart) {
           const day = parseInt(dayPart, 10);
-          const monthStr = monthPart;
+          const monthStr = monthPart.toLowerCase();
           const year = yearPart ? parseInt(yearPart, 10) : new Date().getFullYear();
 
           const monthMap: Record<string, number> = {
-            'января': 0, 'февраля': 1, 'марта': 2, 'апреля': 3, 'мая': 4, 'июня': 5,
-            'июля': 6, 'августа': 7, 'сентября': 8, 'октября': 9, 'ноября': 10, 'декабря': 11,
+            'января': 0, 'январь': 0,
+            'февраля': 1, 'февраль': 1,
+            'марта': 2, 'март': 2,
+            'апреля': 3, 'апрель': 3,
+            'мая': 4, 'май': 4,
+            'июня': 5, 'июнь': 5,
+            'июля': 6, 'июль': 6,
+            'августа': 7, 'август': 7,
+            'сентября': 8, 'сентябрь': 8,
+            'октября': 9, 'октябрь': 9,
+            'ноября': 10, 'ноябрь': 10,
+            'декабря': 11, 'декабрь': 11,
           };
 
           const month = monthMap[monthStr];
@@ -276,7 +286,7 @@ export function TripCard({
             <div className="flex-1 min-w-0">
               <p className="text-[11px] text-slate-400 font-medium">Владелец</p>
               <p className="text-[13px] font-semibold text-slate-900 truncate">
-                {owner.email.split('@')[0]}
+                {getEmailPrefix(owner.email)}
               </p>
             </div>
           </div>
