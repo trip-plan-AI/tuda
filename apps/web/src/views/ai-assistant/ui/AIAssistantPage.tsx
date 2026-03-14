@@ -301,26 +301,15 @@ export function AIAssistantPage() {
   const socketTripId = activeSession?.tripId || '';
   useCollaborationSocket(socketTripId);
 
-  const previousDisplayPointsRef = useRef<typeof displayPoints>(displayPoints);
-
   useEffect(() => {
-    // Обновляем конфиг только если displayPoints действительно изменились
-    // (сравниваем по ID чтобы избежать лишних ререндеров при одинаковых точках)
-    const pointsChanged =
-      previousDisplayPointsRef.current.length !== displayPoints.length ||
-      previousDisplayPointsRef.current.some((p, i) => displayPoints[i]?.id !== p.id);
-
-    if (pointsChanged) {
-      previousDisplayPointsRef.current = displayPoints;
-      setConfig({
-        source: 'ai-assistant-page',
-        priority: 40,
-        points: displayPoints,
-        readonly: true,
-        draggable: false,
-        routeProfile: 'driving',
-      });
-    }
+    setConfig({
+      source: 'ai-assistant-page',
+      priority: 40,
+      points: displayPoints,
+      readonly: true,
+      draggable: false,
+      routeProfile: 'driving',
+    });
 
     return () => {
       clearConfig('ai-assistant-page');
