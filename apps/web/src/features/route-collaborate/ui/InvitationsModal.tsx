@@ -38,7 +38,12 @@ export function InvitationsModal({ open, onClose, invitations, onAccept, onDecli
           </div>
         </div>
 
-        <div className="space-y-3 mt-4 max-h-[60vh] overflow-y-auto pr-2">
+        <div className="space-y-3 mt-4 max-h-[60vh] overflow-y-auto pr-2
+          [&::-webkit-scrollbar]:w-1.5
+          [&::-webkit-scrollbar-track]:bg-transparent
+          [&::-webkit-scrollbar-thumb]:bg-slate-200
+          [&::-webkit-scrollbar-thumb]:rounded-full
+          [&::-webkit-scrollbar-thumb:hover]:bg-slate-300">
           {invitations.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-slate-400 py-12">
               <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mb-3">
