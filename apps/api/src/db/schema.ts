@@ -11,6 +11,7 @@ import {
   primaryKey,
   real,
   index,
+  unique,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -62,6 +63,7 @@ export const trips = pgTable('trips', {
   temp: text('temp'),
   startDate: text('start_date'),
   endDate: text('end_date'),
+  version: integer('version').notNull().default(0),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
@@ -158,6 +160,20 @@ export const popularDestinations = pgTable(
   ],
 );
 
+// ── INVITATIONS ────────────────────────────────────────────────────────────
+// Pending invitations — user must accept/decline before being added to trip_collaborators
+export const invitations = pgTable(
+  'invitations',
+  {
+    id:            uuid('id').primaryKey().defaultRandom(),
+    tripId:        uuid('trip_id').notNull().references(() => trips.id, { onDelete: 'cascade' }),
+    invitedUserId: uuid('invited_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    inviterId:     uuid('inviter_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    createdAt:     timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.tripId, t.invitedUserId)],
+);
+
 // ai_sessions
 export const aiSessions = pgTable('ai_sessions', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -166,5 +182,6 @@ export const aiSessions = pgTable('ai_sessions', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   messages: jsonb('messages').notNull().default('[]'),
+  title: text('title'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });

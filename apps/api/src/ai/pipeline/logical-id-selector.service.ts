@@ -31,7 +31,9 @@ export class LogicalIdSelectorService {
 
   constructor(private readonly llmClientService: LlmClientService) {}
 
-  async selectIds(input: LogicalIdSelectorInput): Promise<LogicalIdSelectorResult> {
+  async selectIds(
+    input: LogicalIdSelectorInput,
+  ): Promise<LogicalIdSelectorResult> {
     const hasPoolShortage = input.candidates.length < input.required_capacity;
     const target = Math.min(
       Math.max(0, Math.floor(input.required_capacity)),
@@ -48,14 +50,21 @@ export class LogicalIdSelectorService {
     }
 
     try {
-      const response = await this.llmClientService.client.chat.completions.create({
-        model: this.model,
-        messages: [{ role: 'user', content: this.buildPrompt(input, target) }],
-        temperature: 0,
-      });
+      const response =
+        await this.llmClientService.client.chat.completions.create({
+          model: this.model,
+          messages: [
+            { role: 'user', content: this.buildPrompt(input, target) },
+          ],
+          temperature: 0,
+        });
 
       const rawText = response.choices[0]?.message?.content ?? '[]';
-      const selectedIds = this.validateModelOutput(rawText, input.candidates, target);
+      const selectedIds = this.validateModelOutput(
+        rawText,
+        input.candidates,
+        target,
+      );
 
       return {
         selected_ids: selectedIds,
@@ -82,13 +91,29 @@ export class LogicalIdSelectorService {
       )
       .join('\n');
 
+    const foodMode = input.food_policy.food_mode;
+    const foodCategories = ['restaurant', 'cafe'];
+    const foodCount = input.candidates.filter((c) => foodCategories.includes(c.category)).length;
+
+    // Explicit food quota based on food_mode
+    let foodRule: string;
+    if (foodMode === 'gastrotour') {
+      const minFood = Math.max(1, Math.floor(target * 0.6));
+      foodRule = `ОБЯЗАТЕЛЬНО включи минимум ${minFood} мест с category=restaurant или cafe (food_mode=gastrotour).`;
+    } else if (foodMode === 'default' && foodCount > 0) {
+      const minFood = Math.max(1, Math.floor(target * 0.3));
+      foodRule = `Включи минимум ${minFood} мест с category=restaurant или cafe (food_mode=default).`;
+    } else if (foodMode === 'none') {
+      foodRule = 'НЕ включай места с category=restaurant или cafe (food_mode=none).';
+    } else {
+      foodRule = 'Выбирай разнообразные места.';
+    }
+
     return [
       'Ты выполняешь строгий логический отбор id для тревел-плана.',
       `Нужно выбрать ровно ${target} id из списка кандидатов, если кандидатов достаточно.`,
       'Если кандидатов меньше цели — выбери максимально возможное количество.',
-      `required_capacity=${input.required_capacity}`,
-      `food_policy.food_mode=${input.food_policy.food_mode}`,
-      `food_policy.food_interval_hours=${input.food_policy.food_interval_hours}`,
+      foodRule,
       'Верни СТРОГО JSON-массив строковых id, без markdown, без комментариев, без дополнительных полей.',
       'Каждый id должен быть только из входного пула и без дублей.',
       'Кандидаты:',
@@ -114,24 +139,37 @@ export class LogicalIdSelectorService {
 
     const allowedIds = new Set(candidates.map((candidate) => candidate.id));
     const uniqueIds = new Set<string>();
+    const resolvedIds: string[] = [];
 
     for (const item of parsed) {
-      if (typeof item !== 'string') {
+      if (typeof item !== 'string' && typeof item !== 'number') {
         throw new Error('NON_STRING_ID');
       }
 
-      if (!allowedIds.has(item)) {
-        throw new Error(`UNKNOWN_ID:${item}`);
+      const strItem = String(item);
+
+      // Support numeric index (1-based) as fallback — GPT sometimes returns row numbers
+      let resolvedId = strItem;
+      if (!allowedIds.has(strItem) && /^\d+$/.test(strItem)) {
+        const index = Number(strItem) - 1;
+        if (index >= 0 && index < candidates.length) {
+          resolvedId = candidates[index].id;
+        }
       }
 
-      if (uniqueIds.has(item)) {
-        throw new Error(`DUPLICATE_ID:${item}`);
+      if (!allowedIds.has(resolvedId)) {
+        throw new Error(`UNKNOWN_ID:${strItem}`);
       }
 
-      uniqueIds.add(item);
+      if (uniqueIds.has(resolvedId)) {
+        throw new Error(`DUPLICATE_ID:${resolvedId}`);
+      }
+
+      uniqueIds.add(resolvedId);
+      resolvedIds.push(resolvedId);
     }
 
-    return parsed;
+    return resolvedIds;
   }
 
   private buildFallback(
@@ -139,7 +177,9 @@ export class LogicalIdSelectorService {
     target: number,
     reason: string,
   ): LogicalIdSelectorResult {
-    const selectedIds = candidates.slice(0, target).map((candidate) => candidate.id);
+    const selectedIds = candidates
+      .slice(0, target)
+      .map((candidate) => candidate.id);
 
     return {
       selected_ids: selectedIds,

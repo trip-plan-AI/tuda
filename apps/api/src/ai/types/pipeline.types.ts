@@ -5,6 +5,7 @@ import type { PoiItem } from './poi.types';
 export interface SessionMessage {
   role: ChatRole;
   content: string;
+  route_plan?: RoutePlan;
 }
 
 export type PoiCategory =
@@ -21,8 +22,14 @@ export interface ParsedIntent {
   days: number;
   budget_total: number | null;
   budget_per_day: number | null;
+  budget_per_person: number | null; // budget_total / party_size
   party_type: 'solo' | 'couple' | 'family' | 'group';
   party_size: number;
+  // Quantitative constraints extracted from user query
+  poi_count_requested: number | null; // e.g., "Find 3 places"
+  min_restaurants: number | null; // e.g., "2 best cafes"
+  min_cafes: number | null;
+  max_poi: number | null; // e.g., "not more than 5 places"
   categories: PoiCategory[];
   excluded_categories: PoiCategory[];
   radius_km: number;
@@ -92,7 +99,8 @@ export interface YandexBatchRefinementMeta extends YandexBatchRefinementDiagnost
   status: YandexBatchRefinementStatus;
 }
 
-export type MassCollectionShadowProvider = 'kudago' | 'overpass' | 'llm_fill';
+// TRI-108-6: Added 'photon' for food-specific venue search
+export type MassCollectionShadowProvider = 'kudago' | 'overpass' | 'llm_fill' | 'photon';
 
 export interface MassCollectionShadowProviderStat {
   provider: MassCollectionShadowProvider;
@@ -165,6 +173,7 @@ export interface PolicySnapshot {
 export type IntentRouterActionType =
   | 'REMOVE_POI'
   | 'REPLACE_POI'
+  | 'ADD_POI'
   | 'ADD_DAYS'
   | 'APPLY_GLOBAL_FILTER'
   | 'NEW_ROUTE';

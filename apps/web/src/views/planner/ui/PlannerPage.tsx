@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import dynamic from 'next/dynamic';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Search,
@@ -52,6 +51,7 @@ import { usePointCrud } from '@/features/route-create';
 import { pointsApi } from '@/entities/route-point';
 import { useAiQueryStore } from '@/features/ai-query';
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
+import { useCollaborationSocket, CollaboratorsAvatarGroup } from '@/features/route-collaborate';
 import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point';
 import { toast } from 'sonner';
@@ -71,19 +71,9 @@ import {
   PopoverTrigger,
   Calendar,
 } from '@/shared/ui';
-
-const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
-  ssr: false,
-  loading: () => <MapSkeleton />,
-});
-
-function MapSkeleton() {
-  return (
-    <div className="w-full h-full rounded-[2.5rem] bg-gray-100 animate-pulse flex items-center justify-center">
-      <p className="text-sm text-gray-400">Загрузка карты...</p>
-    </div>
-  );
-}
+import { clearConfig, setConfig } from '@/features/persistent-map';
+import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
+import type { PlannerConflictType } from '@/widgets/planner-conflict-modal';
 
 interface GeoSuggestion {
   displayName: string;
@@ -322,7 +312,6 @@ function SortablePointRow({
           lon: coords.lon,
           title: cityName,
         });
-        onFocusPoint(coords);
       }
     } finally {
       setIsSearching(false);
@@ -333,6 +322,8 @@ function SortablePointRow({
     <div
       ref={setNodeRef}
       style={style}
+      data-testid="planner-point-row"
+      data-point-id={point.id}
       className={cn('flex flex-col gap-3 group', showDropdownState && 'z-50')}
     >
       {index > 0 && (leg || isRouteLoading) && (
@@ -450,23 +441,21 @@ function SortablePointRow({
           >
             <GripVertical size={16} />
           </button>
-          <button
-            onClick={() => onFocusPoint({ lon: point.lon, lat: point.lat })}
-            className="w-5 h-5 md:w-6 md:h-6 shrink-0 rounded-full bg-brand-blue text-white font-bold hidden lg:flex items-center justify-center text-[10px] shadow-sm cursor-pointer hover:bg-brand-blue-hover transition-colors"
+          <div
+            className="w-5 h-5 md:w-6 md:h-6 shrink-0 rounded-full bg-brand-blue text-white font-bold hidden lg:flex items-center justify-center text-[10px] shadow-sm transition-colors"
           >
             {index + 1}
-          </button>
+          </div>
         </div>
 
         <div className="flex-1 flex flex-col items-start gap-2 min-w-0 pr-10 w-full">
           <div className="flex flex-col lg:flex-row lg:items-center gap-2 min-w-0 w-full items-start">
             <div className="flex-1 min-w-0 flex items-center justify-start gap-2 w-full">
-              <button
-                onClick={() => onFocusPoint({ lon: point.lon, lat: point.lat })}
-                className="w-5 h-5 shrink-0 rounded-full bg-brand-blue text-white font-bold flex lg:hidden items-center justify-center text-[10px] shadow-sm cursor-pointer hover:bg-brand-blue-hover transition-colors"
+              <div
+                className="w-5 h-5 shrink-0 rounded-full bg-brand-blue text-white font-bold flex lg:hidden items-center justify-center text-[10px] shadow-sm transition-colors"
               >
                 {index + 1}
-              </button>
+              </div>
 
               {editingPointId === point.id ? (
                 <input
@@ -668,8 +657,6 @@ export function PlannerPage() {
   // feature/TRI-104-ai-planner-interaction: idempotency-guard для обработки applyTripId.
   // Потребность: чтобы не срабатывали повторные toasts/загрузки при re-render и router.replace.
   const handledApplyTripIdRef = useRef<string | null>(null);
-  // TRI-104: принудительный remount карты после подмены маршрута из AI.
-  const [lastMapRenderAt, setLastMapRenderAt] = useState<number>(Date.now());
   const userLocationRef = useRef<{ lat: number; lon: number } | null>(null);
   const prevLegsCountRef = useRef(0);
   const prevLegsDurationsRef = useRef<string>('');
@@ -687,6 +674,10 @@ export function PlannerPage() {
   const [modal, setModal] = useState<'login' | 'register' | null>(null);
   const [isAddPointMode, setIsAddPointMode] = useState(false);
   const [isOptimizationExpanded, setIsOptimizationExpanded] = useState(true);
+  const [showPlannerConflictModal, setShowPlannerConflictModal] = useState(false);
+  const [pendingApplyTripId, setPendingApplyTripId] = useState<string | null>(null);
+  const [pendingDraftMessageId, setPendingDraftMessageId] = useState<string | null>(null);
+  const [conflictType, setConflictType] = useState<PlannerConflictType>('different_route');
   const addPointStartCountRef = useRef(0);
 
   useEffect(() => {
@@ -739,6 +730,7 @@ export function PlannerPage() {
   const points = currentTrip?.points || [];
   const { isAuthenticated } = useAuthStore();
   const crud = usePointCrud(currentTrip?.id);
+  useCollaborationSocket(currentTrip?.id || '');
 
   const [routeInfo, setRouteInfo] = useState<{
     duration: number;
@@ -878,7 +870,7 @@ export function PlannerPage() {
       prevLegsCountRef.current = legsCount;
       prevLegsDurationsRef.current = legsDurationsKey;
     }
-  }, [routeInfo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [routeInfo]);
 
   useEffect(() => {
     useTripStore.getState().setCachedRouteInfo(null);
@@ -916,6 +908,11 @@ export function PlannerPage() {
   useEffect(() => {
     if (!_hasHydrated) return; // Wait for store to hydrate
     if (currentTrip) return;
+
+    // Если есть входящий applyTripId, не подставляем маршрут автоматически,
+    // чтобы конфликтный guard отработал корректно и не было «тихой» замены.
+    const incomingTripId = searchParams.get('applyTripId');
+    if (incomingTripId) return;
 
     if (!isAuthenticated) {
       const guestTrip: Trip = {
@@ -963,7 +960,7 @@ export function PlannerPage() {
         }
       })
       .catch(console.error);
-  }, [currentTrip, setCurrentTrip, isAuthenticated, _hasHydrated]);
+  }, [currentTrip, setCurrentTrip, isAuthenticated, _hasHydrated, searchParams]);
 
   // Загружаем предзаданные туры для вкладки «Популярные»
   useEffect(() => {
@@ -1241,7 +1238,6 @@ export function PlannerPage() {
       setSearchInput('');
       setShowDropdown(false);
       setSuggestions([]);
-      setFocusCoords({ lon: coords.lon, lat: coords.lat });
     } finally {
       setIsSearching(false);
     }
@@ -1330,7 +1326,13 @@ export function PlannerPage() {
     toast.info('Конструктор очищен', { id: 'planner-status' });
   };
 
-  const handleEditWithAi = () => {
+  const handleEditWithAi = async () => {
+    // Если trip гостевой — сохраняем в DB перед открытием AI-чата,
+    // иначе AIAssistantPage не сможет найти точки и создать сессию.
+    const tripId = await ensureTripId();
+    if (tripId && !tripId.startsWith('guest-')) {
+      await openOrCreateSessionFromTrip(tripId);
+    }
     router.push('/ai-assistant');
   };
 
@@ -1359,7 +1361,6 @@ export function PlannerPage() {
         lon: coords.lon,
         address: s.displayName,
       });
-      setFocusCoords({ lon: coords.lon, lat: coords.lat });
     } catch (e) {
       console.error('Не удалось добавить точку:', e);
     } finally {
@@ -1390,13 +1391,54 @@ export function PlannerPage() {
           setIsAddPointMode(false);
         }
       } catch (e) {
+        // Фолбэк: даже при ошибке reverse geocode сохраняем точку по координатам,
+        // чтобы интерактив карты не ломался в оффлайн/нестабильной среде.
         console.error('Не удалось добавить точку с карты:', e);
+        await addPoint_({
+          title: `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`,
+          lat: coords.lat,
+          lon: coords.lon,
+          address: `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`,
+        });
       } finally {
         setIsSearching(false);
       }
     },
     [addPoint_, resolveMapCoords],
   );
+
+  useEffect(() => {
+    setConfig({
+      source: 'planner-page',
+      priority: 100,
+      points,
+      focusCoords,
+      draggable: true,
+      readonly: false,
+      routeProfile,
+      isDropdownOpen: showDropdown,
+      isAddPointMode,
+      onPointDragEnd: handlePointDragEnd,
+      onMapClick: handleMapClick,
+      onAddPointModeChange: handleAddPointModeChange,
+      onRouteInfoUpdate: setRouteInfo,
+      onRouteInfoLoading: setIsRouteLoading,
+      onAffectedSegmentsChange: setAffectedSegments,
+    });
+
+    return () => {
+      clearConfig('planner-page');
+    };
+  }, [
+    points,
+    focusCoords,
+    routeProfile,
+    showDropdown,
+    isAddPointMode,
+    handlePointDragEnd,
+    handleMapClick,
+    handleAddPointModeChange,
+  ]);
 
   const handleUpdatePlannedBudget = async (val: number) => {
     const newBudget = Math.max(0, val);
@@ -1412,6 +1454,26 @@ export function PlannerPage() {
     }
   };
 
+  const clearApplyTripParams = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('applyTripId');
+    params.delete('draftMessageId');
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `/planner?${nextQuery}` : '/planner');
+  }, [router, searchParams]);
+
+  const finalizeApplyFlow = useCallback(
+    (clearQuery = true) => {
+      setShowPlannerConflictModal(false);
+      setPendingApplyTripId(null);
+      setPendingDraftMessageId(null);
+      if (clearQuery) {
+        clearApplyTripParams();
+      }
+    },
+    [clearApplyTripParams],
+  );
+
   // feature/TRI-104-ai-planner-interaction: централизованное применение tripId из query-параметра applyTripId.
   // Потребность: загрузить маршрут из AI чата в UI без перезагрузки страницы.
   // Если убрать: маршруты из AI чата не будут переноситься в Planner.
@@ -1424,8 +1486,6 @@ export function PlannerPage() {
       const targetPoints = await pointsApi.getAll(tripId);
       setCurrentTrip({ ...target, points: targetPoints });
       setSaved();
-      // TRI-104: принудительный remount карты после подмены маршрута из AI.
-      setLastMapRenderAt(Date.now());
 
       const params = new URLSearchParams(searchParams.toString());
       params.delete('applyTripId');
@@ -1440,7 +1500,31 @@ export function PlannerPage() {
     [router, searchParams, setCurrentTrip, setSaved, openOrCreateSessionFromTrip],
   );
 
+  const handleConfirmPlannerReplace = useCallback(() => {
+    const targetTripId = pendingApplyTripId;
+    finalizeApplyFlow(false);
+
+    if (!targetTripId) {
+      clearApplyTripParams();
+      return;
+    }
+
+    if (targetTripId.startsWith('guest-')) {
+      clearApplyTripParams();
+      return;
+    }
+
+    void applyIncomingTrip(targetTripId);
+  }, [
+    pendingApplyTripId,
+    applyIncomingTrip,
+    clearApplyTripParams,
+    finalizeApplyFlow,
+  ]);
+
   useEffect(() => {
+    if (!_hasHydrated) return;
+
     // feature/TRI-104-ai-planner-interaction: IDEMPOTENCY GUARD
     // Потребность: исключить зацикливание подгрузки маршрута при ре-рендерах.
     const incomingTripId = searchParams.get('applyTripId');
@@ -1454,17 +1538,58 @@ export function PlannerPage() {
     const currentKey = `${incomingTripId}-${draftMessageId || 'nodraft'}`;
     if (handledApplyTripIdRef.current === currentKey) return;
 
+    const hasPlannerContent = (currentTrip?.points?.length ?? 0) > 0 || isDirty;
+    const isDifferentRoute = currentTrip?.id !== incomingTripId;
+    const hasIncomingDraftVersion = Boolean(draftMessageId);
+
+    if (!hasPlannerContent || !currentTrip) {
+      handledApplyTripIdRef.current = currentKey;
+      void applyIncomingTrip(incomingTripId);
+      return;
+    }
+
+    if (!isDifferentRoute && !hasIncomingDraftVersion) {
+      handledApplyTripIdRef.current = currentKey;
+      clearApplyTripParams();
+      return;
+    }
+
     handledApplyTripIdRef.current = currentKey;
-    void applyIncomingTrip(incomingTripId);
-  }, [applyIncomingTrip, searchParams]);
+    setPendingApplyTripId(incomingTripId);
+    setPendingDraftMessageId(draftMessageId);
+    setConflictType(hasIncomingDraftVersion ? 'same_route' : 'different_route');
+    setShowPlannerConflictModal(true);
+  }, [
+    _hasHydrated,
+    applyIncomingTrip,
+    searchParams,
+    points.length,
+    currentTrip?.id,
+    currentTrip?.points,
+    isDirty,
+    clearApplyTripParams,
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== 'my') return;
+    if (points.length === 0) return;
+    const first = points[0];
+    if (!first) return;
+    setFocusCoords({ lon: first.lon, lat: first.lat });
+  }, [activeTab]);
 
   return (
-    <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
-      <div className="w-full mx-auto px-4 md:px-8 py-6 md:py-10 flex-1 flex flex-col relative">
-        <div className="mb-8 bg-white md:p-0 rounded-none w-full max-w-7xl mx-auto">
-          <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight mb-6 text-left">
-            Маршруты
-          </h2>
+    <div className="bg-white min-h-screen md:min-h-0 md:h-[calc(100vh-64px)] md:overflow-hidden w-full max-w-full flex flex-col">
+      <div className="w-full mx-auto px-4 md:px-8 py-6 md:py-8 flex-1 flex flex-col relative min-h-0">
+        <div className="mb-8 bg-white md:p-0 rounded-none w-full max-w-7xl mx-auto shrink-0">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight text-left">
+              Маршруты
+            </h2>
+            {currentTrip?.id && !currentTrip.id.startsWith('guest-') && (
+              <CollaboratorsAvatarGroup tripId={currentTrip.id} />
+            )}
+          </div>
           <SegmentedControl
             options={[
               { label: 'Конструктор', value: 'my' },
@@ -1478,9 +1603,10 @@ export function PlannerPage() {
           />
         </div>
 
-        {activeTab === 'my' ? (
-          <div className="animate-in fade-in duration-500 w-full relative">
-            <div className="mb-10 w-full max-w-7xl mx-auto">
+        <div className="flex-1 min-h-0 md:overflow-y-auto no-scrollbar md:pr-1">
+          {activeTab === 'my' ? (
+            <div className="animate-in fade-in duration-500 w-full relative">
+              <div className="mb-10 w-full max-w-7xl mx-auto">
               {isBudgetExceeded && showBudgetWarning && (
                 <div className="fixed right-4 bottom-20 md:bottom-6 z-40 animate-in slide-in-from-right-4 duration-300">
                   <div className="relative group flex items-start gap-2 rounded-2xl border border-red-200 bg-white/95 backdrop-blur px-3 py-2 shadow-lg max-w-[300px]">
@@ -1716,7 +1842,10 @@ export function PlannerPage() {
               </div>
 
               {(routeInfo || isRouteLoading) && (
-                <div className="flex items-center justify-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 animate-in fade-in zoom-in-95 relative overflow-hidden transition-all duration-300 w-full lg:w-96 lg:h-16">
+                <div
+                  data-testid="planner-route-info"
+                  className="flex items-center justify-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 animate-in fade-in zoom-in-95 relative overflow-hidden transition-all duration-300 w-full lg:w-96 lg:h-16"
+                >
                   {isRouteLoading && (
                     <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10 animate-in fade-in duration-200">
                       <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
@@ -1745,40 +1874,6 @@ export function PlannerPage() {
                   </div>
                 </div>
               )}
-            </div>
-
-            <div className="w-full max-w-7xl mx-auto aspect-[4/3] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden relative z-0 border border-slate-200 shadow-inner bg-slate-50 group">
-              <RouteMap
-                key={`route-map-${currentTrip?.id ?? 'none'}-${lastMapRenderAt}`}
-                points={points}
-                focusCoords={focusCoords}
-                onPointDragEnd={handlePointDragEnd}
-                isDropdownOpen={showDropdown}
-                onMapClick={handleMapClick}
-                isAddPointMode={isAddPointMode}
-                onAddPointModeChange={handleAddPointModeChange}
-                routeProfile={routeProfile}
-                onRouteInfoUpdate={setRouteInfo}
-                onRouteInfoLoading={setIsRouteLoading}
-                onAffectedSegmentsChange={setAffectedSegments}
-              />
-              {/* Кнопка добавления точек — над зумом слева */}
-              <button
-                title={
-                  isAddPointMode ? 'Выйти из режима добавления' : 'Добавить точку кликом на карту'
-                }
-                className={cn(
-                  'absolute left-3 top-3 md:top-16 z-10',
-                  'w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center',
-                  'shadow-lg transition-all active:scale-95 border-2',
-                  isAddPointMode
-                    ? 'bg-brand-sky text-white border-brand-sky'
-                    : 'bg-white text-slate-600 border-transparent hover:border-brand-sky/30',
-                )}
-                onClick={() => handleAddPointModeChange(!isAddPointMode)}
-              >
-                <MapPin size={22} />
-              </button>
             </div>
 
             <div className="max-w-7xl mx-auto w-full mt-8">
@@ -2280,11 +2375,11 @@ export function PlannerPage() {
               </div>
             </div>
 
-            {/* Mobile Actions (Fallback for smaller screens) is removed */}
-          </div>
-        ) : (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto w-full">
-            <div className="w-full mb-10">
+              {/* Mobile Actions (Fallback for smaller screens) is removed */}
+            </div>
+          ) : (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto w-full">
+              <div className="w-full mb-10">
               <div className="relative group mb-8">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-blue transition-colors">
                   <Search size={20} />
@@ -2365,9 +2460,10 @@ export function PlannerPage() {
                     </Link>
                   );
                 })}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
@@ -2416,6 +2512,34 @@ export function PlannerPage() {
         open={modal === 'register'}
         onClose={() => setModal(null)}
         onSwitchToLogin={() => setModal('login')}
+      />
+      <PlannerConflictModal
+        open={showPlannerConflictModal}
+        onOpenChange={setShowPlannerConflictModal}
+        conflictType={conflictType}
+        currentRouteTitle={currentTrip?.title?.trim() || 'без названия'}
+        onCancel={() => {
+          finalizeApplyFlow(true);
+        }}
+        onReplaceWithoutSave={handleConfirmPlannerReplace}
+        onSaveAndReplace={async () => {
+          try {
+            if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+              await tripsApi.update(currentTrip.id, {
+                title: currentTrip.title,
+                description: currentTrip.description ?? undefined,
+                budget: currentTrip.budget ?? undefined,
+              });
+            }
+          } catch (e) {
+            console.error('Failed to save current trip before replace:', e);
+            toast.error('Не удалось сохранить текущий маршрут');
+          }
+          handleConfirmPlannerReplace();
+        }}
+        onGoToPlannerOnly={() => {
+          finalizeApplyFlow(true);
+        }}
       />
     </div>
   );

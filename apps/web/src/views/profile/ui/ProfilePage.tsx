@@ -2,17 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  User as UserIcon,
-  Pencil,
-  Map as MapIcon,
-  ArrowUp,
-  AlertTriangle,
-  CheckCircle2,
-  UserPlus,
-  Check,
-} from 'lucide-react';
-import dynamic from 'next/dynamic';
+import { User as UserIcon, Pencil, Map as MapIcon, ArrowUp } from 'lucide-react';
 import { useUserStore, usersApi } from '@/entities/user';
 import { useTripStore, type Trip } from '@/entities/trip';
 import { useAuthStore } from '@/features/auth';
@@ -22,13 +12,6 @@ import { toast } from 'sonner';
 import { cn } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/button';
 import {
-  Avatar,
-  AvatarImage,
-  AvatarFallback,
-  AvatarGroup,
-  AvatarGroupCount,
-} from '@/shared/ui/avatar';
-import {
   useCollaborateStore,
   collaborateApi,
   useCollaborationSocket,
@@ -36,131 +19,57 @@ import {
   CollaboratorsModal,
 } from '@/features/route-collaborate';
 import { getSocket } from '@/shared/socket/socket-client';
-
-const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-slate-50 animate-pulse rounded-2xl" />,
-});
-
-function getBudgetMetrics(plannedBudget: number | null | undefined, totalBudget: number) {
-  const plan = Math.max(0, plannedBudget ?? 0);
-  const total = Math.max(0, totalBudget);
-  const isOverBudget = plan > 0 && total > plan;
-  const progressPercent = plan > 0 ? Math.min(100, Math.round((total / plan) * 100)) : 0;
-  return { plan, total, isOverBudget, progressPercent };
-}
-
-function formatRub(value: number) {
-  return value.toLocaleString('ru-RU').replace(/\u00A0/g, ' ');
-}
-
-function BudgetSummary({
-  plannedBudget,
-  totalBudget,
-  className,
-}: {
-  plannedBudget: number | null | undefined;
-  totalBudget: number;
-  className?: string;
-}) {
-  const { plan, total, isOverBudget, progressPercent } = getBudgetMetrics(
-    plannedBudget,
-    totalBudget,
-  );
-
-  return (
-    <div className={cn('space-y-2', className)}>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        <div className="flex flex-col min-w-0 text-left">
-          <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">
-            Планируемый
-          </span>
-          <span className="text-sm sm:text-base md:text-lg font-black text-brand-indigo leading-tight break-all">
-            {formatRub(plan)} ₽
-          </span>
-        </div>
-        <div className="flex flex-col min-w-0 text-left md:text-right">
-          <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">
-            Итого по точкам
-          </span>
-          <span
-            className={cn(
-              'text-sm sm:text-base md:text-lg font-black leading-tight break-all',
-              isOverBudget ? 'text-red-500' : 'text-brand-indigo',
-            )}
-          >
-            {formatRub(total)} ₽
-          </span>
-        </div>
-      </div>
-      <div className="space-y-1.5">
-        <div className="h-1 rounded-full bg-slate-100 overflow-hidden">
-          <div
-            className={cn(
-              'h-full rounded-full transition-all duration-300',
-              isOverBudget ? 'bg-red-500' : 'bg-emerald-500',
-            )}
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-2 text-[9px] font-bold text-slate-400">
-          <span className="min-w-0 break-words">
-            {plan > 0 ? `Использовано ${progressPercent}%` : 'Лимит не задан'}
-          </span>
-          <span className="min-w-0 text-right break-all">
-            {plan > 0 ? `${formatRub(plan - total)} ₽` : '—'}
-          </span>
-        </div>
-        <div
-          className={cn(
-            'flex items-start gap-2 rounded-lg border px-2 py-1 text-[9px] sm:text-[10px] font-black leading-tight break-words',
-            isOverBudget
-              ? 'border-red-100 bg-red-50/70 text-red-600'
-              : 'border-emerald-100 bg-emerald-50/70 text-emerald-600',
-          )}
-        >
-          {isOverBudget ? <AlertTriangle size={10} /> : <CheckCircle2 size={10} />}
-          {plan > 0 ? (
-            isOverBudget ? (
-              <span>Перерасход: +{formatRub(total - plan)} ₽</span>
-            ) : (
-              <span>Остаток: {formatRub(plan - total)} ₽</span>
-            )
-          ) : (
-            <span>Задайте планируемый бюджет для контроля расхода</span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+import { setConfig, clearConfig } from '@/features/persistent-map';
+import { TripCard } from '@/entities/trip/ui/TripCard';
+import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 
 export function ProfilePage() {
   const router = useRouter();
   const { user, setUser } = useUserStore();
   const { setCurrentTrip, currentTrip, updateCurrentTrip, setPoints, addPoint, removePoint } =
     useTripStore();
+  const trips = useTripStore((state) => state.trips);
+  const setTrips = useTripStore((state) => state.setTrips);
+  const isDirty = useTripStore((state) => state.isDirty);
+  const clearPlanner = useTripStore((state) => state.clearPlanner);
   const { isAuthenticated } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<'routes' | 'saved'>('routes');
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(user?.name || '');
-  const [savedTrips, setSavedTrips] = useState<Trip[]>([]);
+  const [allTrips, setAllTrips] = useState<Trip[]>([]);
   const [isLoadingTrips, setIsLoadingTrips] = useState(true);
+  const [showPlannerConflictModal, setShowPlannerConflictModal] = useState(false);
+  const [pendingPlannerTripId, setPendingPlannerTripId] = useState<string | null>(null);
+  const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [collaboratorsModalOpen, setCollaboratorsModalOpen] = useState(false);
-  const { collaborators, setCollaborators } = useCollaborateStore();
-  const [isMobile, setIsMobile] = useState(false);
+  const [inviteTripId, setInviteTripId] = useState<string | null>(null);
+  const [collaboratorsTripId, setCollaboratorsTripId] = useState<string | null>(null);
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const { setCollaborators } = useCollaborateStore();
 
+  // Sync local allTrips into the Zustand store so selectors/filtered arrays stay up-to-date
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
+    setTrips(allTrips);
+  }, [allTrips, setTrips]);
+
+  const travelTrips = trips.filter((t) => t.startDate && t.endDate);
+  const savedTrips = trips.filter((t) => !t.startDate || !t.endDate);
+
+  const now = new Date();
+  const currentTrips = travelTrips
+    .filter((t) => new Date(t.startDate!) <= now && new Date(t.endDate!) >= now)
+    .sort((a, b) => new Date(a.endDate!).getTime() - new Date(b.endDate!).getTime());
+  const upcomingTrips = travelTrips
+    .filter((t) => new Date(t.startDate!) > now)
+    .sort((a, b) => new Date(a.startDate!).getTime() - new Date(b.startDate!).getTime());
+  const pastTrips = travelTrips
+    .filter((t) => new Date(t.endDate!) < now)
+    .sort((a, b) => new Date(b.endDate!).getTime() - new Date(a.endDate!).getTime());
 
   const progressColor =
     scrollProgress < 0.4 ? '#0ea5e9' : scrollProgress < 0.8 ? '#4f46e5' : '#9333ea';
@@ -232,8 +141,8 @@ export function ProfilePage() {
 
     tripsApi
       .getAll()
-      .then((trips) => {
-        setSavedTrips(trips);
+      .then((loadedTrips) => {
+        setAllTrips(loadedTrips);
         setIsLoadingTrips(false);
       })
       .catch((err) => {
@@ -244,7 +153,7 @@ export function ProfilePage() {
 
   useEffect(() => {
     evaluateScrollState();
-  }, [activeTab, savedTrips, isLoadingTrips, evaluateScrollState]);
+  }, [activeTab, allTrips, isLoadingTrips, evaluateScrollState]);
 
   useEffect(() => {
     return () => {
@@ -252,10 +161,9 @@ export function ProfilePage() {
     };
   }, []);
 
-  const activeRoute = savedTrips.find((t) => t.isActive);
+  const activeRoute = allTrips.find((t) => t.isActive);
 
-  // Sync activeRoute into the trip store so WS point events (addPoint/updatePoint/removePoint)
-  // update currentTrip.points, which we then use for real-time display.
+  // Sync activeRoute into the trip store so WS point events update currentTrip.points
   useEffect(() => {
     if (activeRoute && currentTrip?.id !== activeRoute.id) {
       setCurrentTrip(activeRoute);
@@ -272,20 +180,35 @@ export function ProfilePage() {
       : activeRoute
     : undefined;
 
-  const activeRouteTotalBudget =
-    displayedActiveRoute?.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
-
   useCollaborationSocket(activeRoute?.id ?? '');
 
-  // Подключаемся по сокетам ко ВСЕМ маршрутам из списка, чтобы видеть обновления
-  // (например, "Итог по точкам") в реальном времени, даже если маршрут не активен.
+  // Selected trip for map display
+  const selectedTrip = selectedTripId
+    ? (allTrips.find((t) => t.id === selectedTripId) ?? null)
+    : (displayedActiveRoute ?? travelTrips[0] ?? null);
+
+  // Feed points to PersistentMapShell (right aside in layout)
+  useEffect(() => {
+    setConfig({
+      source: 'profile-page',
+      priority: 80,
+      points: selectedTrip?.points || [],
+      readonly: true,
+      draggable: false,
+      routeProfile: 'driving',
+      fitKey: selectedTrip?.id,
+    });
+    return () => {
+      clearConfig('profile-page');
+    };
+  }, [selectedTrip?.id, selectedTrip?.points]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Join all trip sockets for real-time card updates
   useEffect(() => {
     const socket = getSocket();
-    const joinedIds = savedTrips.map((t) => t.id).filter(Boolean);
+    const joinedIds = allTrips.map((t) => t.id).filter(Boolean);
 
-    // Подключаемся ко всем
     joinedIds.forEach((id) => {
-      // activeRoute уже обрабатывается useCollaborationSocket, но лишний join не страшен
       if (id !== activeRoute?.id) {
         socket.emit('join:trip', { trip_id: id });
       }
@@ -298,19 +221,23 @@ export function ProfilePage() {
         }
       });
     };
-  }, [savedTrips, activeRoute?.id]);
+  }, [allTrips, activeRoute?.id]);
 
-  // When the current user is invited to a trip, add it to the list in real-time
+  // When the current user is invited to / removed from a trip
   useEffect(() => {
     const socket = getSocket();
     socket.on('trip:shared', (trip: Trip) => {
-      setSavedTrips((prev) => {
+      setAllTrips((prev) => {
         if (prev.some((t) => t.id === trip.id)) return prev;
         return [...prev, { ...trip, isActive: false }];
       });
     });
+    socket.on('trip:removed', ({ tripId }: { tripId: string }) => {
+      setAllTrips((prev) => prev.filter((t) => t.id !== tripId));
+    });
     return () => {
       socket.off('trip:shared');
+      socket.off('trip:removed');
     };
   }, []);
 
@@ -334,8 +261,7 @@ export function ProfilePage() {
         }
       }
 
-      // Update savedTrips so the point order updates for the trip cards
-      setSavedTrips((prev) =>
+      setAllTrips((prev) =>
         prev.map((t) => {
           if (t.id !== trip_id || !t.points) return t;
           const pointMap = new Map(t.points.map((p) => [p.id, p]));
@@ -362,8 +288,7 @@ export function ProfilePage() {
         setPoints(currentPoints.map((p) => (p.id === point_id ? { ...p, ...patch } : p)));
       }
 
-      // Update savedTrips so the point total budget updates for the trip cards
-      setSavedTrips((prev) =>
+      setAllTrips((prev) =>
         prev.map((t) => {
           if (t.id !== trip_id || !t.points) return t;
           return {
@@ -379,7 +304,7 @@ export function ProfilePage() {
         addPoint(point);
       }
 
-      setSavedTrips((prev) =>
+      setAllTrips((prev) =>
         prev.map((t) => {
           if (t.id !== trip_id) return t;
           return { ...t, points: [...(t.points || []), point] };
@@ -392,7 +317,7 @@ export function ProfilePage() {
         removePoint(point_id);
       }
 
-      setSavedTrips((prev) =>
+      setAllTrips((prev) =>
         prev.map((t) => {
           if (t.id !== trip_id || !t.points) return t;
           return { ...t, points: t.points.filter((p) => p.id !== point_id) };
@@ -404,7 +329,7 @@ export function ProfilePage() {
       if (trip_id === currentTrip.id) {
         updateCurrentTrip(patch);
       }
-      setSavedTrips((prev) => prev.map((t) => (t.id === trip_id ? { ...t, ...patch } : t)));
+      setAllTrips((prev) => prev.map((t) => (t.id === trip_id ? { ...t, ...patch } : t)));
     };
 
     socket.on('point:reorder', onPointReorder);
@@ -466,11 +391,11 @@ export function ProfilePage() {
 
   const handleToggleActive = async (routeId: string) => {
     try {
-      const trip = savedTrips.find((t) => t.id === routeId);
+      const trip = allTrips.find((t) => t.id === routeId);
       if (!trip) return;
       const newIsActive = !trip.isActive;
-      setSavedTrips(
-        savedTrips.map((t) => ({ ...t, isActive: t.id === routeId ? newIsActive : false })),
+      setAllTrips(
+        allTrips.map((t) => ({ ...t, isActive: t.id === routeId ? newIsActive : false })),
       );
       await tripsApi.update(routeId, { isActive: newIsActive });
       const socket = getSocket();
@@ -482,7 +407,7 @@ export function ProfilePage() {
         Promise.all([tripsApi.getOne(routeId), pointsApi.getAll(routeId)])
           .then(([updatedTrip, updatedPoints]) => {
             if (updatedTrip && updatedPoints) {
-              setSavedTrips((prev) =>
+              setAllTrips((prev) =>
                 prev.map((t) =>
                   t.id === routeId ? { ...updatedTrip, points: updatedPoints, isActive: true } : t,
                 ),
@@ -507,13 +432,73 @@ export function ProfilePage() {
     }
   };
 
+  // Open edit conflict modal for switching to a different route in planner
   const handleEditRoute = (trip: Trip) => {
-    setCurrentTrip(trip);
+    setPendingPlannerTripId(trip.id);
+    setShowPlannerConflictModal(true);
+  };
+
+  const handleConfirmPlannerReplace = () => {
+    const targetTripId = pendingPlannerTripId;
+    setShowPlannerConflictModal(false);
+    setPendingPlannerTripId(null);
+    if (!targetTripId) {
+      router.push('/planner');
+      return;
+    }
+    router.push(`/planner?applyTripId=${encodeURIComponent(targetTripId)}`);
+  };
+
+  const handleDatesUpdate = async (
+    tripId: string,
+    dates: { startDate: string; endDate: string },
+  ) => {
+    try {
+      await tripsApi.update(tripId, dates);
+      setAllTrips((prev) => prev.map((t) => (t.id === tripId ? { ...t, ...dates } : t)));
+      toast.success('Даты сохранены');
+    } catch {
+      toast.error('Не удалось сохранить даты');
+    }
+  };
+
+  // Open create conflict modal when creating a new trip with unsaved changes
+  const handleCreateTrip = () => {
+    if (currentTrip && isDirty) {
+      setConflictModalOpen(true);
+    } else {
+      clearPlanner();
+      router.push('/planner');
+    }
+  };
+
+  const handleConflictSaveAndReplace = async () => {
+    try {
+      if (currentTrip) {
+        await tripsApi.update(currentTrip.id, currentTrip);
+      }
+      clearPlanner();
+      setConflictModalOpen(false);
+      router.push('/planner');
+    } catch (err) {
+      console.error('Failed to save trip:', err);
+      toast.error('Не удалось сохранить маршрут');
+    }
+  };
+
+  const handleConflictGoToPlannerOnly = () => {
+    setConflictModalOpen(false);
+    router.push('/planner');
+  };
+
+  const handleConflictReplaceWithoutSave = () => {
+    clearPlanner();
+    setConflictModalOpen(false);
     router.push('/planner');
   };
 
   return (
-    <div className="flex flex-col h-full max-h-[calc(100vh-100px)] bg-slate-50 relative overflow-hidden w-full">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[#f0f4f8]">
       <input
         type="file"
         ref={fileInputRef}
@@ -523,27 +508,30 @@ export function ProfilePage() {
       />
 
       {/* ── ШАПКА ПРОФИЛЯ ── */}
-      <div className="w-full shrink-0 bg-white border-b border-slate-200 z-20 px-4 py-3 md:px-5 md:py-4 shadow-sm">
-        <div className="flex items-center gap-3 mb-3 md:mb-4 w-full">
-          <h1 className="text-lg md:text-xl font-black text-brand-indigo">Мой профиль</h1>
-        </div>
-        <div className="flex items-center gap-4 md:gap-5">
+      <div className="w-full shrink-0 bg-white border-b border-slate-100 px-4 py-3">
+        <div className="flex items-center gap-3">
           <div
             onClick={handleAvatarClick}
-            className="w-16 h-16 md:w-20 md:h-20 bg-slate-50 rounded-full flex items-center justify-center border-2 border-white shadow-md overflow-hidden cursor-pointer group relative shrink-0"
+            className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center
+                       border-4 border-white shadow-lg overflow-hidden cursor-pointer group relative shrink-0"
           >
             {user?.photo ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={user.photo} className="w-full h-full object-cover" alt={user.name} />
+            ) : user?.name ? (
+              <span className="text-lg font-bold text-slate-400 uppercase">
+                {user.name.substring(0, 2)}
+              </span>
             ) : (
-              <UserIcon size={32} className="text-slate-200" />
+              <UserIcon size={36} className="text-slate-300" />
             )}
-            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
               <Pencil size={20} className="text-white" />
             </div>
           </div>
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
               {isEditingName ? (
                 <div className="flex items-center gap-2">
                   <input
@@ -553,342 +541,345 @@ export function ProfilePage() {
                     onChange={(e) => setTempName(e.target.value)}
                     onBlur={handleSaveName}
                     onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
-                    className="text-lg md:text-xl font-black text-brand-indigo border-b-2 border-brand-blue outline-none bg-transparent min-w-[150px]"
+                    className="text-xl font-black text-brand-indigo border-b-2 border-brand-sky
+                               outline-none bg-transparent w-full"
                   />
                   <button
                     onClick={handleSaveName}
-                    className="p-2 hover:scale-110 active:scale-90 transition-all flex items-center justify-center"
+                    className="p-1.5 hover:scale-110 active:scale-90 transition-all"
                     aria-label="Сохранить имя"
                   >
-                    <span className="text-xl leading-none">💾</span>
+                    <span className="text-lg leading-none">💾</span>
                   </button>
                 </div>
               ) : (
                 <>
-                  <h2 className="text-lg md:text-xl font-black text-brand-indigo">{user?.name}</h2>
+                  <h2 className="text-xl font-black text-brand-indigo leading-tight truncate">
+                    {user?.name}
+                  </h2>
                   <button
                     onClick={() => {
                       setTempName(user?.name || '');
                       setIsEditingName(true);
                     }}
-                    className="p-1 hover:scale-110 active:scale-90 transition-all flex items-center justify-center"
+                    className="p-1 hover:scale-110 active:scale-90 transition-all opacity-40 hover:opacity-100 shrink-0"
                     aria-label="Редактировать имя"
                   >
-                    <span className="text-sm leading-none">✏️</span>
+                    <Pencil size={14} className="text-slate-500" />
                   </button>
                 </>
               )}
             </div>
-            <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+
+            <p className="text-[13px] text-slate-400 font-medium">
               Путешественник с {user?.createdAt ? new Date(user.createdAt).getFullYear() : '2026'}{' '}
               года
             </p>
           </div>
         </div>
+
+        {/* Stats row */}
+        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-100">
+          <div className="flex flex-col items-center">
+            <span className="text-base font-black text-brand-indigo leading-none">
+              {allTrips.length}
+            </span>
+            <span className="text-[10px] text-slate-400 font-semibold mt-0.5">Поездок</span>
+          </div>
+          <div className="w-px h-6 bg-slate-100" />
+          <div className="flex flex-col items-center">
+            <span className="text-base font-black text-brand-indigo leading-none">
+              {allTrips.reduce((acc, t) => acc + (t.points?.length ?? 0), 0)}
+            </span>
+            <span className="text-[10px] text-slate-400 font-semibold mt-0.5">Точек</span>
+          </div>
+          <div className="w-px h-6 bg-slate-100" />
+          <div className="flex flex-col items-center">
+            <span className="text-base font-black text-brand-indigo leading-none">
+              {travelTrips.length}
+            </span>
+            <span className="text-[10px] text-slate-400 font-semibold mt-0.5">С датами</span>
+          </div>
+        </div>
       </div>
 
-      {/* ── ОСНОВНАЯ ОБЛАСТЬ ── */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full">
-        {/* ── ЛЕВАЯ КОЛОНКА: Список ── */}
+      {/* ── ТАБЫ ── */}
+      <div className="px-4 pt-2.5 pb-0 shrink-0 bg-white border-b border-slate-100">
+        <div className="flex gap-4">
+          <button
+            onClick={() => setActiveTab('routes')}
+            className={cn(
+              'pb-2 text-[12px] font-bold tracking-wide border-b-2 transition-all',
+              activeTab === 'routes'
+                ? 'border-brand-sky text-brand-sky'
+                : 'border-transparent text-slate-400 hover:text-slate-600',
+            )}
+          >
+            Путешествия
+            <span className="ml-1.5 text-[10px] font-black opacity-60">{travelTrips.length}</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('saved')}
+            className={cn(
+              'pb-2 text-[12px] font-bold tracking-wide border-b-2 transition-all',
+              activeTab === 'saved'
+                ? 'border-brand-sky text-brand-sky'
+                : 'border-transparent text-slate-400 hover:text-slate-600',
+            )}
+          >
+            Сохранено
+            <span className="ml-1.5 text-[10px] font-black opacity-60">{savedTrips.length}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── КОНТЕНТ ТАБОВ ── */}
+      <div className="flex-1 relative min-h-0 overflow-hidden flex flex-col">
+        {/* Scroll-to-top button */}
         <div
           className={cn(
-            'flex flex-col bg-white overflow-hidden',
-            'flex-1 md:flex-none w-full md:w-[40%] lg:w-[35%] xl:w-[400px] shrink-0 md:border-r md:border-slate-200',
+            'absolute right-3 bottom-3 md:right-4 md:bottom-4 z-30',
+            'transition-all duration-300',
+            showScrollTop
+              ? 'opacity-100 translate-y-0 visible'
+              : 'opacity-0 translate-y-2 invisible pointer-events-none',
           )}
         >
-          <div className="px-3 md:px-4 pt-3 md:pt-4 shrink-0 bg-white z-20">
-            <div className="flex w-full p-1 bg-slate-100 rounded-xl">
-              <button
-                onClick={() => setActiveTab('routes')}
-                className={cn(
-                  'flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all',
-                  activeTab === 'routes'
-                    ? 'bg-white text-brand-indigo shadow-sm'
-                    : 'text-slate-400 hover:text-slate-600',
-                )}
-              >
-                Активно
-              </button>
-              <button
-                onClick={() => setActiveTab('saved')}
-                className={cn(
-                  'flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all',
-                  activeTab === 'saved'
-                    ? 'bg-white text-brand-indigo shadow-sm'
-                    : 'text-slate-400 hover:text-slate-600',
-                )}
-              >
-                Сохранено
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 relative min-h-0">
-            <div
-              className={cn(
-                'absolute right-3 bottom-3 md:right-4 md:bottom-4 z-30',
-                'transition-all duration-300',
-                showScrollTop
-                  ? 'opacity-100 translate-y-0 visible'
-                  : 'opacity-0 translate-y-2 invisible pointer-events-none',
-              )}
-            >
-              <button
-                type="button"
-                onClick={handleScrollToTop}
-                className="relative h-10 w-10 rounded-full shadow-md transition-transform hover:scale-105 active:scale-95"
-              >
-                <span
-                  className="absolute inset-0 rounded-full"
-                  style={{
-                    background: `conic-gradient(${progressColor} ${progressDegrees}deg, ${progressTrackColor} ${progressDegrees}deg)`,
-                  }}
-                />
-                <span className="absolute inset-[2px] rounded-full bg-white" />
-                <span className="relative z-10 flex h-full w-full items-center justify-center text-brand-indigo">
-                  <ArrowUp size={14} />
-                </span>
-              </button>
-            </div>
-
-            <div className="h-full overflow-y-auto p-3 md:p-4 no-scrollbar">
-              {activeTab === 'routes' ? (
-                activeRoute ? (
-                  <div className="space-y-3 w-full">
-                    <div className="flex justify-between items-center px-1">
-                      <h3 className="text-[10px] font-black text-brand-indigo uppercase tracking-widest">
-                        Активный маршрут
-                      </h3>
-                      <div className="flex items-center gap-2">
-                        {collaborators.length > 0 && (
-                          <button
-                            onClick={() => setCollaboratorsModalOpen(true)}
-                            className="flex items-center hover:opacity-80 transition-opacity"
-                            title="Участники маршрута"
-                          >
-                            <AvatarGroup>
-                              {collaborators.slice(0, 3).map((c) => (
-                                <Avatar key={c.userId} size="sm">
-                                  {c.photo && <AvatarImage src={c.photo} alt={c.name} />}
-                                  <AvatarFallback>{c.name.charAt(0).toUpperCase()}</AvatarFallback>
-                                </Avatar>
-                              ))}
-                              {collaborators.length > 3 && (
-                                <AvatarGroupCount>+{collaborators.length - 3}</AvatarGroupCount>
-                              )}
-                            </AvatarGroup>
-                          </button>
-                        )}
-                        {activeRoute.ownerId === user?.id && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setInviteModalOpen(true)}
-                            className="h-7 px-2 rounded-lg border-brand-sky/30 text-brand-sky font-bold text-[9px] hover:bg-brand-sky/5"
-                          >
-                            <UserPlus size={12} className="mr-1" />
-                            ПРИГЛАСИТЬ
-                          </Button>
-                        )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditRoute(activeRoute)}
-                          className="h-7 px-2 rounded-lg border-slate-200 text-slate-500 font-bold text-[9px]"
-                        >
-                          <Pencil size={12} className="mr-1" />
-                          ИЗМЕНИТЬ
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Превью карты */}
-                    <div className="w-full aspect-video md:hidden rounded-2xl overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100">
-                      <RouteMap
-                        key={`card-${activeRoute.id}`}
-                        points={displayedActiveRoute?.points || []}
-                        onPointDragEnd={() => {}}
-                      />
-                    </div>
-
-                    <div className="bg-white p-3 md:p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col">
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="w-10 h-10 rounded-xl bg-brand-blue/10 text-brand-blue flex items-center justify-center shrink-0">
-                          <MapIcon size={20} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest truncate">
-                            Маршрут
-                          </p>
-                          <p className="text-base font-black text-brand-indigo truncate leading-tight">
-                            {activeRoute.title}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div>
-                        <div
-                          ref={routePointsScrollRef}
-                          onScroll={handleContentScroll}
-                          className="pr-1 no-scrollbar"
-                        >
-                          <div className="space-y-2.5">
-                            {displayedActiveRoute?.points?.map((point, idx) => (
-                              <div key={point.id} className="flex items-start gap-3">
-                                <div className="w-5 h-5 rounded-full bg-brand-blue text-white font-black flex items-center justify-center text-[8px] shrink-0 mt-0.5">
-                                  {idx + 1}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-black text-slate-700 leading-tight">
-                                    {point.title}
-                                  </p>
-                                  <p className="text-[10px] text-slate-400 font-bold">
-                                    {point.budget
-                                      ? `${point.budget.toLocaleString('ru-RU')} ₽`
-                                      : 'Бесплатно'}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-2 pt-2 border-t border-slate-50 shrink-0">
-                        <BudgetSummary
-                          plannedBudget={activeRoute.budget}
-                          totalBudget={activeRouteTotalBudget}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-6">
-                    <MapIcon size={32} className="mb-2 opacity-20" />
-                    <p className="text-[11px] font-bold italic">Нет активного маршрута</p>
-                    <Button
-                      onClick={() => router.push('/planner')}
-                      variant="brand"
-                      className="mt-4 h-8 rounded-lg uppercase font-black tracking-widest text-[9px]"
-                    >
-                      Создать
-                    </Button>
-                  </div>
-                )
-              ) : isLoadingTrips ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-24 bg-slate-100 animate-pulse rounded-2xl" />
-                  ))}
-                </div>
-              ) : savedTrips.length > 0 ? (
-                <div
-                  ref={savedListScrollRef}
-                  onScroll={handleContentScroll}
-                  className="h-full overflow-y-auto pr-1 no-scrollbar"
-                >
-                  <div className="space-y-3 w-full pb-2">
-                    {savedTrips.map((route) => {
-                      const routeTotalBudget =
-                        route.points?.reduce((sum, p) => sum + (p.budget || 0), 0) || 0;
-                      return (
-                        <div
-                          key={route.id}
-                          className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all"
-                        >
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center shrink-0">
-                                <MapIcon size={18} />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest truncate">
-                                  Маршрут
-                                </p>
-                                <p className="text-base font-black text-brand-indigo truncate leading-tight">
-                                  {route.title}
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => handleEditRoute(route)}
-                              className="p-2 bg-slate-50 text-slate-400 hover:text-brand-blue rounded-lg transition-all active:scale-90 shrink-0"
-                            >
-                              <Pencil size={14} />
-                            </button>
-                          </div>
-                          <div className="pt-3 border-t border-slate-50 space-y-3">
-                            <BudgetSummary
-                              plannedBudget={route.budget}
-                              totalBudget={routeTotalBudget}
-                            />
-                            <div className="flex justify-end">
-                              <label className="flex items-center gap-2 cursor-pointer group">
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors">
-                                  {route.isActive ? 'Активен' : 'Активировать'}
-                                </span>
-                                <div className="relative">
-                                  <input
-                                    type="checkbox"
-                                    className="sr-only peer"
-                                    checked={route.isActive}
-                                    onChange={() => handleToggleActive(route.id)}
-                                  />
-                                  <div className="w-10 h-6 bg-slate-100 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[3px] after:start-[3px] after:bg-white after:border-slate-200 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-blue" />
-                                </div>
-                              </label>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : (
-                <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 text-center p-6">
-                  <MapIcon size={32} className="mb-2 opacity-20" />
-                  <p className="text-[11px] font-bold italic">Список пуст</p>
-                </div>
-              )}
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={handleScrollToTop}
+            className="relative h-10 w-10 rounded-full shadow-md transition-transform hover:scale-105 active:scale-95"
+          >
+            <span
+              className="absolute inset-0 rounded-full"
+              style={{
+                background: `conic-gradient(${progressColor} ${progressDegrees}deg, ${progressTrackColor} ${progressDegrees}deg)`,
+              }}
+            />
+            <span className="absolute inset-[2px] rounded-full bg-white" />
+            <span className="relative z-10 flex h-full w-full items-center justify-center text-brand-indigo">
+              <ArrowUp size={14} />
+            </span>
+          </button>
         </div>
 
-        <div className="hidden md:flex flex-1 relative bg-slate-50 items-center justify-center overflow-hidden p-4">
-          <div className="w-full h-full max-w-[96%] max-h-[96%] overflow-hidden relative rounded-2xl border border-slate-200 shadow-lg">
-            {displayedActiveRoute &&
-            displayedActiveRoute.points &&
-            displayedActiveRoute.points.length > 0 ? (
-              <RouteMap
-                key={`desktop-${displayedActiveRoute.id}`}
-                points={displayedActiveRoute.points}
-                onPointDragEnd={() => {}}
-              />
+        {/* Sub-header: count + create button */}
+        <div className="flex items-center justify-between px-4 py-2 shrink-0 border-b border-slate-100 bg-white">
+          <span className="text-[13px] font-bold text-slate-500">
+            {activeTab === 'routes'
+              ? `${travelTrips.length} путешествий`
+              : `${savedTrips.length} сохранено`}
+          </span>
+          <Button
+            onClick={handleCreateTrip}
+            variant="brand"
+            className="h-8 px-4 rounded-xl text-[12px] font-bold"
+          >
+            + Создать поездку
+          </Button>
+        </div>
+
+        {/* Cards area - SCROLLABLE */}
+        <div className="flex-1 min-h-0 flex flex-col">
+          {activeTab === 'routes' ? (
+            isLoadingTrips ? (
+              <div className="px-4 space-y-3 pb-4 pt-3 flex-1 overflow-y-auto">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
+                ))}
+              </div>
+            ) : travelTrips.length > 0 ? (
+              <div
+                ref={routePointsScrollRef}
+                onScroll={handleContentScroll}
+                className="px-4 pb-4 pt-3 flex-1 overflow-y-auto
+                  [&::-webkit-scrollbar]:w-1.5
+                  [&::-webkit-scrollbar-track]:bg-transparent
+                  [&::-webkit-scrollbar-thumb]:bg-slate-200
+                  [&::-webkit-scrollbar-thumb]:rounded-full
+                  [&::-webkit-scrollbar-thumb:hover]:bg-slate-300"
+              >
+                {currentTrips.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-4 my-4">
+                      <hr className="flex-1 border-gray-200" />
+                      <span className="text-xs font-semibold text-gray-400 tracking-wider uppercase">В процессе</span>
+                      <hr className="flex-1 border-gray-200" />
+                    </div>
+                    <div className="space-y-3">
+                      {currentTrips.map((trip) => (
+                        <TripCard
+                          key={trip.id}
+                          trip={trip}
+                          isSelected={selectedTripId === trip.id}
+                          onCardClick={setSelectedTripId}
+                          onInvite={() => { setInviteTripId(trip.id); setInviteModalOpen(true); }}
+                          onCollaboratorsClick={() => { setCollaboratorsTripId(trip.id); setCollaboratorsModalOpen(true); }}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {upcomingTrips.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-4 my-4">
+                      <hr className="flex-1 border-gray-200" />
+                      <span className="text-xs font-semibold text-gray-400 tracking-wider uppercase">Скоро</span>
+                      <hr className="flex-1 border-gray-200" />
+                    </div>
+                    <div className="space-y-3">
+                      {upcomingTrips.map((trip) => (
+                        <TripCard
+                          key={trip.id}
+                          trip={trip}
+                          isSelected={selectedTripId === trip.id}
+                          onCardClick={setSelectedTripId}
+                          onInvite={() => { setInviteTripId(trip.id); setInviteModalOpen(true); }}
+                          onCollaboratorsClick={() => { setCollaboratorsTripId(trip.id); setCollaboratorsModalOpen(true); }}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {pastTrips.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-4 my-4">
+                      <hr className="flex-1 border-gray-200" />
+                      <span className="text-xs font-semibold text-gray-400 tracking-wider uppercase">Завершенные</span>
+                      <hr className="flex-1 border-gray-200" />
+                    </div>
+                    <div className="space-y-3">
+                      {pastTrips.map((trip) => (
+                        <TripCard
+                          key={trip.id}
+                          trip={trip}
+                          isSelected={selectedTripId === trip.id}
+                          onCardClick={setSelectedTripId}
+                          onInvite={() => { setInviteTripId(trip.id); setInviteModalOpen(true); }}
+                          onCollaboratorsClick={() => { setCollaboratorsTripId(trip.id); setCollaboratorsModalOpen(true); }}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             ) : (
-              <MapIcon
-                size={44}
-                className="text-slate-200 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-              />
-            )}
-          </div>
+              <div className="flex flex-col items-center justify-center text-slate-300 text-center px-4 py-10 flex-1">
+                <MapIcon size={40} className="mb-3 opacity-20" />
+                <p className="text-sm font-semibold text-slate-400">Путешествий пока нет</p>
+                <p className="text-xs text-slate-300 mt-1">Создайте первую поездку с датами</p>
+              </div>
+            )
+          ) : isLoadingTrips ? (
+            <div className="px-4 space-y-3 pb-4 pt-3 flex-1 overflow-y-auto">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
+              ))}
+            </div>
+          ) : savedTrips.length > 0 ? (
+            <div
+              ref={savedListScrollRef}
+              onScroll={handleContentScroll}
+              className="px-4 space-y-3 pb-4 pt-3 flex-1 overflow-y-auto
+                [&::-webkit-scrollbar]:w-1.5
+                [&::-webkit-scrollbar-track]:bg-transparent
+                [&::-webkit-scrollbar-thumb]:bg-slate-200
+                [&::-webkit-scrollbar-thumb]:rounded-full
+                [&::-webkit-scrollbar-thumb:hover]:bg-slate-300"
+            >
+              {savedTrips.map((trip) => (
+                <TripCard
+                  key={trip.id}
+                  trip={trip}
+                  onDatesUpdate={handleDatesUpdate}
+                  onInvite={() => {
+                    setInviteTripId(trip.id);
+                    setInviteModalOpen(true);
+                  }}
+                  onCollaboratorsClick={() => {
+                    setCollaboratorsTripId(trip.id);
+                    setCollaboratorsModalOpen(true);
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center text-slate-300 text-center px-4 py-10 flex-1">
+              <MapIcon size={40} className="mb-3 opacity-20" />
+              <p className="text-sm font-semibold text-slate-400">Список пуст</p>
+            </div>
+          )}
         </div>
       </div>
 
-      {activeRoute && (
+      {inviteTripId && (
         <InviteModal
-          tripId={activeRoute.id}
+          tripId={inviteTripId}
           open={inviteModalOpen}
-          onClose={() => setInviteModalOpen(false)}
+          onClose={() => {
+            setInviteModalOpen(false);
+            setInviteTripId(null);
+          }}
         />
       )}
-      {activeRoute && (
+      {collaboratorsTripId && (
         <CollaboratorsModal
-          tripId={activeRoute.id}
-          ownerId={activeRoute.ownerId}
+          tripId={collaboratorsTripId}
+          ownerId={allTrips.find((t) => t.id === collaboratorsTripId)?.ownerId || ''}
           open={collaboratorsModalOpen}
-          onClose={() => setCollaboratorsModalOpen(false)}
+          onClose={() => {
+            setCollaboratorsModalOpen(false);
+            setCollaboratorsTripId(null);
+          }}
         />
       )}
+
+      {/* Conflict modal: switching to a different trip in planner */}
+      <PlannerConflictModal
+        open={showPlannerConflictModal}
+        onOpenChange={setShowPlannerConflictModal}
+        conflictType="different_route"
+        currentRouteTitle={currentTrip?.title?.trim() || 'без названия'}
+        onCancel={() => {
+          setShowPlannerConflictModal(false);
+          setPendingPlannerTripId(null);
+        }}
+        onReplaceWithoutSave={handleConfirmPlannerReplace}
+        onSaveAndReplace={async () => {
+          try {
+            if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+              await tripsApi.update(currentTrip.id, {
+                title: currentTrip.title,
+                description: currentTrip.description ?? undefined,
+                budget: currentTrip.budget ?? undefined,
+              });
+            }
+          } catch (e) {
+            console.error('Failed to save current trip before replace:', e);
+            toast.error('Не удалось сохранить текущий маршрут');
+          }
+          handleConfirmPlannerReplace();
+        }}
+        onGoToPlannerOnly={() => {
+          setShowPlannerConflictModal(false);
+          setPendingPlannerTripId(null);
+          router.push('/planner');
+        }}
+      />
+
+      {/* Conflict modal: creating a new trip with unsaved changes */}
+      <PlannerConflictModal
+        open={conflictModalOpen}
+        onOpenChange={setConflictModalOpen}
+        conflictType="landing_new"
+        currentRouteTitle={currentTrip?.title || 'без названия'}
+        onCancel={() => setConflictModalOpen(false)}
+        onReplaceWithoutSave={handleConflictReplaceWithoutSave}
+        onSaveAndReplace={handleConflictSaveAndReplace}
+        onGoToPlannerOnly={handleConflictGoToPlannerOnly}
+      />
     </div>
   );
 }

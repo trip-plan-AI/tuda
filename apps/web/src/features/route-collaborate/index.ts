@@ -6,3 +6,5 @@ export { InviteModal } from './ui/InviteModal';
 export { CollaboratorList } from './ui/CollaboratorList';
 export { CollaboratorsAvatarGroup } from './ui/CollaboratorsAvatarGroup';
 export { CollaboratorsModal } from './ui/CollaboratorsModal';
+export { InvitationsModal } from './ui/InvitationsModal';
+export type { Invitation } from './ui/InvitationsModal';

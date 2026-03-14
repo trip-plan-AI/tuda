@@ -1,5 +1,13 @@
 import type { RoutePoint } from '@/entities/route-point/model/route-point.types'
 
+export interface Collaborator {
+  id: string
+  email: string
+  name?: string
+  avatarUrl?: string
+  role: 'owner' | 'editor' | 'viewer'
+}
+
 export interface Trip {
   id: string
   title: string
@@ -17,4 +25,5 @@ export interface Trip {
   createdAt: string
   updatedAt: string
   points: RoutePoint[]
+  collaborators?: Collaborator[]
 }

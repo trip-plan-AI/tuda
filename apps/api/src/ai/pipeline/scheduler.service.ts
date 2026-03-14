@@ -7,17 +7,34 @@ import type {
 } from '../types/pipeline.types';
 import type { FilteredPoi } from '../types/poi.types';
 
+// TRI-108-2: Realistic visit durations (in minutes)
+// Museums/Galleries need 2-3 hours, not 1.5
 const VISIT_DURATION: Record<string, number> = {
-  museum: 90,
-  park: 60,
-  restaurant: 60,
-  cafe: 30,
-  attraction: 60,
-  shopping: 45,
-  entertainment: 120,
+  museum: 150,      // 2.5 hours (was 90)
+  gallery: 120,     // 2 hours
+  park: 90,         // 1.5 hours (was 60)
+  monument: 45,     // 45 min quick visit
+  restaurant: 75,   // 1.25 hours with drinks (was 60)
+  cafe: 45,         // 45 min coffee + snack (was 30)
+  attraction: 90,   // 1.5 hours (was 60)
+  shopping: 60,     // 1 hour (was 45)
+  entertainment: 120, // 2 hours
+  viewpoint: 30,    // Quick photo stop
+  theater: 180,     // 3 hours (show + breaks)
+  market: 60,       // 1 hour browsing
 };
 
-const DEFAULT_TRANSIT_DURATION_MIN = 25;
+// TRI-108-2: Transit times between locations (in minutes)
+// Realistic for city navigation, not optimistic
+const TRANSIT_DURATION_BY_DISTANCE: Record<string, number> = {
+  same_location: 5,    // Within same POI area
+  same_district: 15,   // Within same neighborhood
+  adjacent_district: 30, // Next to current area
+  across_city: 50,     // Metro/taxi across city
+  far_distance: 80,    // Long distance travel
+};
+
+const DEFAULT_TRANSIT_DURATION_MIN = 30; // Conservative default (was 25)
 const RESTAURANT_MIN_GAP_MIN = 4 * 60;
 const CAFE_AFTER_MEAL_MIN = 60;
 const TIME_SHIFT_ON_FOOD_CONFLICT_MIN = 30;
@@ -33,7 +50,9 @@ export class SchedulerService {
   ): PlanDay {
     const singleDayBudget =
       intent.budget_per_day ??
-      (intent.budget_total !== null ? Math.max(0, Math.round(intent.budget_total)) : null);
+      (intent.budget_total !== null
+        ? Math.max(0, Math.round(intent.budget_total))
+        : null);
 
     const singleDayIntent: ParsedIntent = {
       ...intent,
@@ -117,30 +136,6 @@ export class SchedulerService {
       );
       let dayNonFoodPoints = 0;
 
-      const getNearestCandidate = (
-        candidates: FilteredPoi[],
-        fromPoi: FilteredPoi | undefined,
-      ): FilteredPoi | undefined => {
-        if (!fromPoi || candidates.length === 0) return candidates[0];
-
-        let nearest = candidates[0];
-        let minDistance = Infinity;
-
-        for (const candidate of candidates) {
-          const dist = this.haversineKm(
-            fromPoi.coordinates.lat,
-            fromPoi.coordinates.lon,
-            candidate.coordinates.lat,
-            candidate.coordinates.lon,
-          );
-          if (dist < minDistance) {
-            minDistance = dist;
-            nearest = candidate;
-          }
-        }
-        return nearest;
-      };
-
       const tryAddPoint = (poi: FilteredPoi, customStart?: number): boolean => {
         const lastPoi =
           points.length > 0
@@ -155,25 +150,34 @@ export class SchedulerService {
             poi.coordinates.lat,
             poi.coordinates.lon,
           );
-          // Если меньше 1 км - идем пешком (~5 км/ч), иначе едем (авто ~25 км/ч)
-          // Добавляем 5 мин на сборы/ожидание
+          // TRI-108-2: Realistic travel time calculation
           const rawMinutes =
-            dist < 1.0 ? (dist / 5) * 60 : (dist / 25) * 60 + 5;
-          transitTime = Math.max(5, Math.min(45, Math.round(rawMinutes)));
+            dist < 1.0
+              ? (dist / 5) * 60
+              : (dist / 25) * 60 + 10;
+          transitTime = Math.max(5, Math.min(90, Math.round(rawMinutes)));
         } else {
-          transitTime = 0; // Первая точка дня
+          transitTime = 0;
         }
 
         const arrival = customStart ?? currentTime + transitTime;
-        // Сокращаем время визита, чтобы больше успеть
-        const baseDuration = VISIT_DURATION[poi.category] ?? 60;
-        const visitDuration = Math.max(30, Math.round(baseDuration * 0.8));
+        const baseDuration = VISIT_DURATION[poi.category] ?? 90;
+        const visitDuration = Math.max(30, baseDuration);
         const leaveTime = arrival + visitDuration;
 
-        // Допускаем небольшое превышение времени (до 60 минут), чтобы показать точку
-        if (leaveTime > endMinutes + 60) return false;
+        if (leaveTime > endMinutes + 120) return false;
 
         const pointCost = this.estimatePointCost(poi, dayBudget);
+
+        // BUDGET GUARD (TRI-104-BUDGET): Prevent adding points that would exceed budget significantly.
+        // We allow 10% overflow to handle rounding and essential points.
+        if (dayBudget > 0 && points.length > 0 && dayCost + pointCost > dayBudget * 1.1) {
+          this.logger.debug(
+            `Skipping point ${poi.name} (cost ${pointCost}) - day budget reached (${dayCost}/${dayBudget})`,
+          );
+          return false;
+        }
+
         points.push({
           poi_id: poi.id,
           poi,
@@ -265,17 +269,65 @@ export class SchedulerService {
           continue;
         }
 
-        // Выбираем географически ближайшую точку
+        // TRI-108-5: Use geographic optimization to minimize backtracking
         const lastPoi =
           points.length > 0
             ? (points[points.length - 1].poi as FilteredPoi)
             : undefined;
-        const next = getNearestCandidate(validCandidates, lastPoi);
+        const optimizedOrder = this.optimizeRouteOrder(validCandidates, lastPoi);
+        
+        let added = false;
+        for (const next of optimizedOrder) {
+          if (tryAddPoint(next)) {
+            added = true;
+            break;
+          }
+        }
 
-        if (!next || !tryAddPoint(next)) {
+        if (!added) {
           break;
         }
       }
+
+      // TRI-108-3: Fill remaining budget with food POIs if available
+      const remainingBudget = dayBudget - dayCost;
+      const budgetUtilization = dayBudget > 0 ? (dayCost / dayBudget) * 100 : 100;
+
+      if (remainingBudget > 500 && currentTime < endMinutes - 60) {
+        // Try to add food venues to fill remaining budget
+        const MAX_RESTAURANTS = 3;
+        const MAX_CAFES = 2;
+
+        const foodCandidates = availablePois.filter(
+          (p) =>
+            !usedPoiIds.has(p.id) &&
+            (p.category === 'restaurant' || p.category === 'cafe') &&
+            (p.category !== 'cafe' || dayCafePoints < MAX_CAFES) &&
+            (p.category !== 'restaurant' || dayRestaurantPoints < MAX_RESTAURANTS),
+        );
+
+        // Sort by price (budget ones first to maximize count)
+        foodCandidates.sort((a, b) => {
+          const costA = this.estimatePointCost(a, dayBudget);
+          const costB = this.estimatePointCost(b, dayBudget);
+          return costA - costB;
+        });
+
+        // Add food POIs until budget exhausted or time exhausted
+        for (const foodPoi of foodCandidates) {
+          if (!tryAddPoint(foodPoi, currentTime)) {
+            break; // Can't fit this one
+          }
+          const newBudget = dayBudget - dayCost;
+          if (newBudget < 300) {
+            break; // Remaining budget too small
+          }
+        }
+      }
+
+      this.logger.log(
+        `[TRI-108-3] Day ${dayNumber}: spent ${dayCost}/${dayBudget} (${budgetUtilization.toFixed(0)}%)`,
+      );
 
       days.push({
         day_number: dayNumber,
@@ -321,21 +373,28 @@ export class SchedulerService {
 
   private estimatePointCost(poi: FilteredPoi, dayBudget: number): number {
     if (poi.price_segment === 'free') return 0;
+    
+    // If budget is not specified (0), use reasonable defaults
+    const budget = dayBudget > 0 ? dayBudget : 5000;
+    
     if (poi.price_segment === 'budget')
-      return Math.max(300, Math.round(dayBudget * 0.1));
+      return Math.max(150, Math.round(budget * 0.1));
     if (poi.price_segment === 'mid')
-      return Math.max(700, Math.round(dayBudget * 0.2));
+      return Math.max(400, Math.round(budget * 0.2));
     if (poi.price_segment === 'premium')
-      return Math.max(1500, Math.round(dayBudget * 0.35));
-    return Math.max(400, Math.round(dayBudget * 0.12));
+      return Math.max(1000, Math.round(budget * 0.35));
+    return Math.max(300, Math.round(budget * 0.12));
   }
 
-  private timeToMinutes(value: string): number {
-    const [h, m] = value.split(':').map(Number);
+  public timeToMinutes(value: string | undefined | null): number {
+    if (!value || typeof value !== 'string') return 0;
+    const parts = value.split(':').map(Number);
+    const h = parts[0] || 0;
+    const m = parts[1] || 0;
     return h * 60 + m;
   }
 
-  private minutesToTime(total: number): string {
+  public minutesToTime(total: number): string {
     const normalized = Math.max(0, Math.min(total, 23 * 60 + 59));
     const h = String(Math.floor(normalized / 60)).padStart(2, '0');
     const m = String(normalized % 60).padStart(2, '0');
@@ -363,5 +422,80 @@ export class SchedulerService {
       Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
 
     return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  // TRI-108-5: Geographic clustering for route optimization
+  private clusterPoisByZone(pois: FilteredPoi[]): Map<string, FilteredPoi[]> {
+    const clusters = new Map<string, FilteredPoi[]>();
+
+    for (const poi of pois) {
+      // Create zone key: round coordinates to 0.1 degree (~11km) grid
+      const latZone = Math.round(poi.coordinates.lat * 10) / 10;
+      const lonZone = Math.round(poi.coordinates.lon * 10) / 10;
+      const zoneKey = `${latZone},${lonZone}`;
+
+      if (!clusters.has(zoneKey)) {
+        clusters.set(zoneKey, []);
+      }
+      clusters.get(zoneKey)!.push(poi);
+    }
+
+    return clusters;
+  }
+
+  // TRI-108-5: Sort POIs to minimize backtracking using nearest-neighbor with zone awareness
+  private optimizeRouteOrder(candidates: FilteredPoi[], lastPoi?: FilteredPoi): FilteredPoi[] {
+    if (candidates.length === 0) return [];
+    if (candidates.length === 1) return candidates;
+
+    const clusters = this.clusterPoisByZone(candidates);
+    const clusterCenters = Array.from(clusters.entries()).map(([key, pois]) => {
+      const avgLat = pois.reduce((sum, p) => sum + p.coordinates.lat, 0) / pois.length;
+      const avgLon = pois.reduce((sum, p) => sum + p.coordinates.lon, 0) / pois.length;
+      return { key, lat: avgLat, lon: avgLon, pois };
+    });
+
+    // Sort clusters by proximity to last position
+    let currentLat = lastPoi?.coordinates.lat ?? 0;
+    let currentLon = lastPoi?.coordinates.lon ?? 0;
+
+    const sortedClusters: typeof clusterCenters = [];
+    const visitedKeys = new Set<string>();
+
+    // Greedy TSP: visit nearest unvisited cluster
+    while (visitedKeys.size < clusterCenters.length) {
+      let nearestCluster: (typeof clusterCenters)[number] | null = null;
+      let minDistance = Infinity;
+
+      for (const cluster of clusterCenters) {
+        if (visitedKeys.has(cluster.key)) continue;
+        const dist = this.haversineKm(currentLat, currentLon, cluster.lat, cluster.lon);
+        if (dist < minDistance) {
+          minDistance = dist;
+          nearestCluster = cluster;
+        }
+      }
+
+      if (nearestCluster !== null) {
+        sortedClusters.push(nearestCluster);
+        visitedKeys.add(nearestCluster.key);
+        currentLat = nearestCluster.lat;
+        currentLon = nearestCluster.lon;
+      }
+    }
+
+    // Flatten clusters into ordered POI list
+    const optimized: FilteredPoi[] = [];
+    for (const cluster of sortedClusters) {
+      // Within cluster, sort by proximity to cluster center
+      const sortedPois = cluster.pois.sort((a, b) => {
+        const distA = this.haversineKm(cluster.lat, cluster.lon, a.coordinates.lat, a.coordinates.lon);
+        const distB = this.haversineKm(cluster.lat, cluster.lon, b.coordinates.lat, b.coordinates.lon);
+        return distA - distB;
+      });
+      optimized.push(...sortedPois);
+    }
+
+    return optimized;
   }
 }

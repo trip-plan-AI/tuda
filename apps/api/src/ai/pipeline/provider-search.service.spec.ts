@@ -21,6 +21,11 @@ describe('ProviderSearchService mass collection shadow diagnostics', () => {
     days: 1,
     budget_total: null,
     budget_per_day: null,
+    budget_per_person: null,
+    poi_count_requested: null,
+    min_restaurants: null,
+    min_cafes: null,
+    max_poi: null,
     party_type: 'solo',
     party_size: 1,
     categories: ['museum'],
@@ -42,6 +47,7 @@ describe('ProviderSearchService mass collection shadow diagnostics', () => {
         client: { chat: { completions: { create: jest.fn() } } },
         model: 'test',
       } as never,
+      { search: jest.fn() } as never,
     );
 
     const result = await service.fetchAndFilter({ ...baseIntent }, []);
@@ -61,6 +67,13 @@ describe('ProviderSearchService mass collection shadow diagnostics', () => {
           attempted: true,
           raw_count: 2,
           used_count: 1,
+          failed: false,
+        },
+        {
+          provider: 'photon',
+          attempted: false,
+          raw_count: 0,
+          used_count: 0,
           failed: false,
         },
         {
@@ -93,6 +106,7 @@ describe('ProviderSearchService mass collection shadow diagnostics', () => {
         client: { chat: { completions: { create: jest.fn() } } },
         model: 'test',
       } as never,
+      { search: jest.fn() } as never,
     );
 
     const result = await service.fetchAndFilter({ ...baseIntent }, fallbacks);
@@ -131,10 +145,11 @@ describe('ProviderSearchService mass collection shadow diagnostics', () => {
         client: { chat: { completions: { create: jest.fn() } } },
         model: 'test',
       } as never,
+      { search: jest.fn() } as never,
     );
 
     jest
-      .spyOn(service as never, 'generateMissingPois')
+      .spyOn(service as any, 'generateMissingPois')
       .mockResolvedValue([
         buildPoi('l-1', 'cafe', 55.81),
         buildPoi('l-2', 'restaurant', 55.83),

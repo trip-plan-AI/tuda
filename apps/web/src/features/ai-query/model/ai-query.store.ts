@@ -90,12 +90,14 @@ interface AiQueryStore {
   // TRI-104: применяет AI-план в Planner-trip и возвращает tripId для навигации/подсветки UI.
   // MERGE-NOTE: контракт используется в AIAssistantPage и MessageBubble, не менять тип без синхронных правок UI.
   applyPlanToCurrentTrip: (messageId: string) => Promise<string | null>;
+  sendMutationQuery: (query: string, tripId: string, currentPointsContext?: string) => Promise<void>;
   // TRI-104: ищет или создаёт AI-сессию для tripId при входе из Planner по кнопке "Редактировать с AI".
   // MERGE-NOTE: при изменении backend response обновите эту сигнатуру и маппинг ниже.
   openOrCreateSessionFromTrip: (tripId: string) => Promise<string | null>;
   createNewSession: (tripId?: string | null) => string;
   switchSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
+  renameSession: (sessionId: string, title: string) => Promise<void>;
   clearChat: () => void;
 }
 
@@ -201,11 +203,16 @@ function tryParseRoutePlan(content: string): ChatRoutePlan | null {
 }
 
 function mapStoredMessagesToChatMessages(
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  messages: Array<{ role: 'user' | 'assistant'; content: string; route_plan?: unknown }>,
 ): ChatMessage[] {
   return messages.map((message, index) => {
     if (message.role === 'assistant') {
-      const routePlan = tryParseRoutePlan(message.content);
+      // Сначала проверяем структурное поле route_plan (новый формат),
+      // потом fallback на JSON в content (legacy формат)
+      const routePlan =
+        (message.route_plan && typeof message.route_plan === 'object'
+          ? (message.route_plan as ChatRoutePlan)
+          : null) ?? tryParseRoutePlan(message.content);
       if (routePlan) {
         return {
           id: crypto.randomUUID(),
@@ -535,6 +542,131 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     }
   },
 
+  sendMutationQuery: async (query, tripId, currentPointsContext) => {
+    if (!tripId) return;
+    const normalized = sanitizeQuery(query);
+    if (!normalized || get().isLoading) return;
+
+    const requestId = crypto.randomUUID();
+    const userMessage: ChatMessage = {
+      id: requestId,
+      role: 'user',
+      content: normalized,
+      timestamp: new Date().toISOString(),
+    };
+
+    set((state) => {
+      const activeId = state.activeSessionId;
+      if (!activeId || !state.sessions[activeId]) return state;
+      const session = state.sessions[activeId];
+      const nextSessions = {
+        ...state.sessions,
+        [activeId]: {
+          ...session,
+          messages: [...session.messages, userMessage],
+        },
+      };
+      return {
+        isLoading: true,
+        sessions: nextSessions,
+        ...syncLegacyFields(nextSessions, activeId),
+      };
+    });
+
+    const activeId = get().activeSessionId;
+    try {
+      // Fetch trip first to get actual DB points (for context) and version
+      const tripData = await api.get<any>(`/trips/${tripId}`);
+      const version = tripData?.version || 0;
+      const actualContext =
+        Array.isArray(tripData?.points) && tripData.points.length > 0
+          ? tripData.points.map((p: any) => p.title).join(', ')
+          : currentPointsContext;
+
+      const mutations = await api.post<any[]>('/ai/mutations/parse', {
+        query: normalized,
+        tripContext: actualContext,
+      });
+
+      const response = await api.post<any>(`/ai/mutations/${tripId}/apply`, {
+        mutations,
+        ifMatch: version,
+        sessionId: activeId,
+      });
+
+      const pointCount = response.points?.length ?? 0;
+      const aiMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: pointCount === 0
+          ? `Маршрут очищен.`
+          : `Я обновил маршрут согласно вашему запросу.`,
+        routePlan: pointCount > 0 ? response.route_plan : undefined,
+        timestamp: new Date().toISOString(),
+      };
+
+      // Sync map: update currentTrip.points so the map reflects the mutation
+      // (WebSocket only fires if Planner page is mounted; this covers AI chat page too)
+      if (Array.isArray(response.points)) {
+        const tripState = useTripStore.getState();
+        if (tripState.currentTrip?.id === tripId) {
+          useTripStore.setState((s) => ({
+            currentTrip: s.currentTrip ? {
+              ...s.currentTrip,
+              points: response.points,
+            } : null,
+          }));
+        }
+      }
+
+      set((state) => {
+        const activeId = state.activeSessionId;
+        if (!activeId || !state.sessions[activeId]) return state;
+        const session = state.sessions[activeId];
+        const nextSessions = {
+          ...state.sessions,
+          [activeId]: {
+            ...session,
+            messages: [...session.messages, aiMessage],
+          },
+        };
+        return {
+          isLoading: false,
+          sessions: nextSessions,
+          ...syncLegacyFields(nextSessions, activeId),
+        };
+      });
+
+    } catch (error) {
+      console.error(error);
+      
+      const errorMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `Ошибка: не удалось применить изменения. Попробуйте обновить страницу.`,
+        timestamp: new Date().toISOString(),
+      };
+
+      set((state) => {
+        const activeId = state.activeSessionId;
+        if (!activeId || !state.sessions[activeId]) return { isLoading: false };
+        const session = state.sessions[activeId];
+        const nextSessions = {
+          ...state.sessions,
+          [activeId]: {
+            ...session,
+            messages: [...session.messages, errorMessage],
+          },
+        };
+        return {
+          isLoading: false,
+          sessions: nextSessions,
+          ...syncLegacyFields(nextSessions, activeId),
+        };
+      });
+    }
+  },
+
   applyPlanToCurrentTrip: (messageId) => {
     // TRI-104 / UX-SAFE-APPLY:
     // Задача: запретить «тихое» обновление маршрута из AI-чата после первичного применения.
@@ -657,7 +789,10 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
             tripId: response.trip_id,
             sessionId: response.session_id,
             messages: mappedMessages,
-            updatedAt: new Date().toISOString(),
+            // updatedAt обновляем только если сообщения действительно изменились
+            updatedAt: JSON.stringify(baseSession.messages) !== JSON.stringify(mappedMessages) 
+              ? new Date().toISOString() 
+              : baseSession.updatedAt,
           },
         };
 
@@ -773,35 +908,69 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     });
   },
 
-  clearChat: () => {
-    set((state) => {
-      const activeSession = state.activeSessionId ? state.sessions[state.activeSessionId] : null;
-      if (!activeSession) {
-        return {
-          sessions: {},
-          activeSessionId: null,
-          messages: [],
-          sessionId: null,
-          lastAppliedPlanMessageId: null,
-          isLoading: false,
-          isSessionsLoading: false,
+  clearChat: async () => {
+    const activeId = get().activeSessionId;
+    const activeSession = activeId ? get().sessions[activeId] : null;
+    if (!activeId || !activeSession?.sessionId) return;
+
+    // TRI-104: Если в маршруте есть точки, просим бэкенд оставить последнее сообщение с планом.
+    // Если точек нет — чистим всё.
+    const tripState = useTripStore.getState();
+    const hasPoints = (tripState.currentTrip?.points?.length ?? 0) > 0;
+
+    try {
+      // Вызываем бэкенд для очистки сообщений
+      const res = await api.post<{ success: boolean; kept?: boolean }>(
+        `/ai/sessions/${activeSession.sessionId}/clear`,
+        { keep_last_plan: hasPoints },
+      );
+
+      // Очищаем локальное состояние
+      set((state) => {
+        const session = state.sessions[activeId];
+        if (!session) return {};
+
+        let newMessages: ChatMessage[] = [];
+        if (res.kept) {
+          // Ищем последнее сообщение ассистента с планом для сохранения в локальном стейте
+          const lastPlan = [...session.messages]
+            .reverse()
+            .find((m) => m.role === 'assistant' && !!m.routePlan);
+          if (lastPlan) newMessages = [lastPlan];
+        }
+
+        const nextSessions = {
+          ...state.sessions,
+          [activeId]: {
+            ...session,
+            messages: newMessages,
+          },
         };
-      }
 
-      // Для соблюдения инварианта не обнуляем sessionId у существующей серверной сессии.
-      // Вместо этого создаем новый локальный пустой чат и делаем его активным.
-      const freshLocalSession = createSession(activeSession.tripId);
+        return {
+          sessions: nextSessions,
+          ...syncLegacyFields(nextSessions, activeId),
+        };
+      });
+    } catch (error) {
+      console.error('❌ Ошибка при очистке чата:', error);
+    }
+  },
 
-      const nextSessions = {
-        ...state.sessions,
-        [freshLocalSession.id]: freshLocalSession,
-      };
+  renameSession: async (targetSessionId, title) => {
+    const target = get().sessions[targetSessionId];
+    if (!target?.sessionId) return;
 
+    await api.patch<{ success: boolean }>(`/ai/sessions/${target.sessionId}`, { title });
+
+    set((state) => {
+      const session = state.sessions[targetSessionId];
+      if (!session) return {};
       return {
-        sessions: nextSessions,
-        isLoading: false,
-        activeSessionId: freshLocalSession.id,
-        ...syncLegacyFields(nextSessions, freshLocalSession.id),
+        sessions: {
+          ...state.sessions,
+          [targetSessionId]: { ...session, title },
+        },
       };
     });
   },

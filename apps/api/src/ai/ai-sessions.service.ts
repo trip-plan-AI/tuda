@@ -25,37 +25,39 @@ export class AiSessionsService {
   private readonly logger = new Logger(AiSessionsService.name);
 
   private deriveSessionTitleFromRoute(messages: SessionMessage[]): string {
-    const lastAssistantWithRoute = [...messages]
+    const lastWithRoute = [...messages]
       .reverse()
-      .find(
-        (item) => item.role === 'assistant' && typeof item.content === 'string',
-      );
+      .find((item) => item.role === 'assistant' && item.route_plan != null);
 
-    if (!lastAssistantWithRoute) return 'Новый чат';
-
-    try {
-      const parsed = JSON.parse(lastAssistantWithRoute.content) as {
-        days?: Array<{
-          points?: Array<{
-            poi?: {
-              name?: string;
-            };
-          }>;
-        }>;
-      };
-
-      const days = parsed.days ?? [];
-      const allPoints = days.flatMap((day) => day.points ?? []);
-      const firstName = allPoints[0]?.poi?.name?.trim();
-      const lastName = allPoints[allPoints.length - 1]?.poi?.name?.trim();
-
-      if (firstName && lastName)
-        return `${firstName} -> ${lastName}`.slice(0, 60);
-      if (firstName) return firstName.slice(0, 60);
-      return 'Новый чат';
-    } catch {
+    if (!lastWithRoute?.route_plan) {
+      // legacy fallback: route plan stored as JSON string in content
+      const lastAssistant = [...messages]
+        .reverse()
+        .find((item) => item.role === 'assistant');
+      if (!lastAssistant) return 'Новый чат';
+      try {
+        const parsed = JSON.parse(lastAssistant.content) as {
+          days?: Array<{ points?: Array<{ poi?: { name?: string } }> }>;
+        };
+        const allPoints = (parsed.days ?? []).flatMap((d) => d.points ?? []);
+        const first = allPoints[0]?.poi?.name?.trim();
+        const last = allPoints[allPoints.length - 1]?.poi?.name?.trim();
+        if (first && last && first !== last) return `${first} → ${last}`.slice(0, 60);
+        if (first) return first.slice(0, 60);
+      } catch {
+        // not JSON
+      }
       return 'Новый чат';
     }
+
+    const allPoints = (lastWithRoute.route_plan.days ?? []).flatMap(
+      (d) => d.points ?? [],
+    );
+    const first = allPoints[0]?.poi?.name?.trim();
+    const last = allPoints[allPoints.length - 1]?.poi?.name?.trim();
+    if (first && last && first !== last) return `${first} → ${last}`.slice(0, 60);
+    if (first) return first.slice(0, 60);
+    return 'Новый чат';
   }
 
   constructor(
@@ -221,6 +223,19 @@ export class AiSessionsService {
 
     const merged = [...this.normalizeMessages(current.messages), ...messages];
     await this.saveMessages(sessionId, merged);
+
+    // Если название сессии ещё не установлено и добавлены сообщения с маршрутом,
+    // сохраняем название на основе маршрута (чтобы оно не менялось при очистке сообщений)
+    if (!current.title && messages.some((m) => (m as any).route_plan)) {
+      const derivedTitle = this.deriveSessionTitleFromRoute(merged);
+      if (derivedTitle !== 'Новый чат') {
+        await this.db
+          .update(schema.aiSessions)
+          .set({ title: derivedTitle })
+          .where(eq(schema.aiSessions.id, sessionId));
+      }
+    }
+
     this.logger.log(
       `Appended ${messages.length} message(s) to AI session ${sessionId}`,
     );
@@ -235,16 +250,13 @@ export class AiSessionsService {
 
     return rows.map((row) => {
       const messages = this.normalizeMessages(row.messages);
-      const firstUserMessage = messages.find((item) => item.role === 'user');
       const routeDerivedTitle = this.deriveSessionTitleFromRoute(messages);
 
       return {
         id: row.id,
         trip_id: row.tripId,
         created_at: row.createdAt,
-        title: firstUserMessage
-          ? firstUserMessage.content.slice(0, 60)
-          : routeDerivedTitle,
+        title: row.title ?? routeDerivedTitle,
         messages_count: messages.length,
       };
     });
@@ -275,6 +287,21 @@ export class AiSessionsService {
   async deleteByIdForUser(sessionId: string, userId: string) {
     const result = await this.db
       .delete(schema.aiSessions)
+      .where(
+        and(
+          eq(schema.aiSessions.id, sessionId),
+          eq(schema.aiSessions.userId, userId),
+        ),
+      )
+      .returning({ id: schema.aiSessions.id });
+
+    return result.length > 0;
+  }
+
+  async renameSession(sessionId: string, userId: string, title: string) {
+    const result = await this.db
+      .update(schema.aiSessions)
+      .set({ title })
       .where(
         and(
           eq(schema.aiSessions.id, sessionId),

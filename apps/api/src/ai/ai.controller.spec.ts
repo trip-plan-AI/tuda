@@ -23,6 +23,11 @@ describe('AiController plan contract fields', () => {
     days: 2,
     budget_total: 10000,
     budget_per_day: 5000,
+    budget_per_person: 10000,
+    poi_count_requested: null,
+    min_restaurants: null,
+    min_cafes: null,
+    max_poi: null,
     party_type: 'solo',
     party_size: 1,
     categories: ['museum'],
@@ -201,15 +206,13 @@ describe('AiController plan contract fields', () => {
       } satisfies DeterministicPlannerDecisionSummary),
     } as unknown as DeterministicPlannerService;
     const logicalIdSelectorService = {
-      selectIds: jest
-        .fn()
-        .mockResolvedValue(
-          options?.logicalSelectorResult ?? {
-            selected_ids: poiItems.map((poi) => poi.id),
-            target: poiItems.length,
-            selected_count: poiItems.length,
-          },
-        ),
+      selectIds: jest.fn().mockResolvedValue(
+        options?.logicalSelectorResult ?? {
+          selected_ids: poiItems.map((poi) => poi.id),
+          target: poiItems.length,
+          selected_count: poiItems.length,
+        },
+      ),
     };
 
     const controller = new AiController(
@@ -227,6 +230,9 @@ describe('AiController plan contract fields', () => {
       deterministicPlannerService,
       yandexBatchRefinementService as never,
       logicalIdSelectorService as never,
+      {} as never, // mutationParser
+      {} as never, // pointMutationService
+      {} as never, // collaborationGateway
     );
 
     return {
@@ -495,6 +501,11 @@ describe('AiController targeted mutations (phase 3)', () => {
     days: 2,
     budget_total: 10000,
     budget_per_day: 5000,
+    budget_per_person: 10000,
+    poi_count_requested: null,
+    min_restaurants: null,
+    min_cafes: null,
+    max_poi: null,
     party_type: 'solo',
     party_size: 1,
     categories: ['museum', 'attraction'],
@@ -583,7 +594,9 @@ describe('AiController targeted mutations (phase 3)', () => {
       refineSelectedInBatches: jest.fn(),
       chooseReplacementAlternative: jest
         .fn()
-        .mockImplementation(async (candidates: FilteredPoi[]) => candidates[0] ?? null),
+        .mockImplementation(
+          async (candidates: FilteredPoi[]) => candidates[0] ?? null,
+        ),
     };
 
     const schedulerService = {
@@ -634,7 +647,9 @@ describe('AiController targeted mutations (phase 3)', () => {
     } as unknown as DeterministicPlannerService;
     const logicalIdSelectorService = {
       selectIds: jest.fn().mockResolvedValue({
-        selected_ids: (options.rawPois ?? options.selectedPois).map((item) => item.id),
+        selected_ids: (options.rawPois ?? options.selectedPois).map(
+          (item) => item.id,
+        ),
         target: (options.rawPois ?? options.selectedPois).length,
         selected_count: (options.rawPois ?? options.selectedPois).length,
       }),
@@ -655,6 +670,9 @@ describe('AiController targeted mutations (phase 3)', () => {
       deterministicPlannerService,
       yandexBatchRefinementService as never,
       logicalIdSelectorService as never,
+      {} as never, // mutationParser
+      {} as never, // pointMutationService
+      {} as never, // collaborationGateway
     );
 
     return {
@@ -736,7 +754,9 @@ describe('AiController targeted mutations (phase 3)', () => {
     const result = await controller.plan(dto, user);
 
     expect(schedulerService.rebuildSingleDayPlan).toHaveBeenCalled();
-    expect(result.route_plan.days[0].points.map((point) => point.poi_id)).toEqual(['p2']);
+    expect(
+      result.route_plan.days[0].points.map((point) => point.poi_id),
+    ).toEqual(['p2']);
     expect(result.meta).toMatchObject({
       mutation_applied: true,
       mutation_type: 'REMOVE_POI',
@@ -871,8 +891,11 @@ describe('AiController targeted mutations (phase 3)', () => {
 
     const result = await controller.plan(dto, user);
 
-    const schedulerCandidates = (schedulerService.buildPlan as jest.Mock).mock.calls[0][0] as FilteredPoi[];
-    expect(schedulerCandidates.map((item) => item.id)).toEqual(expect.arrayContaining(['p2', 'p3']));
+    const schedulerCandidates = schedulerService.buildPlan.mock
+      .calls[0][0] as FilteredPoi[];
+    expect(schedulerCandidates.map((item) => item.id)).toEqual(
+      expect.arrayContaining(['p2', 'p3']),
+    );
     expect(schedulerCandidates.map((item) => item.id)).not.toContain('p1');
     expect(result.route_plan.days).toHaveLength(2);
     expect(result.route_plan.days[1].points[0]?.poi_id).toBe('p2');
@@ -884,8 +907,22 @@ describe('AiController targeted mutations (phase 3)', () => {
 
   it('REPLACE_POI: выбирает альтернативу из ближайших с учетом working_hours', async () => {
     const p1 = poi('p1', 'Старая точка', 'museum', 55.75, 37.61);
-    const altOpen = poi('alt-open', 'Новая точка', 'museum', 55.751, 37.611, '09:00-20:00');
-    const altClosed = poi('alt-closed', 'Закрытая точка', 'museum', 55.7505, 37.6105, '22:00-23:00');
+    const altOpen = poi(
+      'alt-open',
+      'Новая точка',
+      'museum',
+      55.751,
+      37.611,
+      '09:00-20:00',
+    );
+    const altClosed = poi(
+      'alt-closed',
+      'Закрытая точка',
+      'museum',
+      55.7505,
+      37.6105,
+      '22:00-23:00',
+    );
 
     const existingPlan: RoutePlan = {
       city: 'Москва',
@@ -927,28 +964,27 @@ describe('AiController targeted mutations (phase 3)', () => {
       ],
     };
 
-    const { controller, schedulerService, yandexBatchRefinementService } = createController({
-      historyRoutePlan: existingPlan,
-      intentRouterDecision: {
-        action_type: 'REPLACE_POI',
-        confidence: 0.9,
-        target_poi_id: 'p1',
-        route_mode: 'targeted_mutation',
-      },
-      selectedPois: [p1, altOpen, altClosed],
-      rebuildDayResult: rebuiltDay,
-    });
+    const { controller, schedulerService, yandexBatchRefinementService } =
+      createController({
+        historyRoutePlan: existingPlan,
+        intentRouterDecision: {
+          action_type: 'REPLACE_POI',
+          confidence: 0.9,
+          target_poi_id: 'p1',
+          route_mode: 'targeted_mutation',
+        },
+        selectedPois: [p1, altOpen, altClosed],
+        rebuildDayResult: rebuiltDay,
+      });
 
-    (yandexBatchRefinementService.chooseReplacementAlternative as jest.Mock).mockResolvedValue(
+    yandexBatchRefinementService.chooseReplacementAlternative.mockResolvedValue(
       altOpen,
     );
 
     const result = await controller.plan(dto, user);
 
-    const candidates =
-      (yandexBatchRefinementService.chooseReplacementAlternative as jest.Mock).mock.calls[0][0] as
-        | FilteredPoi[]
-        | undefined;
+    const candidates = yandexBatchRefinementService.chooseReplacementAlternative
+      .mock.calls[0][0] as FilteredPoi[] | undefined;
     expect(candidates?.map((item) => item.id)).toEqual(['alt-open']);
     expect(schedulerService.rebuildSingleDayPlan).toHaveBeenCalled();
     expect(result.meta).toMatchObject({

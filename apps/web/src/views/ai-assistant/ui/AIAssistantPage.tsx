@@ -5,17 +5,19 @@
 // Потребность: унифицировать UX модалок предупреждений о перезаписи маршрутов (сохранение старого/открытие нового).
 // Если убрать этот код: пользователь будет "молча" терять старый маршрут в Planner при открытии нового из чата.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useAiQueryStore } from '@/features/ai-query';
 import { useTripStore } from '@/entities/trip';
+import { useCollaborationSocket, CollaboratorsAvatarGroup } from '@/features/route-collaborate';
 import { AiChat } from '@/widgets/ai-chat';
 import { Button } from '@/shared/ui/button';
 import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 import type { PlannerConflictType } from '@/widgets/planner-conflict-modal';
 import { toast } from 'sonner';
 import { tripsApi } from '@/entities/trip';
+import { clearConfig, setConfig } from '@/features/persistent-map';
 
 const AI_QUICK_ACTIONS = ['Сделать дешевле', 'Добавить больше музеев', 'Убрать пешие прогулки'];
 
@@ -23,6 +25,9 @@ export function AIAssistantPage() {
   const router = useRouter();
   const [showPlannerConflictModal, setShowPlannerConflictModal] = useState(false);
   const [pendingPlannerTripId, setPendingPlannerTripId] = useState<string | null>(null);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const [pendingDraftMessageId, setPendingDraftMessageId] = useState<string | null>(null);
   const [conflictType, setConflictType] = useState<PlannerConflictType>('different_route');
   const {
@@ -31,16 +36,21 @@ export function AIAssistantPage() {
     messages,
     isLoading,
     sendQuery,
+    sendMutationQuery,
     applyPlanToCurrentTrip,
     lastAppliedPlanMessageId,
     createNewSession,
     switchSession,
     deleteSession,
+    renameSession,
     loadSessions,
     isSessionsLoading,
     openOrCreateSessionFromTrip,
+    clearChat,
   } = useAiQueryStore();
   const currentTrip = useTripStore((state) => state.currentTrip);
+
+  const activeSession = activeSessionId ? sessions[activeSessionId] : null;
 
   useEffect(() => {
     void loadSessions();
@@ -48,9 +58,11 @@ export function AIAssistantPage() {
 
   const sessionsList = useMemo(
     () =>
-      Object.values(sessions).sort(
-        (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
-      ),
+      Object.values(sessions).sort((left, right) => {
+        const diff = new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+        // Если время обновления совпадает, сортируем по ID для стабильности
+        return diff !== 0 ? diff : right.id.localeCompare(left.id);
+      }),
     [sessions],
   );
 
@@ -67,8 +79,6 @@ export function AIAssistantPage() {
       },
     ];
   }, [messages]);
-
-  const activeSession = activeSessionId ? sessions[activeSessionId] : null;
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -121,9 +131,8 @@ export function AIAssistantPage() {
   }, [isSessionsLoading, sendQuery, switchSession, activeSession?.tripId]);
 
   const handleSend = async (query: string) => {
-    // Важно: запрос должен идти в контексте активного чата, а не текущего trip из Planner.
-    // Иначе новый чат "прилипает" к открытому в Planner маршруту, скрывает кнопку применения
-    // и ломает one-to-one модель chat -> trip.
+    // Всегда идём через Orchestrator (sendQuery), не напрямую в mutations (sendMutationQuery).
+    // Orchestrator правильно парсит intent и маршрутизирует в Intent Router.
     await sendQuery(query, activeSession?.tripId ?? undefined);
   };
 
@@ -144,14 +153,23 @@ export function AIAssistantPage() {
     // Если убрать этот код: при переходе в чат из Planner будет открыт последний активный чат,
     // не связанный с текущим маршрутом, что нарушит контекст UX.
     // Возможен конфликт: при изменении логики active trip/session (сохранить приоритет tripId -> session.tripId).
+    //
+    // ВАЖНО: sessions намеренно НЕ в deps — эффект должен срабатывать только при смене tripId,
+    // но не при изменении списка сессий (например, после удаления), иначе удалённый чат сразу
+    // пересоздаётся через openOrCreateSessionFromTrip.
+    if (isSessionsLoading) return;
     const tripId = currentTrip?.id;
     if (!tripId || tripId.startsWith('guest-')) return;
 
-    const hasTripSession = Object.values(sessions).some((session) => session.tripId === tripId);
-    if (hasTripSession) return;
-
+    // Всегда вызываем from-trip при смене currentTrip — бэкенд сам определит,
+    // нужно ли добавлять контекст (если маршрут изменился) или нет.
+    // hasTripSession-проверку намеренно убрали: она блокировала синхронизацию
+    // при переходе из Planner в AI-чат с уже существующей сессией.
+    // sessions намеренно НЕ в deps (см. ниже), поэтому эффект не срабатывает
+    // после удаления сессии — только при смене trip или завершении загрузки.
     void openOrCreateSessionFromTrip(tripId);
-  }, [currentTrip?.id, sessions, openOrCreateSessionFromTrip]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTrip?.id, isSessionsLoading]);
 
   const handleCreateSession = () => {
     createNewSession(currentTrip?.id ?? null);
@@ -214,12 +232,104 @@ export function AIAssistantPage() {
     router.push(`/planner?${query.toString()}`);
   };
 
+  const handleDeleteAllPoints = async () => {
+    if (!activeSession?.tripId) return;
+    const currentPointsContext = currentTrip?.points?.map((p: any) => p.title).join(', ') || '';
+    await sendMutationQuery('удали все точки', activeSession.tripId, currentPointsContext);
+  };
+
+  const handleDeletePoint = async (pointName: string) => {
+    if (!activeSession?.tripId) return;
+    const currentPointsContext = currentTrip?.points?.map((p: any) => p.title).join(', ') || '';
+    await sendMutationQuery(`удали точку ${pointName}`, activeSession.tripId, currentPointsContext);
+  };
+
   const plannerRouteTitle = currentTrip?.title?.trim() || 'без названия';
+
+  const lastPlanMessage = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]?.routePlan) return messages[i];
+    }
+    return null;
+  }, [messages]);
+
+  const aiPoints = useMemo(() => {
+    if (!lastPlanMessage?.routePlan) return [];
+    
+    let globalIndex = 0;
+    return lastPlanMessage.routePlan.days.flatMap((day: any) =>
+      day.points.flatMap((point: any) => {
+        const poi = point?.poi;
+        const lat = poi?.coordinates?.lat;
+        const lon = poi?.coordinates?.lon;
+
+        if (!poi || typeof lat !== 'number' || typeof lon !== 'number') {
+          return [];
+        }
+
+        return [{
+          id: poi.id || `ai-point-${globalIndex++}`,
+          tripId: currentTrip?.id || 'temp',
+          title: poi.name || `Точка #${point.order}`,
+          lat,
+          lon,
+          budget: point.estimated_cost ?? null,
+          visitDate: day.date || null,
+          imageUrl: poi.image_url ?? null,
+          address: poi.address || '',
+          order: point.order ?? globalIndex,
+        }];
+      })
+    );
+  }, [lastPlanMessage?.routePlan, currentTrip?.id]);
+
+  const displayPoints = useMemo(() => {
+    const lastMessage = messages[messages.length - 1];
+    const hasPlan = !!lastMessage?.routePlan;
+    // Предложение считается "новым" (черновиком), только если оно еще не было применено в этот трип
+    const isNewAIProposal = hasPlan && lastMessage.id !== lastAppliedPlanMessageId;
+
+    // Если чат связан с маршрутом, и мы не смотрим на свежее (непримененное) предложение ИИ,
+    // то показываем актуальное состояние маршрута из базы (синхронизируется сокетами).
+    if (activeSession?.tripId && !isNewAIProposal) {
+      return currentTrip?.points || [];
+    }
+    
+    // В противном случае показываем черновик ИИ из истории чата
+    return aiPoints;
+  }, [activeSession?.tripId, currentTrip?.points, aiPoints, messages, lastAppliedPlanMessageId]);
+
+  const socketTripId = activeSession?.tripId || '';
+  useCollaborationSocket(socketTripId);
+
+  useEffect(() => {
+    // Показываем точки согласно логике displayPoints.
+    // Принудительно передаем новый массив [...displayPoints] для сброса кеша реактивности в мапе
+    setConfig({
+      source: 'ai-assistant-page',
+      priority: 40,
+      points: [...displayPoints],
+      readonly: true,
+      draggable: false,
+      routeProfile: 'driving',
+    });
+
+    return () => {
+      clearConfig('ai-assistant-page');
+    };
+  }, [displayPoints]);
 
   return (
     <div className="min-h-full w-full">
       <div className="mx-auto flex w-full max-w-6xl gap-4 px-4 py-6 md:px-6 md:py-10">
         <aside className="hidden w-72 flex-col rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:flex">
+          {activeSession?.tripId && (
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-brand-indigo">Кто в маршруте</h3>
+              <CollaboratorsAvatarGroup tripId={activeSession.tripId} />
+            </div>
+          )}
+
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-sm font-bold text-brand-indigo">Чаты маршрутов</h3>
             <Button type="button" size="sm" variant="outline" onClick={handleCreateSession}>
@@ -242,33 +352,69 @@ export function AIAssistantPage() {
                       : 'border-slate-200 bg-slate-50 hover:border-slate-300',
                   ].join(' ')}
                 >
-                  <button
-                    type="button"
-                    className="w-full text-left"
-                    onClick={() => switchSession(session.id)}
-                  >
-                    <p className="line-clamp-1 text-sm font-semibold text-slate-800">
-                      {session.title}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {new Date(session.updatedAt).toLocaleString('ru-RU', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </p>
-                  </button>
+                  {renamingSessionId === session.id ? (
+                    <input
+                      ref={renameInputRef}
+                      type="text"
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={() => {
+                        if (renameValue.trim()) void renameSession(session.id, renameValue.trim());
+                        setRenamingSessionId(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          if (renameValue.trim()) void renameSession(session.id, renameValue.trim());
+                          setRenamingSessionId(null);
+                        }
+                        if (e.key === 'Escape') setRenamingSessionId(null);
+                      }}
+                      className="w-full rounded border border-brand-indigo bg-white px-2 py-1 text-sm font-semibold text-slate-800 outline-none"
+                      autoFocus
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="w-full text-left"
+                      onClick={() => switchSession(session.id)}
+                    >
+                      <p className="line-clamp-1 text-sm font-semibold text-slate-800">
+                        {session.title}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {new Date(session.updatedAt).toLocaleString('ru-RU', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </p>
+                    </button>
+                  )}
 
-                  <button
-                    type="button"
-                    aria-label="Удалить чат"
-                    onClick={() => deleteSession(session.id)}
-                    className="mt-2 inline-flex items-center gap-1 text-[11px] text-slate-400 transition hover:text-rose-500"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Удалить
-                  </button>
+                  <div className="mt-2 flex items-center gap-3">
+                    <button
+                      type="button"
+                      aria-label="Переименовать чат"
+                      onClick={() => {
+                        setRenamingSessionId(session.id);
+                        setRenameValue(session.title);
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] text-slate-400 transition hover:text-brand-indigo"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Переименовать
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Удалить чат"
+                      onClick={() => deleteSession(session.id)}
+                      className="inline-flex items-center gap-1 text-[11px] text-slate-400 transition hover:text-rose-500"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Удалить
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -293,7 +439,9 @@ export function AIAssistantPage() {
             onSend={handleSend}
             onApplyPlan={handleApplyPlan}
             onOpenPlanner={handleOpenPlanner}
+            onDeletePoint={handleDeletePoint}
             lastAppliedPlanMessageId={lastAppliedPlanMessageId}
+            lastPlanMessageId={lastPlanMessage?.id ?? null}
             chatKey={activeSessionId ?? 'chat-empty'}
             quickActions={AI_QUICK_ACTIONS}
             hasLinkedTrip={Boolean(activeSession?.tripId)}
@@ -301,8 +449,14 @@ export function AIAssistantPage() {
           />
 
           {activeSession?.tripId && (
-            <div className="mt-3 flex justify-end">
-              <Button type="button" variant="outline" onClick={() => handleOpenPlanner()}>
+            <div className="mt-3 flex flex-wrap justify-end gap-3">
+              <Button type="button" variant="outline" size="lg" onClick={handleDeleteAllPoints}>
+                Удалить все точки 🗑️
+              </Button>
+              <Button type="button" variant="outline" size="lg" onClick={() => clearChat()}>
+                Очистить историю 📜
+              </Button>
+              <Button type="button" variant="outline" size="lg" onClick={() => handleOpenPlanner()}>
                 Открыть Planner 🗺️
               </Button>
             </div>

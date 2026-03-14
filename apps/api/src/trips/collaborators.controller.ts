@@ -59,6 +59,9 @@ export class CollaboratorsController {
     if (trip.ownerId !== req.user.id) {
       throw new ForbiddenException('Only trip owner can remove collaborators');
     }
-    return this.collaboratorsService.remove(tripId, userId);
+    const result = await this.collaboratorsService.remove(tripId, userId);
+    // Broadcast removal to everyone in the trip room
+    this.collabGateway.notifyCollaboratorRemoved(tripId, userId);
+    return result;
   }
 }

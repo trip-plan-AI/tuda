@@ -46,6 +46,7 @@ export class PolicyService {
       .join(' ')
       .toLowerCase();
 
+    // TRI-108-1: Exclude food if explicitly rejected
     if (
       /без\s+ед|без\s+ресторан|без\s+кафе|не\s+нужн\w*\s+ед|не\s+хочу\s+ед/u.test(
         haystack,
@@ -54,12 +55,22 @@ export class PolicyService {
       return 'none';
     }
 
+    // TRI-108-1: Set to gastrotour if food is primary focus
     if (
-      /гастро|гастротур|кухн|дегустац|фудтур|по\s+ресторанам|рестораны\s+и\s+кафе/u.test(
+      /гастро|гастротур|фудтур|дегустац|кулинарн|гурман|топ\s+рестораны?|лучшие\s+кафе/u.test(
         haystack,
       )
     ) {
       return 'gastrotour';
+    }
+
+    // TRI-108-1: Set to default if food is mentioned (even casually)
+    if (
+      /с\s+кафе|кафе|ресторан|еда|поесть|перекус|кофе|булка|пирог|торт|сладкое|деликатес|coffee|cafe|restaurant/u.test(
+        haystack,
+      )
+    ) {
+      return 'default';
     }
 
     return 'default';

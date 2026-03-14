@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -13,7 +14,6 @@ import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Avatar, AvatarImage, AvatarFallback } from '@/shared/ui/avatar';
 import { collaborateApi, type UserSearchResult } from '../api/collaborate.api';
-import { useCollaborateStore } from '../model/collaborate.store';
 
 interface Props {
   tripId: string;
@@ -27,8 +27,6 @@ export function InviteModal({ tripId, open, onClose }: Props) {
   const [isSearching, setIsSearching] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-
-  const addCollaborator = useCollaborateStore((s) => s.addCollaborator);
 
   async function handleSearch() {
     if (!emailInput.trim()) return;
@@ -49,11 +47,13 @@ export function InviteModal({ tripId, open, onClose }: Props) {
     if (!foundUser) return;
     setIsAdding(true);
     try {
-      const collab = await collaborateApi.add(tripId, foundUser.id, 'editor');
-      addCollaborator(collab);
+      await collaborateApi.sendInvitation(tripId, foundUser.id);
+      toast.success(`Приглашение отправлено пользователю ${foundUser.name}`);
       onClose();
-    } catch {
-      setSearchError('Не удалось пригласить пользователя');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось отправить приглашение';
+      setSearchError(message);
+      toast.error(message);
     } finally {
       setIsAdding(false);
     }

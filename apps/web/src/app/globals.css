@@ -206,7 +206,7 @@ input[type='number']::-webkit-inner-spin-button {
   margin: 0;
 }
 
-/* Тонкий скроллбар в стиле Apple */
+/* Тонкий скроллбар */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -217,17 +217,17 @@ input[type='number']::-webkit-inner-spin-button {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.18);
+  background: #e2e8f0;
   border-radius: 100px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.32);
+  background: #cbd5e1;
 }
 
 html {
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
+  scrollbar-color: #e2e8f0 transparent;
 }
 
 /* Скрываем хедер на мобильных устройствах (до md breakpoint) */
