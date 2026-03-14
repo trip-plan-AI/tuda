@@ -161,12 +161,14 @@ export function AIAssistantPage() {
     const tripId = currentTrip?.id;
     if (!tripId || tripId.startsWith('guest-')) return;
 
-    // Всегда вызываем from-trip при смене currentTrip — бэкенд сам определит,
-    // нужно ли добавлять контекст (если маршрут изменился) или нет.
-    // hasTripSession-проверку намеренно убрали: она блокировала синхронизацию
-    // при переходе из Planner в AI-чат с уже существующей сессией.
-    // sessions намеренно НЕ в deps (см. ниже), поэтому эффект не срабатывает
-    // после удаления сессии — только при смене trip или завершении загрузки.
+    // Если активная сессия уже связана с этим tripId и синхронизирована с бэком (sessionId есть) —
+    // не дёргаем from-trip повторно.
+    // Иначе каждый trip:refresh → loadTripData → openOrCreateSessionFromTrip → trip:refresh...
+    // ВАЖНО: проверяем sessionId, а не messages.length — при switchSession messages = [] временно,
+    // что ломало защиту и вызывало бесконечный цикл при переключении чатов.
+    const currentActiveSession = activeSessionId ? sessions[activeSessionId] : null;
+    if (currentActiveSession?.tripId === tripId && currentActiveSession.sessionId) return;
+
     void openOrCreateSessionFromTrip(tripId);
   }, [currentTrip?.id, isSessionsLoading]);
 
@@ -302,12 +304,10 @@ export function AIAssistantPage() {
   useCollaborationSocket(socketTripId);
 
   useEffect(() => {
-    // Показываем точки согласно логике displayPoints.
-    // Принудительно передаем новый массив [...displayPoints] для сброса кеша реактивности в мапе
     setConfig({
       source: 'ai-assistant-page',
       priority: 40,
-      points: [...displayPoints],
+      points: displayPoints,
       readonly: true,
       draggable: false,
       routeProfile: 'driving',

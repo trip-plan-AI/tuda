@@ -1440,7 +1440,11 @@ ${JSON.stringify(points)}
       currentTitles.size !== lastTitles.size ||
       [...currentTitles].some((t) => !lastTitles.has(t));
 
-    if (!lastRoutePlan) {
+    const isNewSession = session.messages.length === 0;
+    const hasPoints = points.length > 0;
+
+    if (!lastRoutePlan && isNewSession && hasPoints) {
+      // Только для совсем новой сессии с точками — добавляем приветствие + план
       await this.aiSessionsService.appendMessages(session.id, [
         {
           role: 'assistant',
@@ -1454,7 +1458,8 @@ ${JSON.stringify(points)}
           route_plan: routePlan,
         },
       ]);
-    } else if (routeChanged) {
+    } else if (routeChanged && hasPoints) {
+      // Маршрут изменился в Planner — добавляем обновление
       await this.aiSessionsService.appendMessages(session.id, [
         {
           role: 'assistant',
@@ -1464,8 +1469,11 @@ ${JSON.stringify(points)}
       ]);
     }
 
-    this.eventsService.emitTripRefresh(tripId);
-    this.eventsService.emitAiUpdate(tripId, session.id);
+    // Эмитим события только если реально что-то добавили.
+    if ((isNewSession && hasPoints && !lastRoutePlan) || (routeChanged && hasPoints)) {
+      this.eventsService.emitTripRefresh(tripId);
+      this.eventsService.emitAiUpdate(tripId, session.id);
+    }
 
     return { session_id: session.id, trip_id: tripId };
   }

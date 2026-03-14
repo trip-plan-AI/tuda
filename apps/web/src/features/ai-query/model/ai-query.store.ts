@@ -110,6 +110,7 @@ interface ChatSession {
   lastAppliedPlanMessageId: string | null;
   createdAt: string;
   updatedAt: string;
+  justCleared?: boolean; // Флаг: была ли сессия только что очищена (не загружать из бэка)
 }
 
 const MAX_QUERY_LENGTH = 1000;
@@ -840,7 +841,8 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       ...syncLegacyFields(state.sessions, nextSessionId),
     });
 
-    if (target.sessionId && target.messages.length === 0) {
+    // Не загружаем историю если сессия только что была очищена (justCleared флаг)
+    if (target.sessionId && target.messages.length === 0 && !target.justCleared) {
       try {
         const details = await api.get<AiSessionDetailsResponse>(`/ai/sessions/${target.sessionId}`);
         const mappedMessages = mapStoredMessagesToChatMessages(details.messages);
@@ -852,7 +854,9 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           const nextSession: ChatSession = {
             ...freshTarget,
             messages: mappedMessages,
-            updatedAt: new Date().toISOString(),
+            // Не обновляем updatedAt при загрузке истории —
+            // это вызывало пересортировку sessionsList и визуальное моргание
+            justCleared: undefined,
           };
 
           const nextSessions = {
@@ -868,6 +872,18 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       } catch {
         // no-op
       }
+    } else if (target.justCleared) {
+      // Если была очистка, убираем флаг после активации сессии
+      set((state) => {
+        const session = state.sessions[nextSessionId];
+        if (!session) return {};
+        return {
+          sessions: {
+            ...state.sessions,
+            [nextSessionId]: { ...session, justCleared: undefined },
+          },
+        };
+      });
     }
   },
 
@@ -950,6 +966,18 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         return {
           sessions: nextSessions,
           ...syncLegacyFields(nextSessions, activeId),
+        };
+      });
+
+      // Пометим что сессия была очищена, чтобы switchSession не загружал из бэка
+      set((state) => {
+        const session = state.sessions[activeId];
+        if (!session) return {};
+        return {
+          sessions: {
+            ...state.sessions,
+            [activeId]: { ...session, justCleared: true },
+          },
         };
       });
     } catch (error) {
