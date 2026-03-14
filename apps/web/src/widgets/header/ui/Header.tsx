@@ -24,6 +24,8 @@ import { useUserStore } from '@/entities/user';
 import { LoginModal } from '@/features/auth';
 import { RegisterModal } from '@/features/auth';
 import { api } from '@/shared/api';
+import { getSocket } from '@/shared/socket/socket-client';
+import { collaborateApi } from '@/features/route-collaborate/api/collaborate.api';
 
 type Modal = 'login' | 'register' | null;
 
@@ -139,6 +141,31 @@ export function Header() {
       // 401 обрабатывается централизованно в shared/api/http.ts
     });
   }, [hydrated, isAuthenticated, pathname]);
+
+  // ── Real-time: listen for incoming invitations ──
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const socket = getSocket();
+
+    const onInviteReceived = (invite: Invitation) => {
+      setInvitations((prev) =>
+        prev.some((i) => i.id === invite.id) ? prev : [...prev, invite],
+      );
+      toast(`Приглашение в маршрут «${invite.tripTitle}»`, {
+        description: `${invite.inviterName} приглашает вас`,
+        action: {
+          label: 'Открыть',
+          onClick: () => setIsInvitationsOpen(true),
+        },
+      });
+    };
+
+    socket.on('invite:received', onInviteReceived);
+    return () => {
+      socket.off('invite:received', onInviteReceived);
+    };
+  }, [isAuthenticated]);
 
   return (
     <>
@@ -380,14 +407,22 @@ export function Header() {
         onClose={() => setIsInvitationsOpen(false)}
         invitations={invitations}
         onAccept={(id) => {
-          // TODO: Логика принятия приглашения
-          toast.success('Приглашение принято!');
-          setInvitations((prev) => prev.filter((i) => i.id !== id));
+          collaborateApi
+            .acceptInvitation(id)
+            .then(() => {
+              setInvitations((prev) => prev.filter((i) => i.id !== id));
+              toast.success('Приглашение принято! Маршрут добавлен в ваш список.');
+            })
+            .catch(() => toast.error('Не удалось принять приглашение'));
         }}
         onDecline={(id) => {
-          // TODO: Логика отклонения приглашения
-          toast.success('Приглашение отклонено');
-          setInvitations((prev) => prev.filter((i) => i.id !== id));
+          collaborateApi
+            .declineInvitation(id)
+            .then(() => {
+              setInvitations((prev) => prev.filter((i) => i.id !== id));
+              toast('Приглашение отклонено');
+            })
+            .catch(() => toast.error('Не удалось отклонить приглашение'));
         }}
       />
     </>

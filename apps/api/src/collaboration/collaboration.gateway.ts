@@ -69,11 +69,15 @@ export class CollaborationGateway
     this.server.to(`user_${userId}`).emit('trip:shared', trip);
   }
 
-  /** Broadcast new collaborator to all members in the trip room */
-  notifyCollaboratorAdded(tripId: string, collaborator: any) {
-    this.server
-      .to(`trip_${tripId}`)
-      .emit('collaborator:added', { tripId, ...collaborator });
+  /** Broadcast new collaborator to all members in the trip room.
+   *  If ownerId is provided, also notify the owner directly via their personal room
+   *  in case they are not currently joined to the trip room. */
+  notifyCollaboratorAdded(tripId: string, collaborator: any, ownerId?: string) {
+    const payload = { tripId, ...collaborator };
+    this.server.to(`trip_${tripId}`).emit('collaborator:added', payload);
+    if (ownerId) {
+      this.server.to(`user_${ownerId}`).emit('collaborator:added', payload);
+    }
   }
 
   /** Broadcast collaborator removal to all members in the trip room */
@@ -81,6 +85,23 @@ export class CollaborationGateway
     this.server
       .to(`trip_${tripId}`)
       .emit('collaborator:removed', { tripId, userId });
+    // Notify the removed user personally so they can remove the trip from their list
+    this.server
+      .to(`user_${userId}`)
+      .emit('trip:removed', { tripId });
+  }
+
+  /** Send invite notification directly to the invited user */
+  notifyInviteReceived(
+    userId: string,
+    payload: { tripId: string; tripTitle: string; inviterName: string; invitationId: string },
+  ) {
+    this.server.to(`user_${userId}`).emit('invite:received', {
+      id: payload.invitationId,
+      tripId: payload.tripId,
+      tripTitle: payload.tripTitle,
+      inviterName: payload.inviterName,
+    });
   }
 
   handleDisconnect(client: TypedSocket) {

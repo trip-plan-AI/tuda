@@ -84,6 +84,13 @@ export class CollaboratorsService {
     };
   }
 
+  async findUserName(userId: string): Promise<string> {
+    const user = await this.db.query.users.findFirst({
+      where: eq(schema.users.id, userId),
+    });
+    return user?.name ?? user?.email ?? 'Пользователь';
+  }
+
   async remove(tripId: string, userId: string) {
     await this.db
       .delete(schema.tripCollaborators)

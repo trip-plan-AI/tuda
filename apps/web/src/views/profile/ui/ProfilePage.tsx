@@ -197,6 +197,7 @@ export function ProfilePage() {
   }, [allTrips, activeRoute?.id]);
 
   // When the current user is invited to a trip, add it to the list in real-time
+  // When the current user is removed from a trip, remove it from the list in real-time
   useEffect(() => {
     const socket = getSocket();
     socket.on('trip:shared', (trip: Trip) => {
@@ -205,8 +206,12 @@ export function ProfilePage() {
         return [...prev, { ...trip, isActive: false }];
       });
     });
+    socket.on('trip:removed', ({ tripId }: { tripId: string }) => {
+      setAllTrips((prev) => prev.filter((t) => t.id !== tripId));
+    });
     return () => {
       socket.off('trip:shared');
+      socket.off('trip:removed');
     };
   }, []);
 

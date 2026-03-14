@@ -11,6 +11,7 @@ import {
   primaryKey,
   real,
   index,
+  unique,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -153,6 +154,20 @@ export const popularDestinations = pgTable('popular_destinations', {
   index('popular_destinations_name_ru_idx').on(t.nameRu),
   index('popular_destinations_country_idx').on(t.countryCode),
 ]);
+
+// ── INVITATIONS ────────────────────────────────────────────────────────────
+// Pending invitations — user must accept/decline before being added to trip_collaborators
+export const invitations = pgTable(
+  'invitations',
+  {
+    id:            uuid('id').primaryKey().defaultRandom(),
+    tripId:        uuid('trip_id').notNull().references(() => trips.id, { onDelete: 'cascade' }),
+    invitedUserId: uuid('invited_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    inviterId:     uuid('inviter_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    createdAt:     timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.tripId, t.invitedUserId)],
+);
 
 // ai_sessions
 export const aiSessions = pgTable('ai_sessions', {

@@ -32,4 +32,14 @@ export const collaborateApi = {
 
   searchByEmail: (email: string): Promise<UserSearchResult> =>
     api.get(`/users/search?email=${encodeURIComponent(email)}`),
+
+  // ── Invitations ──
+  sendInvitation: (tripId: string, userId: string): Promise<{ id: string }> =>
+    api.post(`/trips/${tripId}/invitations`, { userId }),
+
+  acceptInvitation: (invitationId: string): Promise<{ accepted: boolean; trip: any }> =>
+    api.post(`/invitations/${invitationId}/accept`, {}),
+
+  declineInvitation: (invitationId: string): Promise<{ declined: boolean }> =>
+    api.del(`/invitations/${invitationId}`),
 };
