@@ -101,7 +101,6 @@ export function RouteMap({
   const dragPlaceholdersRef = useRef<any[]>([]);
   const draggedPointIndexRef = useRef<number | null>(null);
   const [mapReady, setMapReady] = useState(false);
-  const [zoom, setZoom] = useState(12);
 
   interface SegmentData {
     geometry: any;
@@ -118,6 +117,7 @@ export function RouteMap({
   const hasInitialFitPerformed = useRef(false);
   const prevPointsRef = useRef<RoutePoint[] | null>(null);
   const prevSegmentsRef = useRef<SegmentData[] | null>(null);
+  const zoomRef = useRef(12);
   const prevRouteProfileRef = useRef(routeProfile);
 
   const pointsKey = useMemo(() => points.map(p => `${p.id}:${p.lon},${p.lat}`).join('|'), [points]);
@@ -381,7 +381,9 @@ export function RouteMap({
 
     const listener = new ymaps3.YMapListener({
       onUpdate: (update: any) => {
-        if (update.location?.zoom !== undefined) setZoom(update.location.zoom);
+        if (update.location?.zoom !== undefined) {
+          zoomRef.current = update.location.zoom;
+        }
       },
       onClick: (_object: any, event: any) => {
         console.log('[RouteMap] Map click event:', { 
@@ -605,7 +607,7 @@ export function RouteMap({
       if (z <= 13) return 5;
       return 4;
     };
-    const strokeWidth = getStrokeWidth(zoom);
+    const strokeWidth = getStrokeWidth(zoomRef.current);
 
     // Функция для получения цвета сегмента i→(i+1)
     const getSegmentColor = (segmentIndex: number) => {
@@ -897,7 +899,7 @@ export function RouteMap({
         objectsRef.current = [];
       }
     };
-  }, [pointsKey, transportModesKey, mapReady, routeProfile, zoom, segmentsData, loadingSegmentsKey, draggable]);
+  }, [pointsKey, transportModesKey, mapReady, routeProfile, segmentsData, loadingSegmentsKey, draggable]);
 
   // Прочие эффекты (зум при клике, фит на старте)
   useEffect(() => {
