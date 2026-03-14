@@ -139,20 +139,38 @@ export class ProviderSearchService {
       }
 
       // If Photon returned < 2 food POIs, use AI as fallback
-      const allFood = [...kudagoRaw, ...overpassRaw, ...photonRaw].filter(
+      const allFoodPois = [...kudagoRaw, ...overpassRaw, ...photonRaw];
+      const allFood = allFoodPois.filter(
         (p) => p.category === 'restaurant' || p.category === 'cafe',
       ).length;
 
+      this.logger.log(
+        `[ProviderSearch] TRI-108-6 DEBUG: Total POIs=${allFoodPois.length}, Food POIs=${allFood}`,
+      );
+      this.logger.log(
+        `[ProviderSearch] TRI-108-6 DEBUG: Breakdown - Kudago food=${kudagoRaw.filter(p => p.category === 'restaurant' || p.category === 'cafe').length}, Overpass food=${overpassRaw.filter(p => p.category === 'restaurant' || p.category === 'cafe').length}, Photon food=${photonRaw.filter(p => p.category === 'restaurant' || p.category === 'cafe').length}`,
+      );
+
       if (allFood < 2) {
         this.logger.log(
-          `[ProviderSearch] TRI-108-6 AI FALLBACK: Only ${allFood} food POIs found. Generating AI recommendations...`,
+          `[ProviderSearch] 🤖 TRI-108-6 AI FALLBACK TRIGGERED: Only ${allFood} food POIs. Intent: "${intent.preferences_text}"`,
         );
         try {
           aiGeneratedFood = await this.generateFoodVenuesWithAI(intent);
           this.logger.log(
-            `[ProviderSearch] ✨ AI generated and geocoded ${aiGeneratedFood.length} food venues`,
+            `[ProviderSearch] ✨ AI generated ${aiGeneratedFood.length} food venues (before filtering)`,
           );
-          fallbacks.push('AI_GENERATED_FOOD_RECOMMENDATIONS');
+
+          if (aiGeneratedFood.length > 0) {
+            this.logger.log(
+              `[ProviderSearch] ✨ AI VENUES: ${aiGeneratedFood.map(p => `${p.name}(${p.coordinates.lat.toFixed(2)},${p.coordinates.lon.toFixed(2)})`).join(', ')}`,
+            );
+            fallbacks.push('AI_GENERATED_FOOD_RECOMMENDATIONS');
+          } else {
+            this.logger.warn(
+              `[ProviderSearch] ⚠️ AI generation returned 0 venues (geocoding failed?)`,
+            );
+          }
         } catch (error: unknown) {
           this.logger.warn(
             `[ProviderSearch] ⚠️ AI generation failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -646,39 +664,54 @@ Return ONLY valid JSON (no markdown):
 
       const restaurants = parsed.restaurants ?? [];
       this.logger.log(
-        `[AI_FOOD] Generated ${restaurants.length} recommendations for ${intent.city}`,
+        `[AI_FOOD] 🤖 LLM Generated ${restaurants.length} recommendations for ${intent.city}`,
       );
+      if (restaurants.length > 0) {
+        this.logger.log(
+          `[AI_FOOD] LLM Suggestions: ${restaurants.map(r => `${r.name}(${r.cuisine})`).join(', ')}`,
+        );
+      }
 
       // TRI-108-6 Extended: Geocode each AI restaurant with fuzzy matching + transliteration
       const results: PoiItem[] = [];
 
       for (const r of restaurants) {
         try {
-          let suggestions = null;
+          let suggestions: any = null;
+          let successStrategy: 'exact' | 'fuzzy' | 'generic' | null = null;
 
           // Strategy 1: Exact name search
           const exactQuery = `${r.name}, ${intent.city}`;
-          this.logger.log(
-            `[AI_FOOD_GEOCODE] Strategy 1 (exact): "${exactQuery}"`,
+          this.logger.debug(
+            `[AI_FOOD_GEOCODE] Strategy 1: "${exactQuery}"`,
           );
           suggestions = await this.geosearch.suggest(exactQuery);
+          if (suggestions && suggestions.length > 0) {
+            successStrategy = 'exact';
+          }
 
           // Strategy 2: Fuzzy matching by cuisine type (if exact didn't work well)
           if (!suggestions || suggestions.length === 0) {
             const fuzzyQuery = `${r.cuisine} restaurant, ${intent.city}`;
-            this.logger.log(
-              `[AI_FOOD_GEOCODE] Strategy 2 (fuzzy): "${fuzzyQuery}"`,
+            this.logger.debug(
+              `[AI_FOOD_GEOCODE] Strategy 2: "${fuzzyQuery}"`,
             );
             suggestions = await this.geosearch.suggest(fuzzyQuery);
+            if (suggestions && suggestions.length > 0) {
+              successStrategy = 'fuzzy';
+            }
           }
 
           // Strategy 3: Generic restaurant search for the city
           if (!suggestions || suggestions.length === 0) {
             const genericQuery = `restaurant, ${intent.city}`;
-            this.logger.log(
-              `[AI_FOOD_GEOCODE] Strategy 3 (generic): "${genericQuery}"`,
+            this.logger.debug(
+              `[AI_FOOD_GEOCODE] Strategy 3: "${genericQuery}"`,
             );
             suggestions = await this.geosearch.suggest(genericQuery);
+            if (suggestions && suggestions.length > 0) {
+              successStrategy = 'generic';
+            }
           }
 
           if (suggestions && suggestions.length > 0) {
