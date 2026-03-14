@@ -857,7 +857,6 @@ export function ProfilePage() {
           </div>
         </div>
 
-        <div className="hidden md:block flex-1 rounded-2xl border border-dashed border-slate-200 bg-slate-50/40" />
       </div>
 
       {activeRoute && (
