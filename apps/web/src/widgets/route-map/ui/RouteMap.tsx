@@ -120,9 +120,9 @@ export function RouteMap({
   const prevSegmentsRef = useRef<SegmentData[] | null>(null);
   const prevRouteProfileRef = useRef(routeProfile);
 
-  const pointsKey = useMemo(() => points.map(p => `${p.lon},${p.lat}`).join('|'), [points]);
+  const pointsKey = useMemo(() => points.map(p => `${p.id}:${p.lon},${p.lat}`).join('|'), [points]);
   const transportModesKey = useMemo(
-    () => points.map(p => p.transportMode || 'driving').join(','),
+    () => points.map(p => `${p.id}:${p.transportMode || 'driving'}`).join(','),
     [points],
   );
   const loadingSegmentsKey = useMemo(

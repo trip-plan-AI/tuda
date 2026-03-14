@@ -839,8 +839,8 @@ export function PlannerPage() {
         const fromIndex = pts.findIndex((p) => p.id === id);
         if (fromIndex >= 0) {
           const cascadeUpdates = computeDateCascade(pts, routeInfo.legs, fromIndex);
-          for (const u of cascadeUpdates) {
-            await crud.update(u.id, { visitDate: u.visitDate });
+          if (cascadeUpdates.length > 0) {
+            await crud.updateMany(cascadeUpdates.map(u => ({ id: u.id, data: { visitDate: u.visitDate } })));
           }
         }
       }
@@ -858,13 +858,22 @@ export function PlannerPage() {
     const legsCountChanged = legsCount > prevLegsCountRef.current;
     const legsDurationsChanged = legsDurationsKey !== prevLegsDurationsRef.current;
 
+    // Важно: не запускаем каскад, если routeInfo стал null (например, при сбросе карты)
+    if (!routeInfo) {
+      prevLegsCountRef.current = 0;
+      prevLegsDurationsRef.current = '';
+      return;
+    }
+
     if ((legsCountChanged || legsDurationsChanged) && legs && points.length > 1) {
       prevLegsCountRef.current = legsCount;
       prevLegsDurationsRef.current = legsDurationsKey;
       const firstDatedIdx = points.findIndex((p) => p.visitDate);
       if (firstDatedIdx >= 0) {
         const cascadeUpdates = computeDateCascade(points, legs, firstDatedIdx);
-        cascadeUpdates.forEach((u) => crud.update(u.id, { visitDate: u.visitDate }));
+        if (cascadeUpdates.length > 0) {
+          crud.updateMany(cascadeUpdates.map(u => ({ id: u.id, data: { visitDate: u.visitDate } })));
+        }
       }
     } else {
       prevLegsCountRef.current = legsCount;
@@ -1368,8 +1377,14 @@ export function PlannerPage() {
     }
   };
 
+  const mapClickDebounceRef = useRef<number>(0);
+
   const handleMapClick = useCallback(
     async (coords: { lon: number; lat: number }) => {
+      const now = Date.now();
+      if (now - mapClickDebounceRef.current < 500) return;
+      mapClickDebounceRef.current = now;
+
       setIsSearching(true);
       try {
         const geoData = await resolveMapCoords(coords);
@@ -1425,10 +1440,6 @@ export function PlannerPage() {
       onRouteInfoLoading: setIsRouteLoading,
       onAffectedSegmentsChange: setAffectedSegments,
     });
-
-    return () => {
-      clearConfig('planner-page');
-    };
   }, [
     points,
     focusCoords,
@@ -1439,6 +1450,12 @@ export function PlannerPage() {
     handleMapClick,
     handleAddPointModeChange,
   ]);
+
+  useEffect(() => {
+    return () => {
+      clearConfig('planner-page');
+    };
+  }, []);
 
   const handleUpdatePlannedBudget = async (val: number) => {
     const newBudget = Math.max(0, val);

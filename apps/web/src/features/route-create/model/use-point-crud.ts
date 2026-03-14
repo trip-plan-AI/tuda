@@ -12,7 +12,7 @@ import { getSocket } from '@/shared/socket/socket-client';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function usePointCrud(tripId: string | undefined) {
-  const { addPoint, updatePoint, removePoint, reorderPoints } = useTripStore();
+  const { addPoint, updatePoint, updatePoints, removePoint, reorderPoints } = useTripStore();
 
   const isRealTrip = !!tripId && !tripId.startsWith('guest-') && UUID_RE.test(tripId);
 
@@ -71,6 +71,20 @@ export function usePointCrud(tripId: string | undefined) {
     [tripId, updatePoint],
   );
 
+  const updateMany = useCallback(
+    async (updates: Array<{ id: string; data: UpdatePointPayload }>) => {
+      if (!tripId) return;
+      updatePoints(updates);
+      if (!tripId.startsWith('guest-')) {
+        for (const u of updates) {
+          pointsApi.update(tripId, u.id, u.data).catch(console.error);
+          getSocket().emit('point:update', { trip_id: tripId, point_id: u.id, ...u.data });
+        }
+      }
+    },
+    [tripId, updatePoints],
+  );
+
   const reorder = useCallback(
     async (orderedIds: string[]) => {
       if (!tripId) return;
@@ -84,5 +98,5 @@ export function usePointCrud(tripId: string | undefined) {
     [tripId, reorderPoints],
   );
 
-  return { add, update, remove, reorder };
+  return { add, update, updateMany, remove, reorder };
 }
