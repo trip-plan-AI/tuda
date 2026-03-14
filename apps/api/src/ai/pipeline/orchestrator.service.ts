@@ -301,20 +301,20 @@ export class OrchestratorService {
 
   // Quantity extraction from user preferences
   private extractPoiCount(text: string): number | null {
-    // Match patterns like "3 места", "find 5 places", "3 лучших", "5 достопримечательностей"
-    const matches = text.match(/(\d+)\s+(мест|место|places?|достопримечательностей?|points?|point)/i);
+    // Match patterns like "3 места", "3 интересных места", "find 5 places", "3 лучших", "5 достопримечательностей"
+    const matches = text.match(/(\d+)(?:\s+\w+)*\s+(мест|место|places?|достопримечательностей?|points?|point)/i);
     return matches ? Math.max(1, Math.min(20, parseInt(matches[1], 10))) : null;
   }
 
   private extractMinRestaurants(text: string): number | null {
-    // Match patterns like "2 ресторана", "2 best restaurants", "2 рестораны"
-    const matches = text.match(/(\d+)\s+(best\s+)?рестора(ны?|нов)|(\d+)\s+restaurant/i);
+    // Match patterns like "2 ресторана", "2 best restaurants", "2 хороших ресторана"
+    const matches = text.match(/(\d+)(?:\s+\w+)*\s+(best\s+)?рестора(ны?|нов)|(\d+)(?:\s+\w+)*\s+restaurant/i);
     return matches ? Math.max(1, parseInt(matches[1] || matches[4], 10)) : null;
   }
 
   private extractMinCafes(text: string): number | null {
-    // Match patterns like "2 кафе", "2 cafes", "хотим 2 кафе"
-    const matches = text.match(/(\d+)\s+(best\s+)?кафе|(\d+)\s+cafe?s?/i);
+    // Match patterns like "2 кафе", "2 хороших кафе", "2 cafes"
+    const matches = text.match(/(\d+)(?:\s+\w+)*\s+(best\s+)?кафе|(\d+)(?:\s+\w+)*\s+cafe?s?/i);
     return matches ? Math.max(1, parseInt(matches[1] || matches[3], 10)) : null;
   }
 
