@@ -1,0 +1,21 @@
+{
+  "city": "Valencia",
+  "scenario": "Beach leisure + modern art - paella, beach clubs, futuristic architecture",
+  "preferences": "paella classes, beach clubs, City of Arts and Sciences, Mediterranean food",
+  "budget": 35000,
+  "food_mode": "gastrotour",
+  "pois": [
+    {"id": "v1", "name": "City of Arts and Sciences", "category": "attraction", "rating": 4.6},
+    {"id": "v2", "name": "Malvarrosa Beach", "category": "attraction", "rating": 4.4},
+    {"id": "v3", "name": "L'Hemisfèric (IMAX)", "category": "attraction", "rating": 4.5},
+    {"id": "v4", "name": "Turia Gardens", "category": "attraction", "rating": 4.6},
+    {"id": "v5", "name": "Museum of Sciences", "category": "museum", "rating": 4.5},
+    {"id": "v6", "name": "La Pepica Beach Club", "category": "restaurant", "rating": 4.6},
+    {"id": "v7", "name": "Paella Class at Huerta", "category": "restaurant", "rating": 4.7},
+    {"id": "v8", "name": "Old Town (Barrio del Carmen)", "category": "historic", "rating": 4.3},
+    {"id": "v9", "name": "Oceanographic", "category": "museum", "rating": 4.4},
+    {"id": "v10", "name": "Horchatería Santa Catalina", "category": "cafe", "rating": 4.5},
+    {"id": "v11", "name": "Seafood Market (El Tostador)", "category": "restaurant", "rating": 4.5},
+    {"id": "v12", "name": "Valencia Cathedral", "category": "historic", "rating": 4.3}
+  ]
+}

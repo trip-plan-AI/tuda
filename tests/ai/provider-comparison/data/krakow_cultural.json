@@ -1,0 +1,21 @@
+{
+  "city": "Krakow",
+  "scenario": "Cultural heritage tour - Polish history & architecture",
+  "preferences": "medieval castles, historic sites, local museums, underground tours",
+  "budget": null,
+  "food_mode": "default",
+  "pois": [
+    {"id": "k1", "name": "Wawel Castle", "category": "historic", "rating": 4.6},
+    {"id": "k2", "name": "Rynek Główny (Market Square)", "category": "historic", "rating": 4.5},
+    {"id": "k3", "name": "St. Mary's Basilica", "category": "historic", "rating": 4.5},
+    {"id": "k4", "name": "Underground Salt Mines", "category": "attraction", "rating": 4.6},
+    {"id": "k5", "name": "POLIN Museum", "category": "museum", "rating": 4.4},
+    {"id": "k6", "name": "Jewish Quarter (Kazimierz)", "category": "historic", "rating": 4.4},
+    {"id": "k7", "name": "National Museum Krakow", "category": "museum", "rating": 4.3},
+    {"id": "k8", "name": "Pod Baranami Restaurant", "category": "restaurant", "rating": 4.5},
+    {"id": "k9", "name": "Cloth Hall", "category": "historic", "rating": 4.4},
+    {"id": "k10", "name": "Czartoryski Museum", "category": "museum", "rating": 4.4},
+    {"id": "k11", "name": "Oskar Schindler's Factory", "category": "historic", "rating": 4.5},
+    {"id": "k12", "name": "Wieliczka Salt Mine Spa", "category": "attraction", "rating": 4.5}
+  ]
+}

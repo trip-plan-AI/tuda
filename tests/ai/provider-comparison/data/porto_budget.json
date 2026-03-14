@@ -1,0 +1,21 @@
+{
+  "city": "Porto",
+  "scenario": "Budget travel - affordable attractions, cheap street food, hiking",
+  "preferences": "local wine, riverside walks, street art, budget-friendly attractions",
+  "budget": 15000,
+  "food_mode": "default",
+  "pois": [
+    {"id": "p1", "name": "Dom Luís I Bridge", "category": "historic", "rating": 4.6},
+    {"id": "p2", "name": "Ribeira District", "category": "historic", "rating": 4.5},
+    {"id": "p3", "name": "Livraria Lello", "category": "attraction", "rating": 4.4},
+    {"id": "p4", "name": "Port Wine Cellars", "category": "attraction", "rating": 4.5},
+    {"id": "p5", "name": "Clerigos Tower", "category": "historic", "rating": 4.4},
+    {"id": "p6", "name": "Street Art of Miragaia", "category": "attraction", "rating": 4.3},
+    {"id": "p7", "name": "Francesinha Sandwich Cafe", "category": "cafe", "rating": 4.6},
+    {"id": "p8", "name": "Serralves Museum", "category": "museum", "rating": 4.4},
+    {"id": "p9", "name": "Liede Beach Hike", "category": "attraction", "rating": 4.2},
+    {"id": "p10", "name": "Local Tasco (wine bar)", "category": "restaurant", "rating": 4.4},
+    {"id": "p11", "name": "Chapel of Souls", "category": "historic", "rating": 4.3},
+    {"id": "p12", "name": "Majestic Cafe", "category": "cafe", "rating": 4.3}
+  ]
+}

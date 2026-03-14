@@ -1,0 +1,21 @@
+{
+  "city": "Hoi An",
+  "scenario": "Gastrotour - Vietnamese street food, local cuisine, cooking classes",
+  "preferences": "street food markets, local restaurants, cooking classes, traditional cuisine",
+  "budget": 25000,
+  "food_mode": "gastrotour",
+  "pois": [
+    {"id": "h1", "name": "Hoi An Ancient Town", "category": "historic", "rating": 4.6},
+    {"id": "h2", "name": "Central Market (Cho Hoi An)", "category": "attraction", "rating": 4.5},
+    {"id": "h3", "name": "Thu Bon River", "category": "attraction", "rating": 4.4},
+    {"id": "h4", "name": "Banh Mi 6", "category": "restaurant", "rating": 4.7},
+    {"id": "h5", "name": "Yellow Bridge Tea House", "category": "cafe", "rating": 4.5},
+    {"id": "h6", "name": "Morning Glory Street Food", "category": "restaurant", "rating": 4.8},
+    {"id": "h7", "name": "Phuong Dong Cooking Class", "category": "attraction", "rating": 4.6},
+    {"id": "h8", "name": "Fish Trap Cao Lau", "category": "restaurant", "rating": 4.6},
+    {"id": "h9", "name": "Cua Dai Beach", "category": "attraction", "rating": 4.3},
+    {"id": "h10", "name": "Assembly Hall of Fujian", "category": "historic", "rating": 4.4},
+    {"id": "h11", "name": "Local Noodle Shop", "category": "restaurant", "rating": 4.5},
+    {"id": "h12", "name": "Coffee Culture", "category": "cafe", "rating": 4.4}
+  ]
+}

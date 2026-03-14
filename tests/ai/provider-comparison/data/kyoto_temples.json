@@ -1,0 +1,21 @@
+{
+  "city": "Kyoto",
+  "scenario": "Spiritual journey - temples, traditional gardens, zen monasteries",
+  "preferences": "ancient temples, traditional gardens, zen meditation, tea ceremonies",
+  "budget": null,
+  "food_mode": "default",
+  "pois": [
+    {"id": "ky1", "name": "Fushimi Inari Shrine", "category": "historic", "rating": 4.7},
+    {"id": "ky2", "name": "Kinkaku-ji (Golden Pavilion)", "category": "historic", "rating": 4.7},
+    {"id": "ky3", "name": "Arashiyama Bamboo Grove", "category": "attraction", "rating": 4.6},
+    {"id": "ky4", "name": "Ryoan-ji Temple", "category": "historic", "rating": 4.6},
+    {"id": "ky5", "name": "Gion District", "category": "historic", "rating": 4.5},
+    {"id": "ky6", "name": "Philosopher's Path", "category": "attraction", "rating": 4.5},
+    {"id": "ky7", "name": "Nanzen-ji Temple", "category": "historic", "rating": 4.5},
+    {"id": "ky8", "name": "Tea Ceremony at Camellia Tea", "category": "restaurant", "rating": 4.7},
+    {"id": "ky9", "name": "Kiyomizu-dera Temple", "category": "historic", "rating": 4.5},
+    {"id": "ky10", "name": "Arashiyama Bamboo Forest Walk", "category": "attraction", "rating": 4.6},
+    {"id": "ky11", "name": "Eikando Temple", "category": "historic", "rating": 4.4},
+    {"id": "ky12", "name": "Kaiseki Arashiyama Restaurant", "category": "restaurant", "rating": 4.6}
+  ]
+}
