@@ -9,7 +9,7 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL}
-    command: ['node', 'apps/api/dist/db/seed.js']
+    command: ['node', 'apps/api/dist/src/db/seed.js']
     depends_on:
       db:
         condition: service_healthy
