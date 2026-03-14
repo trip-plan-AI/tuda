@@ -9,6 +9,7 @@ export class CollaboratorsService {
   constructor(@Inject(DRIZZLE) private db: NodePgDatabase<typeof schema>) {}
 
   async getAll(tripId: string) {
+    // Collaborators from trip_collaborators table
     const rows = await this.db
       .select({
         userId: schema.tripCollaborators.userId,
@@ -24,7 +25,36 @@ export class CollaboratorsService {
         eq(schema.tripCollaborators.userId, schema.users.id),
       )
       .where(eq(schema.tripCollaborators.tripId, tripId));
-    return rows;
+
+    // Owner — fetch via trips → users join
+    const ownerRows = await this.db
+      .select({
+        userId: schema.users.id,
+        name: schema.users.name,
+        email: schema.users.email,
+        photo: schema.users.photo,
+        joinedAt: schema.trips.createdAt,
+      })
+      .from(schema.trips)
+      .innerJoin(schema.users, eq(schema.trips.ownerId, schema.users.id))
+      .where(eq(schema.trips.id, tripId))
+      .limit(1);
+
+    if (ownerRows.length === 0) return rows;
+
+    const ownerEntry = {
+      userId: ownerRows[0].userId,
+      role: 'owner' as const,
+      joinedAt: ownerRows[0].joinedAt,
+      name: ownerRows[0].name,
+      email: ownerRows[0].email,
+      photo: ownerRows[0].photo ?? undefined,
+    };
+
+    // Exclude owner from collaborators list in case they were added manually
+    const filteredRows = rows.filter((r) => r.userId !== ownerRows[0].userId);
+
+    return [ownerEntry, ...filteredRows];
   }
 
   async add(tripId: string, userId: string, role: 'editor' | 'viewer') {
