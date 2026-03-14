@@ -71,6 +71,8 @@ import {
   Calendar,
 } from '@/shared/ui';
 import { clearConfig, setConfig } from '@/features/persistent-map';
+import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
+import type { PlannerConflictType } from '@/widgets/planner-conflict-modal';
 
 interface GeoSuggestion {
   displayName: string;
@@ -674,6 +676,13 @@ export function PlannerPage() {
   const [modal, setModal] = useState<'login' | 'register' | null>(null);
   const [isAddPointMode, setIsAddPointMode] = useState(false);
   const [isOptimizationExpanded, setIsOptimizationExpanded] = useState(true);
+  const [showPlannerConflictModal, setShowPlannerConflictModal] = useState(false);
+  const [pendingApplyTarget, setPendingApplyTarget] = useState<{
+    kind: 'trip' | 'predefined';
+    id: string;
+    draftMessageId: string | null;
+  } | null>(null);
+  const [conflictType, setConflictType] = useState<PlannerConflictType>('different_route');
   const addPointStartCountRef = useRef(0);
 
   useEffect(() => {
@@ -1440,6 +1449,15 @@ export function PlannerPage() {
     }
   };
 
+  const clearApplyTripParams = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('applyTripId');
+    params.delete('applyPredefinedId');
+    params.delete('draftMessageId');
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `/planner?${nextQuery}` : '/planner');
+  }, [router, searchParams]);
+
   // feature/TRI-104-ai-planner-interaction: централизованное применение tripId из query-параметра applyTripId.
   // Потребность: загрузить маршрут из AI чата в UI без перезагрузки страницы.
   // Если убрать: маршруты из AI чата не будут переноситься в Planner.
@@ -1466,23 +1484,131 @@ export function PlannerPage() {
     [router, searchParams, setCurrentTrip, setSaved, openOrCreateSessionFromTrip],
   );
 
+  const applyIncomingPredefined = useCallback(
+    async (predefinedId: string) => {
+      const predefined = await tripsApi.getPredefined();
+      const target = predefined.find((trip) => String(trip.id) === String(predefinedId));
+      if (!target) {
+        clearApplyTripParams();
+        return;
+      }
+
+      const nextTripId = `guest-predefined-${target.id}-${Date.now()}`;
+      const now = new Date().toISOString();
+      const nextPoints = (target.points || []).map((p, idx) => ({
+        ...p,
+        id: p.id || `predefined-${target.id}-${idx}-${Date.now()}`,
+        tripId: nextTripId,
+        order: idx,
+        createdAt: p.createdAt || now,
+      }));
+
+      setCurrentTrip({
+        ...target,
+        id: nextTripId,
+        ownerId: 'guest',
+        isPredefined: false,
+        isActive: false,
+        createdAt: now,
+        updatedAt: now,
+        points: nextPoints,
+      });
+      setPoints(nextPoints, false);
+      setSaved();
+      if (nextPoints[0]) {
+        setFocusCoords({ lon: nextPoints[0].lon, lat: nextPoints[0].lat });
+      }
+
+      clearApplyTripParams();
+      toast.success('Маршрут из подборки открыт в Planner');
+    },
+    [clearApplyTripParams, setCurrentTrip, setPoints, setSaved],
+  );
+
+  const handleConfirmPlannerReplace = useCallback(() => {
+    const target = pendingApplyTarget;
+    setShowPlannerConflictModal(false);
+    setPendingApplyTarget(null);
+
+    if (!target) {
+      clearApplyTripParams();
+      return;
+    }
+
+    if (target.kind === 'trip') {
+      if (target.id.startsWith('guest-')) {
+        clearApplyTripParams();
+        return;
+      }
+      void applyIncomingTrip(target.id);
+      return;
+    }
+
+    void applyIncomingPredefined(target.id);
+  }, [pendingApplyTarget, applyIncomingTrip, applyIncomingPredefined, clearApplyTripParams]);
+
   useEffect(() => {
     // feature/TRI-104-ai-planner-interaction: IDEMPOTENCY GUARD
     // Потребность: исключить зацикливание подгрузки маршрута при ре-рендерах.
     const incomingTripId = searchParams.get('applyTripId');
+    const incomingPredefinedId = searchParams.get('applyPredefinedId');
     const draftMessageId = searchParams.get('draftMessageId');
 
-    if (!incomingTripId || incomingTripId.startsWith('guest-')) {
+    const incomingKind: 'trip' | 'predefined' | null = incomingTripId
+      ? 'trip'
+      : incomingPredefinedId
+        ? 'predefined'
+        : null;
+    const incomingId = incomingTripId || incomingPredefinedId;
+
+    if (!incomingKind || !incomingId || (incomingKind === 'trip' && incomingId.startsWith('guest-'))) {
       handledApplyTripIdRef.current = null;
       return;
     }
 
-    const currentKey = `${incomingTripId}-${draftMessageId || 'nodraft'}`;
+    const currentKey = `${incomingKind}:${incomingId}-${draftMessageId || 'nodraft'}`;
     if (handledApplyTripIdRef.current === currentKey) return;
 
+    const hasPlannerContent = points.length > 0;
+    const isDifferentRoute = incomingKind === 'trip' ? currentTrip?.id !== incomingId : true;
+    const hasIncomingDraftVersion = incomingKind === 'trip' && Boolean(draftMessageId);
+
+    if (!hasPlannerContent || !currentTrip) {
+      handledApplyTripIdRef.current = currentKey;
+      if (incomingKind === 'trip') {
+        void applyIncomingTrip(incomingId);
+      } else {
+        void applyIncomingPredefined(incomingId);
+      }
+      return;
+    }
+
+    if (!isDifferentRoute && !hasIncomingDraftVersion) {
+      handledApplyTripIdRef.current = currentKey;
+      clearApplyTripParams();
+      return;
+    }
+
     handledApplyTripIdRef.current = currentKey;
-    void applyIncomingTrip(incomingTripId);
-  }, [applyIncomingTrip, searchParams]);
+    setPendingApplyTarget({ kind: incomingKind, id: incomingId, draftMessageId });
+    setConflictType(hasIncomingDraftVersion ? 'same_route' : 'different_route');
+    setShowPlannerConflictModal(true);
+  }, [
+    applyIncomingTrip,
+    applyIncomingPredefined,
+    searchParams,
+    points.length,
+    currentTrip?.id,
+    clearApplyTripParams,
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== 'my') return;
+    if (points.length === 0) return;
+    const first = points[0];
+    if (!first) return;
+    setFocusCoords({ lon: first.lon, lat: first.lat });
+  }, [activeTab, points]);
 
   return (
     <div className="bg-white min-h-screen md:min-h-0 md:h-[calc(100vh-64px)] md:overflow-hidden w-full max-w-full flex flex-col">
@@ -2413,6 +2539,33 @@ export function PlannerPage() {
         open={modal === 'register'}
         onClose={() => setModal(null)}
         onSwitchToLogin={() => setModal('login')}
+      />
+      <PlannerConflictModal
+        open={showPlannerConflictModal}
+        onOpenChange={setShowPlannerConflictModal}
+        conflictType={conflictType}
+        currentRouteTitle={currentTrip?.title?.trim() || 'без названия'}
+        onCancel={() => {
+          setShowPlannerConflictModal(false);
+          setPendingApplyTarget(null);
+          clearApplyTripParams();
+        }}
+        onReplaceWithoutSave={handleConfirmPlannerReplace}
+        onSaveAndReplace={async () => {
+          if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+            await tripsApi.update(currentTrip.id, {
+              title: currentTrip.title,
+              description: currentTrip.description ?? undefined,
+              budget: currentTrip.budget ?? undefined,
+            });
+          }
+          handleConfirmPlannerReplace();
+        }}
+        onGoToPlannerOnly={() => {
+          setShowPlannerConflictModal(false);
+          setPendingApplyTarget(null);
+          clearApplyTripParams();
+        }}
       />
     </div>
   );

@@ -132,8 +132,7 @@ function BudgetSummary({
 export function ProfilePage() {
   const router = useRouter();
   const { user, setUser } = useUserStore();
-  const { setCurrentTrip, currentTrip, updateCurrentTrip, setPoints, addPoint, removePoint } =
-    useTripStore();
+  const { currentTrip, updateCurrentTrip, setPoints, addPoint, removePoint } = useTripStore();
   const { isAuthenticated } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<'routes' | 'saved'>('routes');
@@ -247,17 +246,6 @@ export function ProfilePage() {
   }, []);
 
   const activeRoute = savedTrips.find((t) => t.isActive);
-
-  // Sync activeRoute into the trip store so WS point events (addPoint/updatePoint/removePoint)
-  // update currentTrip.points, which we then use for real-time display.
-  useEffect(() => {
-    if (activeRoute && currentTrip?.id !== activeRoute.id) {
-      setCurrentTrip(activeRoute);
-      if (activeRoute.points) {
-        setPoints(activeRoute.points, false);
-      }
-    }
-  }, [activeRoute?.id, activeRoute?.points, setCurrentTrip, setPoints]);
 
   // Prefer currentTrip.points (kept live by WS) when viewing the active route
   const displayedActiveRoute = activeRoute
@@ -517,8 +505,7 @@ export function ProfilePage() {
   };
 
   const handleEditRoute = (trip: Trip) => {
-    setCurrentTrip(trip);
-    router.push('/planner');
+    router.push(`/planner?applyTripId=${encodeURIComponent(trip.id)}`);
   };
 
   return (
