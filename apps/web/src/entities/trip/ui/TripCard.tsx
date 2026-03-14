@@ -1,9 +1,14 @@
 import { useRouter } from 'next/navigation';
-import { MapPin, Moon, ArrowRight, Plus, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { MapPin, Moon, ArrowRight, Plus, AlertTriangle, CheckCircle2, MoreVertical } from 'lucide-react';
 import { calcNights } from '@/shared/lib/formatters';
 import { cn } from '@/shared/lib/utils';
 import type { Trip } from '@/entities/trip/model/trip.types';
 import { useTripStore } from '@/entities/trip/model/trip.store';
+
+function getInitials(name?: string, email?: string): string {
+  const text = name || email || '';
+  return text.slice(0, 2).toUpperCase();
+}
 
 function formatRub(value: number) {
   return value.toLocaleString('ru-RU').replace(/\u00A0/g, ' ');
@@ -112,6 +117,93 @@ export function TripCard({ trip, isSelected, onCardClick, onInvite, onCollaborat
           : 'border border-slate-100 shadow-sm hover:shadow-md'
         }`}
     >
+      {/* ── HEADER: Owner + Invite button ── */}
+      <div className="px-4 py-3 flex items-center justify-between border-b border-slate-100">
+        {/* Owner info */}
+        {owner ? (
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-10 h-10 rounded-full border-2 border-slate-200 overflow-hidden
+                            bg-brand-indigo/10 flex items-center justify-center text-[12px] font-bold text-brand-indigo shrink-0">
+              {owner.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={owner.avatarUrl} alt={owner.name ?? owner.email} className="w-full h-full object-cover" />
+              ) : (
+                getInitials(owner.name, owner.email)
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] text-slate-400 font-medium">Владелец</p>
+              <p className="text-[13px] font-semibold text-slate-900 truncate">
+                {owner.email.split('@')[0]}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <span />
+        )}
+
+        {/* Invite button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onInvite?.(trip.id);
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg ml-2 shrink-0
+                     bg-brand-sky text-white text-[12px] font-semibold
+                     hover:bg-brand-sky/90 transition-colors"
+        >
+          <Plus size={14} />
+          Пригласить
+        </button>
+      </div>
+
+      {/* ── COLLABORATORS: Avatars + More button ── */}
+      <div className="px-4 py-3 flex items-center gap-3 border-b border-slate-100">
+        {collaborators.length > 0 ? (
+          <>
+            <span className="text-[11px] text-slate-400 font-medium shrink-0">Участники:</span>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex -space-x-2">
+                {visibleCollabs.map((c) => (
+                  <div
+                    key={c.id}
+                    className="w-8 h-8 rounded-full border-2 border-white bg-brand-indigo/10
+                               flex items-center justify-center text-[10px] font-bold
+                               text-brand-indigo overflow-hidden shrink-0"
+                    title={c.name ?? c.email}
+                  >
+                    {c.avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={c.avatarUrl} alt={c.name ?? c.email} className="w-full h-full object-cover" />
+                    ) : (
+                      getInitials(c.name, c.email)
+                    )}
+                  </div>
+                ))}
+              </div>
+              {extraCount > 0 && (
+                <span className="text-[11px] font-bold text-slate-500 ml-1">+{extraCount}</span>
+              )}
+            </div>
+            {/* More button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onCollaboratorsClick?.(trip.id);
+              }}
+              className="ml-auto flex items-center justify-center w-8 h-8 rounded-lg
+                         bg-slate-100 text-slate-500 hover:bg-slate-200
+                         transition-colors shrink-0"
+              title="Все участники"
+            >
+              <MoreVertical size={16} />
+            </button>
+          </>
+        ) : (
+          <span className="text-[11px] text-slate-400">Нет участников</span>
+        )}
+      </div>
+
       {/* ── Cover image ── */}
       <div className="relative w-full aspect-[4/3] overflow-hidden bg-slate-100">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -121,46 +213,8 @@ export function TripCard({ trip, isSelected, onCardClick, onInvite, onCollaborat
           className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
         />
 
-        {/* gradient scrim — stronger at top and bottom */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-transparent to-black/55" />
-
-        {/* ── TOP OVERLAY: owner avatar + invite button ── */}
-        <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-3 pt-3">
-          {/* Owner avatar + name */}
-          {owner ? (
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full border-2 border-white/80 overflow-hidden
-                              bg-brand-indigo/30 flex items-center justify-center text-white text-[11px] font-bold shrink-0">
-                {owner.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={owner.avatarUrl} alt={owner.name ?? owner.email} className="w-full h-full object-cover" />
-                ) : (
-                  (owner.name ?? owner.email)[0].toUpperCase()
-                )}
-              </div>
-              <span className="text-white text-[12px] font-semibold drop-shadow-sm truncate max-w-[120px]">
-                {owner.name ?? owner.email.split('@')[0]}
-              </span>
-            </div>
-          ) : (
-            <span />
-          )}
-
-          {/* Invite button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onInvite?.(trip.id);
-            }}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-full
-                       bg-white/20 backdrop-blur-sm border border-white/40
-                       text-white text-[11px] font-semibold
-                       hover:bg-white/30 transition-colors"
-          >
-            <Plus size={11} />
-            Пригласить
-          </button>
-        </div>
+        {/* gradient scrim */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/40" />
 
         {/* active badge */}
         {trip.isActive && (
@@ -216,45 +270,8 @@ export function TripCard({ trip, isSelected, onCardClick, onInvite, onCollaborat
           <BudgetSummary plannedBudget={trip.budget} totalBudget={pointsBudgetTotal} />
         </div>
 
-        {/* Bottom row: collaborator avatars + open-in-planner arrow */}
-        <div className="flex items-center justify-between mt-1">
-          {/* Collaborator avatars (excluding owner) */}
-          {collaborators.length > 0 ? (
-            <div
-              className="flex -space-x-2 cursor-pointer"
-              onClick={(e) => {
-                e.stopPropagation();
-                onCollaboratorsClick?.(trip.id);
-              }}
-              title="Участники маршрута"
-            >
-              {visibleCollabs.map((c) => (
-                <div
-                  key={c.id}
-                  className="w-7 h-7 rounded-full border-2 border-white bg-brand-indigo/10
-                             flex items-center justify-center text-[10px] font-bold
-                             text-brand-indigo overflow-hidden"
-                  title={c.name ?? c.email}
-                >
-                  {c.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={c.avatarUrl} alt={c.name ?? c.email} className="w-full h-full object-cover" />
-                  ) : (
-                    (c.name ?? c.email)[0].toUpperCase()
-                  )}
-                </div>
-              ))}
-              {extraCount > 0 && (
-                <div className="w-7 h-7 rounded-full border-2 border-white bg-brand-indigo/20
-                               flex items-center justify-center text-[10px] font-bold text-brand-indigo">
-                  +{extraCount}
-                </div>
-              )}
-            </div>
-          ) : (
-            <span />
-          )}
-
+        {/* Bottom row: arrow button */}
+        <div className="flex items-center justify-end mt-1">
           {/* Arrow → go to planner */}
           <button
             onClick={(e) => {
