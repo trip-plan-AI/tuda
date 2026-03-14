@@ -1485,9 +1485,9 @@ export function PlannerPage() {
   }, [applyIncomingTrip, searchParams]);
 
   return (
-    <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
-      <div className="w-full mx-auto px-4 md:px-8 py-6 md:py-10 flex-1 flex flex-col relative">
-        <div className="mb-8 bg-white md:p-0 rounded-none w-full max-w-7xl mx-auto">
+    <div className="bg-white min-h-screen md:min-h-0 md:h-[calc(100vh-64px)] md:overflow-hidden w-full max-w-full flex flex-col">
+      <div className="w-full mx-auto px-4 md:px-8 py-6 md:py-8 flex-1 flex flex-col relative min-h-0">
+        <div className="mb-8 bg-white md:p-0 rounded-none w-full max-w-7xl mx-auto shrink-0">
           <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight mb-6 text-left">
             Маршруты
           </h2>
@@ -1504,9 +1504,10 @@ export function PlannerPage() {
           />
         </div>
 
-        {activeTab === 'my' ? (
-          <div className="animate-in fade-in duration-500 w-full relative">
-            <div className="mb-10 w-full max-w-7xl mx-auto">
+        <div className="flex-1 min-h-0 md:overflow-y-auto no-scrollbar md:pr-1">
+          {activeTab === 'my' ? (
+            <div className="animate-in fade-in duration-500 w-full relative">
+              <div className="mb-10 w-full max-w-7xl mx-auto">
               {isBudgetExceeded && showBudgetWarning && (
                 <div className="fixed right-4 bottom-20 md:bottom-6 z-40 animate-in slide-in-from-right-4 duration-300">
                   <div className="relative group flex items-start gap-2 rounded-2xl border border-red-200 bg-white/95 backdrop-blur px-3 py-2 shadow-lg max-w-[300px]">
@@ -1774,10 +1775,6 @@ export function PlannerPage() {
                   </div>
                 </div>
               )}
-            </div>
-
-            <div className="w-full max-w-7xl mx-auto rounded-[2.5rem] border border-slate-200 bg-slate-50/40 px-4 py-3 text-xs font-bold text-slate-400">
-              Карта вынесена в сквозной layout.
             </div>
 
             <div className="max-w-7xl mx-auto w-full mt-8">
@@ -2279,11 +2276,11 @@ export function PlannerPage() {
               </div>
             </div>
 
-            {/* Mobile Actions (Fallback for smaller screens) is removed */}
-          </div>
-        ) : (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto w-full">
-            <div className="w-full mb-10">
+              {/* Mobile Actions (Fallback for smaller screens) is removed */}
+            </div>
+          ) : (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto w-full">
+              <div className="w-full mb-10">
               <div className="relative group mb-8">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-blue transition-colors">
                   <Search size={20} />
@@ -2364,9 +2361,10 @@ export function PlannerPage() {
                     </Link>
                   );
                 })}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>

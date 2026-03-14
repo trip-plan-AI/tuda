@@ -522,7 +522,7 @@ export function ProfilePage() {
   };
 
   return (
-    <div className="flex flex-col h-full max-h-[calc(100vh-100px)] bg-slate-50 relative overflow-hidden w-full">
+    <div className="flex flex-col h-full md:h-[calc(100vh-64px)] bg-slate-50 relative overflow-hidden w-full">
       <input
         type="file"
         ref={fileInputRef}
@@ -596,12 +596,12 @@ export function ProfilePage() {
       </div>
 
       {/* ── ОСНОВНАЯ ОБЛАСТЬ ── */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full min-h-0">
         {/* ── ЛЕВАЯ КОЛОНКА: Список ── */}
         <div
           className={cn(
             'flex flex-col bg-white overflow-hidden',
-            'flex-1 md:flex-none w-full md:w-[40%] lg:w-[35%] xl:w-[400px] shrink-0 md:border-r md:border-slate-200',
+            'flex-1 md:flex-none w-full md:w-1/2 lg:w-1/2 xl:w-1/2 shrink-0 md:border-r md:border-slate-200',
           )}
         >
           <div className="px-3 md:px-4 pt-3 md:pt-4 shrink-0 bg-white z-20">
