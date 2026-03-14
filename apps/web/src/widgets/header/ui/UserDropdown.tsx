@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Mail, LogOut, Settings, User } from 'lucide-react';
 import { InvitationsModal } from '@/features/route-collaborate/ui/InvitationsModal';
+import { getEmailPrefix } from '@/shared/lib/formatters';
 
 interface UserDropdownProps {
   userName?: string;
@@ -61,7 +62,7 @@ export function UserDropdown({
           )}
           <div className="hidden sm:flex flex-col items-start">
             <p className="text-sm font-semibold text-slate-900 leading-none">{userName}</p>
-            <p className="text-[11px] text-slate-400">{userEmail.split('@')[0]}</p>
+            <p className="text-[11px] text-slate-400">{getEmailPrefix(userEmail)}</p>
           </div>
         </button>
 
