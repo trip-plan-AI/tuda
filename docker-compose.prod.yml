@@ -116,11 +116,14 @@ services:
       - '443:443'
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ${DOZZLE_HTPASSWD_FILE:-./secrets/.htpasswd-dozzle}:/etc/nginx/.htpasswd-dozzle:ro
     depends_on:
       api:
         condition: service_started
       web:
         condition: service_healthy
+      dozzle:
+        condition: service_started
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1/healthz >/dev/null || exit 1']
       interval: 30s
@@ -136,6 +139,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    restart: unless-stopped
+    expose:
+      - '8080'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
 volumes:
   postgres_data:
