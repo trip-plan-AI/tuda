@@ -1594,23 +1594,42 @@ ${JSON.stringify(points)}
           .filter((m: any) => m.type === 'REMOVE_BY_QUERY')
           .map((m: any) => m.query.toLowerCase());
 
-        this.logger.debug(
-          `applyMutations chat-only: removeQueries=${JSON.stringify(removeQueries)}, ` +
-          `currentPoints=${lastRoutePlan.days.flatMap(d => d.points.map(p => p.poi?.name)).join(', ')}`
+        this.logger.log(
+          `[MUTATION] Mutations to apply: ${JSON.stringify(body.mutations)}`
+        );
+        this.logger.log(
+          `[MUTATION] Parsed removeQueries: [${removeQueries.map(q => `"${q}"`).join(', ')}]`
+        );
+        this.logger.log(
+          `[MUTATION] Current points: ${JSON.stringify(
+            lastRoutePlan.days.map((d, idx) => ({
+              day: idx,
+              points: d.points.map(p => ({ name: p.poi?.name, lower: (p.poi?.name ?? '').toLowerCase() }))
+            }))
+          )}`
         );
 
         // Удаляем точки по названию
-        const updatedDays = lastRoutePlan.days.map((day) => {
+        const updatedDays = lastRoutePlan.days.map((day, dayIdx) => {
           const filteredPoints = day.points.filter((point) => {
             const poiName = (point.poi?.name ?? '').toLowerCase();
-            const shouldKeep = !removeQueries.some(q => poiName.includes(q) || q.includes(poiName.split(' ')[0]));
+            const shouldKeep = !removeQueries.some((q) => {
+              const matches = poiName.includes(q) || q.includes(poiName.split(' ')[0]);
+              if (matches) {
+                this.logger.debug(
+                  `FILTER[${dayIdx}]: poi="${point.poi?.name}" (lower="${poiName}") ` +
+                  `matches query="${q}" → REMOVE`
+                );
+              }
+              return matches;
+            });
             if (!shouldKeep) {
-              this.logger.debug(`Removing point: "${point.poi?.name}" (matching query)`);
+              this.logger.debug(`  → Removed: "${point.poi?.name}"`);
             }
             return shouldKeep;
           });
 
-          this.logger.debug(`Day: kept ${filteredPoints.length}/${day.points.length} points`);
+          this.logger.debug(`Day ${dayIdx}: kept ${filteredPoints.length}/${day.points.length} points`);
 
           // Пересчитываем времена оставшихся точек
           let currentTime = this.schedulerService['timeToMinutes'](day.day_start_time);
@@ -1653,15 +1672,16 @@ ${JSON.stringify(points)}
           total_budget_estimated: updatedDays.reduce((sum, d) => sum + (d.day_budget_estimated ?? 0), 0),
         };
 
-        this.logger.debug(
-          `Final updatedRoutePlan points: ${updatedRoutePlan.days.flatMap(d => d.points.map(p => p.poi?.name)).join(', ')}`
+        const finalPointsList = updatedRoutePlan.days.flatMap(d => d.points.map(p => p.poi?.name)).join(', ');
+        this.logger.log(
+          `[MUTATION] Final updatedRoutePlan points: [${finalPointsList}]`
         );
 
         await this.aiSessionsService.appendMessages(body.sessionId, [
           { role: 'assistant', content: messageContent, route_plan: updatedRoutePlan },
         ]);
 
-        this.logger.debug(`appendMessages completed for session ${body.sessionId}`);
+        this.logger.log(`[MUTATION] ✓ appendMessages completed for session ${body.sessionId}`);
 
         return { success: true, route_plan: updatedRoutePlan, points: [], version: 0 };
       }
