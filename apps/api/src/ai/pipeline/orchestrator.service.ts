@@ -205,26 +205,40 @@ export class OrchestratorService {
     const categories = this.normalizeCategories(parsed.categories);
     const excluded = this.normalizeCategories(parsed.excluded_categories);
     const days = this.toPositiveInt(parsed.days, 1);
+    const partySize = this.toPositiveInt(parsed.party_size, 1);
     const budgetTotal = this.toNullableNumber(
       parsed.budget_total ?? parsed.budget_rub,
     );
     const budgetPerDay =
       this.toNullableNumber(parsed.budget_per_day) ??
       (budgetTotal !== null ? Math.round(budgetTotal / days) : null);
+    const budgetPerPerson =
+      budgetTotal !== null ? Math.round(budgetTotal / partySize) : null;
+
+    const preferencesText = this.toTrimmedString(parsed.preferences_text);
+    const poiCountRequested = this.extractPoiCount(preferencesText);
+    const minRestaurants = this.extractMinRestaurants(preferencesText);
+    const minCafes = this.extractMinCafes(preferencesText);
+    const maxPoi = this.extractMaxPoi(preferencesText);
 
     return {
       city: this.toTrimmedString(parsed.city),
       days,
       budget_total: budgetTotal,
       budget_per_day: budgetPerDay,
+      budget_per_person: budgetPerPerson,
       party_type: this.normalizePartyType(parsed.party_type),
-      party_size: this.toPositiveInt(parsed.party_size, 1),
+      party_size: partySize,
+      poi_count_requested: poiCountRequested,
+      min_restaurants: minRestaurants,
+      min_cafes: minCafes,
+      max_poi: maxPoi,
       categories: categories.length > 0 ? categories : DEFAULT_CATEGORIES,
       excluded_categories: excluded,
       radius_km: this.toPositiveNumber(parsed.radius_km, 5),
       start_time: this.normalizeTime(parsed.start_time, '10:00'),
       end_time: this.normalizeTime(parsed.end_time, '21:00'),
-      preferences_text: this.toTrimmedString(parsed.preferences_text),
+      preferences_text: preferencesText,
     };
   }
 
@@ -283,5 +297,32 @@ export class OrchestratorService {
     if (value === null || value === undefined || value === '') return null;
     const num = Number(value);
     return Number.isFinite(num) ? num : null;
+  }
+
+  // Quantity extraction from user preferences
+  private extractPoiCount(text: string): number | null {
+    // Match patterns like "3 места", "3 интересных места", "find 5 places", "3 лучших", "5 достопримечательностей"
+    const matches = text.match(/(\d+)\s+(?:[а-яёa-z]+\s+)*(мест|место|places?|достопримечательностей?|points?|point)/i);
+    return matches ? Math.max(1, Math.min(20, parseInt(matches[1], 10))) : null;
+  }
+
+  private extractMinRestaurants(text: string): number | null {
+    // Match patterns like "2 ресторана", "2 best restaurants", "2 хороших ресторана"
+    const matches = text.match(/(\d+)\s+(?:[а-яёa-z]+\s+)*(best\s+)?рестора(ны?|нов)|(\d+)\s+(?:[а-яёa-z]+\s+)*restaurant/i);
+    return matches ? Math.max(1, parseInt(matches[1] || matches[4], 10)) : null;
+  }
+
+  private extractMinCafes(text: string): number | null {
+    // Match patterns like "2 кафе", "2 хороших кафе", "2 cafes"
+    const matches = text.match(/(\d+)\s+(?:[а-яёa-z]+\s+)*(best\s+)?кафе|(\d+)\s+(?:[а-яёa-z]+\s+)*cafe?s?/i);
+    return matches ? Math.max(1, parseInt(matches[1] || matches[3], 10)) : null;
+  }
+
+  private extractMaxPoi(text: string): number | null {
+    // Match patterns like "not more than 5", "не более 5", "максимум 5"
+    const matches = text.match(
+      /(не\s+более|максимум|не\s+больше|not\s+more\s+than|max)\s+(\d+)/i,
+    );
+    return matches ? Math.max(1, Math.min(20, parseInt(matches[2], 10))) : null;
   }
 }
