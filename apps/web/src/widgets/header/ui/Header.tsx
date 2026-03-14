@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Map, Home, MessageSquare, MapPin, User, LogOut } from 'lucide-react';
+import { Map, Home, MessageSquare, MapPin, User, LogOut, Mail } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { InvitationsModal, type Invitation } from '@/features/route-collaborate/ui/InvitationsModal';
 
 import {
   Button,
@@ -70,6 +71,8 @@ export function Header() {
   const [modal, setModal] = useState<Modal>(null);
   const [hydrated, setHydrated] = useState(false);
   const [isSessionExpiredModal, setIsSessionExpiredModal] = useState(false);
+  const [isInvitationsOpen, setIsInvitationsOpen] = useState(false);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
 
   useEffect(() => {
     // Zustand с persist загружает данные в микротасках, поэтому используем requestAnimationFrame
@@ -207,26 +210,58 @@ export function Header() {
                   {/* Шапка профиля */}
                   <div
                     className={cn(
-                      'px-4 py-3 border-b mb-2',
+                      'px-4 py-3 border-b mb-2 flex items-start justify-between gap-3',
                       isHome ? 'border-white/10' : 'border-slate-50',
                     )}
                   >
-                    <p
-                      className={cn(
-                        'text-xs font-black uppercase tracking-widest',
-                        isHome ? 'text-white/60' : 'text-slate-400',
-                      )}
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className={cn(
+                          'text-xs font-black uppercase tracking-widest',
+                          isHome ? 'text-white/60' : 'text-slate-400',
+                        )}
+                      >
+                        Профиль
+                      </p>
+                      <p
+                        className={cn(
+                          'text-sm font-bold truncate',
+                          isHome ? 'text-white' : 'text-brand-indigo',
+                        )}
+                      >
+                        {user?.name ?? 'Пользователь'}
+                      </p>
+                    </div>
+                    {/* Кнопка Приглашения - только иконка */}
+                    <DropdownMenuItem
+                      onClick={() => setIsInvitationsOpen(true)}
+                      noDefaultStyles
+                      className="p-0! outline-none shrink-0"
                     >
-                      Профиль
-                    </p>
-                    <p
-                      className={cn(
-                        'text-sm font-bold truncate',
-                        isHome ? 'text-white' : 'text-brand-indigo',
-                      )}
-                    >
-                      {user?.name ?? 'Пользователь'}
-                    </p>
+                      <button
+                        className={cn(
+                          'relative p-2 rounded-lg transition-all duration-200 shrink-0',
+                          isHome
+                            ? 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'
+                            : 'bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-brand-indigo',
+                        )}
+                        title="Приглашения"
+                      >
+                        <Mail size={16} />
+                        {invitations.length > 0 && (
+                          <span
+                            className={cn(
+                              'absolute -top-1 -right-1 text-[10px] font-black px-1 py-0.5 rounded-full',
+                              isHome
+                                ? 'bg-brand-sky text-white'
+                                : 'bg-brand-sky text-white',
+                            )}
+                          >
+                            {invitations.length}
+                          </span>
+                        )}
+                      </button>
+                    </DropdownMenuItem>
                   </div>
 
                   <div className="space-y-1">
@@ -339,6 +374,21 @@ export function Header() {
         open={modal === 'register'}
         onClose={() => setModal(null)}
         onSwitchToLogin={() => setModal('login')}
+      />
+      <InvitationsModal
+        open={isInvitationsOpen}
+        onClose={() => setIsInvitationsOpen(false)}
+        invitations={invitations}
+        onAccept={(id) => {
+          // TODO: Логика принятия приглашения
+          toast.success('Приглашение принято!');
+          setInvitations((prev) => prev.filter((i) => i.id !== id));
+        }}
+        onDecline={(id) => {
+          // TODO: Логика отклонения приглашения
+          toast.success('Приглашение отклонено');
+          setInvitations((prev) => prev.filter((i) => i.id !== id));
+        }}
       />
     </>
   );

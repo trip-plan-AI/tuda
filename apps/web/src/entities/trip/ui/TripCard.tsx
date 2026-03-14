@@ -1,9 +1,20 @@
 import { useRouter } from 'next/navigation';
-import { MapPin, Moon, ArrowRight, Plus, AlertTriangle, CheckCircle2, MoreVertical } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import {
+  MapPin,
+  Moon,
+  ArrowRight,
+  Plus,
+  AlertTriangle,
+  CheckCircle2,
+  MoreVertical,
+  Crown,
+} from 'lucide-react';
 import { calcNights } from '@/shared/lib/formatters';
 import { cn } from '@/shared/lib/utils';
 import type { Trip } from '@/entities/trip/model/trip.types';
 import { useTripStore } from '@/entities/trip/model/trip.store';
+import { collaborateApi } from '@/features/route-collaborate/api/collaborate.api';
 
 function getInitials(name?: string, email?: string): string {
   const text = name || email || '';
@@ -41,7 +52,12 @@ function BudgetSummary({
           <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">
             Итого по точкам
           </span>
-          <span className={cn('text-sm font-black leading-tight', isOverBudget ? 'text-red-500' : 'text-brand-indigo')}>
+          <span
+            className={cn(
+              'text-sm font-black leading-tight',
+              isOverBudget ? 'text-red-500' : 'text-brand-indigo',
+            )}
+          >
             {formatRub(total)} ₽
           </span>
         </div>
@@ -49,7 +65,10 @@ function BudgetSummary({
 
       <div className="h-1 rounded-full bg-slate-100 overflow-hidden">
         <div
-          className={cn('h-full rounded-full transition-all duration-300', isOverBudget ? 'bg-red-500' : 'bg-emerald-500')}
+          className={cn(
+            'h-full rounded-full transition-all duration-300',
+            isOverBudget ? 'bg-red-500' : 'bg-emerald-500',
+          )}
           style={{ width: `${progressPercent}%` }}
         />
       </div>
@@ -59,15 +78,25 @@ function BudgetSummary({
         <span className="text-right">{plan > 0 ? `${formatRub(plan - total)} ₽` : '—'}</span>
       </div>
 
-      <div className={cn(
-        'flex items-start gap-1.5 rounded-lg border px-2 py-1 text-[9px] font-black leading-tight',
-        isOverBudget ? 'border-red-100 bg-red-50/70 text-red-600' : 'border-emerald-100 bg-emerald-50/70 text-emerald-600',
-      )}>
-        {isOverBudget ? <AlertTriangle size={10} className="shrink-0 mt-px" /> : <CheckCircle2 size={10} className="shrink-0 mt-px" />}
-        {plan > 0 ? (
+      <div
+        className={cn(
+          'flex items-start gap-1.5 rounded-lg border px-2 py-1 text-[9px] font-black leading-tight',
           isOverBudget
-            ? <span>Перерасход: +{formatRub(total - plan)} ₽</span>
-            : <span>Остаток: {formatRub(plan - total)} ₽</span>
+            ? 'border-red-100 bg-red-50/70 text-red-600'
+            : 'border-emerald-100 bg-emerald-50/70 text-emerald-600',
+        )}
+      >
+        {isOverBudget ? (
+          <AlertTriangle size={10} className="shrink-0 mt-px" />
+        ) : (
+          <CheckCircle2 size={10} className="shrink-0 mt-px" />
+        )}
+        {plan > 0 ? (
+          isOverBudget ? (
+            <span>Перерасход: +{formatRub(total - plan)} ₽</span>
+          ) : (
+            <span>Остаток: {formatRub(plan - total)} ₽</span>
+          )
         ) : (
           <span>Задайте планируемый бюджет для контроля расхода</span>
         )}
@@ -84,8 +113,7 @@ interface TripCardProps {
   onCollaboratorsClick?: (tripId: string) => void;
 }
 
-const COVER_FALLBACK =
-  'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=800&q=80';
+const COVER_FALLBACK = 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=800&q=80';
 
 const formatDate = (d?: string | null) =>
   d
@@ -96,25 +124,47 @@ const formatDate = (d?: string | null) =>
       })
     : '—';
 
-export function TripCard({ trip, isSelected, onCardClick, onInvite, onCollaboratorsClick }: TripCardProps) {
+export function TripCard({
+  trip,
+  isSelected,
+  onCardClick,
+  onInvite,
+  onCollaboratorsClick,
+}: TripCardProps) {
   const router = useRouter();
   const nights = calcNights(trip.startDate, trip.endDate);
   const pointsCount = trip.points?.length ?? 0;
   const pointsBudgetTotal = trip.points?.reduce((sum, p) => sum + (p.budget || 0), 0) ?? 0;
-  const collaborators = trip.collaborators ?? [];
-  const owner = collaborators.find(c => c.role === 'owner') ?? collaborators[0];
-  const MAX_AVATARS = 3;
-  const visibleCollabs = collaborators.slice(0, MAX_AVATARS);
-  const extraCount = Math.max(0, collaborators.length - MAX_AVATARS);
   const coverSrc = trip.img || COVER_FALLBACK;
+
+  // ── Загружаем участников через API ──
+  const [participants, setParticipants] = useState<any[]>([]);
+
+  useEffect(() => {
+    collaborateApi
+      .getAll(trip.id)
+      .then(setParticipants)
+      .catch(() => {});
+  }, [trip.id]);
+
+  // ── Разделяем владельца и остальных участников ──
+  const owner = participants.find((p) => p.userId === trip.ownerId);
+  const others = participants.filter((p) => p.userId !== trip.ownerId);
+
+  // ── Вычисляем слоты для визуализации ──
+  const MAX_SLOTS = 3;
+  const visibleOthers = others.slice(0, MAX_SLOTS);
+  const hasMore = others.length > MAX_SLOTS;
+  const emptySlotsCount = Math.max(0, MAX_SLOTS - visibleOthers.length);
 
   return (
     <div
       onClick={() => onCardClick?.(trip.id)}
       className={`group cursor-pointer rounded-2xl overflow-hidden bg-white transition-all duration-200
-        ${isSelected
-          ? 'ring-2 ring-brand-sky shadow-lg shadow-brand-sky/20'
-          : 'border border-slate-100 shadow-sm hover:shadow-md'
+        ${
+          isSelected
+            ? 'ring-2 ring-brand-sky shadow-lg shadow-brand-sky/20'
+            : 'border border-slate-100 shadow-sm hover:shadow-md'
         }`}
     >
       {/* ── HEADER: Owner + Invite button ── */}
@@ -122,11 +172,17 @@ export function TripCard({ trip, isSelected, onCardClick, onInvite, onCollaborat
         {/* Owner info */}
         {owner ? (
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-10 h-10 rounded-full border-2 border-slate-200 overflow-hidden
-                            bg-brand-indigo/10 flex items-center justify-center text-[12px] font-bold text-brand-indigo shrink-0">
+            <div
+              className="w-10 h-10 rounded-full border-2 border-slate-200 overflow-hidden
+                            bg-brand-indigo/10 flex items-center justify-center text-[12px] font-bold text-brand-indigo shrink-0"
+            >
               {owner.avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={owner.avatarUrl} alt={owner.name ?? owner.email} className="w-full h-full object-cover" />
+                <img
+                  src={owner.avatarUrl}
+                  alt={owner.name ?? owner.email}
+                  className="w-full h-full object-cover"
+                />
               ) : (
                 getInitials(owner.name, owner.email)
               )}
@@ -157,50 +213,108 @@ export function TripCard({ trip, isSelected, onCardClick, onInvite, onCollaborat
         </button>
       </div>
 
-      {/* ── COLLABORATORS: Avatars + More button ── */}
-      <div className="px-4 py-3 flex items-center gap-3 border-b border-slate-100">
-        {collaborators.length > 0 ? (
-          <>
-            <span className="text-[11px] text-slate-400 font-medium shrink-0">Участники:</span>
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="flex -space-x-2">
-                {visibleCollabs.map((c) => (
-                  <div
-                    key={c.id}
-                    className="w-8 h-8 rounded-full border-2 border-white bg-brand-indigo/10
-                               flex items-center justify-center text-[10px] font-bold
-                               text-brand-indigo overflow-hidden shrink-0"
-                    title={c.name ?? c.email}
-                  >
-                    {c.avatarUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={c.avatarUrl} alt={c.name ?? c.email} className="w-full h-full object-cover" />
-                    ) : (
-                      getInitials(c.name, c.email)
-                    )}
-                  </div>
-                ))}
+      {/* ── COLLABORATORS: Owner + Others with slots ── */}
+      <div className="px-4 py-3 flex items-center justify-between border-b border-slate-100">
+        <div className="flex items-center gap-4">
+          {/* Owner */}
+          {owner && (
+            <div className="flex items-center gap-2">
+              <div
+                className="w-8 h-8 rounded-full border-2 border-white overflow-hidden
+                              bg-brand-indigo/10 flex items-center justify-center text-[10px] font-bold
+                              text-brand-indigo shrink-0"
+              >
+                {owner.photo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={owner.photo}
+                    alt={owner.name ?? owner.email}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  getInitials(owner.name, owner.email)
+                )}
               </div>
-              {extraCount > 0 && (
-                <span className="text-[11px] font-bold text-slate-500 ml-1">+{extraCount}</span>
-              )}
+              <div className="flex items-center gap-1.5">
+                <Crown size={14} className="text-amber-500 shrink-0" />
+                <span className="text-sm font-medium text-slate-700 truncate max-w-[100px]">
+                  {owner.name ?? owner.email}
+                </span>
+              </div>
             </div>
-            {/* More button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onCollaboratorsClick?.(trip.id);
-              }}
-              className="ml-auto flex items-center justify-center w-8 h-8 rounded-lg
-                         bg-slate-100 text-slate-500 hover:bg-slate-200
-                         transition-colors shrink-0"
-              title="Все участники"
-            >
-              <MoreVertical size={16} />
-            </button>
-          </>
-        ) : (
-          <span className="text-[11px] text-slate-400">Нет участников</span>
+          )}
+
+          {/* Separator */}
+          {owner && <div className="w-px h-5 bg-slate-200" />}
+
+          {/* Others with overlay effect */}
+          <div className="flex items-center">
+            {/* Real participants */}
+            {visibleOthers.map((p, index) => (
+              <div
+                key={p.userId}
+                className={cn(
+                  'relative rounded-full border-2 border-white shadow-sm bg-white overflow-hidden',
+                  index > 0 && '-ml-4',
+                )}
+              >
+                <div className="w-8 h-8 rounded-full bg-brand-indigo/10 flex items-center justify-center text-[10px] font-bold text-brand-indigo">
+                  {p.photo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={p.photo}
+                      alt={p.name ?? p.email}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    getInitials(p.name, p.email)
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {/* More indicator */}
+            {hasMore && (
+              <div className="-ml-4 relative flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 border-2 border-white text-[10px] font-bold text-slate-500 shadow-sm z-10">
+                ...
+              </div>
+            )}
+
+            {/* Empty slots with add button */}
+            {!hasMore &&
+              Array.from({ length: emptySlotsCount }).map((_, i) => (
+                <button
+                  key={`empty-${i}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onInvite?.(trip.id);
+                  }}
+                  title="Добавить участника"
+                  className={cn(
+                    'relative flex items-center justify-center w-8 h-8 rounded-full bg-slate-50 border-2 border-white text-slate-400 hover:text-brand-sky hover:bg-brand-sky/10 transition-colors shadow-sm',
+                    (visibleOthers.length > 0 || i > 0) && '-ml-4',
+                  )}
+                >
+                  <Plus size={14} />
+                </button>
+              ))}
+          </div>
+        </div>
+
+        {/* More details button */}
+        {participants.length > 0 && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCollaboratorsClick?.(trip.id);
+            }}
+            className="ml-auto flex items-center justify-center w-8 h-8 rounded-lg
+                       bg-slate-100 text-slate-500 hover:bg-slate-200
+                       transition-colors shrink-0"
+            title="Все участники"
+          >
+            <MoreVertical size={16} />
+          </button>
         )}
       </div>
 
@@ -218,8 +332,10 @@ export function TripCard({ trip, isSelected, onCardClick, onInvite, onCollaborat
 
         {/* active badge */}
         {trip.isActive && (
-          <span className="absolute top-3 right-3 px-2.5 py-1 rounded-full
-                           bg-emerald-500 text-white text-[11px] font-bold tracking-wide">
+          <span
+            className="absolute top-3 right-3 px-2.5 py-1 rounded-full
+                           bg-emerald-500 text-white text-[11px] font-bold tracking-wide"
+          >
             ACTIVE
           </span>
         )}
@@ -227,15 +343,19 @@ export function TripCard({ trip, isSelected, onCardClick, onInvite, onCollaborat
         {/* ── BOTTOM OVERLAY: night / point tags ── */}
         <div className="absolute bottom-3 left-3 flex gap-1.5 flex-wrap">
           {nights != null && nights > 0 && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full
-                             bg-black/50 backdrop-blur-sm text-white text-[11px] font-semibold">
+            <span
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full
+                             bg-black/50 backdrop-blur-sm text-white text-[11px] font-semibold"
+            >
               <Moon size={10} />
               {nights} {nights === 1 ? 'ночь' : nights < 5 ? 'ночи' : 'ночей'}
             </span>
           )}
           {pointsCount > 0 && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full
-                             bg-black/50 backdrop-blur-sm text-white text-[11px] font-semibold">
+            <span
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full
+                             bg-black/50 backdrop-blur-sm text-white text-[11px] font-semibold"
+            >
               <MapPin size={10} />
               {pointsCount} {pointsCount === 1 ? 'точка' : pointsCount < 5 ? 'точки' : 'точек'}
             </span>
