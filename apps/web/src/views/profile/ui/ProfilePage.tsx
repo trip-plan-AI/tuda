@@ -26,6 +26,7 @@ import {
 } from '@/features/route-collaborate';
 import { getSocket } from '@/shared/socket/socket-client';
 import { TripCard } from '@/entities/trip/ui/TripCard';
+import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 
 const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
   ssr: false,
@@ -39,6 +40,8 @@ export function ProfilePage() {
     useTripStore();
   const trips = useTripStore(state => state.trips);
   const setTrips = useTripStore(state => state.setTrips);
+  const isDirty = useTripStore(state => state.isDirty);
+  const clearPlanner = useTripStore(state => state.clearPlanner);
   const { isAuthenticated } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<'routes' | 'saved'>('routes');
@@ -51,7 +54,10 @@ export function ProfilePage() {
   const [scrollProgress, setScrollProgress] = useState(0);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [collaboratorsModalOpen, setCollaboratorsModalOpen] = useState(false);
+  const [inviteTripId, setInviteTripId] = useState<string | null>(null);
+  const [collaboratorsTripId, setCollaboratorsTripId] = useState<string | null>(null);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const { setCollaborators } = useCollaborateStore();
 
   // Sync local allTrips into the Zustand store so selectors/filtered arrays stay up-to-date
@@ -405,6 +411,45 @@ export function ProfilePage() {
     router.push('/planner');
   };
 
+  const handleCreateTrip = () => {
+    // If there's a current trip with unsaved changes, show conflict modal
+    if (currentTrip && isDirty) {
+      setConflictModalOpen(true);
+    } else {
+      // No conflict, clear planner and go to new trip
+      clearPlanner();
+      router.push('/planner');
+    }
+  };
+
+  const handleConflictSaveAndReplace = async () => {
+    // Save current trip and go to new planner
+    try {
+      if (currentTrip) {
+        await tripsApi.update(currentTrip.id, currentTrip);
+      }
+      clearPlanner();
+      setConflictModalOpen(false);
+      router.push('/planner');
+    } catch (err) {
+      console.error('Failed to save trip:', err);
+      toast.error('Не удалось сохранить маршрут');
+    }
+  };
+
+  const handleConflictGoToPlannerOnly = () => {
+    // Just go to planner without clearing
+    setConflictModalOpen(false);
+    router.push('/planner');
+  };
+
+  const handleConflictReplaceWithoutSave = () => {
+    // Clear planner and go to new trip
+    clearPlanner();
+    setConflictModalOpen(false);
+    router.push('/planner');
+  };
+
   // Map: selected card → active route (with live WS points) → first travel trip
   const selectedTrip = selectedTripId
     ? allTrips.find(t => t.id === selectedTripId) ?? null
@@ -560,7 +605,7 @@ export function ProfilePage() {
         </div>
 
         {/* ── КОНТЕНТ ТАБОВ ── */}
-        <div className="flex-1 relative min-h-0 overflow-hidden">
+        <div className="flex-1 relative min-h-0 overflow-hidden flex flex-col">
           {/* Scroll-to-top button */}
           <div
             className={cn(
@@ -589,26 +634,27 @@ export function ProfilePage() {
             </button>
           </div>
 
-          <div className="h-full overflow-y-auto">
-            {/* Sub-header: count + create button */}
-            <div className="flex items-center justify-between px-6 py-4">
-              <span className="text-[13px] font-bold text-slate-500">
-                {activeTab === 'routes'
-                  ? `${travelTrips.length} путешествий`
-                  : `${savedTrips.length} сохранено`}
-              </span>
-              <Button
-                onClick={() => router.push('/planner')}
-                variant="brand"
-                className="h-8 px-4 rounded-xl text-[12px] font-bold"
-              >
-                + Создать поездку
-              </Button>
-            </div>
+          {/* Sub-header: count + create button - FIXED */}
+          <div className="flex items-center justify-between px-6 py-4 shrink-0 border-b border-slate-100">
+            <span className="text-[13px] font-bold text-slate-500">
+              {activeTab === 'routes'
+                ? `${travelTrips.length} путешествий`
+                : `${savedTrips.length} сохранено`}
+            </span>
+            <Button
+              onClick={handleCreateTrip}
+              variant="brand"
+              className="h-8 px-4 rounded-xl text-[12px] font-bold"
+            >
+              + Создать поездку
+            </Button>
+          </div>
 
+          {/* Cards area - SCROLLABLE */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {activeTab === 'routes' ? (
               isLoadingTrips ? (
-                <div className="px-6 space-y-4 pb-6">
+                <div className="px-6 space-y-4 pb-6 pt-4">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
                   ))}
@@ -617,7 +663,7 @@ export function ProfilePage() {
                 <div
                   ref={routePointsScrollRef}
                   onScroll={handleContentScroll}
-                  className="px-6 space-y-4 pb-6"
+                  className="px-6 space-y-4 pb-6 pt-4"
                 >
                   {travelTrips.map((trip) => (
                     <TripCard
@@ -625,8 +671,14 @@ export function ProfilePage() {
                       trip={trip}
                       isSelected={selectedTripId === trip.id}
                       onCardClick={setSelectedTripId}
-                      onInvite={() => setInviteModalOpen(true)}
-                      onCollaboratorsClick={() => setCollaboratorsModalOpen(true)}
+                      onInvite={(tripId) => {
+                        setInviteTripId(tripId);
+                        setInviteModalOpen(true);
+                      }}
+                      onCollaboratorsClick={(tripId) => {
+                        setCollaboratorsTripId(tripId);
+                        setCollaboratorsModalOpen(true);
+                      }}
                     />
                   ))}
                 </div>
@@ -638,7 +690,7 @@ export function ProfilePage() {
                 </div>
               )
             ) : isLoadingTrips ? (
-              <div className="px-6 space-y-4 pb-6">
+              <div className="px-6 space-y-4 pb-6 pt-4">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
                 ))}
@@ -647,14 +699,20 @@ export function ProfilePage() {
               <div
                 ref={savedListScrollRef}
                 onScroll={handleContentScroll}
-                className="px-6 space-y-4 pb-6"
+                className="px-6 space-y-4 pb-6 pt-4"
               >
                 {savedTrips.map((trip) => (
                   <TripCard
                     key={trip.id}
                     trip={trip}
-                    onInvite={() => setInviteModalOpen(true)}
-                    onCollaboratorsClick={() => setCollaboratorsModalOpen(true)}
+                    onInvite={(tripId) => {
+                      setInviteTripId(tripId);
+                      setInviteModalOpen(true);
+                    }}
+                    onCollaboratorsClick={(tripId) => {
+                      setCollaboratorsTripId(tripId);
+                      setCollaboratorsModalOpen(true);
+                    }}
                   />
                 ))}
               </div>
@@ -686,21 +744,38 @@ export function ProfilePage() {
         )}
       </div>
 
-      {activeRoute && (
+      {inviteTripId && (
         <InviteModal
-          tripId={activeRoute.id}
+          tripId={inviteTripId}
           open={inviteModalOpen}
-          onClose={() => setInviteModalOpen(false)}
+          onClose={() => {
+            setInviteModalOpen(false);
+            setInviteTripId(null);
+          }}
         />
       )}
-      {activeRoute && (
+      {collaboratorsTripId && (
         <CollaboratorsModal
-          tripId={activeRoute.id}
-          ownerId={activeRoute.ownerId}
+          tripId={collaboratorsTripId}
+          ownerId={allTrips.find(t => t.id === collaboratorsTripId)?.ownerId || ''}
           open={collaboratorsModalOpen}
-          onClose={() => setCollaboratorsModalOpen(false)}
+          onClose={() => {
+            setCollaboratorsModalOpen(false);
+            setCollaboratorsTripId(null);
+          }}
         />
       )}
+
+      <PlannerConflictModal
+        open={conflictModalOpen}
+        onOpenChange={setConflictModalOpen}
+        conflictType="landing_new"
+        currentRouteTitle={currentTrip?.title || 'без названия'}
+        onCancel={() => setConflictModalOpen(false)}
+        onReplaceWithoutSave={handleConflictReplaceWithoutSave}
+        onSaveAndReplace={handleConflictSaveAndReplace}
+        onGoToPlannerOnly={handleConflictGoToPlannerOnly}
+      />
     </div>
   );
 }
