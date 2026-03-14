@@ -28,6 +28,9 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      AI_VECTOR_TOPK: ${AI_VECTOR_TOPK:-200}
+      YANDEX_BATCH_SIZE: ${YANDEX_BATCH_SIZE:-24}
+      YANDEX_BATCH_TIMEOUT_MS: ${YANDEX_BATCH_TIMEOUT_MS:-8000}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       AI_MODEL: ${AI_MODEL:-gpt-4o-mini}
       YANDEX_GPT_API_KEY: ${YANDEX_GPT_API_KEY}
@@ -38,6 +41,7 @@ services:
       LOCATIONIQ_API_KEY: ${LOCATIONIQ_API_KEY}
       GEOAPIFY_API_KEY: ${GEOAPIFY_API_KEY}
       ORS_API_KEY: ${ORS_API_KEY}
+      PIXABAY_API_KEY: ${PIXABAY_API_KEY}
     expose:
       - '3001'
     healthcheck:
@@ -66,6 +70,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_YANDEX_TILES_API_KEY: ${NEXT_PUBLIC_YANDEX_TILES_API_KEY}
     expose:
       - '3000'
     healthcheck:
