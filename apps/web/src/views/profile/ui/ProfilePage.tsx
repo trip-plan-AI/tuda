@@ -2,12 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  User as UserIcon,
-  Pencil,
-  Map as MapIcon,
-  ArrowUp,
-} from 'lucide-react';
+import { User as UserIcon, Pencil, Map as MapIcon, ArrowUp } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useUserStore, usersApi } from '@/entities/user';
 import { useTripStore, type Trip } from '@/entities/trip';
@@ -38,10 +33,10 @@ export function ProfilePage() {
   const { user, setUser } = useUserStore();
   const { setCurrentTrip, currentTrip, updateCurrentTrip, setPoints, addPoint, removePoint } =
     useTripStore();
-  const trips = useTripStore(state => state.trips);
-  const setTrips = useTripStore(state => state.setTrips);
-  const isDirty = useTripStore(state => state.isDirty);
-  const clearPlanner = useTripStore(state => state.clearPlanner);
+  const trips = useTripStore((state) => state.trips);
+  const setTrips = useTripStore((state) => state.setTrips);
+  const isDirty = useTripStore((state) => state.isDirty);
+  const clearPlanner = useTripStore((state) => state.clearPlanner);
   const { isAuthenticated } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<'routes' | 'saved'>('routes');
@@ -65,8 +60,8 @@ export function ProfilePage() {
     setTrips(allTrips);
   }, [allTrips, setTrips]);
 
-  const travelTrips = trips.filter(t => t.startDate && t.endDate);
-  const savedTrips = trips.filter(t => !t.startDate || !t.endDate);
+  const travelTrips = trips.filter((t) => t.startDate && t.endDate);
+  const savedTrips = trips.filter((t) => !t.startDate || !t.endDate);
 
   const progressColor =
     scrollProgress < 0.4 ? '#0ea5e9' : scrollProgress < 0.8 ? '#4f46e5' : '#9333ea';
@@ -452,7 +447,7 @@ export function ProfilePage() {
 
   // Map: selected card → active route (with live WS points) → first travel trip
   const selectedTrip = selectedTripId
-    ? allTrips.find(t => t.id === selectedTripId) ?? null
+    ? (allTrips.find((t) => t.id === selectedTripId) ?? null)
     : (displayedActiveRoute ?? travelTrips[0] ?? null);
   const mapPoints = selectedTrip?.points ?? [];
 
@@ -468,7 +463,6 @@ export function ProfilePage() {
 
       {/* ── ЛЕВАЯ КОЛОНКА: Профиль + Табы + Карточки ── */}
       <div className="w-full md:w-[600px] lg:w-[680px] flex-shrink-0 flex flex-col overflow-hidden z-10 bg-white shadow-[2px_0_24px_0_rgba(0,0,0,0.08)]">
-
         {/* ── ШАПКА ПРОФИЛЯ ── */}
         <div className="w-full shrink-0 bg-white border-b border-slate-100 px-6 py-6">
           {/* Avatar + name row */}
@@ -481,6 +475,10 @@ export function ProfilePage() {
               {user?.photo ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={user.photo} className="w-full h-full object-cover" alt={user.name} />
+              ) : user?.name ? (
+                <span className="text-2xl font-bold text-slate-400 uppercase">
+                  {user.name.substring(0, 2)}
+                </span>
               ) : (
                 <UserIcon size={36} className="text-slate-300" />
               )}
@@ -533,8 +531,8 @@ export function ProfilePage() {
 
               {/* Tagline */}
               <p className="text-[13px] text-slate-400 font-medium">
-                Путешественник с{' '}
-                {user?.createdAt ? new Date(user.createdAt).getFullYear() : '2026'} года
+                Путешественник с {user?.createdAt ? new Date(user.createdAt).getFullYear() : '2026'}{' '}
+                года
               </p>
             </div>
           </div>
@@ -545,27 +543,21 @@ export function ProfilePage() {
               <span className="text-xl font-black text-brand-indigo leading-none">
                 {allTrips.length}
               </span>
-              <span className="text-[11px] text-slate-400 font-semibold mt-0.5">
-                Поездок
-              </span>
+              <span className="text-[11px] text-slate-400 font-semibold mt-0.5">Поездок</span>
             </div>
             <div className="w-px h-8 bg-slate-100" />
             <div className="flex flex-col items-center">
               <span className="text-xl font-black text-brand-indigo leading-none">
                 {allTrips.reduce((acc, t) => acc + (t.points?.length ?? 0), 0)}
               </span>
-              <span className="text-[11px] text-slate-400 font-semibold mt-0.5">
-                Точек
-              </span>
+              <span className="text-[11px] text-slate-400 font-semibold mt-0.5">Точек</span>
             </div>
             <div className="w-px h-8 bg-slate-100" />
             <div className="flex flex-col items-center">
               <span className="text-xl font-black text-brand-indigo leading-none">
                 {travelTrips.length}
               </span>
-              <span className="text-[11px] text-slate-400 font-semibold mt-0.5">
-                С датами
-              </span>
+              <span className="text-[11px] text-slate-400 font-semibold mt-0.5">С датами</span>
             </div>
           </div>
         </div>
@@ -583,9 +575,7 @@ export function ProfilePage() {
               )}
             >
               Путешествия
-              <span className="ml-1.5 text-[11px] font-black opacity-60">
-                {travelTrips.length}
-              </span>
+              <span className="ml-1.5 text-[11px] font-black opacity-60">{travelTrips.length}</span>
             </button>
             <button
               onClick={() => setActiveTab('saved')}
@@ -597,9 +587,7 @@ export function ProfilePage() {
               )}
             >
               Сохранено
-              <span className="ml-1.5 text-[11px] font-black opacity-60">
-                {savedTrips.length}
-              </span>
+              <span className="ml-1.5 text-[11px] font-black opacity-60">{savedTrips.length}</span>
             </button>
           </div>
         </div>
@@ -651,10 +639,10 @@ export function ProfilePage() {
           </div>
 
           {/* Cards area - SCROLLABLE */}
-          <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="flex-1 min-h-0 flex flex-col">
             {activeTab === 'routes' ? (
               isLoadingTrips ? (
-                <div className="px-6 space-y-4 pb-6 pt-4">
+                <div className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
                   ))}
@@ -663,7 +651,7 @@ export function ProfilePage() {
                 <div
                   ref={routePointsScrollRef}
                   onScroll={handleContentScroll}
-                  className="px-6 space-y-4 pb-6 pt-4"
+                  className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto"
                 >
                   {travelTrips.map((trip) => (
                     <TripCard
@@ -671,26 +659,26 @@ export function ProfilePage() {
                       trip={trip}
                       isSelected={selectedTripId === trip.id}
                       onCardClick={setSelectedTripId}
-                      onInvite={(tripId) => {
-                        setInviteTripId(tripId);
+                      onInvite={() => {
+                        setInviteTripId(trip.id);
                         setInviteModalOpen(true);
                       }}
-                      onCollaboratorsClick={(tripId) => {
-                        setCollaboratorsTripId(tripId);
+                      onCollaboratorsClick={() => {
+                        setCollaboratorsTripId(trip.id);
                         setCollaboratorsModalOpen(true);
                       }}
                     />
                   ))}
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center text-slate-300 text-center px-6 py-16">
+                <div className="flex flex-col items-center justify-center text-slate-300 text-center px-6 py-16 flex-1">
                   <MapIcon size={40} className="mb-3 opacity-20" />
                   <p className="text-sm font-semibold text-slate-400">Путешествий пока нет</p>
                   <p className="text-xs text-slate-300 mt-1">Создайте первую поездку с датами</p>
                 </div>
               )
             ) : isLoadingTrips ? (
-              <div className="px-6 space-y-4 pb-6 pt-4">
+              <div className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
                 ))}
@@ -699,25 +687,25 @@ export function ProfilePage() {
               <div
                 ref={savedListScrollRef}
                 onScroll={handleContentScroll}
-                className="px-6 space-y-4 pb-6 pt-4"
+                className="px-6 space-y-4 pb-6 pt-4 flex-1 overflow-y-auto"
               >
                 {savedTrips.map((trip) => (
                   <TripCard
                     key={trip.id}
                     trip={trip}
-                    onInvite={(tripId) => {
-                      setInviteTripId(tripId);
+                    onInvite={() => {
+                      setInviteTripId(trip.id);
                       setInviteModalOpen(true);
                     }}
-                    onCollaboratorsClick={(tripId) => {
-                      setCollaboratorsTripId(tripId);
+                    onCollaboratorsClick={() => {
+                      setCollaboratorsTripId(trip.id);
                       setCollaboratorsModalOpen(true);
                     }}
                   />
                 ))}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center text-slate-300 text-center px-6 py-16">
+              <div className="flex flex-col items-center justify-center text-slate-300 text-center px-6 py-16 flex-1">
                 <MapIcon size={40} className="mb-3 opacity-20" />
                 <p className="text-sm font-semibold text-slate-400">Список пуст</p>
               </div>
@@ -757,7 +745,7 @@ export function ProfilePage() {
       {collaboratorsTripId && (
         <CollaboratorsModal
           tripId={collaboratorsTripId}
-          ownerId={allTrips.find(t => t.id === collaboratorsTripId)?.ownerId || ''}
+          ownerId={allTrips.find((t) => t.id === collaboratorsTripId)?.ownerId || ''}
           open={collaboratorsModalOpen}
           onClose={() => {
             setCollaboratorsModalOpen(false);

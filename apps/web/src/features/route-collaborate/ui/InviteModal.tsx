@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -51,9 +52,12 @@ export function InviteModal({ tripId, open, onClose }: Props) {
     try {
       const collab = await collaborateApi.add(tripId, foundUser.id, 'editor');
       addCollaborator(collab);
+      toast.success(`${foundUser.name} приглашён в маршрут`);
       onClose();
-    } catch {
-      setSearchError('Не удалось пригласить пользователя');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось пригласить пользователя';
+      setSearchError(message);
+      toast.error(message);
     } finally {
       setIsAdding(false);
     }
