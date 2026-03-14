@@ -62,11 +62,12 @@ export class IntentRouterService {
         },
       ];
 
-      const response = await this.llmClientService.client.chat.completions.create({
-        model: INTENT_ROUTER_MODEL,
-        response_format: { type: 'json_object' },
-        messages,
-      });
+      const response =
+        await this.llmClientService.client.chat.completions.create({
+          model: INTENT_ROUTER_MODEL,
+          response_format: { type: 'json_object' },
+          messages,
+        });
 
       const content = response.choices[0]?.message?.content ?? '{}';
       const parsed = this.parseAndValidateLlmResponse(content);
@@ -85,7 +86,8 @@ export class IntentRouterService {
       return this.applyDeterministicPostProcessing({
         action_type: normalizedActionType,
         confidence: parsed.confidence,
-        target_poi_id: normalizedActionType === 'NEW_ROUTE' ? null : targetPoiId,
+        target_poi_id:
+          normalizedActionType === 'NEW_ROUTE' ? null : targetPoiId,
         route_mode: 'full_rebuild',
       });
     } catch (error) {
@@ -109,15 +111,25 @@ export class IntentRouterService {
   } {
     const parsed = JSON.parse(payload) as IntentRouterLlmResponse;
 
-    if (!ALLOWED_ACTION_TYPES.includes(parsed.action_type as IntentRouterActionType)) {
+    if (
+      !ALLOWED_ACTION_TYPES.includes(
+        parsed.action_type as IntentRouterActionType,
+      )
+    ) {
       throw new Error('Intent router returned unknown action_type');
     }
 
-    if (typeof parsed.confidence !== 'number' || !Number.isFinite(parsed.confidence)) {
+    if (
+      typeof parsed.confidence !== 'number' ||
+      !Number.isFinite(parsed.confidence)
+    ) {
       throw new Error('Intent router returned invalid confidence');
     }
 
-    if (parsed.target_poi_id !== null && typeof parsed.target_poi_id !== 'string') {
+    if (
+      parsed.target_poi_id !== null &&
+      typeof parsed.target_poi_id !== 'string'
+    ) {
       throw new Error('Intent router returned invalid target_poi_id');
     }
 
@@ -142,7 +154,9 @@ export class IntentRouterService {
     return {
       ...decision,
       route_mode:
-        decision.action_type === 'NEW_ROUTE' ? 'full_rebuild' : 'targeted_mutation',
+        decision.action_type === 'NEW_ROUTE'
+          ? 'full_rebuild'
+          : 'targeted_mutation',
       fallback_reason: undefined,
     };
   }
@@ -178,7 +192,10 @@ export class IntentRouterService {
       return explicitId;
     }
 
-    if (typeof llmTargetPoiId === 'string' && llmTargetPoiId.trim().length > 0) {
+    if (
+      typeof llmTargetPoiId === 'string' &&
+      llmTargetPoiId.trim().length > 0
+    ) {
       return llmTargetPoiId.trim();
     }
 

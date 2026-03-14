@@ -1,9 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Clock, Cloud, CloudSun, MapPin, Route, Sun, Wind } from 'lucide-react';
+import { ArrowLeft, Clock, Cloud, CloudSun, Route, Sun, Wind } from 'lucide-react';
 import { useTripStore, tripsApi } from '@/entities/trip';
 import type { Trip } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point';
@@ -18,15 +17,7 @@ import {
 } from '@/shared/ui';
 import { cn } from '@/shared/lib/utils';
 import { env } from '@/shared/config/env';
-
-const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-full rounded-[2.5rem] bg-gray-100 animate-pulse flex items-center justify-center">
-      <p className="text-sm text-gray-400">Загрузка карты...</p>
-    </div>
-  ),
-});
+import { clearConfig, setConfig } from '@/features/persistent-map';
 
 interface TourDetailPageProps {
   tourId: string;
@@ -118,6 +109,25 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
       if (coords) setFocusCoords(coords);
     });
   }, [tour, attractions.length, geocodeCity]);
+
+  useEffect(() => {
+    setConfig({
+      source: 'tour-detail-page',
+      priority: 60,
+      points: attractions,
+      focusCoords: attractions.length === 0 ? focusCoords : null,
+      readonly: true,
+      draggable: false,
+      routeProfile: 'driving',
+      onPointDragEnd: () => undefined,
+      onRouteInfoUpdate: setRouteInfo,
+      onRouteInfoLoading: setIsRouteLoading,
+    });
+
+    return () => {
+      clearConfig('tour-detail-page');
+    };
+  }, [attractions, focusCoords]);
 
   const doOpenRoute = useCallback(async () => {
     if (!tour) return;
@@ -313,20 +323,8 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           </div>
         </div>
 
-        {/* Карта с маршрутом */}
-        <div className="mb-8">
-          <div className="w-full aspect-[4/3] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden border border-slate-200 shadow-inner bg-slate-50">
-            <RouteMap
-              points={attractions}
-              focusCoords={attractions.length === 0 ? focusCoords : null}
-              onPointDragEnd={() => undefined}
-              isDropdownOpen={false}
-              routeProfile="driving"
-              onRouteInfoUpdate={setRouteInfo}
-              onRouteInfoLoading={setIsRouteLoading}
-              readonly={true}
-            />
-          </div>
+        <div className="mb-8 rounded-[2.5rem] border border-slate-200 bg-slate-50/40 px-4 py-3 text-xs font-bold text-slate-400">
+          Карта вынесена в сквозной layout.
         </div>
 
         {/* Кнопка в конструктор */}

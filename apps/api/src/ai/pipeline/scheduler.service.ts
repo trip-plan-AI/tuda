@@ -33,7 +33,9 @@ export class SchedulerService {
   ): PlanDay {
     const singleDayBudget =
       intent.budget_per_day ??
-      (intent.budget_total !== null ? Math.max(0, Math.round(intent.budget_total)) : null);
+      (intent.budget_total !== null
+        ? Math.max(0, Math.round(intent.budget_total))
+        : null);
 
     const singleDayIntent: ParsedIntent = {
       ...intent,

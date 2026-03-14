@@ -10,9 +10,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   UserPlus,
-  Check,
 } from 'lucide-react';
-import dynamic from 'next/dynamic';
 import { useUserStore, usersApi } from '@/entities/user';
 import { useTripStore, type Trip } from '@/entities/trip';
 import { useAuthStore } from '@/features/auth';
@@ -36,11 +34,7 @@ import {
   CollaboratorsModal,
 } from '@/features/route-collaborate';
 import { getSocket } from '@/shared/socket/socket-client';
-
-const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-slate-50 animate-pulse rounded-2xl" />,
-});
+import { clearConfig, setConfig } from '@/features/persistent-map';
 
 function getBudgetMetrics(plannedBudget: number | null | undefined, totalBudget: number) {
   const plan = Math.max(0, plannedBudget ?? 0);
@@ -263,7 +257,7 @@ export function ProfilePage() {
         setPoints(activeRoute.points, false);
       }
     }
-  }, [activeRoute?.id, activeRoute?.points, setCurrentTrip, setPoints]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeRoute?.id, activeRoute?.points, setCurrentTrip, setPoints]);
 
   // Prefer currentTrip.points (kept live by WS) when viewing the active route
   const displayedActiveRoute = activeRoute
@@ -274,6 +268,21 @@ export function ProfilePage() {
 
   const activeRouteTotalBudget =
     displayedActiveRoute?.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
+
+  useEffect(() => {
+    setConfig({
+      source: 'profile-page',
+      priority: 80,
+      points: displayedActiveRoute?.points || [],
+      readonly: true,
+      draggable: false,
+      routeProfile: 'driving',
+    });
+
+    return () => {
+      clearConfig('profile-page');
+    };
+  }, [displayedActiveRoute?.id, displayedActiveRoute?.points]);
 
   useCollaborationSocket(activeRoute?.id ?? '');
 
@@ -533,7 +542,6 @@ export function ProfilePage() {
             className="w-16 h-16 md:w-20 md:h-20 bg-slate-50 rounded-full flex items-center justify-center border-2 border-white shadow-md overflow-hidden cursor-pointer group relative shrink-0"
           >
             {user?.photo ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img src={user.photo} className="w-full h-full object-cover" alt={user.name} />
             ) : (
               <UserIcon size={32} className="text-slate-200" />
@@ -702,13 +710,8 @@ export function ProfilePage() {
                       </div>
                     </div>
 
-                    {/* Превью карты */}
-                    <div className="w-full aspect-video md:hidden rounded-2xl overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100">
-                      <RouteMap
-                        key={`card-${activeRoute.id}`}
-                        points={displayedActiveRoute?.points || []}
-                        onPointDragEnd={() => {}}
-                      />
+                    <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                      Карта вынесена в сквозной layout
                     </div>
 
                     <div className="bg-white p-3 md:p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col">
@@ -854,24 +857,7 @@ export function ProfilePage() {
           </div>
         </div>
 
-        <div className="hidden md:flex flex-1 relative bg-slate-50 items-center justify-center overflow-hidden p-4">
-          <div className="w-full h-full max-w-[96%] max-h-[96%] overflow-hidden relative rounded-2xl border border-slate-200 shadow-lg">
-            {displayedActiveRoute &&
-            displayedActiveRoute.points &&
-            displayedActiveRoute.points.length > 0 ? (
-              <RouteMap
-                key={`desktop-${displayedActiveRoute.id}`}
-                points={displayedActiveRoute.points}
-                onPointDragEnd={() => {}}
-              />
-            ) : (
-              <MapIcon
-                size={44}
-                className="text-slate-200 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-              />
-            )}
-          </div>
-        </div>
+        <div className="hidden md:block flex-1 rounded-2xl border border-dashed border-slate-200 bg-slate-50/40" />
       </div>
 
       {activeRoute && (

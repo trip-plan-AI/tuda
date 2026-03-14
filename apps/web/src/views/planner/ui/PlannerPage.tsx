@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import dynamic from 'next/dynamic';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Search,
@@ -71,19 +70,7 @@ import {
   PopoverTrigger,
   Calendar,
 } from '@/shared/ui';
-
-const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
-  ssr: false,
-  loading: () => <MapSkeleton />,
-});
-
-function MapSkeleton() {
-  return (
-    <div className="w-full h-full rounded-[2.5rem] bg-gray-100 animate-pulse flex items-center justify-center">
-      <p className="text-sm text-gray-400">Загрузка карты...</p>
-    </div>
-  );
-}
+import { clearConfig, setConfig } from '@/features/persistent-map';
 
 interface GeoSuggestion {
   displayName: string;
@@ -333,6 +320,8 @@ function SortablePointRow({
     <div
       ref={setNodeRef}
       style={style}
+      data-testid="planner-point-row"
+      data-point-id={point.id}
       className={cn('flex flex-col gap-3 group', showDropdownState && 'z-50')}
     >
       {index > 0 && (leg || isRouteLoading) && (
@@ -668,8 +657,6 @@ export function PlannerPage() {
   // feature/TRI-104-ai-planner-interaction: idempotency-guard для обработки applyTripId.
   // Потребность: чтобы не срабатывали повторные toasts/загрузки при re-render и router.replace.
   const handledApplyTripIdRef = useRef<string | null>(null);
-  // TRI-104: принудительный remount карты после подмены маршрута из AI.
-  const [lastMapRenderAt, setLastMapRenderAt] = useState<number>(Date.now());
   const userLocationRef = useRef<{ lat: number; lon: number } | null>(null);
   const prevLegsCountRef = useRef(0);
   const prevLegsDurationsRef = useRef<string>('');
@@ -878,7 +865,7 @@ export function PlannerPage() {
       prevLegsCountRef.current = legsCount;
       prevLegsDurationsRef.current = legsDurationsKey;
     }
-  }, [routeInfo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [routeInfo]);
 
   useEffect(() => {
     useTripStore.getState().setCachedRouteInfo(null);
@@ -1390,13 +1377,54 @@ export function PlannerPage() {
           setIsAddPointMode(false);
         }
       } catch (e) {
+        // Фолбэк: даже при ошибке reverse geocode сохраняем точку по координатам,
+        // чтобы интерактив карты не ломался в оффлайн/нестабильной среде.
         console.error('Не удалось добавить точку с карты:', e);
+        await addPoint_({
+          title: `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`,
+          lat: coords.lat,
+          lon: coords.lon,
+          address: `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`,
+        });
       } finally {
         setIsSearching(false);
       }
     },
     [addPoint_, resolveMapCoords],
   );
+
+  useEffect(() => {
+    setConfig({
+      source: 'planner-page',
+      priority: 100,
+      points,
+      focusCoords,
+      draggable: true,
+      readonly: false,
+      routeProfile,
+      isDropdownOpen: showDropdown,
+      isAddPointMode,
+      onPointDragEnd: handlePointDragEnd,
+      onMapClick: handleMapClick,
+      onAddPointModeChange: handleAddPointModeChange,
+      onRouteInfoUpdate: setRouteInfo,
+      onRouteInfoLoading: setIsRouteLoading,
+      onAffectedSegmentsChange: setAffectedSegments,
+    });
+
+    return () => {
+      clearConfig('planner-page');
+    };
+  }, [
+    points,
+    focusCoords,
+    routeProfile,
+    showDropdown,
+    isAddPointMode,
+    handlePointDragEnd,
+    handleMapClick,
+    handleAddPointModeChange,
+  ]);
 
   const handleUpdatePlannedBudget = async (val: number) => {
     const newBudget = Math.max(0, val);
@@ -1424,8 +1452,6 @@ export function PlannerPage() {
       const targetPoints = await pointsApi.getAll(tripId);
       setCurrentTrip({ ...target, points: targetPoints });
       setSaved();
-      // TRI-104: принудительный remount карты после подмены маршрута из AI.
-      setLastMapRenderAt(Date.now());
 
       const params = new URLSearchParams(searchParams.toString());
       params.delete('applyTripId');
@@ -1716,7 +1742,10 @@ export function PlannerPage() {
               </div>
 
               {(routeInfo || isRouteLoading) && (
-                <div className="flex items-center justify-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 animate-in fade-in zoom-in-95 relative overflow-hidden transition-all duration-300 w-full lg:w-96 lg:h-16">
+                <div
+                  data-testid="planner-route-info"
+                  className="flex items-center justify-center gap-6 px-6 py-3 bg-brand-indigo/5 rounded-[1.25rem] border border-brand-indigo/10 animate-in fade-in zoom-in-95 relative overflow-hidden transition-all duration-300 w-full lg:w-96 lg:h-16"
+                >
                   {isRouteLoading && (
                     <div className="absolute inset-0 bg-white/40 flex items-center justify-center z-10 animate-in fade-in duration-200">
                       <div className="w-5 h-5 border-2 border-brand-indigo border-t-transparent rounded-full animate-spin" />
@@ -1747,38 +1776,8 @@ export function PlannerPage() {
               )}
             </div>
 
-            <div className="w-full max-w-7xl mx-auto aspect-[4/3] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden relative z-0 border border-slate-200 shadow-inner bg-slate-50 group">
-              <RouteMap
-                key={`route-map-${currentTrip?.id ?? 'none'}-${lastMapRenderAt}`}
-                points={points}
-                focusCoords={focusCoords}
-                onPointDragEnd={handlePointDragEnd}
-                isDropdownOpen={showDropdown}
-                onMapClick={handleMapClick}
-                isAddPointMode={isAddPointMode}
-                onAddPointModeChange={handleAddPointModeChange}
-                routeProfile={routeProfile}
-                onRouteInfoUpdate={setRouteInfo}
-                onRouteInfoLoading={setIsRouteLoading}
-                onAffectedSegmentsChange={setAffectedSegments}
-              />
-              {/* Кнопка добавления точек — над зумом слева */}
-              <button
-                title={
-                  isAddPointMode ? 'Выйти из режима добавления' : 'Добавить точку кликом на карту'
-                }
-                className={cn(
-                  'absolute left-3 top-3 md:top-16 z-10',
-                  'w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center',
-                  'shadow-lg transition-all active:scale-95 border-2',
-                  isAddPointMode
-                    ? 'bg-brand-sky text-white border-brand-sky'
-                    : 'bg-white text-slate-600 border-transparent hover:border-brand-sky/30',
-                )}
-                onClick={() => handleAddPointModeChange(!isAddPointMode)}
-              >
-                <MapPin size={22} />
-              </button>
+            <div className="w-full max-w-7xl mx-auto rounded-[2.5rem] border border-slate-200 bg-slate-50/40 px-4 py-3 text-xs font-bold text-slate-400">
+              Карта вынесена в сквозной layout.
             </div>
 
             <div className="max-w-7xl mx-auto w-full mt-8">

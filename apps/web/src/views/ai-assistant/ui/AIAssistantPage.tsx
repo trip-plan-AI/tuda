@@ -16,6 +16,7 @@ import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 import type { PlannerConflictType } from '@/widgets/planner-conflict-modal';
 import { toast } from 'sonner';
 import { tripsApi } from '@/entities/trip';
+import { clearConfig, setConfig } from '@/features/persistent-map';
 
 const AI_QUICK_ACTIONS = ['Сделать дешевле', 'Добавить больше музеев', 'Убрать пешие прогулки'];
 
@@ -215,6 +216,21 @@ export function AIAssistantPage() {
   };
 
   const plannerRouteTitle = currentTrip?.title?.trim() || 'без названия';
+
+  useEffect(() => {
+    setConfig({
+      source: 'ai-assistant-page',
+      priority: 40,
+      points: currentTrip?.points || [],
+      readonly: true,
+      draggable: false,
+      routeProfile: 'driving',
+    });
+
+    return () => {
+      clearConfig('ai-assistant-page');
+    };
+  }, [currentTrip?.id, currentTrip?.points]);
 
   return (
     <div className="min-h-full w-full">

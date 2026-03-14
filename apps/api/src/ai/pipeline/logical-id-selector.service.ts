@@ -31,7 +31,9 @@ export class LogicalIdSelectorService {
 
   constructor(private readonly llmClientService: LlmClientService) {}
 
-  async selectIds(input: LogicalIdSelectorInput): Promise<LogicalIdSelectorResult> {
+  async selectIds(
+    input: LogicalIdSelectorInput,
+  ): Promise<LogicalIdSelectorResult> {
     const hasPoolShortage = input.candidates.length < input.required_capacity;
     const target = Math.min(
       Math.max(0, Math.floor(input.required_capacity)),
@@ -48,14 +50,21 @@ export class LogicalIdSelectorService {
     }
 
     try {
-      const response = await this.llmClientService.client.chat.completions.create({
-        model: this.model,
-        messages: [{ role: 'user', content: this.buildPrompt(input, target) }],
-        temperature: 0,
-      });
+      const response =
+        await this.llmClientService.client.chat.completions.create({
+          model: this.model,
+          messages: [
+            { role: 'user', content: this.buildPrompt(input, target) },
+          ],
+          temperature: 0,
+        });
 
       const rawText = response.choices[0]?.message?.content ?? '[]';
-      const selectedIds = this.validateModelOutput(rawText, input.candidates, target);
+      const selectedIds = this.validateModelOutput(
+        rawText,
+        input.candidates,
+        target,
+      );
 
       return {
         selected_ids: selectedIds,
@@ -139,7 +148,9 @@ export class LogicalIdSelectorService {
     target: number,
     reason: string,
   ): LogicalIdSelectorResult {
-    const selectedIds = candidates.slice(0, target).map((candidate) => candidate.id);
+    const selectedIds = candidates
+      .slice(0, target)
+      .map((candidate) => candidate.id);
 
     return {
       selected_ids: selectedIds,
