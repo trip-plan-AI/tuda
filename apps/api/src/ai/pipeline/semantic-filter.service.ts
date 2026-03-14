@@ -175,7 +175,24 @@ export class SemanticFilterService {
         throw new Error('Semantic output too small');
       }
 
-      return selected.slice(0, Math.max(minRequired, 15));
+      // Hybrid strategy: supplement with LLM if < 10 POI
+      let finalSelected = selected.slice(0, Math.max(minRequired, 15));
+      if (finalSelected.length < 10) {
+        this.logger.warn(
+          `Selected only ${finalSelected.length} POI, supplementing with LLM generation...`,
+        );
+        try {
+          const llmSupplements = await this.generatePoiFromScratch(intent);
+          finalSelected = [...finalSelected, ...llmSupplements].slice(0, 20);
+          this.logger.log(
+            `After LLM supplement: ${finalSelected.length} POI total`,
+          );
+        } catch (llmError) {
+          this.logger.warn(`LLM supplement failed, returning ${finalSelected.length} POI`);
+        }
+      }
+
+      return finalSelected;
     } catch (yandexError: any) {
       const yErrMessage =
         yandexError instanceof Error
@@ -221,21 +238,51 @@ export class SemanticFilterService {
   async generatePoiFromScratch(
     intent: ParsedIntent,
   ): Promise<FilteredPoi[]> {
-    const target = Math.min(intent.days * 6, 20);
+    const target = intent.poi_count_requested ?? Math.min(intent.days * 6, 20);
+    const maxTarget = Math.min(intent.max_poi ?? 20, 20);
+    const actualTarget = Math.min(target, maxTarget);
+
     const preferences = intent.preferences_text.toLowerCase();
     const hasFoodFocus =
       /гастро|ресторан|кафе|с\s+кафе|кофе|еда|дегустац|гурман|булка|пирог|торт|сладкое|кулинарн|фудтур|по\s+кафе/i.test(
         preferences,
       );
 
+    // Build budget guidance
+    const budgetGuidance = this.buildBudgetInstructions(
+      intent.budget_total,
+      intent.budget_per_day,
+      intent.days,
+      intent.party_size,
+      actualTarget,
+    );
+
+    // Build quantity constraints
+    const quantityConstraints = this.buildQuantityConstraints(
+      intent.poi_count_requested,
+      intent.min_restaurants,
+      intent.min_cafes,
+      intent.max_poi,
+      Math.floor(actualTarget * 0.3),
+      actualTarget,
+    );
+
     const prompt = `Ты рекомендуешь туристические места.
 
 Город: ${intent.city || 'неизвестно'}
 Предпочтения: ${intent.preferences_text}
 Дни: ${intent.days}
-Нужно мест: ${target}
+Группа: ${intent.party_size} чел.
+Нужно мест: ${actualTarget}
+${quantityConstraints ? `Ограничения: ${quantityConstraints}` : ''}
+
+БЮДЖЕТ И ЦЕНЫ:
+${budgetGuidance}
 
 ${hasFoodFocus ? 'ВАЖНО: Включи много мест с едой (рестораны, кафе, местную кухню).' : ''}
+
+${intent.min_restaurants ? `ОБЯЗАТЕЛЬНО: минимум ${intent.min_restaurants} ресторанов` : ''}
+${intent.min_cafes ? `ОБЯЗАТЕЛЬНО: минимум ${intent.min_cafes} кафе` : ''}
 
 Верни ТОЛЬКО JSON без markdown:
 {
