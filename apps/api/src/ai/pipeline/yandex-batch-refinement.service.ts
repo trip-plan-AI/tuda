@@ -26,7 +26,11 @@ export class YandexBatchRefinementService {
       return candidates[0];
     }
 
-    const prompt = this.buildReplacementPrompt(candidates, userPersonaSummary, context);
+    const prompt = this.buildReplacementPrompt(
+      candidates,
+      userPersonaSummary,
+      context,
+    );
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.resolveTimeoutMs());
 
@@ -65,7 +69,9 @@ export class YandexBatchRefinementService {
       const resolved = this.resolvePoiByModelId(candidates, parsed.id ?? '');
       return resolved ?? candidates[0];
     } catch (error) {
-      this.logger.warn(`Replacement alternative selection fallback: ${String(error)}`);
+      this.logger.warn(
+        `Replacement alternative selection fallback: ${String(error)}`,
+      );
       return candidates[0];
     } finally {
       clearTimeout(timer);

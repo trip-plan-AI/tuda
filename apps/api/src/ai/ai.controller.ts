@@ -171,7 +171,9 @@ export class AiController {
 
     return parsed.days.flatMap((day) =>
       day.points
-        .filter((point) => typeof point.poi_id === 'string' && point.poi_id.trim())
+        .filter(
+          (point) => typeof point.poi_id === 'string' && point.poi_id.trim(),
+        )
         .map((point) => ({
           poi_id: point.poi_id,
           title: point.poi?.name ?? null,
@@ -192,7 +194,9 @@ export class AiController {
   private toFilteredPoi(poi: PoiItem, descriptionFallback = ''): FilteredPoi {
     return {
       ...poi,
-      description: (descriptionFallback || `Интересное место: ${poi.name}.`).trim(),
+      description: (
+        descriptionFallback || `Интересное место: ${poi.name}.`
+      ).trim(),
     };
   }
 
@@ -208,7 +212,10 @@ export class AiController {
     return hours * 60 + minutes;
   }
 
-  private isWorkingHoursAllowed(workingHours: string | undefined, time: string): boolean {
+  private isWorkingHoursAllowed(
+    workingHours: string | undefined,
+    time: string,
+  ): boolean {
     if (!workingHours || typeof workingHours !== 'string') return true;
 
     const normalized = workingHours.toLowerCase();
@@ -216,7 +223,9 @@ export class AiController {
       return true;
     }
 
-    const rangeMatch = normalized.match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
+    const rangeMatch = normalized.match(
+      /(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/,
+    );
     if (!rangeMatch) return true;
 
     const current = this.parseTimeToMinutes(time);
@@ -460,11 +469,7 @@ ${JSON.stringify(points)}
     const orchestratorDuration = Date.now() - orchestratorStart;
     const plannerVersion: PlannerVersion = 'v2';
     const policySnapshot: PolicySnapshot =
-      this.policyService.calculatePolicySnapshot(
-        intent,
-        llmContext,
-        'v2',
-      );
+      this.policyService.calculatePolicySnapshot(intent, llmContext, 'v2');
 
     const providerStart = Date.now();
     const fallbacks: string[] = [];
@@ -484,7 +489,8 @@ ${JSON.stringify(points)}
       };
     const providerDuration = Date.now() - providerStart;
 
-    const personaSummary = policySnapshot.user_persona_summary ?? dto.user_query;
+    const personaSummary =
+      policySnapshot.user_persona_summary ?? dto.user_query;
     const vectorPrefilterShadowMeta: VectorPrefilterShadowMeta =
       await this.vectorPrefilterService.runShadowPrefilter(
         personaSummary,
@@ -492,17 +498,21 @@ ${JSON.stringify(points)}
         this.resolveVectorTopK(),
       );
 
-    const logicalSelectorResult = await this.logicalIdSelectorService.selectIds({
-      candidates: rawPoi.map((poi) => ({
-        id: poi.id,
-        name: poi.name,
-        category: poi.category,
-      })),
-      required_capacity: policySnapshot.required_capacity,
-      food_policy: policySnapshot.food_policy,
-    });
+    const logicalSelectorResult = await this.logicalIdSelectorService.selectIds(
+      {
+        candidates: rawPoi.map((poi) => ({
+          id: poi.id,
+          name: poi.name,
+          category: poi.category,
+        })),
+        required_capacity: policySnapshot.required_capacity,
+        food_policy: policySnapshot.food_policy,
+      },
+    );
     const selectedIdSet = new Set(logicalSelectorResult.selected_ids);
-    const logicalSelectedPool = rawPoi.filter((poi) => selectedIdSet.has(poi.id));
+    const logicalSelectedPool = rawPoi.filter((poi) =>
+      selectedIdSet.has(poi.id),
+    );
 
     const enrichedWithLogicalIds = this.logicalIdFilterService.attachLogicalIds(
       rawPoi,
@@ -516,7 +526,10 @@ ${JSON.stringify(points)}
     const logicalIdShadowMeta: LogicalIdShadowMeta = {
       total_candidates: enrichedWithLogicalIds.length,
       duplicates_groups: duplicateGroups.length,
-      duplicates_total: duplicateGroups.reduce((sum, group) => sum + group.count, 0),
+      duplicates_total: duplicateGroups.reduce(
+        (sum, group) => sum + group.count,
+        0,
+      ),
     };
 
     const semanticStart = Date.now();
@@ -566,7 +579,10 @@ ${JSON.stringify(points)}
       mutation_applied: false,
     };
 
-    const buildRoutePlanFromDays = (city: string, days: RoutePlan['days']): RoutePlan => ({
+    const buildRoutePlanFromDays = (
+      city: string,
+      days: RoutePlan['days'],
+    ): RoutePlan => ({
       city,
       days,
       total_budget_estimated: days.reduce(
@@ -601,7 +617,9 @@ ${JSON.stringify(points)}
 
           if (!targetPoiId || !targetExists) {
             mutationMeta.mutation_fallback_reason = 'TARGET_NOT_FOUND';
-            fallbacks.push('TARGETED_MUTATION_REMOVE_FALLBACK:TARGET_NOT_FOUND');
+            fallbacks.push(
+              'TARGETED_MUTATION_REMOVE_FALLBACK:TARGET_NOT_FOUND',
+            );
             routePlan = buildFullRebuild();
             break;
           }
@@ -622,7 +640,10 @@ ${JSON.stringify(points)}
             });
           });
 
-          routePlan = buildRoutePlanFromDays(existingRoutePlan.city, rebuiltDays);
+          routePlan = buildRoutePlanFromDays(
+            existingRoutePlan.city,
+            rebuiltDays,
+          );
           mutationMeta.mutation_applied = true;
           break;
         }
@@ -630,7 +651,9 @@ ${JSON.stringify(points)}
         case 'ADD_DAYS': {
           const daysToAdd = Math.max(0, intent.days);
           const usedPoiIds = new Set(
-            existingRoutePlan.days.flatMap((day) => day.points.map((point) => point.poi_id)),
+            existingRoutePlan.days.flatMap((day) =>
+              day.points.map((point) => point.poi_id),
+            ),
           );
 
           const additionalCandidates = selectedForScheduler.filter(
@@ -642,8 +665,15 @@ ${JSON.stringify(points)}
           };
           const newDaysPlan =
             daysToAdd > 0
-              ? this.schedulerService.buildPlan(additionalCandidates, addDaysIntent)
-              : { city: existingRoutePlan.city, total_budget_estimated: 0, days: [] };
+              ? this.schedulerService.buildPlan(
+                  additionalCandidates,
+                  addDaysIntent,
+                )
+              : {
+                  city: existingRoutePlan.city,
+                  total_budget_estimated: 0,
+                  days: [],
+                };
 
           const lastExistingDate =
             existingRoutePlan.days[existingRoutePlan.days.length - 1]?.date ??
@@ -670,7 +700,9 @@ ${JSON.stringify(points)}
 
           if (!targetPoiId || dayIndex === -1) {
             mutationMeta.mutation_fallback_reason = 'TARGET_NOT_FOUND';
-            fallbacks.push('TARGETED_MUTATION_REPLACE_FALLBACK:TARGET_NOT_FOUND');
+            fallbacks.push(
+              'TARGETED_MUTATION_REPLACE_FALLBACK:TARGET_NOT_FOUND',
+            );
             routePlan = buildFullRebuild();
             break;
           }
@@ -681,12 +713,16 @@ ${JSON.stringify(points)}
           );
           const targetPoint = targetDay.points[pointIndex];
           const usedPoiIds = new Set(
-            existingRoutePlan.days.flatMap((day) => day.points.map((point) => point.poi_id)),
+            existingRoutePlan.days.flatMap((day) =>
+              day.points.map((point) => point.poi_id),
+            ),
           );
 
           const poolFromRaw = rawPoi.map((poi) => this.toFilteredPoi(poi));
           const candidatePool =
-            selectedForScheduler.length > 0 ? selectedForScheduler : poolFromRaw;
+            selectedForScheduler.length > 0
+              ? selectedForScheduler
+              : poolFromRaw;
           const nearestSameCategory = candidatePool
             .filter(
               (poi) =>
@@ -707,27 +743,34 @@ ${JSON.stringify(points)}
             .slice(0, 5)
             .map((entry) => entry.poi)
             .filter((poi) =>
-              this.isWorkingHoursAllowed(poi.working_hours, targetPoint.arrival_time),
+              this.isWorkingHoursAllowed(
+                poi.working_hours,
+                targetPoint.arrival_time,
+              ),
             );
 
           if (nearestSameCategory.length === 0) {
             mutationMeta.mutation_fallback_reason = 'NO_ALTERNATIVES';
-            fallbacks.push('TARGETED_MUTATION_REPLACE_FALLBACK:NO_ALTERNATIVES');
+            fallbacks.push(
+              'TARGETED_MUTATION_REPLACE_FALLBACK:NO_ALTERNATIVES',
+            );
             routePlan = buildFullRebuild();
             break;
           }
 
-          const replacement = await this.yandexBatchRefinementService.chooseReplacementAlternative(
-            nearestSameCategory,
-            yandexPersonaSummary,
-            {
-              city: intent.city,
-              targetName: targetPoint.poi.name,
-            },
-          );
+          const replacement =
+            await this.yandexBatchRefinementService.chooseReplacementAlternative(
+              nearestSameCategory,
+              yandexPersonaSummary,
+              {
+                city: intent.city,
+                targetName: targetPoint.poi.name,
+              },
+            );
 
           if (!replacement) {
-            mutationMeta.mutation_fallback_reason = 'REPLACEMENT_SELECTION_FAILED';
+            mutationMeta.mutation_fallback_reason =
+              'REPLACEMENT_SELECTION_FAILED';
             fallbacks.push(
               'TARGETED_MUTATION_REPLACE_FALLBACK:REPLACEMENT_SELECTION_FAILED',
             );
@@ -755,7 +798,10 @@ ${JSON.stringify(points)}
           const mergedDays = existingRoutePlan.days.map((day, index) =>
             index === dayIndex ? rebuiltTargetDay : day,
           );
-          routePlan = buildRoutePlanFromDays(existingRoutePlan.city, mergedDays);
+          routePlan = buildRoutePlanFromDays(
+            existingRoutePlan.city,
+            mergedDays,
+          );
           mutationMeta.mutation_applied = true;
           break;
         }

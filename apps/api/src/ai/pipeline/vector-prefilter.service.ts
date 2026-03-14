@@ -64,7 +64,11 @@ export class VectorPrefilterService {
       return {
         status: 'ok',
         total_candidates: candidates.length,
-        selected_count: Math.min(returnedCount, normalizedTopK, candidates.length),
+        selected_count: Math.min(
+          returnedCount,
+          normalizedTopK,
+          candidates.length,
+        ),
         top_k: normalizedTopK,
       };
     } catch (error) {
@@ -86,10 +90,7 @@ export class VectorPrefilterService {
     }
 
     try {
-      await this.redisService.executeCommand(
-        'FT.INFO',
-        this.vectorIndexName,
-      );
+      await this.redisService.executeCommand('FT.INFO', this.vectorIndexName);
       this.indexReady = true;
       return;
     } catch (error) {
@@ -138,7 +139,9 @@ export class VectorPrefilterService {
     }
   }
 
-  private async ensureCandidateEmbeddings(candidates: PoiItem[]): Promise<void> {
+  private async ensureCandidateEmbeddings(
+    candidates: PoiItem[],
+  ): Promise<void> {
     for (const poi of candidates) {
       const key = `${this.vectorPrefix}${poi.id}`;
 
@@ -152,7 +155,10 @@ export class VectorPrefilterService {
         continue;
       }
 
-      if (typeof existingEmbedding === 'string' && existingEmbedding.length > 0) {
+      if (
+        typeof existingEmbedding === 'string' &&
+        existingEmbedding.length > 0
+      ) {
         continue;
       }
 
@@ -233,13 +239,15 @@ export class VectorPrefilterService {
   }
 
   private isMissingIndexError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message.toLowerCase() : String(error);
+    const message =
+      error instanceof Error ? error.message.toLowerCase() : String(error);
 
     return message.includes('unknown index name');
   }
 
   private isIndexAlreadyExistsError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message.toLowerCase() : String(error);
+    const message =
+      error instanceof Error ? error.message.toLowerCase() : String(error);
 
     return message.includes('index already exists');
   }

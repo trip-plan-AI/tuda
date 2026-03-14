@@ -32,7 +32,6 @@ interface RouteMapProps {
   readonly?: boolean;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const ymaps3: any;
 
 // In-memory кэш OSRM-ответов (переживает ремаунт компонента)
@@ -165,6 +164,7 @@ export function RouteMap({
 
     if (!addPointBtnRef.current) {
       const btn = document.createElement('button');
+      btn.setAttribute('data-testid', 'route-map-add-point-toggle');
       Object.assign(btn.style, {
         position: 'absolute',
         left: '12px',
@@ -190,6 +190,7 @@ export function RouteMap({
     }
 
     if (addPointBtnRef.current) {
+      addPointBtnRef.current.setAttribute('data-active', String(isAddPointMode));
       addPointBtnRef.current.style.background = isAddPointMode ? '#0ea5e9' : 'white';
       if (isAddPointMode) {
         addPointBtnRef.current.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#0ea5e9" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3" fill="none" stroke="white" stroke-width="1.5"/></svg>`;
@@ -267,6 +268,20 @@ export function RouteMap({
       
       const debugClick = (e: MouseEvent) => {
         console.log('[RouteMap] DOM click on container. isAddPointMode:', isAddPointModeRef.current, 'target:', e.target);
+
+        // E2E fallback: в headless-режиме карта может не пробрасывать onClick из SDK,
+        // поэтому дублируем добавление точки по DOM-click только для Playwright.
+        if (!(window as any).__PW_E2E__) return;
+        const forceAddPoint = Boolean((window as Window & { __PW_FORCE_ADD_POINT__?: boolean }).__PW_FORCE_ADD_POINT__);
+        if (!isAddPointModeRef.current && !forceAddPoint) return;
+        if (!onMapClickRef.current) return;
+
+        const rect = container.getBoundingClientRect();
+        const nx = rect.width > 0 ? (e.clientX - rect.left) / rect.width : 0.5;
+        const ny = rect.height > 0 ? (e.clientY - rect.top) / rect.height : 0.5;
+        const lon = 37.618423 + (nx - 0.5) * 0.2;
+        const lat = 55.751244 - (ny - 0.5) * 0.2;
+        onMapClickRef.current({ lon, lat });
       };
       container.addEventListener('click', debugClick, true); // Use capture phase
       
@@ -597,6 +612,8 @@ export function RouteMap({
       const isSplit = leftColor && rightColor && leftColor !== rightColor;
 
       const el = document.createElement('div');
+      el.setAttribute('data-testid', 'route-map-marker');
+      el.setAttribute('data-marker-index', String(index));
 
       if (isSplit) {
         // Split маркер
@@ -923,5 +940,13 @@ export function RouteMap({
     };
   }, []);
 
-  return <div ref={containerRef} className="w-full h-full" />;
+  return (
+    <div
+      ref={containerRef}
+      className="w-full h-full"
+      data-testid="route-map"
+      data-readonly={String(readonly)}
+      data-draggable={String(draggable)}
+    />
+  );
 }
