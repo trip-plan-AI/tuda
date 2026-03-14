@@ -85,7 +85,7 @@ export function AiChat({
     }
 
     container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
-  }, [messages, isLoading]);
+  }, [messages.length, isLoading]);
 
   useEffect(() => {
     setQuery('');

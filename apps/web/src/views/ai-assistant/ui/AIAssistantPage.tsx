@@ -303,11 +303,10 @@ export function AIAssistantPage() {
 
   useEffect(() => {
     // Показываем точки согласно логике displayPoints.
-    // Принудительно передаем новый массив [...displayPoints] для сброса кеша реактивности в мапе
     setConfig({
       source: 'ai-assistant-page',
       priority: 40,
-      points: [...displayPoints],
+      points: displayPoints,
       readonly: true,
       draggable: false,
       routeProfile: 'driving',
