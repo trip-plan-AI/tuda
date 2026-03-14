@@ -945,7 +945,7 @@ export function RouteMap({
 
     mapRef.current.update({ location: { bounds, duration: 500 } });
     hasInitialFitPerformed.current = true;
-  }, [points.length > 0, mapReady, fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [points.length > 0, mapReady, fitKey]);
 
   // Cleanup: удаляем cursor indicator при размонтировании
   useEffect(() => {

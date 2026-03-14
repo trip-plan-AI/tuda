@@ -49,7 +49,6 @@ export function UserDropdown({
           className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors shrink-0"
         >
           {userAvatar ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={userAvatar}
               alt={userName}

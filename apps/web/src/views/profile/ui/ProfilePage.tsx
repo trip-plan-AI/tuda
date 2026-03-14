@@ -171,7 +171,7 @@ export function ProfilePage() {
         setPoints(activeRoute.points, false);
       }
     }
-  }, [activeRoute?.id, activeRoute?.points, setCurrentTrip, setPoints]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeRoute?.id, activeRoute?.points, setCurrentTrip, setPoints]);
 
   // Prefer currentTrip.points (kept live by WS) when viewing the active route
   const displayedActiveRoute = activeRoute
@@ -201,7 +201,7 @@ export function ProfilePage() {
     return () => {
       clearConfig('profile-page');
     };
-  }, [selectedTrip?.id, selectedTrip?.points]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedTrip?.id, selectedTrip?.points]);
 
   // Join all trip sockets for real-time card updates
   useEffect(() => {
@@ -516,7 +516,6 @@ export function ProfilePage() {
                        border-4 border-white shadow-lg overflow-hidden cursor-pointer group relative shrink-0"
           >
             {user?.photo ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img src={user.photo} className="w-full h-full object-cover" alt={user.name} />
             ) : user?.name ? (
               <span className="text-lg font-bold text-slate-400 uppercase">

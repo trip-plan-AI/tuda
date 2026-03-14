@@ -9,7 +9,7 @@ export interface CreateTripPayload {
 
 export interface UpdateTripPayload {
   title?: string
-  description?: string
+  description?: string | null
   budget?: number | null
   isActive?: boolean
   startDate?: string | null

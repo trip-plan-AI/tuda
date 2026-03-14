@@ -174,10 +174,14 @@ export function TripCard({
       try {
         // Parse date from aria-label like "14 марта 2026"
         const parts = ariaLabel.split(' ');
-        if (parts.length >= 2) {
-          const day = parseInt(parts[0]);
-          const monthStr = parts[1];
-          const year = parts[2] ? parseInt(parts[2]) : new Date().getFullYear();
+        const dayPart = parts[0];
+        const monthPart = parts[1];
+        const yearPart = parts[2];
+
+        if (dayPart && monthPart) {
+          const day = parseInt(dayPart, 10);
+          const monthStr = monthPart;
+          const year = yearPart ? parseInt(yearPart, 10) : new Date().getFullYear();
 
           const monthMap: Record<string, number> = {
             'января': 0, 'февраля': 1, 'марта': 2, 'апреля': 3, 'мая': 4, 'июня': 5,
@@ -260,7 +264,6 @@ export function TripCard({
                             bg-brand-indigo/10 flex items-center justify-center text-[12px] font-bold text-brand-indigo shrink-0"
             >
               {owner.photo ? (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={owner.photo}
                   alt={owner.name ?? owner.email}
@@ -308,7 +311,6 @@ export function TripCard({
                               text-brand-indigo shrink-0"
               >
                 {owner.photo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={owner.photo}
                     alt={owner.name ?? owner.email}
@@ -349,7 +351,6 @@ export function TripCard({
               >
                 <div className="w-8 h-8 rounded-full bg-brand-indigo/10 flex items-center justify-center text-[10px] font-bold text-brand-indigo">
                   {p.photo ? (
-                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={p.photo}
                       alt={p.name ?? p.email}
@@ -409,7 +410,6 @@ export function TripCard({
 
       {/* ── Cover image ── */}
       <div className="relative w-full h-32 overflow-hidden bg-slate-100">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={coverSrc}
           alt={trip.title}
