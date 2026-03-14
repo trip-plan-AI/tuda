@@ -15,6 +15,7 @@ import { cn } from '@/shared/lib/utils';
 import type { Trip } from '@/entities/trip/model/trip.types';
 import { useTripStore } from '@/entities/trip/model/trip.store';
 import { collaborateApi, type Collaborator } from '@/features/route-collaborate/api/collaborate.api';
+import { getSocket } from '@/shared/socket/socket-client';
 
 function getInitials(name?: string, email?: string): string {
   const text = name || email || '';
@@ -147,6 +148,31 @@ export function TripCard({
       .catch(() => {});
   }, [trip.id]);
 
+  // ── Real-time sync: collaborator added / removed ──
+  useEffect(() => {
+    const socket = getSocket();
+
+    const onAdded = (payload: Collaborator & { tripId: string }) => {
+      if (payload.tripId !== trip.id) return;
+      setParticipants((prev) =>
+        prev.some((p) => p.userId === payload.userId) ? prev : [...prev, payload],
+      );
+    };
+
+    const onRemoved = ({ tripId, userId }: { tripId: string; userId: string }) => {
+      if (tripId !== trip.id) return;
+      setParticipants((prev) => prev.filter((p) => p.userId !== userId));
+    };
+
+    socket.on('collaborator:added', onAdded);
+    socket.on('collaborator:removed', onRemoved);
+
+    return () => {
+      socket.off('collaborator:added', onAdded);
+      socket.off('collaborator:removed', onRemoved);
+    };
+  }, [trip.id]);
+
   // ── Разделяем владельца и остальных участников ──
   const owner = participants.find((p) => p.userId === trip.ownerId);
   const others = participants.filter((p) => p.userId !== trip.ownerId);
@@ -247,8 +273,14 @@ export function TripCard({
           {/* Separator */}
           {owner && <div className="w-px h-5 bg-slate-200" />}
 
-          {/* Others with overlay effect */}
-          <div className="flex items-center">
+          {/* Others with overlay effect — clickable to open collaborators modal */}
+          <div
+            className="flex items-center cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCollaboratorsClick?.(trip.id);
+            }}
+          >
             {/* Real participants */}
             {visibleOthers.map((p, index) => (
               <div

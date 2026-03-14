@@ -42,6 +42,8 @@ export class CollaboratorsController {
     const result = await this.collaboratorsService.add(tripId, dto.userId, dto.role ?? 'editor');
     // Push the trip to the invited user's profile in real-time
     this.collabGateway.notifyTripShared(dto.userId, trip);
+    // Broadcast new collaborator to everyone already in the trip room
+    this.collabGateway.notifyCollaboratorAdded(tripId, result);
     return result;
   }
 
@@ -55,6 +57,9 @@ export class CollaboratorsController {
     if (trip.ownerId !== req.user.id) {
       throw new ForbiddenException('Only trip owner can remove collaborators');
     }
-    return this.collaboratorsService.remove(tripId, userId);
+    const result = await this.collaboratorsService.remove(tripId, userId);
+    // Broadcast removal to everyone in the trip room
+    this.collabGateway.notifyCollaboratorRemoved(tripId, userId);
+    return result;
   }
 }

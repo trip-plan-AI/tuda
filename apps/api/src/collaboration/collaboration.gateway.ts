@@ -69,6 +69,20 @@ export class CollaborationGateway
     this.server.to(`user_${userId}`).emit('trip:shared', trip);
   }
 
+  /** Broadcast new collaborator to all members in the trip room */
+  notifyCollaboratorAdded(tripId: string, collaborator: any) {
+    this.server
+      .to(`trip_${tripId}`)
+      .emit('collaborator:added', { tripId, ...collaborator });
+  }
+
+  /** Broadcast collaborator removal to all members in the trip room */
+  notifyCollaboratorRemoved(tripId: string, userId: string) {
+    this.server
+      .to(`trip_${tripId}`)
+      .emit('collaborator:removed', { tripId, userId });
+  }
+
   handleDisconnect(client: TypedSocket) {
     this.collabService.removePresence(client.id, this.server);
   }
