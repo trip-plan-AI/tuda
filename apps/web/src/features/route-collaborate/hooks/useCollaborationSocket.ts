@@ -76,7 +76,7 @@ export function useCollaborationSocket(tripId: string) {
     });
     socket.on(
       'point:updated',
-      ({ point_id, ...patch }: { point_id: string } & Record<string, unknown>) => {
+      ({ point_id, trip_id: _trip_id, ...patch }: { point_id: string; trip_id?: string } & Record<string, unknown>) => {
         updatePoint(point_id, patch as Parameters<typeof updatePoint>[1]);
       },
     );
