@@ -32,14 +32,17 @@ describe('VectorPrefilterService', () => {
   });
 
   it('writes POI embeddings on cache miss and returns ok from KNN search', async () => {
-    const executeCommand = jest.fn(async (command: string, ...args: unknown[]) => {
-      if (command === 'FT.INFO') return ['index_definition'];
-      if (command === 'HGET') return null;
-      if (command === 'HSET') return 1;
-      if (command === 'EXPIRE') return 1;
-      if (command === 'FT.SEARCH') return [2, 'ai:poi:vec:poi-1', 'ai:poi:vec:poi-2'];
-      throw new Error(`Unexpected command: ${command} ${args.join(' ')}`);
-    });
+    const executeCommand = jest.fn(
+      async (command: string, ...args: unknown[]) => {
+        if (command === 'FT.INFO') return ['index_definition'];
+        if (command === 'HGET') return null;
+        if (command === 'HSET') return 1;
+        if (command === 'EXPIRE') return 1;
+        if (command === 'FT.SEARCH')
+          return [2, 'ai:poi:vec:poi-1', 'ai:poi:vec:poi-2'];
+        throw new Error(`Unexpected command: ${command} ${args.join(' ')}`);
+      },
+    );
 
     const redisService = {
       isAvailable: true,
@@ -72,20 +75,31 @@ describe('VectorPrefilterService', () => {
     });
 
     expect(llmClientService.client.embeddings.create).toHaveBeenCalledTimes(3);
-    expect(llmClientService.client.embeddings.create).toHaveBeenNthCalledWith(1, {
-      model: 'text-embedding-3-small',
-      input: '[museum] Точка 1 ()',
-    });
-    expect(llmClientService.client.embeddings.create).toHaveBeenNthCalledWith(2, {
-      model: 'text-embedding-3-small',
-      input: '[park] Точка 2 ()',
-    });
-    expect(llmClientService.client.embeddings.create).toHaveBeenNthCalledWith(3, {
-      model: 'text-embedding-3-small',
-      input: 'persona',
-    });
+    expect(llmClientService.client.embeddings.create).toHaveBeenNthCalledWith(
+      1,
+      {
+        model: 'text-embedding-3-small',
+        input: '[museum] Точка 1 ()',
+      },
+    );
+    expect(llmClientService.client.embeddings.create).toHaveBeenNthCalledWith(
+      2,
+      {
+        model: 'text-embedding-3-small',
+        input: '[park] Точка 2 ()',
+      },
+    );
+    expect(llmClientService.client.embeddings.create).toHaveBeenNthCalledWith(
+      3,
+      {
+        model: 'text-embedding-3-small',
+        input: 'persona',
+      },
+    );
 
-    const hsetCalls = executeCommand.mock.calls.filter(([command]) => command === 'HSET');
+    const hsetCalls = executeCommand.mock.calls.filter(
+      ([command]) => command === 'HSET',
+    );
     const expireCalls = executeCommand.mock.calls.filter(
       ([command]) => command === 'EXPIRE',
     );

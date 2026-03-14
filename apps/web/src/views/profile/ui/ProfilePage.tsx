@@ -10,9 +10,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   UserPlus,
-  Check,
 } from 'lucide-react';
-import dynamic from 'next/dynamic';
 import { useUserStore, usersApi } from '@/entities/user';
 import { useTripStore, type Trip } from '@/entities/trip';
 import { useAuthStore } from '@/features/auth';
@@ -31,16 +29,12 @@ import {
 import {
   useCollaborateStore,
   collaborateApi,
-  useCollaborationSocket,
   InviteModal,
   CollaboratorsModal,
 } from '@/features/route-collaborate';
 import { getSocket } from '@/shared/socket/socket-client';
-
-const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-slate-50 animate-pulse rounded-2xl" />,
-});
+import { clearConfig, setConfig } from '@/features/persistent-map';
+import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 
 function getBudgetMetrics(plannedBudget: number | null | undefined, totalBudget: number) {
   const plan = Math.max(0, plannedBudget ?? 0);
@@ -138,8 +132,7 @@ function BudgetSummary({
 export function ProfilePage() {
   const router = useRouter();
   const { user, setUser } = useUserStore();
-  const { setCurrentTrip, currentTrip, updateCurrentTrip, setPoints, addPoint, removePoint } =
-    useTripStore();
+  const { currentTrip, isDirty, updateCurrentTrip, setPoints, addPoint, removePoint } = useTripStore();
   const { isAuthenticated } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<'routes' | 'saved'>('routes');
@@ -147,6 +140,8 @@ export function ProfilePage() {
   const [tempName, setTempName] = useState(user?.name || '');
   const [savedTrips, setSavedTrips] = useState<Trip[]>([]);
   const [isLoadingTrips, setIsLoadingTrips] = useState(true);
+  const [showPlannerConflictModal, setShowPlannerConflictModal] = useState(false);
+  const [pendingPlannerTripId, setPendingPlannerTripId] = useState<string | null>(null);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -254,17 +249,6 @@ export function ProfilePage() {
 
   const activeRoute = savedTrips.find((t) => t.isActive);
 
-  // Sync activeRoute into the trip store so WS point events (addPoint/updatePoint/removePoint)
-  // update currentTrip.points, which we then use for real-time display.
-  useEffect(() => {
-    if (activeRoute && currentTrip?.id !== activeRoute.id) {
-      setCurrentTrip(activeRoute);
-      if (activeRoute.points) {
-        setPoints(activeRoute.points, false);
-      }
-    }
-  }, [activeRoute?.id, activeRoute?.points, setCurrentTrip, setPoints]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Prefer currentTrip.points (kept live by WS) when viewing the active route
   const displayedActiveRoute = activeRoute
     ? currentTrip?.id === activeRoute.id
@@ -275,7 +259,20 @@ export function ProfilePage() {
   const activeRouteTotalBudget =
     displayedActiveRoute?.points?.reduce((sum, point) => sum + (point.budget || 0), 0) || 0;
 
-  useCollaborationSocket(activeRoute?.id ?? '');
+  useEffect(() => {
+    setConfig({
+      source: 'profile-page',
+      priority: 80,
+      points: displayedActiveRoute?.points || [],
+      readonly: true,
+      draggable: false,
+      routeProfile: 'driving',
+    });
+
+    return () => {
+      clearConfig('profile-page');
+    };
+  }, [displayedActiveRoute?.id, displayedActiveRoute?.points]);
 
   // Подключаемся по сокетам ко ВСЕМ маршрутам из списка, чтобы видеть обновления
   // (например, "Итог по точкам") в реальном времени, даже если маршрут не активен.
@@ -508,12 +505,23 @@ export function ProfilePage() {
   };
 
   const handleEditRoute = (trip: Trip) => {
-    setCurrentTrip(trip);
-    router.push('/planner');
+    setPendingPlannerTripId(trip.id);
+    setShowPlannerConflictModal(true);
+  };
+
+  const handleConfirmPlannerReplace = () => {
+    const targetTripId = pendingPlannerTripId;
+    setShowPlannerConflictModal(false);
+    setPendingPlannerTripId(null);
+    if (!targetTripId) {
+      router.push('/planner');
+      return;
+    }
+    router.push(`/planner?applyTripId=${encodeURIComponent(targetTripId)}`);
   };
 
   return (
-    <div className="flex flex-col h-full max-h-[calc(100vh-100px)] bg-slate-50 relative overflow-hidden w-full">
+    <div className="flex flex-col h-full md:h-[calc(100vh-64px)] bg-slate-50 relative overflow-hidden w-full">
       <input
         type="file"
         ref={fileInputRef}
@@ -533,7 +541,6 @@ export function ProfilePage() {
             className="w-16 h-16 md:w-20 md:h-20 bg-slate-50 rounded-full flex items-center justify-center border-2 border-white shadow-md overflow-hidden cursor-pointer group relative shrink-0"
           >
             {user?.photo ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img src={user.photo} className="w-full h-full object-cover" alt={user.name} />
             ) : (
               <UserIcon size={32} className="text-slate-200" />
@@ -588,12 +595,12 @@ export function ProfilePage() {
       </div>
 
       {/* ── ОСНОВНАЯ ОБЛАСТЬ ── */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full min-h-0">
         {/* ── ЛЕВАЯ КОЛОНКА: Список ── */}
         <div
           className={cn(
             'flex flex-col bg-white overflow-hidden',
-            'flex-1 md:flex-none w-full md:w-[40%] lg:w-[35%] xl:w-[400px] shrink-0 md:border-r md:border-slate-200',
+            'flex-1 w-full md:w-full shrink-0',
           )}
         >
           <div className="px-3 md:px-4 pt-3 md:pt-4 shrink-0 bg-white z-20">
@@ -700,15 +707,6 @@ export function ProfilePage() {
                           ИЗМЕНИТЬ
                         </Button>
                       </div>
-                    </div>
-
-                    {/* Превью карты */}
-                    <div className="w-full aspect-video md:hidden rounded-2xl overflow-hidden relative border border-slate-200 shadow-inner bg-slate-100">
-                      <RouteMap
-                        key={`card-${activeRoute.id}`}
-                        points={displayedActiveRoute?.points || []}
-                        onPointDragEnd={() => {}}
-                      />
                     </div>
 
                     <div className="bg-white p-3 md:p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col">
@@ -854,24 +852,6 @@ export function ProfilePage() {
           </div>
         </div>
 
-        <div className="hidden md:flex flex-1 relative bg-slate-50 items-center justify-center overflow-hidden p-4">
-          <div className="w-full h-full max-w-[96%] max-h-[96%] overflow-hidden relative rounded-2xl border border-slate-200 shadow-lg">
-            {displayedActiveRoute &&
-            displayedActiveRoute.points &&
-            displayedActiveRoute.points.length > 0 ? (
-              <RouteMap
-                key={`desktop-${displayedActiveRoute.id}`}
-                points={displayedActiveRoute.points}
-                onPointDragEnd={() => {}}
-              />
-            ) : (
-              <MapIcon
-                size={44}
-                className="text-slate-200 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-              />
-            )}
-          </div>
-        </div>
       </div>
 
       {activeRoute && (
@@ -889,6 +869,38 @@ export function ProfilePage() {
           onClose={() => setCollaboratorsModalOpen(false)}
         />
       )}
+
+      <PlannerConflictModal
+        open={showPlannerConflictModal}
+        onOpenChange={setShowPlannerConflictModal}
+        conflictType="different_route"
+        currentRouteTitle={currentTrip?.title?.trim() || 'без названия'}
+        onCancel={() => {
+          setShowPlannerConflictModal(false);
+          setPendingPlannerTripId(null);
+        }}
+        onReplaceWithoutSave={handleConfirmPlannerReplace}
+        onSaveAndReplace={async () => {
+          try {
+            if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+              await tripsApi.update(currentTrip.id, {
+                title: currentTrip.title,
+                description: currentTrip.description ?? undefined,
+                budget: currentTrip.budget ?? undefined,
+              });
+            }
+          } catch (e) {
+            console.error('Failed to save current trip before replace:', e);
+            toast.error('Не удалось сохранить текущий маршрут');
+          }
+          handleConfirmPlannerReplace();
+        }}
+        onGoToPlannerOnly={() => {
+          setShowPlannerConflictModal(false);
+          setPendingPlannerTripId(null);
+          router.push('/planner');
+        }}
+      />
     </div>
   );
 }

@@ -1,9 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Clock, Cloud, CloudSun, MapPin, Route, Sun, Wind } from 'lucide-react';
+import { ArrowLeft, Clock, Cloud, CloudSun, Route, Sun, Wind } from 'lucide-react';
 import { useTripStore, tripsApi } from '@/entities/trip';
 import type { Trip } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point';
@@ -18,15 +17,7 @@ import {
 } from '@/shared/ui';
 import { cn } from '@/shared/lib/utils';
 import { env } from '@/shared/config/env';
-
-const RouteMap = dynamic(() => import('@/widgets/route-map').then((m) => m.RouteMap), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-full rounded-[2.5rem] bg-gray-100 animate-pulse flex items-center justify-center">
-      <p className="text-sm text-gray-400">Загрузка карты...</p>
-    </div>
-  ),
-});
+import { clearConfig, setConfig } from '@/features/persistent-map';
 
 interface TourDetailPageProps {
   tourId: string;
@@ -119,6 +110,25 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     });
   }, [tour, attractions.length, geocodeCity]);
 
+  useEffect(() => {
+    setConfig({
+      source: 'tour-detail-page',
+      priority: 60,
+      points: attractions,
+      focusCoords: attractions.length === 0 ? focusCoords : null,
+      readonly: true,
+      draggable: false,
+      routeProfile: 'driving',
+      onPointDragEnd: () => undefined,
+      onRouteInfoUpdate: setRouteInfo,
+      onRouteInfoLoading: setIsRouteLoading,
+    });
+
+    return () => {
+      clearConfig('tour-detail-page');
+    };
+  }, [attractions, focusCoords]);
+
   const doOpenRoute = useCallback(async () => {
     if (!tour) return;
     setIsOpening(true);
@@ -129,9 +139,10 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
 
       clearPlanner();
 
-      const tripId = `guest-${Date.now()}`;
+      const targetTripId = `guest-${Date.now()}`;
+
       const tourTrip: Trip = {
-        id: tripId,
+        id: targetTripId,
         ownerId: 'guest',
         title: tour.title,
         description: tour.description,
@@ -152,7 +163,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
         attractions.forEach((attr, idx) => {
           newPoints.push({
             id: `tour-attr-${Date.now()}-${idx}`,
-            tripId,
+            tripId: targetTripId,
             title: attr.title,
             description: attr.description,
             address: attr.address ?? `${cityName}, ${attr.title}`,
@@ -168,7 +179,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
       } else if (safeCoords) {
         newPoints.push({
           id: `tour-city-${Date.now()}`,
-          tripId,
+          tripId: targetTripId,
           title: cityName,
           description: null,
           address: cityName,
@@ -203,12 +214,12 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
   ]);
 
   const handleOpenRoute = useCallback(() => {
-    if (points && points.length > 0 && isDirty) {
+    if (points && points.length > 0) {
       setShowConfirmOverwrite(true);
     } else {
       doOpenRoute();
     }
-  }, [points, doOpenRoute, isDirty]);
+  }, [points, doOpenRoute]);
 
   const confirmOverwrite = () => {
     setShowConfirmOverwrite(false);
@@ -313,22 +324,6 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           </div>
         </div>
 
-        {/* Карта с маршрутом */}
-        <div className="mb-8">
-          <div className="w-full aspect-[4/3] md:aspect-[21/9] rounded-[2.5rem] overflow-hidden border border-slate-200 shadow-inner bg-slate-50">
-            <RouteMap
-              points={attractions}
-              focusCoords={attractions.length === 0 ? focusCoords : null}
-              onPointDragEnd={() => undefined}
-              isDropdownOpen={false}
-              routeProfile="driving"
-              onRouteInfoUpdate={setRouteInfo}
-              onRouteInfoLoading={setIsRouteLoading}
-              readonly={true}
-            />
-          </div>
-        </div>
-
         {/* Кнопка в конструктор */}
         <div className="flex justify-center mb-20">
           <Button
@@ -423,6 +418,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

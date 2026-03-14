@@ -5,13 +5,14 @@ import { Sidebar } from '@/widgets/sidebar/ui/Sidebar';
 import { Header } from '@/widgets/header/ui/Header';
 import { BottomNav } from '@/widgets/bottom-nav/ui/BottomNav';
 import { Footer } from '@/widgets/footer';
+import { PersistentMapShell } from '@/widgets/persistent-map-shell';
+import { MobileContentSheet } from '@/widgets/mobile-content-sheet';
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLanding = pathname === '/';
-  const isProfile = pathname.startsWith('/profile');
 
-return (
+  return (
     <div className="bg-white min-h-[112vh] w-full flex flex-col" style={{zoom: 0}}>
       {isLanding ? (
         <>
@@ -36,12 +37,31 @@ return (
           <div className="hidden md:block">
             <Header />
           </div>
-          <div className="flex flex-1 w-full pt-0">
-            <div className={`flex w-full${isProfile ? '' : ' max-w-276 mx-auto'}`}>
+          <div className="flex flex-1 w-full pt-0 relative">
+            <div className="md:hidden absolute inset-0 z-0" data-testid="mobile-map-layer">
+              <PersistentMapShell />
+            </div>
+
+            <div className="md:hidden relative z-10 flex w-full">
+              <MobileContentSheet>{children}</MobileContentSheet>
+            </div>
+
+            <div className="hidden md:flex w-full">
               <Sidebar />
-              <main className="flex-1 flex flex-col relative w-full min-w-0 bg-white pb-16 md:pb-0">
-                {children}
-              </main>
+              <div className="flex w-full min-w-0">
+                <main
+                  className="w-1/2 min-w-0 overflow-y-auto bg-white pb-16 md:pb-0"
+                  data-testid="desktop-content-pane"
+                >
+                  {children}
+                </main>
+                <aside
+                  className="w-1/2 min-w-0 border-l border-slate-200 bg-slate-50 h-[calc(100vh-64px)] sticky top-16"
+                  data-testid="desktop-map-pane"
+                >
+                  <PersistentMapShell />
+                </aside>
+              </div>
             </div>
           </div>
           <Footer />
