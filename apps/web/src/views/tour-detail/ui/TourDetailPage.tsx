@@ -3,9 +3,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Clock, Cloud, CloudSun, Route, Sun, Wind } from 'lucide-react';
-import { tripsApi } from '@/entities/trip';
+import { useTripStore, tripsApi } from '@/entities/trip';
 import type { Trip } from '@/entities/trip';
-import { Button } from '@/shared/ui';
+import type { RoutePoint } from '@/entities/route-point';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/shared/ui';
 import { cn } from '@/shared/lib/utils';
 import { env } from '@/shared/config/env';
 import { clearConfig, setConfig } from '@/features/persistent-map';
@@ -40,8 +49,12 @@ function formatDistance(meters: number) {
 
 export function TourDetailPage({ tourId }: TourDetailPageProps) {
   const router = useRouter();
+  const { currentTrip, setCurrentTrip, setPoints, clearPlanner, isDirty, setCachedRouteInfo } =
+    useTripStore();
+  const points = currentTrip?.points || [];
   const [focusCoords, setFocusCoords] = useState<{ lon: number; lat: number } | null>(null);
   const [isOpening, setIsOpening] = useState(false);
+  const [showConfirmOverwrite, setShowConfirmOverwrite] = useState(false);
   const [tour, setTour] = useState<Trip | null>(null);
   const [loading, setLoading] = useState(true);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
@@ -120,17 +133,98 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
     if (!tour) return;
     setIsOpening(true);
     try {
-      router.push(`/planner?applyPredefinedId=${encodeURIComponent(String(tour.id))}&tab=my`);
+      const cityName = tour.title.split(':')[0]?.trim() ?? tour.title;
+      let coords: { lon: number; lat: number } | null = focusCoords;
+      if (!coords) coords = await geocodeCity(cityName);
+
+      clearPlanner();
+
+      const targetTripId = `guest-${Date.now()}`;
+
+      const tourTrip: Trip = {
+        id: targetTripId,
+        ownerId: 'guest',
+        title: tour.title,
+        description: tour.description,
+        budget: tour.budget,
+        startDate: null,
+        endDate: null,
+        isActive: false,
+        isPredefined: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        points: [],
+      };
+      setCurrentTrip(tourTrip);
+
+      const newPoints: RoutePoint[] = [];
+      const safeCoords = coords;
+      if (attractions.length > 0) {
+        attractions.forEach((attr, idx) => {
+          newPoints.push({
+            id: `tour-attr-${Date.now()}-${idx}`,
+            tripId: targetTripId,
+            title: attr.title,
+            description: attr.description,
+            address: attr.address ?? `${cityName}, ${attr.title}`,
+            lat: attr.lat || (safeCoords ? safeCoords.lat + (Math.random() - 0.5) * 0.05 : 0),
+            lon: attr.lon || (safeCoords ? safeCoords.lon + (Math.random() - 0.5) * 0.05 : 0),
+            budget: attr.budget,
+            visitDate: null,
+            imageUrl: attr.imageUrl,
+            order: idx,
+            createdAt: new Date().toISOString(),
+          });
+        });
+      } else if (safeCoords) {
+        newPoints.push({
+          id: `tour-city-${Date.now()}`,
+          tripId: targetTripId,
+          title: cityName,
+          description: null,
+          address: cityName,
+          lat: safeCoords.lat,
+          lon: safeCoords.lon,
+          budget: 0,
+          visitDate: null,
+          imageUrl: null,
+          order: 0,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      setPoints(newPoints, false);
+      if (routeInfo) setCachedRouteInfo(routeInfo);
+      router.push('/planner?profile=driving');
     } catch (e) {
       console.error('[TourDetail] Failed to open route:', e);
     } finally {
       setIsOpening(false);
     }
-  }, [tour, router]);
+  }, [
+    tour,
+    focusCoords,
+    attractions,
+    geocodeCity,
+    clearPlanner,
+    setCurrentTrip,
+    setPoints,
+    router,
+    routeInfo,
+    setCachedRouteInfo,
+  ]);
 
   const handleOpenRoute = useCallback(() => {
+    if (points && points.length > 0) {
+      setShowConfirmOverwrite(true);
+    } else {
+      doOpenRoute();
+    }
+  }, [points, doOpenRoute]);
+
+  const confirmOverwrite = () => {
+    setShowConfirmOverwrite(false);
     doOpenRoute();
-  }, [doOpenRoute]);
+  };
 
   if (loading) {
     return (
@@ -294,6 +388,36 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           </div>
         )}
       </div>
+
+      <Dialog open={showConfirmOverwrite} onOpenChange={setShowConfirmOverwrite}>
+        <DialogContent className="sm:max-w-md border-none shadow-2xl rounded-[2.5rem] p-10 overflow-hidden">
+          <DialogHeader className="gap-4">
+            <DialogTitle className="text-xl font-black text-brand-indigo uppercase tracking-widest leading-tight">
+              Внимание
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 font-bold text-lg leading-snug">
+              В конструкторе уже есть непустой маршрут. При открытии нового маршрута старый будет
+              очищен. Продолжить?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row gap-3 mt-8">
+            <Button
+              variant="ghost"
+              className="flex-1 font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-50 h-12 rounded-xl"
+              onClick={() => setShowConfirmOverwrite(false)}
+            >
+              ОТМЕНА
+            </Button>
+            <Button
+              variant="brand-indigo"
+              className="flex-1 font-black uppercase tracking-widest h-12 rounded-xl shadow-lg shadow-brand-indigo/20"
+              onClick={confirmOverwrite}
+            >
+              ПРОДОЛЖИТЬ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

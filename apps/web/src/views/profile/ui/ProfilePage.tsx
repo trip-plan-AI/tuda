@@ -29,12 +29,12 @@ import {
 import {
   useCollaborateStore,
   collaborateApi,
-  useCollaborationSocket,
   InviteModal,
   CollaboratorsModal,
 } from '@/features/route-collaborate';
 import { getSocket } from '@/shared/socket/socket-client';
 import { clearConfig, setConfig } from '@/features/persistent-map';
+import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 
 function getBudgetMetrics(plannedBudget: number | null | undefined, totalBudget: number) {
   const plan = Math.max(0, plannedBudget ?? 0);
@@ -132,7 +132,7 @@ function BudgetSummary({
 export function ProfilePage() {
   const router = useRouter();
   const { user, setUser } = useUserStore();
-  const { currentTrip, updateCurrentTrip, setPoints, addPoint, removePoint } = useTripStore();
+  const { currentTrip, isDirty, updateCurrentTrip, setPoints, addPoint, removePoint } = useTripStore();
   const { isAuthenticated } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<'routes' | 'saved'>('routes');
@@ -140,6 +140,8 @@ export function ProfilePage() {
   const [tempName, setTempName] = useState(user?.name || '');
   const [savedTrips, setSavedTrips] = useState<Trip[]>([]);
   const [isLoadingTrips, setIsLoadingTrips] = useState(true);
+  const [showPlannerConflictModal, setShowPlannerConflictModal] = useState(false);
+  const [pendingPlannerTripId, setPendingPlannerTripId] = useState<string | null>(null);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -271,8 +273,6 @@ export function ProfilePage() {
       clearConfig('profile-page');
     };
   }, [displayedActiveRoute?.id, displayedActiveRoute?.points]);
-
-  useCollaborationSocket(activeRoute?.id ?? '');
 
   // Подключаемся по сокетам ко ВСЕМ маршрутам из списка, чтобы видеть обновления
   // (например, "Итог по точкам") в реальном времени, даже если маршрут не активен.
@@ -505,7 +505,19 @@ export function ProfilePage() {
   };
 
   const handleEditRoute = (trip: Trip) => {
-    router.push(`/planner?applyTripId=${encodeURIComponent(trip.id)}`);
+    setPendingPlannerTripId(trip.id);
+    setShowPlannerConflictModal(true);
+  };
+
+  const handleConfirmPlannerReplace = () => {
+    const targetTripId = pendingPlannerTripId;
+    setShowPlannerConflictModal(false);
+    setPendingPlannerTripId(null);
+    if (!targetTripId) {
+      router.push('/planner');
+      return;
+    }
+    router.push(`/planner?applyTripId=${encodeURIComponent(targetTripId)}`);
   };
 
   return (
@@ -857,6 +869,38 @@ export function ProfilePage() {
           onClose={() => setCollaboratorsModalOpen(false)}
         />
       )}
+
+      <PlannerConflictModal
+        open={showPlannerConflictModal}
+        onOpenChange={setShowPlannerConflictModal}
+        conflictType="different_route"
+        currentRouteTitle={currentTrip?.title?.trim() || 'без названия'}
+        onCancel={() => {
+          setShowPlannerConflictModal(false);
+          setPendingPlannerTripId(null);
+        }}
+        onReplaceWithoutSave={handleConfirmPlannerReplace}
+        onSaveAndReplace={async () => {
+          try {
+            if (currentTrip && !currentTrip.id.startsWith('guest-')) {
+              await tripsApi.update(currentTrip.id, {
+                title: currentTrip.title,
+                description: currentTrip.description ?? undefined,
+                budget: currentTrip.budget ?? undefined,
+              });
+            }
+          } catch (e) {
+            console.error('Failed to save current trip before replace:', e);
+            toast.error('Не удалось сохранить текущий маршрут');
+          }
+          handleConfirmPlannerReplace();
+        }}
+        onGoToPlannerOnly={() => {
+          setShowPlannerConflictModal(false);
+          setPendingPlannerTripId(null);
+          router.push('/planner');
+        }}
+      />
     </div>
   );
 }
