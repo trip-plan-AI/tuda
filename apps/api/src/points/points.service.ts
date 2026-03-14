@@ -11,12 +11,14 @@ import * as schema from '../db/schema';
 import { CreatePointDto } from './dto/create-point.dto';
 import { UpdatePointDto } from './dto/update-point.dto';
 import { ReorderPointsDto } from './dto/reorder-points.dto';
+import { TripImageService } from '../trips/trip-image.service';
 
 @Injectable()
 export class PointsService {
   constructor(
     @Inject(DRIZZLE)
     private db: NodePgDatabase<typeof schema>,
+    private readonly tripImageService: TripImageService,
   ) {}
 
   findByTrip(tripId: string) {
@@ -35,6 +37,8 @@ export class PointsService {
       .insert(schema.routePoints)
       .values({ ...dto, tripId, order: nextOrder })
       .returning();
+
+    this.triggerTripImageRecalculation(tripId);
     return point;
   }
 
@@ -45,6 +49,8 @@ export class PointsService {
       .set(dto)
       .where(eq(schema.routePoints.id, point.id))
       .returning();
+
+    this.triggerTripImageRecalculation(tripId);
     return updated;
   }
 
@@ -64,6 +70,8 @@ export class PointsService {
           .where(eq(schema.routePoints.id, p.id)),
       ),
     );
+
+    this.triggerTripImageRecalculation(tripId);
 
     return { deleted: true };
   }
@@ -101,5 +109,11 @@ export class PointsService {
       throw new NotFoundException('Point not found');
     }
     return point;
+  }
+
+  private triggerTripImageRecalculation(tripId: string): void {
+    void this.tripImageService.resolveTripCover(tripId).catch(() => {
+      // Ошибки внешних сервисов не должны ломать CRUD точек.
+    });
   }
 }
