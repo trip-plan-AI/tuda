@@ -347,6 +347,14 @@ export class SemanticFilterService {
 
 8. ${categoryInstructions}
 
+${hasFoodFocus ? `9. 🔴 CRITICAL FOOD PRIORITY (TRI-108-6 Extended):
+   - Пользователь ЯВНО ищет еду ("${intent.preferences_text}")
+   - ОБЯЗАТЕЛЬНО выбери минимум 50% мест из категорий restaurant/cafe
+   - Если есть культурные места - добавь их максимум 30%
+   - ГЛАВНОЕ: Гарантируй, что большинство выбранных мест - это рестораны и кафе!
+   - Не избегай выбирать еду просто потому что культурные места "интереснее"
+` : ''}
+
 Список мест (JSON):
 ${JSON.stringify(
   pois.map((poi, index) => ({
