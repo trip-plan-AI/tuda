@@ -1112,36 +1112,37 @@ ${JSON.stringify(points)}
   async compareProviders(
     @Body()
     body: {
-      city: string;
-      preferences?: string;
-      days?: number;
-      pois?: PoiItem[];
+      query: string;
     },
   ) {
-    const { city, preferences = 'интересные места' } = body;
+    const { query } = body;
 
     const fallbacks: string[] = [];
-    const intent = await this.orchestratorService.parseIntent(
-      `${city}. ${preferences}`,
-      [],
+    const intent = await this.orchestratorService.parseIntent(query, []);
+
+    const { pois: poisRaw } = await this.providerSearchService.fetchAndFilter(
+      intent,
+      fallbacks,
     );
 
-    let pois: PoiItem[];
-    if (body.pois && body.pois.length > 0) {
-      pois = body.pois.slice(0, 20);
-    } else {
-      const { pois: poisRaw } = await this.providerSearchService.fetchAndFilter(
-        { ...intent, city: intent.city || city },
-        fallbacks,
-      );
-      pois = poisRaw.slice(0, 20);
+    const pois = poisRaw.slice(0, 20);
+
+    if (pois.length === 0) {
+      return {
+        error: 'No POI found for query. For foreign cities, check Overpass API status.',
+        city: intent.city || 'unknown',
+        query,
+        input_poi_count: 0,
+      };
     }
 
     const comparison = await this.semanticFilterService.compareProviders(pois, intent);
 
     return {
-      city: intent.city || city,
+      city: intent.city || 'unknown',
+      query,
       input_poi_count: pois.length,
+      fallbacks: fallbacks.length > 0 ? fallbacks : undefined,
       yandex: {
         count: comparison.yandex.pois.length,
         duration_ms: comparison.yandex.duration_ms,
