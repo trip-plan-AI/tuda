@@ -142,7 +142,6 @@ services:
 
   dozzle:
     image: amir20/dozzle:latest
-    container_name: dozzle
     restart: unless-stopped
     expose:
       - '8080'
