@@ -26,6 +26,7 @@ interface TripStore {
   setPoints: (ps: RoutePoint[], isDirty?: boolean) => void;
   addPoint: (p: RoutePoint) => void;
   updatePoint: (id: string, data: Partial<RoutePoint>) => void;
+  updatePoints: (updates: Array<{ id: string; data: Partial<RoutePoint> }>) => void;
   removePoint: (id: string) => void;
   reorderPoints: (orderedIds: string[]) => void;
   clearPlanner: () => void;
@@ -97,6 +98,19 @@ export const useTripStore = create<TripStore>()(
               ...s.currentTrip,
               points: s.currentTrip.points.map((p) => (p.id === id ? { ...p, ...data } : p)),
             },
+            isDirty: true,
+          };
+        }),
+      updatePoints: (updates) =>
+        set((s) => {
+          if (!s.currentTrip) return s;
+          const updatesMap = new Map(updates.map((u) => [u.id, u.data]));
+          const newPoints = s.currentTrip.points.map((p) => {
+            const patch = updatesMap.get(p.id);
+            return patch ? { ...p, ...patch } : p;
+          });
+          return {
+            currentTrip: { ...s.currentTrip, points: newPoints },
             isDirty: true,
           };
         }),
