@@ -27,16 +27,21 @@ export class InvitationsController {
     private collabGateway: CollaborationGateway,
   ) {}
 
-  /** POST /trips/:tripId/invitations — owner sends invite */
+  /** POST /trips/:tripId/invitations — owner/editor sends invite */
   @Post('trips/:tripId/invitations')
   async create(
     @Param('tripId') tripId: string,
     @Body() dto: CreateInvitationDto,
     @Req() req: any,
   ) {
-    const trip = await this.tripsService.findById(tripId);
-    if (trip.ownerId !== req.user.id) {
-      throw new ForbiddenException('Only trip owner can send invitations');
+    const trip = await this.tripsService.findByIdWithAccess(
+      tripId,
+      req.user.id,
+    );
+    if (trip.role === 'viewer') {
+      throw new ForbiddenException(
+        'Only trip owner or editors can send invitations',
+      );
     }
 
     const invite = await this.invitationsService.create(
@@ -45,7 +50,9 @@ export class InvitationsController {
       dto.userId,
     );
 
-    const inviterName = await this.invitationsService.getInviterName(req.user.id);
+    const inviterName = await this.invitationsService.getInviterName(
+      req.user.id,
+    );
 
     // Notify invited user — trip does NOT appear in their list yet
     this.collabGateway.notifyInviteReceived(dto.userId, {
@@ -70,7 +77,11 @@ export class InvitationsController {
       // Now send trip to the new collaborator's profile
       this.collabGateway.notifyTripShared(req.user.id, trip);
       // Notify trip members + owner directly that a new collaborator joined
-      this.collabGateway.notifyCollaboratorAdded(trip.id, collaborator, trip.ownerId);
+      this.collabGateway.notifyCollaboratorAdded(
+        trip.id,
+        collaborator,
+        trip.ownerId,
+      );
     }
 
     return { accepted: true, trip };

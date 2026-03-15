@@ -1,8 +1,11 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import * as zlib from 'zlib';
 import * as dotenv from 'dotenv';
 dotenv.config({ path: '../../.env' });
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import * as schema from './schema';
 import * as bcrypt from 'bcrypt';
 import { DESTINATIONS } from './seed-destinations';
@@ -28,7 +31,7 @@ const TOURS = [
         price: 15000,
         lat: 43.6819,
         lon: 40.2045,
-      }, // [web:1][web:7]
+      },
       {
         title: 'Олимпийский парк',
         description:
@@ -36,7 +39,7 @@ const TOURS = [
         price: 5000,
         lat: 43.4033,
         lon: 39.9556,
-      }, // [web:2][web:8]
+      },
       {
         title: 'Тисо-самшитовая роща',
         description:
@@ -44,7 +47,7 @@ const TOURS = [
         price: 2000,
         lat: 43.5267,
         lon: 39.8747,
-      }, // [web:3][web:9]
+      },
       {
         title: 'Агурские водопады',
         description:
@@ -52,7 +55,7 @@ const TOURS = [
         price: 3000,
         lat: 43.5592,
         lon: 39.8256,
-      }, // [web:4][web:10]
+      },
       {
         title: 'Дендрарий',
         description:
@@ -60,7 +63,7 @@ const TOURS = [
         price: 4000,
         lat: 43.5763,
         lon: 39.7339,
-      }, // [web:11][web:17]
+      },
       {
         title: 'Навалищенское ущелье',
         description:
@@ -68,7 +71,7 @@ const TOURS = [
         price: 16000,
         lat: 43.5536,
         lon: 39.896,
-      }, // [web:12][web:18]
+      },
     ],
   },
   {
@@ -87,7 +90,7 @@ const TOURS = [
         price: 10000,
         lat: 51.7814,
         lon: 87.2742,
-      }, // [web:13][web:19]
+      },
       {
         title: 'Чуйский тракт',
         description:
@@ -95,7 +98,7 @@ const TOURS = [
         price: 8000,
         lat: 50.3,
         lon: 87.7,
-      }, // [web:14][web:20]
+      },
       {
         title: 'Долина Чулышман',
         description:
@@ -103,7 +106,7 @@ const TOURS = [
         price: 15000,
         lat: 50.9112,
         lon: 88.2175,
-      }, // [web:15][web:26]
+      },
       {
         title: 'Гора Белуха',
         description:
@@ -111,7 +114,7 @@ const TOURS = [
         price: 12000,
         lat: 49.807,
         lon: 86.5897,
-      }, // [web:16]
+      },
       {
         title: 'Катунь и Мультинские озёра',
         description:
@@ -119,7 +122,7 @@ const TOURS = [
         price: 7000,
         lat: 51.285,
         lon: 86.592,
-      }, // [web:13][web:19]
+      },
       {
         title: 'Курайская степь',
         description:
@@ -127,7 +130,7 @@ const TOURS = [
         price: 3000,
         lat: 50.2167,
         lon: 87.9,
-      }, // [web:14][web:20]
+      },
     ],
   },
   {
@@ -147,7 +150,7 @@ const TOURS = [
         price: 8500,
         lat: 62.0833,
         lon: 34.5,
-      }, // [web:21]
+      },
       {
         title: 'Водопад Кивач',
         description:
@@ -155,7 +158,7 @@ const TOURS = [
         price: 3000,
         lat: 62.2681,
         lon: 33.9803,
-      }, // [web:22]
+      },
       {
         title: 'Ладожские шхеры',
         description:
@@ -163,7 +166,7 @@ const TOURS = [
         price: 12000,
         lat: 61.6,
         lon: 30.8333,
-      }, // [web:23]
+      },
       {
         title: 'Рускеала',
         description:
@@ -171,7 +174,7 @@ const TOURS = [
         price: 7000,
         lat: 61.9458,
         lon: 30.5756,
-      }, // [web:24]
+      },
       {
         title: 'Петрозаводск',
         description:
@@ -179,7 +182,7 @@ const TOURS = [
         price: 8000,
         lat: 61.7849,
         lon: 34.3469,
-      }, // [web:25]
+      },
       {
         title: 'Белые ночи на Онего',
         description:
@@ -187,7 +190,7 @@ const TOURS = [
         price: 4000,
         lat: 61.8,
         lon: 34.3833,
-      }, // [web:25]
+      },
     ],
   },
   {
@@ -207,7 +210,7 @@ const TOURS = [
         price: 18800,
         lat: 43.325,
         lon: 42.455,
-      }, // [web:27]
+      },
       {
         title: 'Чегемские водопады',
         description:
@@ -215,7 +218,7 @@ const TOURS = [
         price: 5000,
         lat: 43.4167,
         lon: 43.2167,
-      }, // [web:28]
+      },
       {
         title: 'Голубые озёра',
         description:
@@ -258,7 +261,6 @@ async function seed() {
 
   console.log('Seeding predefined tours...\n');
 
-  // 1. Upsert system user
   let systemUser = await db.query.users.findFirst({
     where: eq(schema.users.email, SYSTEM_EMAIL),
   });
@@ -275,11 +277,9 @@ async function seed() {
     console.log('System user exists:', systemUser.id);
   }
 
-  // 2. Delete existing predefined trips (clean re-seed)
   await db.delete(schema.trips).where(eq(schema.trips.isPredefined, true));
   console.log('Cleared old predefined trips\n');
 
-  // 3. Insert tours + attractions
   for (const tour of TOURS) {
     const [trip] = await db
       .insert(schema.trips)
@@ -312,20 +312,59 @@ async function seed() {
     console.log(`  → ${pointValues.length} attractions inserted`);
   }
 
-  console.log('\nSeeding popular destinations...');
-  await db.delete(schema.popularDestinations);
-  console.log('Cleared old popular destinations');
+  console.log('\nChecking popular destinations...');
+  const existingCountResult = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(schema.popularDestinations);
+  const existingCount = Number(existingCountResult[0]?.count || 0);
 
-  const destinationChunks: (typeof DESTINATIONS)[] = [];
-  const CHUNK_SIZE = 50;
-  for (let i = 0; i < DESTINATIONS.length; i += CHUNK_SIZE) {
-    destinationChunks.push(DESTINATIONS.slice(i, i + CHUNK_SIZE));
-  }
+  if (existingCount > 1000) {
+    console.log(
+      `Popular destinations already seeded (${existingCount} records). Skipping large seed.`,
+    );
+  } else {
+    console.log('Seeding popular destinations from compressed dump...');
+    const dumpPath = path.join(__dirname, 'popular_destinations.json.gz');
+    if (fs.existsSync(dumpPath)) {
+      const compressed = fs.readFileSync(dumpPath);
+      const decompressed = zlib.gunzipSync(compressed);
+      const destinations = JSON.parse(decompressed.toString());
 
-  for (const chunk of destinationChunks) {
-    await db.insert(schema.popularDestinations).values(chunk);
+      const CHUNK_SIZE = 500;
+      for (let i = 0; i < destinations.length; i += CHUNK_SIZE) {
+        const chunk = destinations.slice(i, i + CHUNK_SIZE);
+        await db
+          .insert(schema.popularDestinations)
+          .values(chunk)
+          .onConflictDoNothing();
+        if (i % 5000 === 0) {
+          console.log(`  → Inserted ${i} / ${destinations.length}`);
+        }
+      }
+      console.log(
+        `Inserted ${destinations.length} popular destinations from dump.`,
+      );
+    } else {
+      console.log(
+        'Dump file not found, using small seed-destinations.ts fallback...',
+      );
+      const destinationChunks: (typeof DESTINATIONS)[] = [];
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < DESTINATIONS.length; i += CHUNK_SIZE) {
+        destinationChunks.push(DESTINATIONS.slice(i, i + CHUNK_SIZE));
+      }
+
+      for (const chunk of destinationChunks) {
+        await db
+          .insert(schema.popularDestinations)
+          .values(chunk)
+          .onConflictDoNothing();
+      }
+      console.log(
+        `Inserted ${DESTINATIONS.length} popular destinations from fallback.`,
+      );
+    }
   }
-  console.log(`Inserted ${DESTINATIONS.length} popular destinations.`);
 
   console.log('\nSeed completed!');
   await pool.end();

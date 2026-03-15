@@ -5,7 +5,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { AppModule } from './app.module';
-import * as path from 'path'
+import * as path from 'path';
 const logger = new Logger('Bootstrap');
 
 async function runMigrations() {
@@ -22,8 +22,8 @@ async function runMigrations() {
   } catch (error) {
     logger.error(
       'Migration failed — server will start anyway. ' +
-      'If tables already exist but __drizzle_migrations is empty, ' +
-      'run the sync query from the README to register existing migrations.',
+        'If tables already exist but __drizzle_migrations is empty, ' +
+        'run the sync query from the README to register existing migrations.',
       error,
     );
     // Graceful fallback: do NOT rethrow — let the server boot regardless

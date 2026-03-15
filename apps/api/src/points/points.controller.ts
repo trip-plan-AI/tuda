@@ -43,8 +43,10 @@ export class PointsController {
     @Body() dto: CreatePointDto,
   ) {
     const trip = await this.tripsService.findByIdWithAccess(tripId, user.id);
-    if (trip.ownerId !== user.id && !trip.ownerIsActive) {
-      throw new ForbiddenException('Route editing is disabled by the owner');
+    if (trip.role === 'viewer') {
+      throw new ForbiddenException(
+        'Only trip owner or editors can modify points',
+      );
     }
     const result = await this.pointsService.create(tripId, dto);
     this.eventsService.emitTripRefresh(tripId);
@@ -58,8 +60,10 @@ export class PointsController {
     @Body() dto: ReorderPointsDto,
   ) {
     const trip = await this.tripsService.findByIdWithAccess(tripId, user.id);
-    if (trip.ownerId !== user.id && !trip.ownerIsActive) {
-      throw new ForbiddenException('Route editing is disabled by the owner');
+    if (trip.role === 'viewer') {
+      throw new ForbiddenException(
+        'Only trip owner or editors can modify points',
+      );
     }
     const result = await this.pointsService.reorder(tripId, dto);
     this.eventsService.emitTripRefresh(tripId);
@@ -74,8 +78,10 @@ export class PointsController {
     @Body() dto: UpdatePointDto,
   ) {
     const trip = await this.tripsService.findByIdWithAccess(tripId, user.id);
-    if (trip.ownerId !== user.id && !trip.ownerIsActive) {
-      throw new ForbiddenException('Route editing is disabled by the owner');
+    if (trip.role === 'viewer') {
+      throw new ForbiddenException(
+        'Only trip owner or editors can modify points',
+      );
     }
     const result = await this.pointsService.update(id, tripId, dto);
     this.eventsService.emitTripRefresh(tripId);
@@ -89,8 +95,10 @@ export class PointsController {
     @CurrentUser() user: { id: string },
   ) {
     const trip = await this.tripsService.findByIdWithAccess(tripId, user.id);
-    if (trip.ownerId !== user.id && !trip.ownerIsActive) {
-      throw new ForbiddenException('Route editing is disabled by the owner');
+    if (trip.role === 'viewer') {
+      throw new ForbiddenException(
+        'Only trip owner or editors can modify points',
+      );
     }
     const result = await this.pointsService.remove(id, tripId);
     this.eventsService.emitTripRefresh(tripId);

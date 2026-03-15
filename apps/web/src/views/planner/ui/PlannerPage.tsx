@@ -1492,25 +1492,33 @@ export function PlannerPage() {
   );
 
   // feature/TRI-104-ai-planner-interaction: централизованное применение tripId из query-параметра applyTripId.
-  // Потребность: загрузить маршрут из AI чата в UI без перезагрузки страницы.
-  // Если убрать: маршруты из AI чата не будут переноситься в Planner.
+  // Потребность: загрузить маршрут из AI чата или Личного кабинета в UI без перезагрузки страницы.
+  // Если убрать: маршруты из AI чата / ЛК не будут переноситься в Planner.
   const applyIncomingTrip = useCallback(
     async (tripId: string) => {
-      const all = await tripsApi.getAll();
-      const target = all.find((trip) => trip.id === tripId);
-      if (!target) return;
+      // TRI-114: use getOne instead of searching in getAll for efficiency
+      let target: Trip;
+      try {
+        target = await tripsApi.getOne(tripId);
+      } catch (e) {
+        console.error('Failed to fetch trip for apply:', e);
+        return;
+      }
 
       const targetPoints = await pointsApi.getAll(tripId);
       setCurrentTrip({ ...target, points: targetPoints });
       setSaved();
 
       const params = new URLSearchParams(searchParams.toString());
+      const draftId = params.get('draftMessageId');
       params.delete('applyTripId');
       params.delete('draftMessageId');
       const nextQuery = params.toString();
       router.replace(nextQuery ? `/planner?${nextQuery}` : '/planner');
 
-      toast.success('Маршрут из AI чата открыт в Planner');
+      toast.success(draftId ? 'Маршрут из AI чата открыт' : 'Маршрут открыт в конструкторе', {
+        id: 'planner-apply-success',
+      });
       // Открываем связанный AI-чат для контекста
       void openOrCreateSessionFromTrip(tripId);
     },
@@ -1559,13 +1567,16 @@ export function PlannerPage() {
     const isDifferentRoute = currentTrip?.id !== incomingTripId;
     const hasIncomingDraftVersion = Boolean(draftMessageId);
 
-    if (!hasPlannerContent || !currentTrip) {
+    // TRI-114: if current points are missing but we have an incomingTripId, always load.
+    const pointsMissing = (currentTrip?.points?.length ?? 0) === 0;
+
+    if (!hasPlannerContent || !currentTrip || (pointsMissing && !isDirty)) {
       handledApplyTripIdRef.current = currentKey;
       void applyIncomingTrip(incomingTripId);
       return;
     }
 
-    if (!isDifferentRoute && !hasIncomingDraftVersion) {
+    if (!isDifferentRoute && !hasIncomingDraftVersion && !pointsMissing) {
       handledApplyTripIdRef.current = currentKey;
       clearApplyTripParams();
       return;

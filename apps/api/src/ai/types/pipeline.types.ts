@@ -100,7 +100,11 @@ export interface YandexBatchRefinementMeta extends YandexBatchRefinementDiagnost
 }
 
 // TRI-108-6: Added 'photon' for food-specific venue search
-export type MassCollectionShadowProvider = 'kudago' | 'overpass' | 'llm_fill' | 'photon';
+export type MassCollectionShadowProvider =
+  | 'kudago'
+  | 'overpass'
+  | 'llm_fill'
+  | 'photon';
 
 export interface MassCollectionShadowProviderStat {
   provider: MassCollectionShadowProvider;

@@ -165,11 +165,17 @@ export const popularDestinations = pgTable(
 export const invitations = pgTable(
   'invitations',
   {
-    id:            uuid('id').primaryKey().defaultRandom(),
-    tripId:        uuid('trip_id').notNull().references(() => trips.id, { onDelete: 'cascade' }),
-    invitedUserId: uuid('invited_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    inviterId:     uuid('inviter_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    createdAt:     timestamp('created_at').notNull().defaultNow(),
+    id: uuid('id').primaryKey().defaultRandom(),
+    tripId: uuid('trip_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'cascade' }),
+    invitedUserId: uuid('invited_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    inviterId: uuid('inviter_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (t) => [unique().on(t.tripId, t.invitedUserId)],
 );

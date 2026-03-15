@@ -15,7 +15,7 @@ import * as dotenv from 'dotenv';
 import * as schema from './schema';
 
 dotenv.config({
-  path: path.resolve(__dirname, '../../../../.env')
+  path: path.resolve(__dirname, '../../../../.env'),
 });
 
 interface GeoNamesCity {
@@ -61,8 +61,7 @@ const openai = process.env.OPENAI_API_KEY
 
 const BATCH_SIZE = 100;
 const MAX_CITIES = 100000;
-const GEONAMES_URL =
-  'https://download.geonames.org/export/dump/cities500.zip';
+const GEONAMES_URL = 'https://download.geonames.org/export/dump/cities500.zip';
 const GEONAMES_FALLBACK_FILE = '/tmp/cities500.txt'; // Для локального тестирования
 
 // Кэш переводов для избежания повторных API запросов
@@ -126,7 +125,9 @@ async function downloadGeoNames(): Promise<string> {
       if (fs.existsSync(GEONAMES_FALLBACK_FILE)) {
         return GEONAMES_FALLBACK_FILE;
       }
-      throw new Error('Не удалось скачать GeoNames и нет локального fallback файла. Попробуйте скачать вручную: https://download.geonames.org/export/dump/cities500.txt в /tmp/');
+      throw new Error(
+        'Не удалось скачать GeoNames и нет локального fallback файла. Попробуйте скачать вручную: https://download.geonames.org/export/dump/cities500.txt в /tmp/',
+      );
     }
   }
 }
@@ -190,8 +191,7 @@ async function translateCityToRussian(cityName: string): Promise<string> {
       temperature: 0,
     });
 
-    const translation =
-      response.choices[0].message.content?.trim() || cityName;
+    const translation = response.choices[0].message.content?.trim() || cityName;
     translationCache.set(cityName, translation);
     return translation;
   } catch (error) {
@@ -293,12 +293,15 @@ async function insertCitiesBatch(cities: GeoNamesCity[]): Promise<void> {
           lon: city.longitude,
           popularity: Math.min(10, (city.population || 0) / 1000000),
         };
-      })
+      }),
     );
 
     // Вставляем через Drizzle (автоматически пропускает дубли)
     if (valuesToInsert.length > 0) {
-      await db.insert(schema.popularDestinations).values(valuesToInsert).onConflictDoNothing();
+      await db
+        .insert(schema.popularDestinations)
+        .values(valuesToInsert)
+        .onConflictDoNothing();
     }
 
     console.log(`✅ Вставлено ${cities.length} городов`);
@@ -313,10 +316,14 @@ async function main() {
     console.log('🚀 Начинаю загрузку GeoNames в БД...\n');
 
     if (!openai) {
-      console.log('⚠️  OPENAI_API_KEY не установлен. Города будут загружены без перевода на русский.');
+      console.log(
+        '⚠️  OPENAI_API_KEY не установлен. Города будут загружены без перевода на русский.',
+      );
       console.log('   (Названия будут транслитерированы автоматически)\n');
     } else {
-      console.log('✅ OpenAI API доступен, названия будут переведены на русский\n');
+      console.log(
+        '✅ OpenAI API доступен, названия будут переведены на русский\n',
+      );
     }
 
     // 1. Скачиваем данные
@@ -327,12 +334,16 @@ async function main() {
 
     // 3. Вставляем батчами с параллельным переводом
     const PARALLEL_BATCH_SIZE = 50; // Оптимально для OpenAI rate-limits
-    console.log(`\n🌍 Перевожу и вставляю города (батчами по ${PARALLEL_BATCH_SIZE})...`);
-    
+    console.log(
+      `\n🌍 Перевожу и вставляю города (батчами по ${PARALLEL_BATCH_SIZE})...`,
+    );
+
     for (let i = 0; i < cities.length; i += PARALLEL_BATCH_SIZE) {
       const batch = cities.slice(i, i + PARALLEL_BATCH_SIZE);
       await insertCitiesBatch(batch);
-      console.log(`   [${Math.min(i + PARALLEL_BATCH_SIZE, cities.length)}/${cities.length}]`);
+      console.log(
+        `   [${Math.min(i + PARALLEL_BATCH_SIZE, cities.length)}/${cities.length}]`,
+      );
 
       // Небольшая пауза, чтобы не забить Rate Limit
       if (i + PARALLEL_BATCH_SIZE < cities.length) {
