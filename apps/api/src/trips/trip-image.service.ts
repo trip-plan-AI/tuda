@@ -28,6 +28,10 @@ type PixabayResponse = {
   hits?: PixabayHit[];
 };
 
+type GoogleSearchResponse = {
+  items?: Array<{ link: string }>;
+};
+
 const LOCAL_IMAGE_EXTENSIONS = ['webp', 'avif', 'jpg', 'jpeg', 'png'];
 const LOCK_TTL_MS = 15_000;
 const MAX_DOWNLOAD_SIZE_BYTES = 8 * 1024 * 1024;
@@ -104,13 +108,31 @@ export class TripImageService implements OnModuleInit {
         return;
       }
 
-      this.logger.debug(`[${tripId}] no local image, querying Pixabay`);
-      const downloaded = await this.downloadFromPixabay(slug, city);
+      this.logger.debug(`[${tripId}] no local image, querying Google`);
+      let downloaded = await this.downloadFromGoogle(slug, city);
+
       if (downloaded) {
-        this.logger.debug(`[${tripId}] Pixabay downloaded: ${downloaded}`);
+        this.logger.log(
+          `📸  [${tripId}] Image found via Google: ${downloaded}`,
+        );
+        await this.updateTripImageIfChanged(tripId, downloaded);
+        return;
+      }
+
+      this.logger.warn(
+        `🚫  [${tripId}] Google failed or rate-limited for "${slug}", trying Pixabay fallback`,
+      );
+
+      downloaded = await this.downloadFromPixabay(slug, city);
+      if (downloaded) {
+        this.logger.log(
+          `📸  [${tripId}] Image found via Pixabay: ${downloaded}`,
+        );
         await this.updateTripImageIfChanged(tripId, downloaded);
       } else {
-        this.logger.warn(`[${tripId}] Pixabay returned nothing for "${slug}"`);
+        this.logger.warn(
+          `🚫  [${tripId}] Both Google and Pixabay failed for "${slug}"`,
+        );
       }
     } finally {
       await unlock();
@@ -245,38 +267,110 @@ export class TripImageService implements OnModuleInit {
     return null;
   }
 
+  private async downloadFromGoogle(
+    slug: string,
+    city: string,
+  ): Promise<string | null> {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    const cx = process.env.GOOGLE_SEARCH_CX;
+
+    if (!apiKey || !cx) {
+      this.logger.warn('⚠️   GOOGLE_API_KEY or GOOGLE_SEARCH_CX not set');
+      return null;
+    }
+
+    const query = `эстетика красивого города  ${city} `;
+    const params = new URLSearchParams({
+      key: apiKey,
+      cx,
+      q: query,
+      searchType: 'image',
+      num: '1',
+      imgSize: 'xlarge',
+      imgType: 'photo',
+    });
+
+    this.logger.log(`🔍  Searching Google: "${query}"`);
+
+    let response: GoogleSearchResponse | null = null;
+    try {
+      response = await this.fetchWithRetry<GoogleSearchResponse>(
+        `https://www.googleapis.com/customsearch/v1?${params.toString()}`,
+        { timeoutMs: 6000, retries: 1 },
+        'Google',
+      );
+    } catch {
+      return null;
+    }
+
+    const imageUrl = response?.items?.[0]?.link;
+    if (!imageUrl) {
+      this.logger.warn(`❌  Google: No image found for "${slug}"`);
+      return null;
+    }
+
+    this.logger.log(`🖼️   Google: ${imageUrl}`);
+
+    const parsedUrl = this.safeHttpsUrl(imageUrl);
+    if (!parsedUrl) return null;
+
+    return this.saveRemoteImage(parsedUrl, slug, 'Google');
+  }
+
   private async downloadFromPixabay(
     slug: string,
     city: string,
   ): Promise<string | null> {
     const apiKey = process.env.PIXABAY_API_KEY;
     if (!apiKey) {
-      this.logger.warn('PIXABAY_API_KEY is not set, skip Pixabay fallback');
+      this.logger.warn('⚠️   PIXABAY_API_KEY not set');
       return null;
     }
 
+    const query = `красивый город ${city}`;
     const params = new URLSearchParams({
       key: apiKey,
-      q: slug || city,
+      q: query,
       image_type: 'photo',
-      safesearch: 'true',
-      per_page: '10',
-      orientation: 'horizontal',
+      order: 'popular',
+      per_page: '1',
     });
 
-    const response = await this.fetchWithRetry<PixabayResponse>(
-      `https://pixabay.com/api/?${params.toString()}`,
-      { timeoutMs: 5000, retries: 2 },
-    );
+    this.logger.log(`🔍  Searching Pixabay: "${query}"`);
 
-    const hit = response?.hits?.[0];
-    const imageUrl = hit?.largeImageURL ?? hit?.webformatURL ?? hit?.previewURL;
-    if (!imageUrl) return null;
+    let response: PixabayResponse | null = null;
+    try {
+      response = await this.fetchWithRetry<PixabayResponse>(
+        `https://pixabay.com/api/?${params.toString()}`,
+        { timeoutMs: 6000, retries: 1 },
+        'Pixabay',
+      );
+    } catch {
+      return null;
+    }
+
+    const imageUrl =
+      response?.hits?.[0]?.largeImageURL ??
+      response?.hits?.[0]?.webformatURL;
+    if (!imageUrl) {
+      this.logger.warn(`❌  Pixabay: No image found for "${slug}"`);
+      return null;
+    }
+
+    this.logger.log(`🖼️   Pixabay: ${imageUrl}`);
 
     const parsedUrl = this.safeHttpsUrl(imageUrl);
     if (!parsedUrl) return null;
 
-    const fileExtension = this.detectFileExtension(parsedUrl);
+    return this.saveRemoteImage(parsedUrl, slug, 'Pixabay');
+  }
+
+  private async saveRemoteImage(
+    url: URL,
+    slug: string,
+    provider: string,
+  ): Promise<string | null> {
+    const fileExtension = this.detectFileExtension(url);
     const filename = `${slug}.${fileExtension}`;
     const finalPath = join(this.imagesDir, filename);
 
@@ -289,17 +383,17 @@ export class TripImageService implements OnModuleInit {
 
     const temporaryPath = `${finalPath}.${Date.now()}.tmp`;
 
-    const download = await this.fetchBinary(parsedUrl, 8000);
+    const download = await this.fetchBinary(url, 8000);
     if (!download) return null;
 
     if (!download.contentType.startsWith('image/')) {
-      this.logger.warn(`Pixabay mime rejected: ${download.contentType}`);
+      this.logger.warn(`${provider} mime rejected: ${download.contentType}`);
       return null;
     }
 
     if (download.buffer.length > MAX_DOWNLOAD_SIZE_BYTES) {
       this.logger.warn(
-        `Pixabay file too large: ${download.buffer.length} bytes for ${slug}`,
+        `${provider} file too large: ${download.buffer.length} bytes for ${slug}`,
       );
       return null;
     }
@@ -381,6 +475,7 @@ export class TripImageService implements OnModuleInit {
   private async fetchWithRetry<T>(
     url: string,
     options: { timeoutMs: number; retries: number },
+    provider = 'API',
   ): Promise<T | null> {
     for (let attempt = 0; attempt <= options.retries; attempt += 1) {
       const controller = new AbortController();
@@ -389,8 +484,10 @@ export class TripImageService implements OnModuleInit {
       try {
         const res = await fetch(url, { signal: controller.signal });
 
-        if (res.status === 429) {
-          this.logger.warn('Pixabay rate limited (429), fallback skipped');
+        if (res.status === 429 || res.status === 403) {
+          this.logger.warn(
+            `${provider} rate limited or forbidden (${res.status}), skipping`,
+          );
           return null;
         }
 
@@ -400,13 +497,14 @@ export class TripImageService implements OnModuleInit {
         }
 
         if (!res.ok) {
+          this.logger.warn(`${provider} responded with status ${res.status}`);
           return null;
         }
 
         return (await res.json()) as T;
       } catch (error) {
         if (attempt >= options.retries) {
-          this.logger.warn(`Pixabay request failed: ${String(error)}`);
+          this.logger.warn(`${provider} request failed: ${String(error)}`);
           return null;
         }
       } finally {
