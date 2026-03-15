@@ -39,7 +39,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <div className="bg-white min-h-[112vh] w-full flex flex-col" style={{zoom: 0}}>
+    <div className="bg-white min-h-[112vh] w-full flex flex-col">
       {isLanding ? (
         <>
           <div className="relative">

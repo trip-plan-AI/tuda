@@ -17,6 +17,7 @@ import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 import type { PlannerConflictType } from '@/widgets/planner-conflict-modal';
 import { toast } from 'sonner';
 import { tripsApi } from '@/entities/trip';
+import { pointsApi } from '@/entities/route-point';
 import { clearConfig, setConfig } from '@/features/persistent-map';
 
 const AI_QUICK_ACTIONS = ['Сделать дешевле', 'Добавить больше музеев', 'Убрать пешие прогулки'];
@@ -303,20 +304,55 @@ export function AIAssistantPage() {
   const socketTripId = activeSession?.tripId || '';
   useCollaborationSocket(socketTripId);
 
+  const [isAddPointMode, setIsAddPointMode] = useState(false);
+
   useEffect(() => {
     setConfig({
       source: 'ai-assistant-page',
       priority: 40,
-      points: displayPoints,
-      readonly: true,
-      draggable: false,
+      points: [...displayPoints],
+      readonly: false,
+      draggable: true,
       routeProfile: 'driving',
+      isAddPointMode,
+      onAddPointModeChange: setIsAddPointMode,
+      onMapClick: (coords) => {
+        if (!isAddPointMode) return;
+        // Logic similar to PlannerPage: add point from map
+        // Since AIAssistantPage doesn't have usePointCrud directly, we might need to add it or use a simplified version
+        void handleAddPointFromMap(coords);
+      }
     });
 
     return () => {
       clearConfig('ai-assistant-page');
     };
-  }, [displayPoints]);
+  }, [displayPoints, isAddPointMode]);
+
+  const handleAddPointFromMap = async (coords: { lat: number, lon: number }) => {
+    const tripId = activeSession?.tripId;
+    if (!tripId) {
+      toast.error('Сначала создайте или выберите маршрут');
+      return;
+    }
+
+    try {
+      const address = 'Новая точка'; // Simplified, Map usually provides address but let's keep it simple
+      const newPoint = await pointsApi.create(tripId, {
+        title: address,
+        lat: coords.lat,
+        lon: coords.lon,
+        order: displayPoints.length,
+      });
+
+      // Update state if necessary or let socket handle it
+      toast.success('Точка добавлена');
+      setIsAddPointMode(false);
+    } catch (e) {
+      console.error('Failed to add point from map in AI chat:', e);
+      toast.error('Не удалось добавить точку');
+    }
+  };
 
   return (
     <div className="min-h-full w-full">

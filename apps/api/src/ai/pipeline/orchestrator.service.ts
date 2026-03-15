@@ -302,19 +302,25 @@ export class OrchestratorService {
   // Quantity extraction from user preferences
   private extractPoiCount(text: string): number | null {
     // Match patterns like "3 места", "3 интересных места", "find 5 places", "3 лучших", "5 достопримечательностей"
-    const matches = text.match(/(\d+)\s+(?:[а-яёa-z]+\s+)*(мест|место|places?|достопримечательностей?|points?|point)/i);
+    const matches = text.match(
+      /(\d+)\s+(?:[а-яёa-z]+\s+)*(мест|место|places?|достопримечательностей?|points?|point)/i,
+    );
     return matches ? Math.max(1, Math.min(20, parseInt(matches[1], 10))) : null;
   }
 
   private extractMinRestaurants(text: string): number | null {
     // Match patterns like "2 ресторана", "2 best restaurants", "2 хороших ресторана"
-    const matches = text.match(/(\d+)\s+(?:[а-яёa-z]+\s+)*(best\s+)?рестора(ны?|нов)|(\d+)\s+(?:[а-яёa-z]+\s+)*restaurant/i);
+    const matches = text.match(
+      /(\d+)\s+(?:[а-яёa-z]+\s+)*(best\s+)?рестора(ны?|нов)|(\d+)\s+(?:[а-яёa-z]+\s+)*restaurant/i,
+    );
     return matches ? Math.max(1, parseInt(matches[1] || matches[4], 10)) : null;
   }
 
   private extractMinCafes(text: string): number | null {
     // Match patterns like "2 кафе", "2 хороших кафе", "2 cafes"
-    const matches = text.match(/(\d+)\s+(?:[а-яёa-z]+\s+)*(best\s+)?кафе|(\d+)\s+(?:[а-яёa-z]+\s+)*cafe?s?/i);
+    const matches = text.match(
+      /(\d+)\s+(?:[а-яёa-z]+\s+)*(best\s+)?кафе|(\d+)\s+(?:[а-яёa-z]+\s+)*cafe?s?/i,
+    );
     return matches ? Math.max(1, parseInt(matches[1] || matches[3], 10)) : null;
   }
 

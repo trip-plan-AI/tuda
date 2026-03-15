@@ -103,9 +103,8 @@ export class ProviderSearchService {
     }
 
     // 3) TRI-108-6: If food focus detected, supplement with Photon + AI
-    const hasFoodFocus = intent.categories.some(
-      (cat) =>
-        /cafe|кафе|restaurant|ресторан|bar|бар|food|еда|coffee|кофе/i.test(cat),
+    const hasFoodFocus = intent.categories.some((cat) =>
+      /cafe|кафе|restaurant|ресторан|bar|бар|food|еда|coffee|кофе/i.test(cat),
     );
 
     let photonRaw: PoiItem[] = [];
@@ -148,7 +147,7 @@ export class ProviderSearchService {
         `[ProviderSearch] TRI-108-6 DEBUG: Total POIs=${allFoodPois.length}, Food POIs=${allFood}`,
       );
       this.logger.log(
-        `[ProviderSearch] TRI-108-6 DEBUG: Breakdown - Kudago food=${kudagoRaw.filter(p => p.category === 'restaurant' || p.category === 'cafe').length}, Overpass food=${overpassRaw.filter(p => p.category === 'restaurant' || p.category === 'cafe').length}, Photon food=${photonRaw.filter(p => p.category === 'restaurant' || p.category === 'cafe').length}`,
+        `[ProviderSearch] TRI-108-6 DEBUG: Breakdown - Kudago food=${kudagoRaw.filter((p) => p.category === 'restaurant' || p.category === 'cafe').length}, Overpass food=${overpassRaw.filter((p) => p.category === 'restaurant' || p.category === 'cafe').length}, Photon food=${photonRaw.filter((p) => p.category === 'restaurant' || p.category === 'cafe').length}`,
       );
 
       if (allFood < 2) {
@@ -163,7 +162,7 @@ export class ProviderSearchService {
 
           if (aiGeneratedFood.length > 0) {
             this.logger.log(
-              `[ProviderSearch] ✨ AI VENUES: ${aiGeneratedFood.map(p => `${p.name}(${p.coordinates.lat.toFixed(2)},${p.coordinates.lon.toFixed(2)})`).join(', ')}`,
+              `[ProviderSearch] ✨ AI VENUES: ${aiGeneratedFood.map((p) => `${p.name}(${p.coordinates.lat.toFixed(2)},${p.coordinates.lon.toFixed(2)})`).join(', ')}`,
             );
             fallbacks.push('AI_GENERATED_FOOD_RECOMMENDATIONS');
           } else {
@@ -506,7 +505,7 @@ export class ProviderSearchService {
           continue;
         }
 
-        const data = (await response.json()) as any;
+        const data = await response.json();
         const features = data.features || [];
         this.logger.log(
           `[Photon] Query "${query}" returned ${features.length} features`,
@@ -572,7 +571,8 @@ export class ProviderSearchService {
     if (/паста|итальян|пицц/.test(preferences)) cuisineHints = 'Italian';
     if (/азиат|вьетнам|тайск|китай|суши/.test(preferences))
       cuisineHints = 'Asian (Vietnamese, Thai, Chinese, Japanese)';
-    if (/франц|фран|европей/.test(preferences)) cuisineHints = 'French European';
+    if (/франц|фран|европей/.test(preferences))
+      cuisineHints = 'French European';
     if (/мекс|испан/.test(preferences)) cuisineHints = 'Mexican Spanish';
 
     let atmosphereHints = 'popular, well-reviewed';
@@ -586,8 +586,9 @@ export class ProviderSearchService {
       atmosphereHints = 'cozy, comfortable, family-friendly';
 
     let priceGuidance = 'mid-range (moderate price)';
-    const perPersonPerDay = (intent.budget_per_day ?? 0) / (intent.party_size || 1);
-    
+    const perPersonPerDay =
+      (intent.budget_per_day ?? 0) / (intent.party_size || 1);
+
     if (perPersonPerDay > 0) {
       if (perPersonPerDay < 1500)
         priceGuidance = 'budget (cheap, street food, casual)';
@@ -603,12 +604,14 @@ export class ProviderSearchService {
       contextGuidance =
         'match nightlife vibe - fun, lively, good cocktails/wine, energetic';
     if (/природ|парк|пешком|актив|спорт/.test(preferences))
-      contextGuidance = 'match outdoor activity vibe - casual, comfortable, energy-boosting';
+      contextGuidance =
+        'match outdoor activity vibe - casual, comfortable, energy-boosting';
     if (/семья|дети|малыш/.test(preferences))
       contextGuidance =
         'family-friendly - diverse menu, accommodating for kids, relaxed';
     if (/романт|свидани|влюблен|пара/.test(preferences))
-      contextGuidance = 'romantic - intimate, candle-lit, special occasion vibe';
+      contextGuidance =
+        'romantic - intimate, candle-lit, special occasion vibe';
 
     const restaurantCount = Math.min(
       5,
@@ -645,8 +648,8 @@ Return ONLY valid JSON (no markdown):
 }`;
 
     try {
-      const response = await this.llmClientService.client.chat.completions.create(
-        {
+      const response =
+        await this.llmClientService.client.chat.completions.create({
           model: this.llmClientService.model,
           response_format: { type: 'json_object' },
           temperature: 0.7,
@@ -661,8 +664,7 @@ Return ONLY valid JSON (no markdown):
               content: prompt,
             },
           ],
-        },
-      );
+        });
 
       const rawText = response.choices[0]?.message?.content ?? '{}';
       const parsed = JSON.parse(rawText) as {
@@ -682,7 +684,7 @@ Return ONLY valid JSON (no markdown):
       );
       if (restaurants.length > 0) {
         this.logger.log(
-          `[AI_FOOD] LLM Suggestions: ${restaurants.map(r => `${r.name}(${r.cuisine})`).join(', ')}`,
+          `[AI_FOOD] LLM Suggestions: ${restaurants.map((r) => `${r.name}(${r.cuisine})`).join(', ')}`,
         );
       }
 
@@ -696,9 +698,7 @@ Return ONLY valid JSON (no markdown):
 
           // Strategy 1: Exact name search
           const exactQuery = `${r.name}, ${intent.city}`;
-          this.logger.debug(
-            `[AI_FOOD_GEOCODE] Strategy 1: "${exactQuery}"`,
-          );
+          this.logger.debug(`[AI_FOOD_GEOCODE] Strategy 1: "${exactQuery}"`);
           suggestions = await this.geosearch.suggest(exactQuery);
           if (suggestions && suggestions.length > 0) {
             successStrategy = 'exact';
@@ -707,9 +707,7 @@ Return ONLY valid JSON (no markdown):
           // Strategy 2: Fuzzy matching by cuisine type (if exact didn't work well)
           if (!suggestions || suggestions.length === 0) {
             const fuzzyQuery = `${r.cuisine} restaurant, ${intent.city}`;
-            this.logger.debug(
-              `[AI_FOOD_GEOCODE] Strategy 2: "${fuzzyQuery}"`,
-            );
+            this.logger.debug(`[AI_FOOD_GEOCODE] Strategy 2: "${fuzzyQuery}"`);
             suggestions = await this.geosearch.suggest(fuzzyQuery);
             if (suggestions && suggestions.length > 0) {
               successStrategy = 'fuzzy';
@@ -734,10 +732,7 @@ Return ONLY valid JSON (no markdown):
             // Map price_segment to valid PriceSegment
             let priceSegment: 'free' | 'budget' | 'mid' | 'premium' = 'mid';
             if (r.price_segment === 'budget') priceSegment = 'budget';
-            if (
-              r.price_segment === 'luxury' ||
-              r.price_segment === 'premium'
-            )
+            if (r.price_segment === 'luxury' || r.price_segment === 'premium')
               priceSegment = 'premium';
 
             const poi: PoiItem = {
@@ -773,11 +768,8 @@ Return ONLY valid JSON (no markdown):
 
       return results;
     } catch (error: unknown) {
-      const errorMsg =
-        error instanceof Error ? error.message : String(error);
-      this.logger.error(
-        `[AI_FOOD] ❌ Food generation error: ${errorMsg}`,
-      );
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`[AI_FOOD] ❌ Food generation error: ${errorMsg}`);
       throw error;
     }
   }

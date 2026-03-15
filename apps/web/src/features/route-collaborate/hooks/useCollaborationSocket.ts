@@ -76,7 +76,7 @@ export function useCollaborationSocket(tripId: string) {
     });
     socket.on(
       'point:updated',
-      ({ point_id, ...patch }: { point_id: string } & Record<string, unknown>) => {
+      ({ point_id, trip_id: _trip_id, ...patch }: { point_id: string; trip_id?: string } & Record<string, unknown>) => {
         updatePoint(point_id, patch as Parameters<typeof updatePoint>[1]);
       },
     );
@@ -125,6 +125,7 @@ export function useCollaborationSocket(tripId: string) {
       socket.off('point:updated');
       socket.off('point:reorder');
       socket.off('trip:update');
+      socket.off('trip:refresh');
       socket.off('trip_version_updated');
     };
   }, [tripId]);

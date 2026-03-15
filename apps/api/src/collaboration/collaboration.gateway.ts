@@ -47,14 +47,20 @@ export class CollaborationGateway
 
   onModuleInit() {
     this.eventsService.events$.subscribe((event) => {
-      console.log(`[CollaborationGateway] Received internal event: ${event.type} for trip ${event.tripId}`);
+      console.log(
+        `[CollaborationGateway] Received internal event: ${event.type} for trip ${event.tripId}`,
+      );
       if (!this.server) {
-        console.warn(`[CollaborationGateway] WebSocket server not initialized, cannot broadcast event ${event.type}`);
+        console.warn(
+          `[CollaborationGateway] WebSocket server not initialized, cannot broadcast event ${event.type}`,
+        );
         return;
       }
 
       if (event.type === 'trip:refresh') {
-        this.server.to(`trip_${event.tripId}`).emit('trip:refresh', { trip_id: event.tripId });
+        this.server
+          .to(`trip_${event.tripId}`)
+          .emit('trip:refresh', { trip_id: event.tripId });
       } else if (event.type === 'ai:update') {
         this.server.to(`trip_${event.tripId}`).emit('ai:update', {
           trip_id: event.tripId,
@@ -109,15 +115,18 @@ export class CollaborationGateway
       .to(`trip_${tripId}`)
       .emit('collaborator:removed', { tripId, userId });
     // Notify the removed user personally so they can remove the trip from their list
-    this.server
-      .to(`user_${userId}`)
-      .emit('trip:removed', { tripId });
+    this.server.to(`user_${userId}`).emit('trip:removed', { tripId });
   }
 
   /** Send invite notification directly to the invited user */
   notifyInviteReceived(
     userId: string,
-    payload: { tripId: string; tripTitle: string; inviterName: string; invitationId: string },
+    payload: {
+      tripId: string;
+      tripTitle: string;
+      inviterName: string;
+      invitationId: string;
+    },
   ) {
     this.server.to(`user_${userId}`).emit('invite:received', {
       id: payload.invitationId,
@@ -171,7 +180,7 @@ export class CollaborationGateway
     // DB already saved via REST — just broadcast to other collaborators
     _client
       .to(`trip_${data.trip_id}`)
-      .emit('point:added', { point: data.point });
+      .emit('point:added', { trip_id: data.trip_id, point: data.point });
   }
 
   @SubscribeMessage('point:move')
@@ -186,6 +195,7 @@ export class CollaborationGateway
       lon: data.lon,
     });
     this.server.to(`trip_${data.trip_id}`).emit('point:moved', {
+      trip_id: data.trip_id,
       point_id: data.point_id,
       coords: { lat: data.lat, lon: data.lon },
     });
@@ -198,9 +208,10 @@ export class CollaborationGateway
   ) {
     await this.checkAccess(_client.data.userId, data.trip_id);
     // DB already saved via REST — just broadcast to other collaborators
-    _client
-      .to(`trip_${data.trip_id}`)
-      .emit('point:deleted', { point_id: data.point_id });
+    _client.to(`trip_${data.trip_id}`).emit('point:deleted', {
+      trip_id: data.trip_id,
+      point_id: data.point_id,
+    });
   }
 
   @SubscribeMessage('point:update')
@@ -212,7 +223,7 @@ export class CollaborationGateway
     await this.checkAccess(client.data.userId, data.trip_id);
     const { trip_id, ...rest } = data;
     // DB already saved via HTTP PATCH — just broadcast to other collaborators
-    client.to(`trip_${trip_id}`).emit('point:updated', rest);
+    client.to(`trip_${trip_id}`).emit('point:updated', { trip_id, ...rest });
   }
 
   @SubscribeMessage('point:reorder')
@@ -241,24 +252,35 @@ export class CollaborationGateway
 
   emitTripUpdate(tripId: string, patch: Record<string, unknown> = {}) {
     if (!this.server) return;
-    this.server.to(`trip_${tripId}`).emit('trip:update', { trip_id: tripId, ...patch });
+    this.server
+      .to(`trip_${tripId}`)
+      .emit('trip:update', { trip_id: tripId, ...patch });
   }
 
-  emitTripVersionUpdated(tripId: string, data: { version: number; points: any[]; mutations?: any[] }) {
+  emitTripVersionUpdated(
+    tripId: string,
+    data: { version: number; points: any[]; mutations?: any[] },
+  ) {
     if (!this.server) return;
     this.server.to(`trip_${tripId}`).emit('trip_version_updated', data);
   }
 
   emitTripRefresh(tripId: string) {
-    console.log(`[CollaborationGateway] Emitting trip:refresh for trip ${tripId}, server initialized: ${!!this.server}`);
+    console.log(
+      `[CollaborationGateway] Emitting trip:refresh for trip ${tripId}, server initialized: ${!!this.server}`,
+    );
     if (!this.server) return;
     this.server.to(`trip_${tripId}`).emit('trip:refresh', { trip_id: tripId });
   }
 
   emitAiUpdate(tripId: string, sessionId: string) {
-    console.log(`[CollaborationGateway] Emitting ai:update for trip ${tripId}, session ${sessionId}`);
+    console.log(
+      `[CollaborationGateway] Emitting ai:update for trip ${tripId}, session ${sessionId}`,
+    );
     if (!this.server) return;
-    this.server.to(`trip_${tripId}`).emit('ai:update', { trip_id: tripId, session_id: sessionId });
+    this.server
+      .to(`trip_${tripId}`)
+      .emit('ai:update', { trip_id: tripId, session_id: sessionId });
   }
 
   @SubscribeMessage('cursor:move')

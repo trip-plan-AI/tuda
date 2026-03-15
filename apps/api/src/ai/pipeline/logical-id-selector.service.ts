@@ -93,7 +93,9 @@ export class LogicalIdSelectorService {
 
     const foodMode = input.food_policy.food_mode;
     const foodCategories = ['restaurant', 'cafe'];
-    const foodCount = input.candidates.filter((c) => foodCategories.includes(c.category)).length;
+    const foodCount = input.candidates.filter((c) =>
+      foodCategories.includes(c.category),
+    ).length;
 
     // Explicit food quota based on food_mode
     let foodRule: string;
@@ -104,7 +106,8 @@ export class LogicalIdSelectorService {
       const minFood = Math.max(1, Math.floor(target * 0.3));
       foodRule = `Включи минимум ${minFood} мест с category=restaurant или cafe (food_mode=default).`;
     } else if (foodMode === 'none') {
-      foodRule = 'НЕ включай места с category=restaurant или cafe (food_mode=none).';
+      foodRule =
+        'НЕ включай места с category=restaurant или cafe (food_mode=none).';
     } else {
       foodRule = 'Выбирай разнообразные места.';
     }

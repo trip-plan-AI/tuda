@@ -42,7 +42,8 @@ export class AiSessionsService {
         const allPoints = (parsed.days ?? []).flatMap((d) => d.points ?? []);
         const first = allPoints[0]?.poi?.name?.trim();
         const last = allPoints[allPoints.length - 1]?.poi?.name?.trim();
-        if (first && last && first !== last) return `${first} → ${last}`.slice(0, 60);
+        if (first && last && first !== last)
+          return `${first} → ${last}`.slice(0, 60);
         if (first) return first.slice(0, 60);
       } catch {
         // not JSON
@@ -55,7 +56,8 @@ export class AiSessionsService {
     );
     const first = allPoints[0]?.poi?.name?.trim();
     const last = allPoints[allPoints.length - 1]?.poi?.name?.trim();
-    if (first && last && first !== last) return `${first} → ${last}`.slice(0, 60);
+    if (first && last && first !== last)
+      return `${first} → ${last}`.slice(0, 60);
     if (first) return first.slice(0, 60);
     return 'Новый чат';
   }

@@ -589,8 +589,13 @@ export function TripCard({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              useTripStore.getState().setCurrentTrip(trip);
-              router.push('/planner');
+              if (trip.id && !trip.id.startsWith('guest-')) {
+                // TRI-114: use robust applyTripId flow to handle points loading and conflicts
+                router.push(`/planner?applyTripId=${encodeURIComponent(trip.id)}`);
+              } else {
+                useTripStore.getState().setCurrentTrip(trip);
+                router.push('/planner');
+              }
             }}
             className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center
                        text-slate-400 hover:bg-brand-sky hover:text-white

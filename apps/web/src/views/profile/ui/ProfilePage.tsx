@@ -182,9 +182,13 @@ export function ProfilePage() {
 
   useCollaborationSocket(activeRoute?.id ?? '');
 
-  // Selected trip for map display
+  // Selected trip for map display.
+  // When the selected card is the active route, use displayedActiveRoute so live
+  // socket updates (currentTrip.points) are reflected on the map immediately.
   const selectedTrip = selectedTripId
-    ? (allTrips.find((t) => t.id === selectedTripId) ?? null)
+    ? selectedTripId === activeRoute?.id
+      ? (displayedActiveRoute ?? allTrips.find((t) => t.id === selectedTripId) ?? null)
+      : (allTrips.find((t) => t.id === selectedTripId) ?? null)
     : (displayedActiveRoute ?? travelTrips[0] ?? null);
 
   // Feed points to PersistentMapShell (right aside in layout)
@@ -278,11 +282,13 @@ export function ProfilePage() {
       );
     };
 
+    // point:updated payload: { trip_id, point_id, ...fields }
     const onPointUpdate = ({
       trip_id,
       point_id,
       ...patch
     }: { trip_id: string; point_id: string } & any) => {
+      if (!trip_id) return;
       if (trip_id === currentTrip.id) {
         const currentPoints = useTripStore.getState().currentTrip?.points || [];
         setPoints(currentPoints.map((p) => (p.id === point_id ? { ...p, ...patch } : p)));
@@ -299,7 +305,34 @@ export function ProfilePage() {
       );
     };
 
-    const onPointAdd = ({ trip_id, ...point }: { trip_id: string } & any) => {
+    // point:moved payload: { trip_id, point_id, coords: { lat, lon } }
+    const onPointMoved = ({
+      trip_id,
+      point_id,
+      coords,
+    }: { trip_id: string; point_id: string; coords: { lat: number; lon: number } }) => {
+      if (!trip_id) return;
+      if (trip_id === currentTrip.id) {
+        const currentPoints = useTripStore.getState().currentTrip?.points || [];
+        setPoints(currentPoints.map((p) => (p.id === point_id ? { ...p, lat: coords.lat, lon: coords.lon } : p)));
+      }
+
+      setAllTrips((prev) =>
+        prev.map((t) => {
+          if (t.id !== trip_id || !t.points) return t;
+          return {
+            ...t,
+            points: t.points.map((p) =>
+              p.id === point_id ? { ...p, lat: coords.lat, lon: coords.lon } : p,
+            ),
+          };
+        }),
+      );
+    };
+
+    // point:added payload: { trip_id, point }
+    const onPointAdd = ({ trip_id, point }: { trip_id: string; point: any }) => {
+      if (!trip_id) return;
       if (trip_id === currentTrip.id) {
         addPoint(point);
       }
@@ -312,7 +345,9 @@ export function ProfilePage() {
       );
     };
 
+    // point:deleted payload: { trip_id, point_id }
     const onPointDelete = ({ trip_id, point_id }: { trip_id: string; point_id: string }) => {
+      if (!trip_id) return;
       if (trip_id === currentTrip.id) {
         removePoint(point_id);
       }
@@ -334,7 +369,7 @@ export function ProfilePage() {
 
     socket.on('point:reorder', onPointReorder);
     socket.on('point:updated', onPointUpdate);
-    socket.on('point:moved', onPointUpdate);
+    socket.on('point:moved', onPointMoved);
     socket.on('point:added', onPointAdd);
     socket.on('point:deleted', onPointDelete);
     socket.on('trip:update', onTripUpdate);
@@ -342,7 +377,7 @@ export function ProfilePage() {
     return () => {
       socket.off('point:reorder', onPointReorder);
       socket.off('point:updated', onPointUpdate);
-      socket.off('point:moved', onPointUpdate);
+      socket.off('point:moved', onPointMoved);
       socket.off('point:added', onPointAdd);
       socket.off('point:deleted', onPointDelete);
       socket.off('trip:update', onTripUpdate);

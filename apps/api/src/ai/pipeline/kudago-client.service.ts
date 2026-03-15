@@ -41,14 +41,16 @@ export class KudagoClientService {
       // TRI-108-1: Request food categories if food intent detected
       const url = new URL(`${this.baseUrl}/places/`);
       url.searchParams.set('location', cityCode);
-      url.searchParams.set('fields', 'id,title,address,coords,is_closed,categories');
+      url.searchParams.set(
+        'fields',
+        'id,title,address,coords,is_closed,categories',
+      );
       url.searchParams.set('text_format', 'text');
       url.searchParams.set('page_size', '100');
 
       // TRI-108-1: If food is in categories, request food-related places
-      const foodCategories = intent.categories.filter(
-        (cat) =>
-          /cafe|кафе|restaurant|ресторан|bar|бар|food|еда|coffee|кофе/i.test(cat),
+      const foodCategories = intent.categories.filter((cat) =>
+        /cafe|кафе|restaurant|ресторан|bar|бар|food|еда|coffee|кофе/i.test(cat),
       );
       if (foodCategories.length > 0) {
         url.searchParams.set('categories', 'cafe,restaurant,bar');
