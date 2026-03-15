@@ -26,7 +26,7 @@
     "db:seed": "tsx src/db/seed.ts",
     "db:download-photos": "tsx src/db/download-tour-photos.ts",
     "db:load-geonames": "tsx src/db/load-geonames.ts",
-    "cleanup:images": "tsx src/trips/cli/cleanup-images.ts"
+    "clear": "tsx src/trips/cli/cleanup-images.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
