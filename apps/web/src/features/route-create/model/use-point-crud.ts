@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTripStore } from '@/entities/trip/model/trip.store';
 import {
   pointsApi,
@@ -98,5 +98,8 @@ export function usePointCrud(tripId: string | undefined) {
     [tripId, reorderPoints],
   );
 
-  return { add, update, updateMany, remove, reorder };
+  return useMemo(
+    () => ({ add, update, updateMany, remove, reorder }),
+    [add, update, updateMany, remove, reorder],
+  );
 }

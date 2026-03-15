@@ -35,7 +35,10 @@ export interface PersistentMapConfig {
   fitKey?: string;
 }
 
-type InternalConfig = PersistentMapConfig & { updatedAt: number };
+interface InternalEntry {
+  config: PersistentMapConfig;
+  updatedAt: number;
+}
 
 interface PersistentMapStore {
   config: PersistentMapConfig | null;
@@ -45,30 +48,25 @@ interface PersistentMapStore {
   setSheetState: (sheetState: MapSheetState) => void;
 }
 
-const registry = new Map<string, InternalConfig>();
+const registry = new Map<string, InternalEntry>();
 
 function pickActiveConfig(): PersistentMapConfig | null {
   const entries = Array.from(registry.values());
   if (entries.length === 0) return null;
 
   entries.sort((a, b) => {
-    if (b.priority !== a.priority) return b.priority - a.priority;
+    if (b.config.priority !== a.config.priority) return b.config.priority - a.config.priority;
     return b.updatedAt - a.updatedAt;
   });
 
-  const top = entries[0];
-  if (!top) return null;
-
-  const { updatedAt, ...config } = top;
-  void updatedAt;
-  return config;
+  return entries[0]?.config ?? null;
 }
 
 export const usePersistentMapStore = create<PersistentMapStore>((set) => ({
   config: null,
   sheetState: 'medium',
   setConfig: (config) => {
-    registry.set(config.source, { ...config, updatedAt: Date.now() });
+    registry.set(config.source, { config, updatedAt: Date.now() });
     set({ config: pickActiveConfig() });
   },
   clearConfig: (source) => {

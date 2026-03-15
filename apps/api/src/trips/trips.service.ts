@@ -119,9 +119,10 @@ export class TripsService {
         ...trip,
         isActive: collab.isActive,
         ownerIsActive: trip.isActive,
+        role: collab.role,
       };
     }
-    return { ...trip, ownerIsActive: trip.isActive };
+    return { ...trip, ownerIsActive: trip.isActive, role: 'owner' as const };
   }
 
   async create(userId: string, dto: CreateTripDto) {

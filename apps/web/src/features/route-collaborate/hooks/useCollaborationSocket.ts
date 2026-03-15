@@ -125,6 +125,7 @@ export function useCollaborationSocket(tripId: string) {
       socket.off('point:updated');
       socket.off('point:reorder');
       socket.off('trip:update');
+      socket.off('trip:refresh');
       socket.off('trip_version_updated');
     };
   }, [tripId]);

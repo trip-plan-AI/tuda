@@ -89,7 +89,6 @@ export function RouteMap({
   readonly = false,
   fitKey,
 }: RouteMapProps) {
-  console.log('[RouteMap] Render. isAddPointMode:', isAddPointMode, 'hasOnMapClick:', !!onMapClick, 'points:', points.length);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const objectsRef = useRef<any[]>([]);
@@ -183,7 +182,7 @@ export function RouteMap({
         justifyContent: 'center',
         boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
         transition: 'all 0.2s ease',
-        zIndex: '1000',
+        zIndex: '2500',
       });
       btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="#4d4d4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3" fill="none" stroke="#4d4d4d" stroke-width="1.5"/></svg>`;
       btn.addEventListener('click', () => onAddPointModeChange?.(!isAddPointModeRef.current));
