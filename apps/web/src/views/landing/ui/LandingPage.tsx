@@ -25,6 +25,7 @@ import type { Trip } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point';
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
 import { useAiQueryStore } from '@/features/ai-query';
+import { useMicrophone, useStreamingText } from '@/shared/hooks';
 import {
   Popover,
   PopoverContent,
@@ -39,6 +40,7 @@ import {
   DialogFooter,
 } from '@/shared/ui';
 import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
+import { MicrophoneButton } from '@/widgets/microphone-button';
 import { env } from '@/shared/config/env';
 
 type Modal = 'login' | 'register' | null;
@@ -171,6 +173,25 @@ export function LandingPage() {
   const points = currentTrip?.points || [];
   const { isAuthenticated } = useAuthStore();
   const [showConfirmOverwrite, setShowConfirmOverwrite] = useState(false);
+
+  // Микрофон для аудиотранскрибирования
+  const {
+    isListening,
+    transcript,
+    interimTranscript,
+    startListening,
+    stopListening,
+    clearTranscript,
+    isSupported: isMicSupported,
+  } = useMicrophone({
+    onTranscriptUpdate: (text) => {
+      setSearchQuery(text);
+    },
+    language: 'ru-RU',
+  });
+
+  // Анимация текста при потоковом вводе
+  const displayText = useStreamingText(searchQuery, { speed: 20 });
 
   // Адаптивный размер textarea, как в исходном прототипе
   useEffect(() => {
@@ -560,7 +581,7 @@ export function LandingPage() {
                   <div className="bg-white rounded-[2.2rem] md:rounded-[3.5rem] flex items-center p-1 md:p-2 pr-2 md:pr-4 focus-within:ring-4 focus-within:ring-brand-blue/10 transition-none">
                     <div className="flex-1 relative group flex items-center">
                       <textarea
-                        value={searchQuery}
+                        value={displayText}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey) {
@@ -572,12 +593,12 @@ export function LandingPage() {
                         rows={inputRows}
                         className="w-full py-2 md:py-4 lg:py-6 !px-6 md:!pl-12 md:!pr-14 lg:!pl-14 bg-transparent outline-none text-slate-800 font-bold text-[clamp(0.875rem,1.5vw,1.25rem)] placeholder:text-slate-400 placeholder:font-normal resize-none overflow-hidden leading-snug md:leading-normal transition-none"
                       />
-                      <button
-                        type="button"
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-brand-blue transition-none"
-                      >
-                        <Mic size={24} />
-                      </button>
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                        <MicrophoneButton
+                          onTranscriptUpdate={(text) => setSearchQuery(text)}
+                          className="w-12 h-12"
+                        />
+                      </div>
                     </div>
                     <Link
                       href="/ai-assistant"
