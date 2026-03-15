@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Mic } from 'lucide-react';
 import { useMicrophone, useAudioAnalyzer } from '@/shared/hooks';
 
@@ -12,6 +12,8 @@ interface MicrophoneButtonProps {
 }
 
 const EQUALIZER_BARS = 8; // Количество столбиков эквалайзера
+const SILENCE_THRESHOLD = 5; // Порог громкости для определения тишины (0-100)
+const SILENCE_TIMEOUT_MS = 5000; // 5 секунд тишины → авто-выключение
 
 export function MicrophoneButton({
   onTranscriptUpdate,
@@ -21,7 +23,6 @@ export function MicrophoneButton({
 }: MicrophoneButtonProps) {
   const {
     isListening,
-    transcript,
     startListening,
     stopListening,
     clearTranscript,
@@ -31,11 +32,24 @@ export function MicrophoneButton({
     onTranscriptUpdate,
     onTranscript,
     language: 'ru-RU',
+    continuous: true, // Непрерывное слушание
   });
 
-  const { frequencies, volume } = useAudioAnalyzer();
+  const { frequencies, volume, startAnalyzing, stopAnalyzing } = useAudioAnalyzer();
+
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [equalizerBars, setEqualizerBars] = useState<number[]>(Array(EQUALIZER_BARS).fill(0));
+
+  // Запускаем анализатор когда появляется mediaStream
+  useEffect(() => {
+    if (mediaStream && isListening) {
+      startAnalyzing(mediaStream);
+    } else {
+      stopAnalyzing();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mediaStream, isListening]);
 
   useEffect(() => {
     if (frequencies && isListening && frequencies.length > 0) {
@@ -50,25 +64,50 @@ export function MicrophoneButton({
     } else {
       setEqualizerBars(Array(EQUALIZER_BARS).fill(0));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [frequencies, isListening]);
+
+  // Авто-выключение микрофона после 5 секунд тишины
+  useEffect(() => {
+    if (!isListening) {
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (volume < SILENCE_THRESHOLD) {
+      if (!silenceTimerRef.current) {
+        silenceTimerRef.current = setTimeout(() => {
+          silenceTimerRef.current = null;
+          stopListening();
+        }, SILENCE_TIMEOUT_MS);
+      }
+    } else {
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [volume, isListening]);
+
+  // Очищаем таймер при размонтировании
+  useEffect(() => {
+    return () => {
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleMicClick = async () => {
     if (isListening) {
       stopListening();
     } else {
       clearTranscript();
-      // Запрашиваем микрофон перед началом прослушивания
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
-        // Закрываем поток после получения доступа (он будет переоткрыт в useMicrophone)
-        stream.getTracks().forEach((track) => track.stop());
-      } catch (err) {
-        console.error('Микрофон недоступен:', err);
-        return;
-      }
-      startListening();
+      await startListening();
     }
   };
 
@@ -92,14 +131,14 @@ export function MicrophoneButton({
     >
       {/* Горизонтальный эквалайзер вместо микрофона при записи */}
       {isListening ? (
-        <div className="relative z-10 flex items-center gap-1 h-8 px-2">
+        <div className="relative z-10 flex items-end justify-center gap-0.5 h-6">
           {equalizerBars.map((height, i) => (
             <div
               key={i}
-              className="w-1.5 bg-gradient-to-t from-brand-yellow to-amber-300 rounded-full transition-all duration-100 ease-out"
+              className="w-1 bg-gradient-to-t from-brand-yellow to-amber-300 rounded-full transition-all duration-75 ease-out"
               style={{
-                height: `${Math.max(12, (height / 100) * 32)}px`,
-                opacity: 1,
+                height: `${Math.max(4, (height / 100) * 24)}px`,
+                opacity: 0.9,
               }}
             />
           ))}
@@ -119,23 +158,6 @@ export function MicrophoneButton({
               isListening ? 'text-white animate-pulse' : 'text-slate-300 hover:text-brand-yellow'
             }`}
           />
-        </div>
-      )}
-
-      {/* Индикатор громкости */}
-      {isListening && (
-        <div className="absolute -bottom-2 -right-2 flex flex-col gap-0.5">
-          {/* Уровень громкости в виде кружочков */}
-          {[0, 33, 66].map((threshold) => (
-            <div
-              key={threshold}
-              className={`w-1.5 h-1.5 rounded-full transition-all duration-150 ${
-                volume > threshold
-                  ? 'bg-brand-yellow shadow-lg shadow-brand-yellow/50'
-                  : 'bg-slate-400/30'
-              }`}
-            />
-          ))}
         </div>
       )}
     </button>
