@@ -90,7 +90,11 @@ interface AiQueryStore {
   // TRI-104: применяет AI-план в Planner-trip и возвращает tripId для навигации/подсветки UI.
   // MERGE-NOTE: контракт используется в AIAssistantPage и MessageBubble, не менять тип без синхронных правок UI.
   applyPlanToCurrentTrip: (messageId: string) => Promise<string | null>;
-  sendMutationQuery: (query: string, tripId: string, currentPointsContext?: string) => Promise<void>;
+  sendMutationQuery: (
+    query: string,
+    tripId: string,
+    currentPointsContext?: string,
+  ) => Promise<void>;
   // TRI-104: ищет или создаёт AI-сессию для tripId при входе из Planner по кнопке "Редактировать с AI".
   // MERGE-NOTE: при изменении backend response обновите эту сигнатуру и маппинг ниже.
   openOrCreateSessionFromTrip: (tripId: string) => Promise<string | null>;
@@ -98,7 +102,7 @@ interface AiQueryStore {
   switchSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
-  clearChat: () => void;
+  clearChat: (keepLastPlan?: boolean) => void;
 }
 
 interface ChatSession {
@@ -160,6 +164,7 @@ function toRoutePoints(routePlan: ChatRoutePlan, tripId: string): RoutePoint[] {
           imageUrl: poi.image_url ?? null,
           address: poi.address,
           order: point.order,
+          duration: point.visit_duration_min ?? 0,
           createdAt: new Date().toISOString(),
         },
       ];
@@ -218,7 +223,7 @@ function mapStoredMessagesToChatMessages(
         return {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: `Составил маршрут по городу ${routePlan.city} на ${routePlan.days.length} дн.`,
+          content: `Маршрут по городу ${routePlan.city} на ${routePlan.days.length} дн.`,
           routePlan,
           timestamp: new Date().toISOString(),
         } satisfies ChatMessage;
@@ -321,10 +326,18 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           return acc;
         }, {});
 
-        const mergedSessions = {
-          ...remoteSessions,
-          ...localTransientSessions,
-        };
+        // Merge remote sessions with local transient sessions, but filter out empty drafts
+        // if we have real sessions from the server (prevents chat duplication/cloning)
+        const mergedSessions = { ...remoteSessions };
+
+        Object.values(localTransientSessions).forEach(localSession => {
+          // Only keep empty local drafts if we have NO remote sessions
+          // Or keep non-empty drafts (ones with messages)
+          const isCompletelyEmptyDraft = localSession.sessionId === null && localSession.messages.length === 0;
+          if (!isCompletelyEmptyDraft || Object.keys(remoteSessions).length === 0) {
+            mergedSessions[localSession.id] = localSession;
+          }
+        });
 
         // TRI-106 / MERGE-GUARD
         // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
@@ -427,7 +440,13 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
 
           const nextSessions = { ...state.sessions };
           if (activeId !== promotedSession.id) {
-            delete nextSessions[activeId];
+            const { [activeId]: _, ...restSessions } = nextSessions;
+            restSessions[promotedSession.id] = promotedSession;
+            return {
+              sessions: restSessions,
+              activeSessionId: promotedSession.id,
+              ...syncLegacyFields(restSessions, promotedSession.id),
+            };
           }
           nextSessions[promotedSession.id] = promotedSession;
 
@@ -460,8 +479,8 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         id: crypto.randomUUID(),
         role: 'assistant',
         content:
-          `Составил маршрут по городу ${response.route_plan.city} ` +
-          `на ${response.route_plan.days.length} дн.${fallbackHint(response.meta)}`,
+          `Маршрут по городу ${response.route_plan.city} ` +
+          `на ${response.route_plan.days.length} дн.`,
         routePlan: response.route_plan,
         meta: response.meta,
         timestamp: new Date().toISOString(),
@@ -483,9 +502,10 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           updatedAt: new Date().toISOString(),
         };
 
-        const nextSessions = { ...state.sessions };
+        let nextSessions = { ...state.sessions };
         if (activeSession.id !== persistedSessionId) {
-          delete nextSessions[activeSession.id];
+          const { [activeSession.id]: _, ...restSessions } = nextSessions;
+          nextSessions = restSessions;
         }
         nextSessions[persistedSessionId] = nextSession;
 
@@ -527,9 +547,10 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           updatedAt: new Date().toISOString(),
         };
 
-        const nextSessions = { ...state.sessions };
+        let nextSessions = { ...state.sessions };
         if (activeSession.id !== nextSession.id) {
-          delete nextSessions[activeSession.id];
+          const { [activeSession.id]: _, ...restSessions } = nextSessions;
+          nextSessions = restSessions;
         }
         nextSessions[nextSession.id] = nextSession;
 
@@ -565,6 +586,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         [activeId]: {
           ...session,
           messages: [...session.messages, userMessage],
+          updatedAt: new Date().toISOString(),
         },
       };
       return {
@@ -599,9 +621,8 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       const aiMessage: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: pointCount === 0
-          ? `Маршрут очищен.`
-          : `Я обновил маршрут согласно вашему запросу.`,
+        content:
+          pointCount === 0 ? `Маршрут очищен.` : `Я обновил маршрут согласно вашему запросу.`,
         routePlan: pointCount > 0 ? response.route_plan : undefined,
         timestamp: new Date().toISOString(),
       };
@@ -612,10 +633,12 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         const tripState = useTripStore.getState();
         if (tripState.currentTrip?.id === tripId) {
           useTripStore.setState((s) => ({
-            currentTrip: s.currentTrip ? {
-              ...s.currentTrip,
-              points: response.points,
-            } : null,
+            currentTrip: s.currentTrip
+              ? {
+                  ...s.currentTrip,
+                  points: response.points,
+                }
+              : null,
           }));
         }
       }
@@ -629,6 +652,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           [activeId]: {
             ...session,
             messages: [...session.messages, aiMessage],
+            updatedAt: new Date().toISOString(),
           },
         };
         return {
@@ -637,10 +661,9 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           ...syncLegacyFields(nextSessions, activeId),
         };
       });
-
     } catch (error) {
       console.error(error);
-      
+
       const errorMessage: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -657,6 +680,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           [activeId]: {
             ...session,
             messages: [...session.messages, errorMessage],
+            updatedAt: new Date().toISOString(),
           },
         };
         return {
@@ -670,50 +694,15 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
 
   applyPlanToCurrentTrip: (messageId) => {
     // TRI-104 / UX-SAFE-APPLY:
-    // Задача: запретить «тихое» обновление маршрута из AI-чата после первичного применения.
-    // Функция: этот метод разрешает запись в БД только один раз (когда session.tripId ещё не привязан).
-    // Если убрать правило ниже, кнопка из чата снова начнёт перезаписывать маршрут в БД без
-    // явного подтверждения в Planner, что ломает продуктовый сценарий и повышает риск потери правок.
-    // MERGE-NOTE: при конфликтах всегда сохраняйте инвариант:
-    // "first apply in chat -> create/link trip", "next applies -> open Planner for explicit decision".
+    // Задача: применить AI-план в маршрут на каждый клик "Применить", включая повторные применения.
+    // Функция: всегда отправляем apply API даже для связанного чата, чтобы обновить точки.
     const { activeSessionId, sessions } = get();
     const activeSession = activeSessionId ? sessions[activeSessionId] : null;
     const message = activeSession?.messages.find((item) => item.id === messageId);
 
     if (!activeSession?.sessionId || !message?.routePlan) return Promise.resolve(null);
 
-    if (activeSession.tripId) {
-      // TRI-104 / LINKED-CHAT-DRAFT:
-      // Задача: для уже связанного чата помечать выбранную AI-версию как актуальную,
-      // но НЕ отправлять update в БД.
-      // Функция: обновляем lastAppliedPlanMessageId локально, чтобы UI показал переход в Planner.
-      // Если убрать этот блок, пользователь не увидит корректный CTA/состояние "версия выбрана",
-      // а логика перехода по draftMessageId станет непредсказуемой при слияниях.
-      set((state) => {
-        if (!state.activeSessionId) return {};
-        const targetSession = state.sessions[state.activeSessionId];
-        if (!targetSession) return {};
-
-        const nextSession: ChatSession = {
-          ...targetSession,
-          lastAppliedPlanMessageId: messageId,
-          updatedAt: new Date().toISOString(),
-        };
-
-        const nextSessions = {
-          ...state.sessions,
-          [nextSession.id]: nextSession,
-        };
-
-        return {
-          sessions: nextSessions,
-          ...syncLegacyFields(nextSessions, state.activeSessionId),
-        };
-      });
-
-      return Promise.resolve(activeSession.tripId);
-    }
-
+    // Всегда вызываем API для применения плана (создание новой trip или обновление существующей)
     return api
       .post<ApplySessionPlanResponse>(`/ai/sessions/${activeSession.sessionId}/apply`, {
         message_id: messageId,
@@ -772,7 +761,14 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       const mappedMessages = mapStoredMessagesToChatMessages(sessionDetails.messages);
 
       set((state) => {
-        const baseSession = state.sessions[response.session_id] ?? {
+        // Удаляем все пустые сессии, чтобы они не дублировались и не "висели" рядом
+        const nextSessions = Object.fromEntries(
+          Object.entries({ ...state.sessions }).filter(
+            ([key, session]) => !(session.messages.length === 0 && key !== response.session_id),
+          ),
+        );
+
+        const baseSession = nextSessions[response.session_id] ?? {
           id: response.session_id,
           title: state.sessions[state.activeSessionId ?? '']?.title ?? 'Маршрут',
           tripId: response.trip_id,
@@ -783,18 +779,16 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           updatedAt: new Date().toISOString(),
         };
 
-        const nextSessions = {
-          ...state.sessions,
-          [response.session_id]: {
-            ...baseSession,
-            tripId: response.trip_id,
-            sessionId: response.session_id,
-            messages: mappedMessages,
-            // updatedAt обновляем только если сообщения действительно изменились
-            updatedAt: JSON.stringify(baseSession.messages) !== JSON.stringify(mappedMessages) 
-              ? new Date().toISOString() 
+        nextSessions[response.session_id] = {
+          ...baseSession,
+          tripId: response.trip_id,
+          sessionId: response.session_id,
+          messages: mappedMessages,
+          // updatedAt обновляем только если сообщения действительно изменились
+          updatedAt:
+            JSON.stringify(baseSession.messages) !== JSON.stringify(mappedMessages)
+              ? new Date().toISOString()
               : baseSession.updatedAt,
-          },
         };
 
         return {
@@ -811,9 +805,35 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
   },
 
   createNewSession: (tripId = null) => {
-    const session = createSession(tripId);
+    let targetSessionId = '';
 
     set((state) => {
+      // Ищем пустой чат с названием "Новый чат"
+      const emptySession = Object.values(state.sessions).find((s) => 
+        s.messages.length === 0 && s.title === 'Новый чат'
+      );
+
+      if (emptySession) {
+        targetSessionId = emptySession.id;
+        const nextSessions = {
+          ...state.sessions,
+          [emptySession.id]: {
+            ...emptySession,
+            tripId: tripId ?? emptySession.tripId,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+        return {
+          sessions: nextSessions,
+          activeSessionId: emptySession.id,
+          isLoading: false,
+          ...syncLegacyFields(nextSessions, emptySession.id),
+        };
+      }
+
+      const session = createSession(tripId);
+      targetSessionId = session.id;
+
       const nextSessions = {
         ...state.sessions,
         [session.id]: session,
@@ -827,7 +847,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       };
     });
 
-    return session.id;
+    return targetSessionId;
   },
 
   switchSession: async (nextSessionId) => {
@@ -854,9 +874,6 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           const nextSession: ChatSession = {
             ...freshTarget,
             messages: mappedMessages,
-            // Не обновляем updatedAt при загрузке истории —
-            // это вызывало пересортировку sessionsList и визуальное моргание
-            justCleared: undefined,
           };
 
           const nextSessions = {
@@ -902,8 +919,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     set((state) => {
       if (!state.sessions[targetSessionId]) return {};
 
-      const nextSessions = { ...state.sessions };
-      delete nextSessions[targetSessionId];
+      const { [targetSessionId]: _, ...nextSessions } = { ...state.sessions };
 
       const fallbackSession = createSession();
       const sessionIds = Object.keys(nextSessions);
@@ -924,7 +940,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     });
   },
 
-  clearChat: async () => {
+  clearChat: async (keepLastPlan = undefined) => {
     const activeId = get().activeSessionId;
     const activeSession = activeId ? get().sessions[activeId] : null;
     if (!activeId || !activeSession?.sessionId) return;
@@ -932,7 +948,8 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     // TRI-104: Если в маршруте есть точки, просим бэкенд оставить последнее сообщение с планом.
     // Если точек нет — чистим всё.
     const tripState = useTripStore.getState();
-    const hasPoints = (tripState.currentTrip?.points?.length ?? 0) > 0;
+    // Если keepLastPlan не определен, используем старую логику
+    const hasPoints = keepLastPlan ?? ((tripState.currentTrip?.points?.length ?? 0) > 0);
 
     try {
       // Вызываем бэкенд для очистки сообщений
@@ -997,7 +1014,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       return {
         sessions: {
           ...state.sessions,
-          [targetSessionId]: { ...session, title },
+          [targetSessionId]: { ...session, title, updatedAt: new Date().toISOString() },
         },
       };
     });

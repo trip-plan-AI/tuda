@@ -30,6 +30,8 @@ export interface PersistentMapConfig {
   ) => void;
   onRouteInfoLoading?: (loading: boolean) => void;
   onAffectedSegmentsChange?: (indices: Set<number>) => void;
+  onPointClick?: (pointId: string) => void;
+  selectedDays?: string[];
   source: string;
   priority: number;
   fitKey?: string;

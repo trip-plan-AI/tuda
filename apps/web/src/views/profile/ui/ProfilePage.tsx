@@ -81,15 +81,12 @@ export function ProfilePage() {
   const scrollRafRef = useRef<number | null>(null);
 
   const evaluateScrollState = useCallback(() => {
-    const container =
-      activeTab === 'saved' ? savedListScrollRef.current : routePointsScrollRef.current;
-    if (!container) return;
-    const { scrollTop, clientHeight, scrollHeight } = container;
-    const maxScrollTop = Math.max(1, scrollHeight - clientHeight);
-    const progress = Math.max(0, Math.min(1, scrollTop / maxScrollTop));
+    const scrollTop = window.scrollY;
+    const maxScrollTop = document.documentElement.scrollHeight - window.innerHeight;
+    const progress = Math.max(0, Math.min(1, maxScrollTop > 0 ? scrollTop / maxScrollTop : 0));
     setScrollProgress(progress);
-    setShowScrollTop(scrollTop > 10);
-  }, [activeTab]);
+    setShowScrollTop(scrollTop > 50);
+  }, []);
 
   const handleContentScroll = useCallback(() => {
     if (scrollRafRef.current != null) return;
@@ -99,21 +96,22 @@ export function ProfilePage() {
     });
   }, [evaluateScrollState]);
 
+  useEffect(() => {
+    window.addEventListener('scroll', handleContentScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleContentScroll);
+  }, [handleContentScroll]);
+
   const handleScrollToTop = useCallback(() => {
-    const container =
-      activeTab === 'saved' ? savedListScrollRef.current : routePointsScrollRef.current;
-    if (!container) return;
-    const currentTop = container.scrollTop;
+    const currentTop = window.scrollY;
     if (currentTop > 4000) {
-      container.scrollTo({ top: 1200, behavior: 'auto' });
+      window.scrollTo({ top: 1200, behavior: 'auto' });
       window.requestAnimationFrame(() => {
-        const c = activeTab === 'saved' ? savedListScrollRef.current : routePointsScrollRef.current;
-        c?.scrollTo({ top: 0, behavior: 'smooth' });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       });
       return;
     }
-    container.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [activeTab]);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
   const progressDegrees = Math.round(scrollProgress * 360);
 
@@ -162,16 +160,6 @@ export function ProfilePage() {
   }, []);
 
   const activeRoute = allTrips.find((t) => t.isActive);
-
-  // Sync activeRoute into the trip store so WS point events update currentTrip.points
-  useEffect(() => {
-    if (activeRoute && currentTrip?.id !== activeRoute.id) {
-      setCurrentTrip(activeRoute);
-      if (activeRoute.points) {
-        setPoints(activeRoute.points, false);
-      }
-    }
-  }, [activeRoute?.id, activeRoute?.points, setCurrentTrip, setPoints]);
 
   // Prefer currentTrip.points (kept live by WS) when viewing the active route
   const displayedActiveRoute = activeRoute
@@ -533,7 +521,7 @@ export function ProfilePage() {
   };
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[#f0f4f8]">
+    <div className="w-full bg-[#f0f4f8] pb-16">
       <input
         type="file"
         ref={fileInputRef}
@@ -668,7 +656,7 @@ export function ProfilePage() {
       </div>
 
       {/* ── КОНТЕНТ ТАБОВ ── */}
-      <div className="flex-1 relative min-h-0 overflow-hidden flex flex-col">
+      <div className="w-full flex flex-col relative">
         {/* Scroll-to-top button */}
         <div
           className={cn(
@@ -713,11 +701,11 @@ export function ProfilePage() {
           </Button>
         </div>
 
-        {/* Cards area - SCROLLABLE */}
-        <div className="flex-1 min-h-0 flex flex-col">
+        {/* Cards area */}
+        <div className="w-full flex flex-col">
           {activeTab === 'routes' ? (
             isLoadingTrips ? (
-              <div className="px-4 space-y-3 pb-4 pt-3 flex-1 overflow-y-auto">
+              <div className="px-4 space-y-3 pb-4 pt-3 w-full">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
                 ))}
@@ -725,13 +713,7 @@ export function ProfilePage() {
             ) : travelTrips.length > 0 ? (
               <div
                 ref={routePointsScrollRef}
-                onScroll={handleContentScroll}
-                className="px-4 pb-4 pt-3 flex-1 overflow-y-auto
-                  [&::-webkit-scrollbar]:w-1.5
-                  [&::-webkit-scrollbar-track]:bg-transparent
-                  [&::-webkit-scrollbar-thumb]:bg-slate-200
-                  [&::-webkit-scrollbar-thumb]:rounded-full
-                  [&::-webkit-scrollbar-thumb:hover]:bg-slate-300"
+                className="px-4 pb-4 pt-3 w-full"
               >
                 {currentTrips.length > 0 && (
                   <>
@@ -807,7 +789,7 @@ export function ProfilePage() {
               </div>
             )
           ) : isLoadingTrips ? (
-            <div className="px-4 space-y-3 pb-4 pt-3 flex-1 overflow-y-auto">
+            <div className="px-4 space-y-3 pb-4 pt-3 w-full">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
               ))}
@@ -815,13 +797,7 @@ export function ProfilePage() {
           ) : savedTrips.length > 0 ? (
             <div
               ref={savedListScrollRef}
-              onScroll={handleContentScroll}
-              className="px-4 space-y-3 pb-4 pt-3 flex-1 overflow-y-auto
-                [&::-webkit-scrollbar]:w-1.5
-                [&::-webkit-scrollbar-track]:bg-transparent
-                [&::-webkit-scrollbar-thumb]:bg-slate-200
-                [&::-webkit-scrollbar-thumb]:rounded-full
-                [&::-webkit-scrollbar-thumb:hover]:bg-slate-300"
+              className="px-4 space-y-3 pb-4 pt-3 w-full"
             >
               {savedTrips.map((trip) => (
                 <TripCard

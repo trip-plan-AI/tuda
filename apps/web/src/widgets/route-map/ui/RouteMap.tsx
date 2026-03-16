@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useMemo } from 'react';
+import { format } from 'date-fns';
 import { loadYandexMaps } from '@/shared/lib/yandex-maps';
 import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point/model/route-point.types';
@@ -29,8 +30,10 @@ interface RouteMapProps {
   ) => void;
   onRouteInfoLoading?: (loading: boolean) => void;
   onAffectedSegmentsChange?: (indices: Set<number>) => void;
+  onPointClick?: (pointId: string) => void;
   readonly?: boolean;
   fitKey?: string;
+  selectedDays?: string[];
 }
 
 declare const ymaps3: any;
@@ -86,8 +89,10 @@ export function RouteMap({
   onRouteInfoUpdate,
   onRouteInfoLoading,
   onAffectedSegmentsChange,
+  onPointClick,
   readonly = false,
   fitKey,
+  selectedDays = [],
 }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -150,56 +155,6 @@ export function RouteMap({
     isAddPointModeRef.current = isAddPointMode;
     onAddPointModeChangeRef.current = onAddPointModeChange;
   }, [onMapClick, isAddPointMode, onAddPointModeChange]);
-
-  // Управление кнопкой добавления точек
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    if (!onAddPointModeChange || readonly) {
-      if (addPointBtnRef.current) {
-        addPointBtnRef.current.remove();
-        addPointBtnRef.current = null;
-      }
-      return;
-    }
-
-    if (!addPointBtnRef.current) {
-      const btn = document.createElement('button');
-      btn.setAttribute('data-testid', 'route-map-add-point-toggle');
-      Object.assign(btn.style, {
-        position: 'absolute',
-        left: '12px',
-        top: '60px',
-        width: '40px',
-        height: '40px',
-        borderRadius: '12px',
-        border: 'none',
-        background: 'white',
-        color: 'black',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-        transition: 'all 0.2s ease',
-        zIndex: '2500',
-      });
-      btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="#4d4d4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3" fill="none" stroke="#4d4d4d" stroke-width="1.5"/></svg>`;
-      btn.addEventListener('click', () => onAddPointModeChange?.(!isAddPointModeRef.current));
-      container.appendChild(btn);
-      addPointBtnRef.current = btn;
-    }
-
-    if (addPointBtnRef.current) {
-      addPointBtnRef.current.setAttribute('data-active', String(isAddPointMode));
-      addPointBtnRef.current.style.background = isAddPointMode ? '#0ea5e9' : 'white';
-      if (isAddPointMode) {
-        addPointBtnRef.current.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#0ea5e9" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3" fill="none" stroke="white" stroke-width="1.5"/></svg>`;
-      } else {
-        addPointBtnRef.current.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="#4d4d4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3" fill="none" stroke="#4d4d4d" stroke-width="1.5"/></svg>`;
-      }
-    }
-  }, [isAddPointMode, onAddPointModeChange, readonly, mapReady]);
 
   // Управление cursor indicator при добавлении точек
   useEffect(() => {
@@ -326,9 +281,6 @@ export function RouteMap({
         if (cancelled) return;
 
         if (container.childElementCount > 0) {
-          // Сбрасываем ref кнопки — она будет удалена вместе с innerHTML,
-          // useEffect кнопки пересоздаст её после mapReady
-          addPointBtnRef.current = null;
           container.innerHTML = '';
         }
 
@@ -472,9 +424,20 @@ export function RouteMap({
     }
 
     if (affectedSegments.size === 0) {
-      // Ничего не изменилось - не перезагружаем
+      // Ничего не изменилось - не перезагружаем, но уведомляем если config изменился
       prevPointsRef.current = points;
       prevRouteProfileRef.current = routeProfile;
+      if (segmentsData) {
+        const legs = (segmentsData || []).map((s) => s?.info ?? { duration: 0, distance: 0 });
+        const total = legs.reduce(
+          (acc, l) => ({
+            duration: acc.duration + (l?.duration || 0),
+            distance: acc.distance + (l?.distance || 0),
+          }),
+          { duration: 0, distance: 0 }
+        );
+        onRouteInfoUpdate?.({ ...total, legs });
+      }
       return;
     }
 
@@ -572,7 +535,7 @@ export function RouteMap({
     return () => {
       isCancelled = true;
     };
-  }, [pointsKey, transportModesKey, routeProfile, mapReady]);
+  }, [pointsKey, transportModesKey, routeProfile, mapReady, onRouteInfoUpdate]);
 
   // Уведомление об инфо маршрута (собираем из segmentsData)
   useEffect(() => {
@@ -580,16 +543,16 @@ export function RouteMap({
       onRouteInfoUpdate?.(null);
       return;
     }
-    const legs = segmentsData.map((s) => s.info ?? { duration: 0, distance: 0 });
+    const legs = (segmentsData || []).map((s) => s?.info ?? { duration: 0, distance: 0 });
     const total = legs.reduce(
       (acc, l) => ({
-        duration: acc.duration + l.duration,
-        distance: acc.distance + l.distance,
+        duration: acc.duration + (l?.duration || 0),
+        distance: acc.distance + (l?.distance || 0),
       }),
       { duration: 0, distance: 0 }
     );
     onRouteInfoUpdate?.({ ...total, legs });
-  }, [segmentsData]);
+  }, [segmentsData, onRouteInfoUpdate]);
 
   // Эффект отрисовки объектов
   useEffect(() => {
@@ -611,6 +574,12 @@ export function RouteMap({
     };
     const strokeWidth = getStrokeWidth(zoomRef.current);
 
+    const isPointVisible = (p: RoutePoint) => {
+      if (!selectedDays || selectedDays.length === 0) return true;
+      const dayKey = p.visitDate ? format(new Date(p.visitDate), 'yyyy-MM-dd') : 'no-date';
+      return selectedDays.includes(dayKey);
+    };
+
     // Функция для получения цвета сегмента i→(i+1)
     const getSegmentColor = (segmentIndex: number) => {
       if (segmentIndex < 0 || segmentIndex >= points.length - 1) return null;
@@ -620,6 +589,8 @@ export function RouteMap({
 
     // Маркеры с поддержкой split-дизайна для переходных точек
     points.forEach((point, index) => {
+      if (!isPointVisible(point)) return;
+
       const leftColor = index > 0 ? getSegmentColor(index - 1) : null;
       const rightColor = index < points.length - 1 ? getSegmentColor(index) : null;
       const isSplit = leftColor && rightColor && leftColor !== rightColor;
@@ -701,6 +672,31 @@ export function RouteMap({
         el.textContent = String(index + 1);
       }
 
+      // Add click listener to distinguish from drag
+      let isMoved = false;
+      let startX = 0;
+      let startY = 0;
+
+      el.addEventListener('mousedown', (e: MouseEvent) => {
+        isMoved = false;
+        startX = e.clientX;
+        startY = e.clientY;
+      });
+
+      el.addEventListener('mouseup', (e: MouseEvent) => {
+        const diffX = Math.abs(e.clientX - startX);
+        const diffY = Math.abs(e.clientY - startY);
+        if (diffX > 5 || diffY > 5) {
+          isMoved = true;
+        }
+      });
+
+      el.addEventListener('click', () => {
+        if (!isMoved && onPointClick) {
+          onPointClick(point.id);
+        }
+      });
+
       const marker = new ymaps3.YMapMarker(
         {
           coordinates: [point.lon, point.lat],
@@ -771,6 +767,9 @@ export function RouteMap({
       if (segmentsData) {
         // Рисуем полилинию для каждого сегмента со своим цветом
         segmentsData.forEach((segment, i) => {
+          // Если одна из точек сегмента скрыта фильтром - не рисуем сегмент
+          if (!isPointVisible(points[i]!) || !isPointVisible(points[i+1]!)) return;
+
           // Пропускаем сегменты, которые затронуты перетаскиванием
           const dragIdx = draggedPointIndexRef.current;
           if (dragIdx !== null && (dragIdx === i || dragIdx === i + 1)) {
@@ -806,6 +805,8 @@ export function RouteMap({
         // Показываем пунктирные линии для загружаемых сегментов
         if (loadingSegments.size > 0) {
           loadingSegments.forEach((i) => {
+            if (!isPointVisible(points[i]!) || !isPointVisible(points[i+1]!)) return;
+
             // Пропускаем сегменты, которые затронуты перетаскиванием
             const dragIdx = draggedPointIndexRef.current;
             if (dragIdx !== null && (dragIdx === i || dragIdx === i + 1)) {
@@ -848,6 +849,8 @@ export function RouteMap({
       } else if (loadingSegments.size > 0) {
         // Во время загрузки (нет segmentsData): показываем пунктирную линию только для загружаемых сегментов
         loadingSegments.forEach((i) => {
+          if (!isPointVisible(points[i]!) || !isPointVisible(points[i+1]!)) return;
+
           // Пропускаем сегменты, которые затронуты перетаскиванием
           const dragIdx = draggedPointIndexRef.current;
           if (dragIdx !== null && (dragIdx === i || dragIdx === i + 1)) {
@@ -901,7 +904,7 @@ export function RouteMap({
         objectsRef.current = [];
       }
     };
-  }, [pointsKey, transportModesKey, mapReady, routeProfile, segmentsData, loadingSegmentsKey, draggable]);
+  }, [pointsKey, transportModesKey, mapReady, routeProfile, segmentsData, loadingSegmentsKey, draggable, selectedDays]);
 
   // Прочие эффекты (зум при клике, фит на старте)
   useEffect(() => {
@@ -927,8 +930,16 @@ export function RouteMap({
   useEffect(() => {
     if (!mapRef.current || !mapReady || points.length === 0 || hasInitialFitPerformed.current) return;
 
-    const lons = points.map(p => p.lon);
-    const lats = points.map(p => p.lat);
+    const visiblePoints = points.filter((p) => {
+      if (!selectedDays || selectedDays.length === 0) return true;
+      const dayKey = p.visitDate ? format(new Date(p.visitDate), 'yyyy-MM-dd') : 'no-date';
+      return selectedDays.includes(dayKey);
+    });
+
+    const pointsToFit = visiblePoints.length > 0 ? visiblePoints : points;
+
+    const lons = pointsToFit.map(p => p.lon);
+    const lats = pointsToFit.map(p => p.lat);
 
     const minLon = Math.min(...lons);
     const maxLon = Math.max(...lons);
@@ -961,12 +972,38 @@ export function RouteMap({
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full h-full"
-      data-testid="route-map"
-      data-readonly={String(readonly)}
-      data-draggable={String(draggable)}
-    />
+    <div className="w-full h-full relative">
+      <div
+        ref={containerRef}
+        className="absolute inset-0 z-0"
+        data-testid="route-map"
+        data-readonly={String(readonly)}
+        data-draggable={String(draggable)}
+      />
+      {!readonly && onAddPointModeChange && (
+        <button
+          data-testid="route-map-add-point-toggle"
+          data-active={String(isAddPointMode)}
+          onClick={() => onAddPointModeChange(!isAddPointMode)}
+          className="absolute left-[12px] top-[60px] w-[40px] h-[40px] rounded-[12px] border-none flex items-center justify-center cursor-pointer transition-all duration-200 z-[2500]"
+          style={{
+            background: isAddPointMode ? '#0ea5e9' : 'white',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          }}
+        >
+          {isAddPointMode ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#0ea5e9" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+              <circle cx="12" cy="10" r="3" fill="none" stroke="white" strokeWidth="1.5"/>
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="#4d4d4d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+              <circle cx="12" cy="10" r="3" fill="none" stroke="#4d4d4d" strokeWidth="1.5"/>
+            </svg>
+          )}
+        </button>
+      )}
+    </div>
   );
 }

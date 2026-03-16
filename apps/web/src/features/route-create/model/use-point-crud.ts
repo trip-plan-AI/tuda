@@ -35,6 +35,7 @@ export function usePointCrud(tripId: string | undefined) {
         order: payload.order ?? 0,
         budget: payload.budget ?? 0,
         visitDate: payload.visitDate ?? null,
+        duration: payload.duration ?? 0,
         imageUrl: payload.imageUrl ?? null,
         address: payload.address ?? null,
         createdAt: new Date().toISOString(),
