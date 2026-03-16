@@ -790,6 +790,9 @@ export function ProfilePage() {
               )}
             </div>
 
+            <p className="text-[13px] text-slate-400 font-medium truncate">
+              {user?.email ?? '—'}
+            </p>
             <p className="text-[13px] text-slate-400 font-medium">
               Путешественник с {user?.createdAt ? new Date(user.createdAt).getFullYear() : '2026'}{' '}
               года
