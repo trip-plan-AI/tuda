@@ -325,10 +325,18 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           return acc;
         }, {});
 
-        const mergedSessions = {
-          ...remoteSessions,
-          ...localTransientSessions,
-        };
+        // Merge remote sessions with local transient sessions, but filter out empty drafts
+        // if we have real sessions from the server (prevents chat duplication/cloning)
+        const mergedSessions = { ...remoteSessions };
+
+        Object.values(localTransientSessions).forEach(localSession => {
+          // Only keep empty local drafts if we have NO remote sessions
+          // Or keep non-empty drafts (ones with messages)
+          const isCompletelyEmptyDraft = localSession.sessionId === null && localSession.messages.length === 0;
+          if (!isCompletelyEmptyDraft || Object.keys(remoteSessions).length === 0) {
+            mergedSessions[localSession.id] = localSession;
+          }
+        });
 
         // TRI-106 / MERGE-GUARD
         // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
