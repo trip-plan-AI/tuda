@@ -19,7 +19,10 @@ import { calcNights, getEmailPrefix } from '@/shared/lib/formatters';
 import { cn } from '@/shared/lib/utils';
 import type { Trip } from '@/entities/trip/model/trip.types';
 import { useTripStore } from '@/entities/trip/model/trip.store';
-import { collaborateApi, type Collaborator } from '@/features/route-collaborate/api/collaborate.api';
+import {
+  collaborateApi,
+  type Collaborator,
+} from '@/features/route-collaborate/api/collaborate.api';
 import { getSocket } from '@/shared/socket/socket-client';
 
 function getInitials(name?: string, email?: string): string {
@@ -184,18 +187,30 @@ export function TripCard({
           const year = yearPart ? parseInt(yearPart, 10) : new Date().getFullYear();
 
           const monthMap: Record<string, number> = {
-            'января': 0, 'январь': 0,
-            'февраля': 1, 'февраль': 1,
-            'марта': 2, 'март': 2,
-            'апреля': 3, 'апрель': 3,
-            'мая': 4, 'май': 4,
-            'июня': 5, 'июнь': 5,
-            'июля': 6, 'июль': 6,
-            'августа': 7, 'август': 7,
-            'сентября': 8, 'сентябрь': 8,
-            'октября': 9, 'октябрь': 9,
-            'ноября': 10, 'ноябрь': 10,
-            'декабря': 11, 'декабрь': 11,
+            января: 0,
+            январь: 0,
+            февраля: 1,
+            февраль: 1,
+            марта: 2,
+            март: 2,
+            апреля: 3,
+            апрель: 3,
+            мая: 4,
+            май: 4,
+            июня: 5,
+            июнь: 5,
+            июля: 6,
+            июль: 6,
+            августа: 7,
+            август: 7,
+            сентября: 8,
+            сентябрь: 8,
+            октября: 9,
+            октябрь: 9,
+            ноября: 10,
+            ноябрь: 10,
+            декабря: 11,
+            декабрь: 11,
           };
 
           const month = monthMap[monthStr];
@@ -419,7 +434,7 @@ export function TripCard({
       </div>
 
       {/* ── Cover image ── */}
-      <div className="relative w-full h-32 overflow-hidden bg-slate-100">
+      <div className="relative w-full h-[144px] overflow-hidden bg-slate-100">
         <img
           src={coverSrc}
           alt={trip.title}
@@ -481,11 +496,19 @@ export function TripCard({
         <div onClick={(e) => e.stopPropagation()}>
           <Popover
             open={dateStep !== null}
-            onOpenChange={(open) => { if (!open) { setDateStep(null); setTempFrom(undefined); } }}
+            onOpenChange={(open) => {
+              if (!open) {
+                setDateStep(null);
+                setTempFrom(undefined);
+              }
+            }}
           >
             <PopoverTrigger asChild>
               <button
-                onClick={(e) => { e.stopPropagation(); setDateStep('from'); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDateStep('from');
+                }}
                 className="flex items-center gap-1.5 px-2 py-1 text-[12px] font-semibold rounded-md transition-colors
                            text-slate-500 hover:text-brand-sky hover:bg-slate-100"
               >
@@ -511,7 +534,10 @@ export function TripCard({
               <div className="px-4 pt-3 pb-1 flex items-center gap-2">
                 {dateStep === 'to' && (
                   <button
-                    onClick={() => { setDateStep('from'); setTempFrom(undefined); }}
+                    onClick={() => {
+                      setDateStep('from');
+                      setTempFrom(undefined);
+                    }}
                     className="text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
                   >
                     ← Назад
@@ -569,7 +595,11 @@ export function TripCard({
                   />
                   {hoverDate && tempFrom && (
                     <div className="px-4 pb-3 text-center text-[11px] font-semibold text-brand-sky border-t border-slate-100 pt-2">
-                      📅 {Math.ceil((hoverDate.getTime() - tempFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1} дней
+                      📅{' '}
+                      {Math.ceil(
+                        (hoverDate.getTime() - tempFrom.getTime()) / (1000 * 60 * 60 * 24),
+                      ) + 1}{' '}
+                      дней
                     </div>
                   )}
                 </div>
