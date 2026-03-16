@@ -222,7 +222,7 @@ function mapStoredMessagesToChatMessages(
         return {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: `Составил маршрут по городу ${routePlan.city} на ${routePlan.days.length} дн.`,
+          content: `Маршрут по городу ${routePlan.city} на ${routePlan.days.length} дн.`,
           routePlan,
           timestamp: new Date().toISOString(),
         } satisfies ChatMessage;
@@ -478,8 +478,8 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         id: crypto.randomUUID(),
         role: 'assistant',
         content:
-          `Составил маршрут по городу ${response.route_plan.city} ` +
-          `на ${response.route_plan.days.length} дн.${fallbackHint(response.meta)}`,
+          `Маршрут по городу ${response.route_plan.city} ` +
+          `на ${response.route_plan.days.length} дн.`,
         routePlan: response.route_plan,
         meta: response.meta,
         timestamp: new Date().toISOString(),
