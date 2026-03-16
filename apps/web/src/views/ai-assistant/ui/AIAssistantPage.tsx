@@ -11,7 +11,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useAiQueryStore } from '@/features/ai-query';
 import { useShallow } from 'zustand/react/shallow';
 import { useTripStore } from '@/entities/trip';
-import { useCollaborationSocket, CollaboratorsAvatarGroup } from '@/features/route-collaborate';
+import { useCollaborationSocket, CollaboratorsAvatarGroup, useChatSync } from '@/features/route-collaborate';
 import { AiChat } from '@/widgets/ai-chat';
 import { Button } from '@/shared/ui/button';
 import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 import { tripsApi } from '@/entities/trip';
 import { pointsApi } from '@/entities/route-point';
 import { clearConfig, setConfig } from '@/features/persistent-map';
+import { getSocket } from '@/shared/socket/socket-client';
 
 const AI_QUICK_ACTIONS = ['Сделать дешевле', 'Добавить больше музеев', 'Убрать пешие прогулки'];
 
@@ -67,6 +68,7 @@ export function AIAssistantPage() {
     isSessionsLoading,
     openOrCreateSessionFromTrip,
     clearChat,
+    addLocalMessage,
   } = useAiQueryStore(
     useShallow((state) => ({
       sessions: state.sessions,
@@ -85,6 +87,7 @@ export function AIAssistantPage() {
       isSessionsLoading: state.isSessionsLoading,
       openOrCreateSessionFromTrip: state.openOrCreateSessionFromTrip,
       clearChat: state.clearChat,
+      addLocalMessage: state.addLocalMessage,
     })),
   );
   const currentTrip = useTripStore((state) => state.currentTrip);
@@ -172,9 +175,39 @@ export function AIAssistantPage() {
   }, [isSessionsLoading, sendQuery, switchSession, activeSession?.tripId]);
 
   const handleSend = async (query: string) => {
-    // Всегда идём через Orchestrator (sendQuery), не напрямую в mutations (sendMutationQuery).
-    // Orchestrator правильно парсит intent и маршрутизирует в Intent Router.
-    await sendQuery(query, activeSession?.tripId ?? undefined);
+    const messageId = crypto.randomUUID();
+
+    // Транслируем сообщение другим участникам комнаты, используя единый ID
+    sendChatMessage(query, messageId);
+
+    const isHelpRequest = query.startsWith('/help');
+
+    if (isHelpRequest) {
+      const cleanQuery = query.replace(/^\/help\s*/, '').trim() || query;
+      await sendQuery(cleanQuery, activeSession?.tripId ?? undefined);
+
+      const updatedMessages = useAiQueryStore.getState().messages;
+      const lastAssistant = [...updatedMessages].reverse().find(m => m.role === 'assistant');
+
+      if (lastAssistant && socketTripId) {
+        const socket = getSocket();
+        socket.emit('agent:response', {
+          trip_id: socketTripId,
+          id: lastAssistant.id,
+          content: lastAssistant.content,
+          timestamp: lastAssistant.timestamp,
+          route_plan: lastAssistant.routePlan ?? null,
+        });
+      }
+    } else {
+      // Показываем собственное сообщение локально с тем же ID
+      addLocalMessage({
+        id: messageId,
+        role: 'user',
+        content: query,
+        timestamp: new Date().toISOString(),
+      });
+    }
   };
 
   const handleApplyPlan = async (messageId: string) => {
@@ -373,23 +406,20 @@ export function AIAssistantPage() {
   }, [lastPlanMessage?.routePlan, currentTrip?.id]);
 
   const displayPoints = useMemo(() => {
-    const lastMessage = messages[messages.length - 1];
-    const hasPlan = !!lastMessage?.routePlan;
-    // Предложение считается "новым" (черновиком), только если оно еще не было применено в этот трип
-    const isNewAIProposal = hasPlan && lastMessage.id !== lastAppliedPlanMessageId;
-
-    // Если чат связан с маршрутом, и мы не смотрим на свежее (непримененное) предложение ИИ,
-    // то показываем актуальное состояние маршрута из базы (синхронизируется сокетами).
-    if (activeSession?.tripId && !isNewAIProposal) {
+    // Если сессия привязана к маршруту — всегда показываем актуальное состояние из сокет-стейта.
+    // Это гарантирует, что изменения от других участников (через useCollaborationSocket)
+    // немедленно отражаются на карте.
+    if (activeSession?.tripId) {
       return currentTrip?.points || [];
     }
 
-    // В противном случае показываем черновик ИИ из истории чата
+    // Нет привязанного маршрута — показываем черновик ИИ из истории чата
     return aiPoints;
-  }, [activeSession?.tripId, currentTrip?.points, aiPoints, messages, lastAppliedPlanMessageId]);
+  }, [activeSession?.tripId, currentTrip?.points, aiPoints]);
 
   const socketTripId = activeSession?.tripId || '';
   useCollaborationSocket(socketTripId);
+  const { sendChatMessage } = useChatSync(socketTripId);
 
   const [isAddPointMode, setIsAddPointMode] = useState(false);
 
