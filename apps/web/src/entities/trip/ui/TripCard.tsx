@@ -5,8 +5,6 @@ import {
   Moon,
   ArrowRight,
   Plus,
-  AlertTriangle,
-  CheckCircle2,
   MoreVertical,
   Crown,
   CalendarIcon,
@@ -84,31 +82,18 @@ function BudgetSummary({
 
       <div className="grid grid-cols-2 gap-2 text-[9px] font-bold text-slate-400">
         <span>{plan > 0 ? `Использовано ${progressPercent}%` : 'Лимит не задан'}</span>
-        <span className="text-right">{plan > 0 ? `${formatRub(plan - total)} ₽` : '—'}</span>
-      </div>
-
-      <div
-        className={cn(
-          'flex items-start gap-1.5 rounded-lg border px-2 py-1 text-[9px] font-black leading-tight',
-          isOverBudget
-            ? 'border-red-100 bg-red-50/70 text-red-600'
-            : 'border-emerald-100 bg-emerald-50/70 text-emerald-600',
-        )}
-      >
-        {isOverBudget ? (
-          <AlertTriangle size={10} className="shrink-0 mt-px" />
-        ) : (
-          <CheckCircle2 size={10} className="shrink-0 mt-px" />
-        )}
-        {plan > 0 ? (
-          isOverBudget ? (
-            <span>Перерасход: +{formatRub(total - plan)} ₽</span>
-          ) : (
-            <span>Остаток: {formatRub(plan - total)} ₽</span>
-          )
-        ) : (
-          <span>Задайте планируемый бюджет для контроля расхода</span>
-        )}
+        <span
+          className={cn(
+            'text-right',
+            plan > 0 && (isOverBudget ? 'text-red-600' : 'text-emerald-600'),
+          )}
+        >
+          {plan > 0
+            ? isOverBudget
+              ? `Перерасход: +${formatRub(total - plan)} ₽`
+              : `Остаток: ${formatRub(plan - total)} ₽`
+            : '—'}
+        </span>
       </div>
     </div>
   );
@@ -117,7 +102,10 @@ function BudgetSummary({
 interface TripCardProps {
   trip: Trip;
   isSelected?: boolean;
+  highlighted?: boolean;
+  cardRef?: (node: HTMLDivElement | null) => void;
   onCardClick?: (tripId: string) => void;
+  onOpenPlanner?: (trip: Trip) => void | Promise<void>;
   onInvite?: (tripId: string) => void;
   onCollaboratorsClick?: (tripId: string) => void;
   onDatesUpdate?: (tripId: string, dates: { startDate: string; endDate: string }) => void;
@@ -137,7 +125,10 @@ const formatDate = (d?: string | null) =>
 export function TripCard({
   trip,
   isSelected,
+  highlighted,
+  cardRef,
   onCardClick,
+  onOpenPlanner,
   onInvite,
   onCollaboratorsClick,
   onDatesUpdate,
@@ -271,13 +262,15 @@ export function TripCard({
 
   return (
     <div
+      ref={cardRef}
       onClick={() => onCardClick?.(trip.id)}
       className={`group cursor-pointer rounded-2xl overflow-hidden bg-white transition-all duration-200
         ${
           isSelected
             ? 'ring-2 ring-brand-sky shadow-lg shadow-brand-sky/20'
             : 'border border-slate-100 shadow-sm hover:shadow-md'
-        }`}
+        }
+        ${highlighted ? 'ring-2 ring-amber-400 shadow-lg shadow-amber-200/70' : ''}`}
     >
       {/* ── HEADER: Owner + Invite button ── */}
       <div className="px-3 py-2 flex items-center justify-between border-b border-slate-100">
@@ -619,6 +612,10 @@ export function TripCard({
           <button
             onClick={(e) => {
               e.stopPropagation();
+              if (onOpenPlanner) {
+                void onOpenPlanner(trip);
+                return;
+              }
               if (trip.id && !trip.id.startsWith('guest-')) {
                 // TRI-114: use robust applyTripId flow to handle points loading and conflicts
                 router.push(`/planner?applyTripId=${encodeURIComponent(trip.id)}`);

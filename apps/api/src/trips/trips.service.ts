@@ -1,6 +1,7 @@
 import {
   Injectable,
   Inject,
+  Logger,
   NotFoundException,
   ForbiddenException,
   UnauthorizedException,
@@ -15,11 +16,26 @@ import { CollaboratorsService } from './collaborators.service';
 
 @Injectable()
 export class TripsService {
+  private readonly logger = new Logger(TripsService.name);
+
   constructor(
     @Inject(DRIZZLE)
     private db: NodePgDatabase<typeof schema>,
     private collaboratorsService: CollaboratorsService,
   ) {}
+
+  private isMissingIsActiveColumnError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') return false;
+
+    const err = error as { code?: string; message?: string };
+    const hasPgCode = err.code === '42703';
+    const mentionsColumn =
+      typeof err.message === 'string' &&
+      err.message.includes('trip_collaborators') &&
+      err.message.includes('is_active');
+
+    return hasPgCode || mentionsColumn;
+  }
 
   async findAllForUser(userId: string) {
     // 1. Own trips — isActive from trips table
@@ -30,13 +46,34 @@ export class TripsService {
     });
 
     // 2. Trips where user is a collaborator — isActive from tripCollaborators
-    const collabRows = await this.db
-      .select({
-        tripId: schema.tripCollaborators.tripId,
-        isActive: schema.tripCollaborators.isActive,
-      })
-      .from(schema.tripCollaborators)
-      .where(eq(schema.tripCollaborators.userId, userId));
+    let collabRows: { tripId: string; isActive: boolean }[] = [];
+
+    try {
+      collabRows = await this.db
+        .select({
+          tripId: schema.tripCollaborators.tripId,
+          isActive: schema.tripCollaborators.isActive,
+        })
+        .from(schema.tripCollaborators)
+        .where(eq(schema.tripCollaborators.userId, userId));
+    } catch (error) {
+      if (!this.isMissingIsActiveColumnError(error)) {
+        throw error;
+      }
+
+      this.logger.warn(
+        'Missing column trip_collaborators.is_active detected. Falling back to default collaborator isActive=false. Run DB migrations.',
+      );
+
+      const fallbackRows = await this.db
+        .select({
+          tripId: schema.tripCollaborators.tripId,
+        })
+        .from(schema.tripCollaborators)
+        .where(eq(schema.tripCollaborators.userId, userId));
+
+      collabRows = fallbackRows.map((row) => ({ tripId: row.tripId, isActive: false }));
+    }
 
     const collabIds = collabRows.map((r) => r.tripId);
     const collabActiveMap = new Map(
@@ -159,13 +196,17 @@ export class TripsService {
       });
       if (!collab) throw new ForbiddenException('Access denied');
 
-      // Collaborators can only change isActive and budget — extra fields are silently ignored
-      const { isActive, budget } = dto;
+      // Collaborators can only change isActive, budget and distanceKm — extra fields are silently ignored
+      const { isActive, budget, distanceKm } = dto;
 
-      if (budget !== undefined) {
+      if (budget !== undefined || distanceKm !== undefined) {
         await this.db
           .update(schema.trips)
-          .set({ budget, updatedAt: new Date() })
+          .set({
+            ...(budget !== undefined ? { budget } : {}),
+            ...(distanceKm !== undefined ? { distanceKm } : {}),
+            updatedAt: new Date(),
+          })
           .where(eq(schema.trips.id, id));
       }
 

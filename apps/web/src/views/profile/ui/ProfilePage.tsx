@@ -2,7 +2,17 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Pencil, Map as MapIcon, ArrowUp } from 'lucide-react';
+import {
+  User as UserIcon,
+  Pencil,
+  Map as MapIcon,
+  ArrowUp,
+  Route,
+  MapPin,
+  Ruler,
+  CheckCircle2,
+  ArrowRight,
+} from 'lucide-react';
 import { useUserStore, usersApi } from '@/entities/user';
 import { useTripStore, type Trip } from '@/entities/trip';
 import { useAuthStore } from '@/features/auth';
@@ -23,24 +33,32 @@ import { setConfig, clearConfig } from '@/features/persistent-map';
 import { TripCard } from '@/entities/trip/ui/TripCard';
 import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 
+type TabKey = 'routes' | 'saved';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export function ProfilePage() {
   const router = useRouter();
   const { user, setUser } = useUserStore();
-  const { setCurrentTrip, currentTrip, updateCurrentTrip, setPoints, addPoint, removePoint } =
-    useTripStore();
+  const {
+    setCurrentTrip,
+    currentTrip,
+    updateCurrentTrip,
+    setPoints,
+    addPoint,
+    removePoint,
+    setSaved,
+  } = useTripStore();
   const trips = useTripStore((state) => state.trips);
   const setTrips = useTripStore((state) => state.setTrips);
   const isDirty = useTripStore((state) => state.isDirty);
   const clearPlanner = useTripStore((state) => state.clearPlanner);
   const { isAuthenticated } = useAuthStore();
 
-  const [activeTab, setActiveTab] = useState<'routes' | 'saved'>('routes');
+  const [activeTab, setActiveTab] = useState<TabKey>('routes');
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(user?.name || '');
   const [allTrips, setAllTrips] = useState<Trip[]>([]);
   const [isLoadingTrips, setIsLoadingTrips] = useState(true);
-  const [showPlannerConflictModal, setShowPlannerConflictModal] = useState(false);
-  const [pendingPlannerTripId, setPendingPlannerTripId] = useState<string | null>(null);
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -50,6 +68,7 @@ export function ProfilePage() {
   const [inviteTripId, setInviteTripId] = useState<string | null>(null);
   const [collaboratorsTripId, setCollaboratorsTripId] = useState<string | null>(null);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const [highlightedTripId, setHighlightedTripId] = useState<string | null>(null);
   const { setCollaborators } = useCollaborateStore();
 
   // Sync local allTrips into the Zustand store so selectors/filtered arrays stay up-to-date
@@ -71,6 +90,54 @@ export function ProfilePage() {
     .filter((t) => new Date(t.endDate!) < now)
     .sort((a, b) => new Date(b.endDate!).getTime() - new Date(a.endDate!).getTime());
 
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const getDistanceKmBetweenPoints = (
+    from: { lat: number; lon: number },
+    to: { lat: number; lon: number },
+  ) => {
+    const earthRadiusKm = 6371;
+    const dLat = toRad(to.lat - from.lat);
+    const dLon = toRad(to.lon - from.lon);
+    const lat1 = toRad(from.lat);
+    const lat2 = toRad(to.lat);
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return earthRadiusKm * c;
+  };
+
+  const getTripDistanceKm = (trip: Trip) => {
+    if (trip.distanceKm != null) return trip.distanceKm;
+
+    const tripPoints = trip.points ?? [];
+    if (tripPoints.length < 2) return 0;
+
+    let total = 0;
+    for (let i = 1; i < tripPoints.length; i += 1) {
+      const prev = tripPoints[i - 1]!;
+      const curr = tripPoints[i]!;
+      total += getDistanceKmBetweenPoints(
+        { lat: prev.lat, lon: prev.lon },
+        { lat: curr.lat, lon: curr.lon },
+      );
+    }
+    return total;
+  };
+
+  const finishedOrActiveTrips = [...currentTrips, ...pastTrips];
+  const statsTripsCount = finishedOrActiveTrips.length;
+  const statsPointsCount = finishedOrActiveTrips.reduce(
+    (acc, t) => acc + (t.points?.length ?? 0),
+    0,
+  );
+  const statsDistanceKm = Math.round(
+    finishedOrActiveTrips.reduce((acc, t) => acc + getTripDistanceKm(t), 0),
+  );
+  const formatStatValue = (value: number) => value.toLocaleString('ru-RU').replace(/\u00A0/g, ' ');
+
   const progressColor =
     scrollProgress < 0.4 ? '#0ea5e9' : scrollProgress < 0.8 ? '#4f46e5' : '#9333ea';
   const progressTrackColor = '#e2e8f0';
@@ -79,6 +146,114 @@ export function ProfilePage() {
   const savedListScrollRef = useRef<HTMLDivElement>(null);
   const routePointsScrollRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
+  const highlightTimeoutRef = useRef<number | null>(null);
+  const tripCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const getTripTab = useCallback((trip?: Pick<Trip, 'startDate' | 'endDate'> | null): TabKey => {
+    return trip?.startDate && trip?.endDate ? 'routes' : 'saved';
+  }, []);
+
+  const getTripIdsByTab = useCallback((tripsList: Trip[], tab: TabKey): string[] => {
+    if (tab === 'saved') {
+      return tripsList.filter((t) => !t.startDate || !t.endDate).map((t) => t.id);
+    }
+
+    const currentTime = new Date();
+    const travelList = tripsList.filter((t) => t.startDate && t.endDate);
+    const currentList = travelList
+      .filter((t) => new Date(t.startDate!) <= currentTime && new Date(t.endDate!) >= currentTime)
+      .sort((a, b) => new Date(a.endDate!).getTime() - new Date(b.endDate!).getTime());
+    const upcomingList = travelList
+      .filter((t) => new Date(t.startDate!) > currentTime)
+      .sort((a, b) => new Date(a.startDate!).getTime() - new Date(b.startDate!).getTime());
+    const pastList = travelList
+      .filter((t) => new Date(t.endDate!) < currentTime)
+      .sort((a, b) => new Date(b.endDate!).getTime() - new Date(a.endDate!).getTime());
+
+    return [...currentList, ...upcomingList, ...pastList].map((t) => t.id);
+  }, []);
+
+  const registerTripCardRef = useCallback((tripId: string, node: HTMLDivElement | null) => {
+    if (node) {
+      tripCardRefs.current.set(tripId, node);
+      return;
+    }
+    tripCardRefs.current.delete(tripId);
+  }, []);
+
+  const focusTripCard = useCallback((tripId: string, targetTab: TabKey) => {
+    setActiveTab(targetTab);
+    setSelectedTripId(tripId);
+
+    const tryFocus = () => {
+      const node = tripCardRefs.current.get(tripId);
+      if (!node) {
+        window.setTimeout(() => {
+          const delayedNode = tripCardRefs.current.get(tripId);
+          if (!delayedNode) return;
+          delayedNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setHighlightedTripId(tripId);
+        }, 120);
+        return;
+      }
+
+      node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightedTripId(tripId);
+    };
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(tryFocus);
+    });
+
+    if (highlightTimeoutRef.current != null) {
+      window.clearTimeout(highlightTimeoutRef.current);
+    }
+    highlightTimeoutRef.current = window.setTimeout(() => {
+      setHighlightedTripId((prev) => (prev === tripId ? null : prev));
+    }, 1800);
+  }, []);
+
+  const showTripMovedToast = useCallback(
+    (tripId: string, nextTab: TabKey) => {
+      toast.custom(
+        (toastId) => (
+          <div className="relative overflow-hidden rounded-2xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50/95 via-white to-emerald-100/80 shadow-xl backdrop-blur-md">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.15),transparent_45%)]" />
+            <div className="relative flex items-center gap-3 px-4 py-3.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 ring-1 ring-emerald-200">
+                <CheckCircle2 size={16} />
+              </div>
+
+              <div className="min-w-0">
+                <p className="text-[15px] font-black text-emerald-900 leading-tight">
+                  Даты обновлены
+                </p>
+                <p className="mt-0.5 text-[12px] font-medium text-emerald-700/90 leading-snug">
+                  Маршрут изменил позицию в списке. Перейдите к нему в один клик.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  focusTripCard(tripId, nextTab);
+                  toast.dismiss(toastId);
+                }}
+                className="ml-1 inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-brand-indigo px-3 py-2 text-[12px] font-bold text-white shadow-sm transition-all hover:bg-brand-indigo-hover hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-sky/60"
+              >
+                Показать
+                <ArrowRight size={13} />
+              </button>
+            </div>
+          </div>
+        ),
+        {
+          duration: 7000,
+        },
+      );
+    },
+    [focusTripCard],
+  );
 
   const evaluateScrollState = useCallback(() => {
     const scrollTop = window.scrollY;
@@ -145,6 +320,8 @@ export function ProfilePage() {
       })
       .catch((err) => {
         console.error('Failed to load trips:', err);
+        setAllTrips([]);
+        toast.error('Не удалось загрузить маршруты профиля. Попробуйте обновить страницу.');
         setIsLoadingTrips(false);
       });
   }, [isAuthenticated, isAuthResolved, router]);
@@ -156,6 +333,7 @@ export function ProfilePage() {
   useEffect(() => {
     return () => {
       if (scrollRafRef.current != null) window.cancelAnimationFrame(scrollRafRef.current);
+      if (highlightTimeoutRef.current != null) window.clearTimeout(highlightTimeoutRef.current);
     };
   }, []);
 
@@ -298,11 +476,19 @@ export function ProfilePage() {
       trip_id,
       point_id,
       coords,
-    }: { trip_id: string; point_id: string; coords: { lat: number; lon: number } }) => {
+    }: {
+      trip_id: string;
+      point_id: string;
+      coords: { lat: number; lon: number };
+    }) => {
       if (!trip_id) return;
       if (trip_id === currentTrip.id) {
         const currentPoints = useTripStore.getState().currentTrip?.points || [];
-        setPoints(currentPoints.map((p) => (p.id === point_id ? { ...p, lat: coords.lat, lon: coords.lon } : p)));
+        setPoints(
+          currentPoints.map((p) =>
+            p.id === point_id ? { ...p, lat: coords.lat, lon: coords.lon } : p,
+          ),
+        );
       }
 
       setAllTrips((prev) =>
@@ -455,21 +641,100 @@ export function ProfilePage() {
     }
   };
 
-  // Open edit conflict modal for switching to a different route in planner
-  const handleEditRoute = (trip: Trip) => {
-    setPendingPlannerTripId(trip.id);
-    setShowPlannerConflictModal(true);
-  };
+  const autoSaveCurrentTripBeforePlannerSwitch = useCallback(async (): Promise<string | null> => {
+    if (!currentTrip?.id) return;
 
-  const handleConfirmPlannerReplace = () => {
-    const targetTripId = pendingPlannerTripId;
-    setShowPlannerConflictModal(false);
-    setPendingPlannerTripId(null);
-    if (!targetTripId) {
+    const currentPoints = useTripStore.getState().currentTrip?.points || currentTrip.points || [];
+    let tripId = currentTrip.id;
+    const isLocalDraft = tripId.startsWith('guest-') || !UUID_RE.test(tripId);
+    const autoTitle =
+      currentPoints.length > 1
+        ? `${currentPoints[0]!.title} — ${currentPoints[currentPoints.length - 1]!.title}`
+        : currentPoints.length === 1
+          ? currentPoints[0]!.title
+          : 'Мой маршрут';
+
+    if (isLocalDraft) {
+      if (!isAuthenticated) return;
+      const createdTrip = await tripsApi.create({
+        title: autoTitle,
+        isActive: currentTrip.isActive,
+        budget: currentTrip.budget ?? 0,
+      });
+      tripId = createdTrip.id;
+      setCurrentTrip({ ...createdTrip, points: currentPoints });
+    }
+
+    if (!isLocalDraft) {
+      const backendPoints = await pointsApi.getAll(tripId);
+      await Promise.all(backendPoints.map((p) => pointsApi.remove(tripId, p.id)));
+    }
+
+    await Promise.all(
+      currentPoints.map((p, i) =>
+        pointsApi.create(tripId, {
+          title: p.title,
+          lat: p.lat,
+          lon: p.lon,
+          order: i,
+          budget: p.budget ?? undefined,
+          visitDate: p.visitDate ?? undefined,
+          duration: p.duration ?? 0,
+          imageUrl: p.imageUrl ?? undefined,
+          address: p.address ?? undefined,
+          transportMode: p.transportMode,
+        }),
+      ),
+    );
+
+    const updated = await tripsApi.update(tripId, {
+      title: autoTitle,
+      budget: currentTrip.budget ?? 0,
+      distanceKm: currentTrip.distanceKm ?? 0,
+      isActive: currentTrip.isActive,
+    });
+
+    updateCurrentTrip(updated);
+    setSaved();
+    const socket = getSocket();
+    if (socket.connected) {
+      socket.emit('trip:update', { trip_id: tripId, ...updated });
+    }
+
+    return updated?.title?.trim() || autoTitle;
+  }, [currentTrip, isAuthenticated, setCurrentTrip, setSaved, updateCurrentTrip]);
+
+  // Profile card -> planner: autosave current dirty route and open target route without confirmations
+  const handleEditRoute = async (trip: Trip) => {
+    if (!trip.id) {
       router.push('/planner');
       return;
     }
-    router.push(`/planner?applyTripId=${encodeURIComponent(targetTripId)}`);
+
+    let autosavedRouteTitle: string | null = null;
+    const isDifferentRoute = currentTrip?.id && currentTrip.id !== trip.id;
+    if (isDifferentRoute && currentTrip) {
+      try {
+        if (isDirty || currentTrip.id.startsWith('guest-')) {
+          autosavedRouteTitle = (await autoSaveCurrentTripBeforePlannerSwitch()) || null;
+        } else if (!currentTrip.id.startsWith('guest-')) {
+          const persistedTrip = await tripsApi.getOne(currentTrip.id);
+          autosavedRouteTitle = persistedTrip?.title?.trim() || null;
+        }
+      } catch (e) {
+        console.error('Failed to autosave current trip before planner switch:', e);
+        toast.error('Не удалось автосохранить текущий маршрут');
+        return;
+      }
+    }
+
+    const query = new URLSearchParams();
+    query.set('applyTripId', trip.id);
+    query.set('from', 'profile-card-autosave');
+    if (autosavedRouteTitle) {
+      query.set('autosavedRouteTitle', autosavedRouteTitle);
+    }
+    router.push(`/planner?${query.toString()}`);
   };
 
   const handleDatesUpdate = async (
@@ -478,7 +743,27 @@ export function ProfilePage() {
   ) => {
     try {
       await tripsApi.update(tripId, dates);
-      setAllTrips((prev) => prev.map((t) => (t.id === tripId ? { ...t, ...dates } : t)));
+      const prevTrip = allTrips.find((t) => t.id === tripId);
+      const prevTab = getTripTab(prevTrip ?? null);
+      const prevOrder = getTripIdsByTab(allTrips, prevTab);
+      const prevIndex = prevOrder.indexOf(tripId);
+
+      const nextTrips = allTrips.map((t) => (t.id === tripId ? { ...t, ...dates } : t));
+      setAllTrips(nextTrips);
+
+      const nextTrip = nextTrips.find((t) => t.id === tripId);
+      const nextTab = getTripTab(nextTrip ?? null);
+      const nextOrder = getTripIdsByTab(nextTrips, nextTab);
+      const nextIndex = nextOrder.indexOf(tripId);
+
+      const hasTabChanged = prevTab !== nextTab;
+      const hasPositionChanged = prevIndex !== -1 && nextIndex !== -1 && prevIndex !== nextIndex;
+
+      if (hasTabChanged || hasPositionChanged) {
+        showTripMovedToast(tripId, nextTab);
+        return;
+      }
+
       toast.success('Даты сохранены');
     } catch {
       toast.error('Не удалось сохранить даты');
@@ -498,7 +783,15 @@ export function ProfilePage() {
   const handleConflictSaveAndReplace = async () => {
     try {
       if (currentTrip) {
-        await tripsApi.update(currentTrip.id, currentTrip);
+        await tripsApi.update(currentTrip.id, {
+          title: currentTrip.title,
+          description: currentTrip.description ?? undefined,
+          budget: currentTrip.budget ?? undefined,
+          startDate: currentTrip.startDate ?? undefined,
+          endDate: currentTrip.endDate ?? undefined,
+          isActive: currentTrip.isActive,
+          distanceKm: currentTrip.distanceKm ?? 0,
+        });
       }
       clearPlanner();
       setConflictModalOpen(false);
@@ -593,6 +886,7 @@ export function ProfilePage() {
               )}
             </div>
 
+            <p className="text-[13px] text-slate-400 font-medium truncate">{user?.email ?? '—'}</p>
             <p className="text-[13px] text-slate-400 font-medium">
               Путешественник с {user?.createdAt ? new Date(user.createdAt).getFullYear() : '2026'}{' '}
               года
@@ -600,27 +894,37 @@ export function ProfilePage() {
           </div>
         </div>
 
-        {/* Stats row */}
-        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-100">
-          <div className="flex flex-col items-center">
-            <span className="text-base font-black text-brand-indigo leading-none">
-              {allTrips.length}
-            </span>
-            <span className="text-[10px] text-slate-400 font-semibold mt-0.5">Поездок</span>
-          </div>
-          <div className="w-px h-6 bg-slate-100" />
-          <div className="flex flex-col items-center">
-            <span className="text-base font-black text-brand-indigo leading-none">
-              {allTrips.reduce((acc, t) => acc + (t.points?.length ?? 0), 0)}
-            </span>
-            <span className="text-[10px] text-slate-400 font-semibold mt-0.5">Точек</span>
-          </div>
-          <div className="w-px h-6 bg-slate-100" />
-          <div className="flex flex-col items-center">
-            <span className="text-base font-black text-brand-indigo leading-none">
-              {travelTrips.length}
-            </span>
-            <span className="text-[10px] text-slate-400 font-semibold mt-0.5">С датами</span>
+        <div className="mt-3 pt-3 border-t border-slate-100">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5 sm:p-3.5">
+              <div className="flex items-center gap-1.5 text-slate-500">
+                <MapPin size={12} className="sm:w-3.5 sm:h-3.5" />
+                <p className="text-[10px] sm:text-xs font-semibold leading-none">Точки</p>
+              </div>
+              <p className="text-lg sm:text-2xl font-black text-brand-indigo leading-none mt-2">
+                {formatStatValue(statsPointsCount)}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5 sm:p-3.5">
+              <div className="flex items-center gap-1.5 text-slate-500">
+                <Route size={12} className="sm:w-3.5 sm:h-3.5" />
+                <p className="text-[10px] sm:text-xs font-semibold leading-none">Поездки</p>
+              </div>
+              <p className="text-lg sm:text-2xl font-black text-brand-indigo leading-none mt-2">
+                {formatStatValue(statsTripsCount)}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5 sm:p-3.5">
+              <div className="flex items-center gap-1.5 text-slate-500">
+                <Ruler size={12} className="sm:w-3.5 sm:h-3.5" />
+                <p className="text-[10px] sm:text-xs font-semibold leading-none">Километры</p>
+              </div>
+              <p className="text-lg sm:text-2xl font-black text-brand-indigo leading-none mt-2">
+                {formatStatValue(statsDistanceKm)}
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -657,34 +961,6 @@ export function ProfilePage() {
 
       {/* ── КОНТЕНТ ТАБОВ ── */}
       <div className="w-full flex flex-col relative">
-        {/* Scroll-to-top button */}
-        <div
-          className={cn(
-            'absolute right-3 bottom-3 md:right-4 md:bottom-4 z-30',
-            'transition-all duration-300',
-            showScrollTop
-              ? 'opacity-100 translate-y-0 visible'
-              : 'opacity-0 translate-y-2 invisible pointer-events-none',
-          )}
-        >
-          <button
-            type="button"
-            onClick={handleScrollToTop}
-            className="relative h-10 w-10 rounded-full shadow-md transition-transform hover:scale-105 active:scale-95"
-          >
-            <span
-              className="absolute inset-0 rounded-full"
-              style={{
-                background: `conic-gradient(${progressColor} ${progressDegrees}deg, ${progressTrackColor} ${progressDegrees}deg)`,
-              }}
-            />
-            <span className="absolute inset-[2px] rounded-full bg-white" />
-            <span className="relative z-10 flex h-full w-full items-center justify-center text-brand-indigo">
-              <ArrowUp size={14} />
-            </span>
-          </button>
-        </div>
-
         {/* Sub-header: count + create button */}
         <div className="flex items-center justify-between px-4 py-2 shrink-0 border-b border-slate-100 bg-white">
           <span className="text-[13px] font-bold text-slate-500">
@@ -702,7 +978,35 @@ export function ProfilePage() {
         </div>
 
         {/* Cards area */}
-        <div className="w-full flex flex-col">
+        <div className="w-full flex flex-col relative">
+          {/* Scroll-to-top button */}
+          <div
+            className={cn(
+              'sticky top-[calc(100vh-5rem)] z-30 h-0 px-4 flex justify-end pointer-events-none',
+              'transition-all duration-300',
+              showScrollTop
+                ? 'opacity-100 translate-y-0 visible'
+                : 'opacity-0 translate-y-2 invisible',
+            )}
+          >
+            <button
+              type="button"
+              onClick={handleScrollToTop}
+              className="pointer-events-auto relative h-10 w-10 rounded-full shadow-md transition-transform hover:scale-105 active:scale-95"
+            >
+              <span
+                className="absolute inset-0 rounded-full"
+                style={{
+                  background: `conic-gradient(${progressColor} ${progressDegrees}deg, ${progressTrackColor} ${progressDegrees}deg)`,
+                }}
+              />
+              <span className="absolute inset-[2px] rounded-full bg-white" />
+              <span className="relative z-10 flex h-full w-full items-center justify-center text-brand-indigo">
+                <ArrowUp size={14} />
+              </span>
+            </button>
+          </div>
+
           {activeTab === 'routes' ? (
             isLoadingTrips ? (
               <div className="px-4 space-y-3 pb-4 pt-3 w-full">
@@ -711,15 +1015,14 @@ export function ProfilePage() {
                 ))}
               </div>
             ) : travelTrips.length > 0 ? (
-              <div
-                ref={routePointsScrollRef}
-                className="px-4 pb-4 pt-3 w-full"
-              >
+              <div ref={routePointsScrollRef} className="px-4 pb-4 pt-3 w-full">
                 {currentTrips.length > 0 && (
                   <>
                     <div className="flex items-center gap-4 my-4">
                       <hr className="flex-1 border-gray-200" />
-                      <span className="text-xs font-semibold text-gray-400 tracking-wider uppercase">В процессе</span>
+                      <span className="text-xs font-semibold text-gray-400 tracking-wider uppercase">
+                        В процессе
+                      </span>
                       <hr className="flex-1 border-gray-200" />
                     </div>
                     <div className="space-y-3">
@@ -729,8 +1032,18 @@ export function ProfilePage() {
                           trip={trip}
                           isSelected={selectedTripId === trip.id}
                           onCardClick={setSelectedTripId}
-                          onInvite={() => { setInviteTripId(trip.id); setInviteModalOpen(true); }}
-                          onCollaboratorsClick={() => { setCollaboratorsTripId(trip.id); setCollaboratorsModalOpen(true); }}
+                          highlighted={highlightedTripId === trip.id}
+                          cardRef={(node) => registerTripCardRef(trip.id, node)}
+                          onOpenPlanner={handleEditRoute}
+                          onDatesUpdate={handleDatesUpdate}
+                          onInvite={() => {
+                            setInviteTripId(trip.id);
+                            setInviteModalOpen(true);
+                          }}
+                          onCollaboratorsClick={() => {
+                            setCollaboratorsTripId(trip.id);
+                            setCollaboratorsModalOpen(true);
+                          }}
                         />
                       ))}
                     </div>
@@ -741,7 +1054,9 @@ export function ProfilePage() {
                   <>
                     <div className="flex items-center gap-4 my-4">
                       <hr className="flex-1 border-gray-200" />
-                      <span className="text-xs font-semibold text-gray-400 tracking-wider uppercase">Скоро</span>
+                      <span className="text-xs font-semibold text-gray-400 tracking-wider uppercase">
+                        Скоро
+                      </span>
                       <hr className="flex-1 border-gray-200" />
                     </div>
                     <div className="space-y-3">
@@ -751,8 +1066,18 @@ export function ProfilePage() {
                           trip={trip}
                           isSelected={selectedTripId === trip.id}
                           onCardClick={setSelectedTripId}
-                          onInvite={() => { setInviteTripId(trip.id); setInviteModalOpen(true); }}
-                          onCollaboratorsClick={() => { setCollaboratorsTripId(trip.id); setCollaboratorsModalOpen(true); }}
+                          highlighted={highlightedTripId === trip.id}
+                          cardRef={(node) => registerTripCardRef(trip.id, node)}
+                          onOpenPlanner={handleEditRoute}
+                          onDatesUpdate={handleDatesUpdate}
+                          onInvite={() => {
+                            setInviteTripId(trip.id);
+                            setInviteModalOpen(true);
+                          }}
+                          onCollaboratorsClick={() => {
+                            setCollaboratorsTripId(trip.id);
+                            setCollaboratorsModalOpen(true);
+                          }}
                         />
                       ))}
                     </div>
@@ -763,7 +1088,9 @@ export function ProfilePage() {
                   <>
                     <div className="flex items-center gap-4 my-4">
                       <hr className="flex-1 border-gray-200" />
-                      <span className="text-xs font-semibold text-gray-400 tracking-wider uppercase">Завершенные</span>
+                      <span className="text-xs font-semibold text-gray-400 tracking-wider uppercase">
+                        Завершенные
+                      </span>
                       <hr className="flex-1 border-gray-200" />
                     </div>
                     <div className="space-y-3">
@@ -773,8 +1100,18 @@ export function ProfilePage() {
                           trip={trip}
                           isSelected={selectedTripId === trip.id}
                           onCardClick={setSelectedTripId}
-                          onInvite={() => { setInviteTripId(trip.id); setInviteModalOpen(true); }}
-                          onCollaboratorsClick={() => { setCollaboratorsTripId(trip.id); setCollaboratorsModalOpen(true); }}
+                          highlighted={highlightedTripId === trip.id}
+                          cardRef={(node) => registerTripCardRef(trip.id, node)}
+                          onOpenPlanner={handleEditRoute}
+                          onDatesUpdate={handleDatesUpdate}
+                          onInvite={() => {
+                            setInviteTripId(trip.id);
+                            setInviteModalOpen(true);
+                          }}
+                          onCollaboratorsClick={() => {
+                            setCollaboratorsTripId(trip.id);
+                            setCollaboratorsModalOpen(true);
+                          }}
                         />
                       ))}
                     </div>
@@ -795,14 +1132,16 @@ export function ProfilePage() {
               ))}
             </div>
           ) : savedTrips.length > 0 ? (
-            <div
-              ref={savedListScrollRef}
-              className="px-4 space-y-3 pb-4 pt-3 w-full"
-            >
+            <div ref={savedListScrollRef} className="px-4 space-y-3 pb-4 pt-3 w-full">
               {savedTrips.map((trip) => (
                 <TripCard
                   key={trip.id}
                   trip={trip}
+                  isSelected={selectedTripId === trip.id}
+                  onCardClick={setSelectedTripId}
+                  highlighted={highlightedTripId === trip.id}
+                  cardRef={(node) => registerTripCardRef(trip.id, node)}
+                  onOpenPlanner={handleEditRoute}
                   onDatesUpdate={handleDatesUpdate}
                   onInvite={() => {
                     setInviteTripId(trip.id);
@@ -845,39 +1184,6 @@ export function ProfilePage() {
           }}
         />
       )}
-
-      {/* Conflict modal: switching to a different trip in planner */}
-      <PlannerConflictModal
-        open={showPlannerConflictModal}
-        onOpenChange={setShowPlannerConflictModal}
-        conflictType="different_route"
-        currentRouteTitle={currentTrip?.title?.trim() || 'без названия'}
-        onCancel={() => {
-          setShowPlannerConflictModal(false);
-          setPendingPlannerTripId(null);
-        }}
-        onReplaceWithoutSave={handleConfirmPlannerReplace}
-        onSaveAndReplace={async () => {
-          try {
-            if (currentTrip && !currentTrip.id.startsWith('guest-')) {
-              await tripsApi.update(currentTrip.id, {
-                title: currentTrip.title,
-                description: currentTrip.description ?? undefined,
-                budget: currentTrip.budget ?? undefined,
-              });
-            }
-          } catch (e) {
-            console.error('Failed to save current trip before replace:', e);
-            toast.error('Не удалось сохранить текущий маршрут');
-          }
-          handleConfirmPlannerReplace();
-        }}
-        onGoToPlannerOnly={() => {
-          setShowPlannerConflictModal(false);
-          setPendingPlannerTripId(null);
-          router.push('/planner');
-        }}
-      />
 
       {/* Conflict modal: creating a new trip with unsaved changes */}
       <PlannerConflictModal

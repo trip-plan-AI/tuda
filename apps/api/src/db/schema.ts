@@ -53,6 +53,7 @@ export const trips = pgTable('trips', {
   title: text('title').notNull(),
   description: text('description'),
   budget: integer('budget'),
+  distanceKm: doublePrecision('distance_km').notNull().default(0),
   ownerId: uuid('owner_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
