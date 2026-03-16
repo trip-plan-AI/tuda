@@ -2,6 +2,7 @@ export { useCollaborateStore } from './model/collaborate.store';
 export type { Collaborator } from './model/collaborate.store';
 export { collaborateApi } from './api/collaborate.api';
 export { useCollaborationSocket } from './hooks/useCollaborationSocket';
+export { useChatSync } from './hooks/useChatSync';
 export { InviteModal } from './ui/InviteModal';
 export { CollaboratorList } from './ui/CollaboratorList';
 export { CollaboratorsAvatarGroup } from './ui/CollaboratorsAvatarGroup';
