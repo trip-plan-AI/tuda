@@ -343,6 +343,17 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         // if we have real sessions from the server (prevents chat duplication/cloning)
         const mergedSessions = { ...remoteSessions };
 
+        // TRI-120: Race condition fix — сохраняем уже загруженные сообщения из текущего стора.
+        // chat:history от WebSocket может прийти ДО того, как loadSessions() завершит set() —
+        // в этом случае remoteSessions создаётся с messages:[], стирая только что полученную историю.
+        // Решение: берём messages из state.sessions (текущий стор на момент set()) для каждой remote-сессии.
+        Object.keys(mergedSessions).forEach((id) => {
+          const localSess = state.sessions[id];
+          if (localSess && localSess.messages.length > 0) {
+            mergedSessions[id] = { ...mergedSessions[id], messages: localSess.messages };
+          }
+        });
+
         Object.values(localTransientSessions).forEach((localSession) => {
           // Only keep empty local drafts if we have NO remote sessions
           // Or keep non-empty drafts (ones with messages)
