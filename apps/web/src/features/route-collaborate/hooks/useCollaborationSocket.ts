@@ -53,6 +53,13 @@ export function useCollaborationSocket(tripId: string) {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         loadTripData();
+        const socket = getSocket();
+        if (socket && socket.connected) {
+          // Принудительно "пингуем" комнату при возврате на вкладку
+          socket.emit('join:trip', { trip_id: tripId });
+        } else if (socket) {
+          socket.connect();
+        }
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -90,7 +97,11 @@ export function useCollaborationSocket(tripId: string) {
     });
     socket.on(
       'point:updated',
-      ({ point_id, trip_id: _trip_id, ...patch }: { point_id: string; trip_id?: string } & Record<string, unknown>) => {
+      ({
+        point_id,
+        trip_id: _trip_id,
+        ...patch
+      }: { point_id: string; trip_id?: string } & Record<string, unknown>) => {
         if (checkTripId()) updatePoint(point_id, patch as Parameters<typeof updatePoint>[1]);
       },
     );

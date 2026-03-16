@@ -167,7 +167,7 @@ export class CollaborationGateway
       history.map((msg: any) => ({
         id: msg.id,
         content: msg.content,
-        timestamp: msg.createdAt.toISOString(),
+        timestamp: new Date(msg.createdAt).toISOString(), // 🛡 Защита: Drizzle может возвращать строку
         user_id: msg.userId,
         user_name: msg.userEmail,
       })),
