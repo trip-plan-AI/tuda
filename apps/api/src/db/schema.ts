@@ -181,6 +181,20 @@ export const invitations = pgTable(
   (t) => [unique().on(t.tripId, t.invitedUserId)],
 );
 
+// trip_chat_messages — real-time user chat messages per trip (TRI-121)
+export const tripChatMessages = pgTable('trip_chat_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tripId: uuid('trip_id')
+    .notNull()
+    .references(() => trips.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  userEmail: text('user_email').notNull(),
+  content: text('content').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 // ai_sessions
 export const aiSessions = pgTable('ai_sessions', {
   id: uuid('id').primaryKey().defaultRandom(),
