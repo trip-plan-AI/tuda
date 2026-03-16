@@ -55,21 +55,29 @@ export function useChatSync(tripId: string) {
         role: 'assistant',
         content: data.content,
         timestamp: data.timestamp,
-        routePlan: data.route_plan as ChatMessage['routePlan'] ?? undefined,
+        routePlan: (data.route_plan as ChatMessage['routePlan']) ?? undefined,
       };
       useAiQueryStore.getState().addLocalMessage(agentMessage);
     };
 
     // Load persisted chat history when joining the trip room
     const handleChatHistory = (messages: RemoteChatPayload[]) => {
-      for (const msg of messages) {
-        useAiQueryStore.getState().addLocalMessage({
-          id: msg.id,
-          role: 'user',
-          content: `${msg.user_name}: ${msg.content}`,
-          timestamp: msg.timestamp,
-        });
+      console.log('✅ Получена история чата:', messages);
+      if (!Array.isArray(messages)) {
+        console.warn('⚠️  chat:history получил не массив:', messages);
+        return;
       }
+
+      messages.forEach((data) => {
+        const msg: ChatMessage = {
+          id: data.id,
+          role: 'user',
+          content: `${data.user_name}: ${data.content}`,
+          timestamp: data.timestamp,
+        };
+        console.log('📝 Добавляем сообщение в стейт:', msg);
+        useAiQueryStore.getState().addLocalMessage(msg);
+      });
     };
 
     socket.on('chat:history', handleChatHistory);
