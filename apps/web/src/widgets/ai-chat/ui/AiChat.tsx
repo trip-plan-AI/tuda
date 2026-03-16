@@ -107,7 +107,7 @@ export function AiChat({
   };
 
   return (
-    <div className="flex h-full max-h-[800px] min-h-[560px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 xl:max-h-[calc(100vh-140px)]">
+    <div className="flex h-full max-h-150 min-h-105 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 xl:max-h-[calc(100vh-220px)]">
       <div className="shrink-0 border-b border-slate-200 bg-white px-5 py-4">
         <h2 className="text-base font-bold text-brand-indigo">AI Ассистент</h2>
         <p className="mt-1 text-xs text-slate-500">

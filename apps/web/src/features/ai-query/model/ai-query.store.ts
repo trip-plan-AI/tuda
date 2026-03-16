@@ -685,50 +685,15 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
 
   applyPlanToCurrentTrip: (messageId) => {
     // TRI-104 / UX-SAFE-APPLY:
-    // Задача: запретить «тихое» обновление маршрута из AI-чата после первичного применения.
-    // Функция: этот метод разрешает запись в БД только один раз (когда session.tripId ещё не привязан).
-    // Если убрать правило ниже, кнопка из чата снова начнёт перезаписывать маршрут в БД без
-    // явного подтверждения в Planner, что ломает продуктовый сценарий и повышает риск потери правок.
-    // MERGE-NOTE: при конфликтах всегда сохраняйте инвариант:
-    // "first apply in chat -> create/link trip", "next applies -> open Planner for explicit decision".
+    // Задача: применить AI-план в маршрут на каждый клик "Применить", включая повторные применения.
+    // Функция: всегда отправляем apply API даже для связанного чата, чтобы обновить точки.
     const { activeSessionId, sessions } = get();
     const activeSession = activeSessionId ? sessions[activeSessionId] : null;
     const message = activeSession?.messages.find((item) => item.id === messageId);
 
     if (!activeSession?.sessionId || !message?.routePlan) return Promise.resolve(null);
 
-    if (activeSession.tripId) {
-      // TRI-104 / LINKED-CHAT-DRAFT:
-      // Задача: для уже связанного чата помечать выбранную AI-версию как актуальную,
-      // но НЕ отправлять update в БД.
-      // Функция: обновляем lastAppliedPlanMessageId локально, чтобы UI показал переход в Planner.
-      // Если убрать этот блок, пользователь не увидит корректный CTA/состояние "версия выбрана",
-      // а логика перехода по draftMessageId станет непредсказуемой при слияниях.
-      set((state) => {
-        if (!state.activeSessionId) return {};
-        const targetSession = state.sessions[state.activeSessionId];
-        if (!targetSession) return {};
-
-        const nextSession: ChatSession = {
-          ...targetSession,
-          lastAppliedPlanMessageId: messageId,
-          updatedAt: new Date().toISOString(),
-        };
-
-        const nextSessions = {
-          ...state.sessions,
-          [nextSession.id]: nextSession,
-        };
-
-        return {
-          sessions: nextSessions,
-          ...syncLegacyFields(nextSessions, state.activeSessionId),
-        };
-      });
-
-      return Promise.resolve(activeSession.tripId);
-    }
-
+    // Всегда вызываем API для применения плана (создание новой trip или обновление существующей)
     return api
       .post<ApplySessionPlanResponse>(`/ai/sessions/${activeSession.sessionId}/apply`, {
         message_id: messageId,
