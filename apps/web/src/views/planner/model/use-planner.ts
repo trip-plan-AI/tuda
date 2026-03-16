@@ -567,6 +567,11 @@ export function usePlanner() {
     [points],
   );
 
+  const routeDistanceKm = useMemo(() => {
+    if (!routeInfo?.distance || routeInfo.distance <= 0) return 0;
+    return Number((routeInfo.distance / 1000).toFixed(1));
+  }, [routeInfo]);
+
   const dailyBudgets = useMemo(() => {
     const map = new Map<string, number>();
     points.forEach((p) => {
@@ -719,11 +724,13 @@ export function usePlanner() {
         await tripsApi.update(tripId, {
           title: autoTitle,
           budget: currentTrip?.budget || null,
+          distanceKm: routeDistanceKm,
           isActive: isActiveRoute,
         });
         updateCurrentTrip({
           title: autoTitle,
           budget: currentTrip?.budget || null,
+          distanceKm: routeDistanceKm,
           isActive: isActiveRoute,
         });
         import('@/shared/socket/socket-client').then(({ getSocket }) => {
@@ -731,6 +738,7 @@ export function usePlanner() {
             trip_id: tripId,
             title: autoTitle,
             budget: currentTrip?.budget || null,
+            distanceKm: routeDistanceKm,
             isActive: isActiveRoute,
           });
         });
@@ -1115,6 +1123,7 @@ export function usePlanner() {
       const updated = await tripsApi.update(tripId, {
         title: autoTitle,
         budget: currentTrip?.budget ?? 0,
+        distanceKm: routeDistanceKm,
         isActive: isActiveRoute,
       });
       updateCurrentTrip(updated);

@@ -13,6 +13,7 @@ export interface Trip {
   title: string
   description: string | null
   budget: number | null
+  distanceKm?: number | null
   ownerId: string
   isActive: boolean
   ownerIsActive?: boolean

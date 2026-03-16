@@ -71,6 +71,47 @@ export function ProfilePage() {
     .filter((t) => new Date(t.endDate!) < now)
     .sort((a, b) => new Date(b.endDate!).getTime() - new Date(a.endDate!).getTime());
 
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const getDistanceKmBetweenPoints = (
+    from: { lat: number; lon: number },
+    to: { lat: number; lon: number },
+  ) => {
+    const earthRadiusKm = 6371;
+    const dLat = toRad(to.lat - from.lat);
+    const dLon = toRad(to.lon - from.lon);
+    const lat1 = toRad(from.lat);
+    const lat2 = toRad(to.lat);
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return earthRadiusKm * c;
+  };
+
+  const getTripDistanceKm = (trip: Trip) => {
+    if (trip.distanceKm != null) return trip.distanceKm;
+
+    const tripPoints = trip.points ?? [];
+    if (tripPoints.length < 2) return 0;
+
+    let total = 0;
+    for (let i = 1; i < tripPoints.length; i += 1) {
+      const prev = tripPoints[i - 1]!;
+      const curr = tripPoints[i]!;
+      total += getDistanceKmBetweenPoints({ lat: prev.lat, lon: prev.lon }, { lat: curr.lat, lon: curr.lon });
+    }
+    return total;
+  };
+
+  const finishedOrActiveTrips = [...currentTrips, ...pastTrips];
+  const statsTripsCount = finishedOrActiveTrips.length;
+  const statsPointsCount = finishedOrActiveTrips.reduce((acc, t) => acc + (t.points?.length ?? 0), 0);
+  const statsDistanceKm = Math.round(
+    finishedOrActiveTrips.reduce((acc, t) => acc + getTripDistanceKm(t), 0),
+  );
+
   const progressColor =
     scrollProgress < 0.4 ? '#0ea5e9' : scrollProgress < 0.8 ? '#4f46e5' : '#9333ea';
   const progressTrackColor = '#e2e8f0';
@@ -500,7 +541,15 @@ export function ProfilePage() {
   const handleConflictSaveAndReplace = async () => {
     try {
       if (currentTrip) {
-        await tripsApi.update(currentTrip.id, currentTrip);
+        await tripsApi.update(currentTrip.id, {
+          title: currentTrip.title,
+          description: currentTrip.description ?? undefined,
+          budget: currentTrip.budget ?? undefined,
+          startDate: currentTrip.startDate ?? undefined,
+          endDate: currentTrip.endDate ?? undefined,
+          isActive: currentTrip.isActive,
+          distanceKm: currentTrip.distanceKm ?? 0,
+        });
       }
       clearPlanner();
       setConflictModalOpen(false);
@@ -606,23 +655,23 @@ export function ProfilePage() {
         <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-100">
           <div className="flex flex-col items-center">
             <span className="text-base font-black text-brand-indigo leading-none">
-              {allTrips.length}
+              {statsTripsCount}
             </span>
             <span className="text-[10px] text-slate-400 font-semibold mt-0.5">Поездок</span>
           </div>
           <div className="w-px h-6 bg-slate-100" />
           <div className="flex flex-col items-center">
             <span className="text-base font-black text-brand-indigo leading-none">
-              {allTrips.reduce((acc, t) => acc + (t.points?.length ?? 0), 0)}
+              {statsPointsCount}
             </span>
             <span className="text-[10px] text-slate-400 font-semibold mt-0.5">Точек</span>
           </div>
           <div className="w-px h-6 bg-slate-100" />
           <div className="flex flex-col items-center">
             <span className="text-base font-black text-brand-indigo leading-none">
-              {travelTrips.length}
+              {statsDistanceKm}
             </span>
-            <span className="text-[10px] text-slate-400 font-semibold mt-0.5">С датами</span>
+            <span className="text-[10px] text-slate-400 font-semibold mt-0.5">км</span>
           </div>
         </div>
       </div>

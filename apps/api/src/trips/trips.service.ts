@@ -196,13 +196,17 @@ export class TripsService {
       });
       if (!collab) throw new ForbiddenException('Access denied');
 
-      // Collaborators can only change isActive and budget — extra fields are silently ignored
-      const { isActive, budget } = dto;
+      // Collaborators can only change isActive, budget and distanceKm — extra fields are silently ignored
+      const { isActive, budget, distanceKm } = dto;
 
-      if (budget !== undefined) {
+      if (budget !== undefined || distanceKm !== undefined) {
         await this.db
           .update(schema.trips)
-          .set({ budget, updatedAt: new Date() })
+          .set({
+            ...(budget !== undefined ? { budget } : {}),
+            ...(distanceKm !== undefined ? { distanceKm } : {}),
+            updatedAt: new Date(),
+          })
           .where(eq(schema.trips.id, id));
       }
 
