@@ -105,6 +105,8 @@ interface AiQueryStore {
   clearChat: (keepLastPlan?: boolean) => void;
   // TRI-120: добавляет сообщение в активную сессию без вызова AI (для ретрансляции из сокетов).
   addLocalMessage: (message: ChatMessage) => void;
+  // TRI-120: добавляет историю чата из WebSocket с merge существующих сообщений
+  addChatHistory: (messages: ChatMessage[]) => void;
 }
 
 interface ChatSession {
@@ -141,6 +143,15 @@ function mapErrorToUserMessage(error: HttpError) {
   if (error.status === 429) return 'Слишком много запросов. Подождите немного и повторите.';
   if (error.status === 504) return 'AI сервис отвечает слишком долго. Попробуйте повторить запрос.';
   return error.message ?? 'Неизвестная ошибка. Попробуйте еще раз.';
+}
+
+// TRI-120: RACE CONDITION FIX - Merge сообщений из REST API и WebSocket
+function mergeAndSortMessages(existing: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  const map = new Map(existing.map((m) => [m.id, m]));
+  incoming.forEach((m) => map.set(m.id, m));
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+  );
 }
 
 function toRoutePoints(routePlan: ChatRoutePlan, tripId: string): RoutePoint[] {
@@ -786,7 +797,8 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           ...baseSession,
           tripId: response.trip_id,
           sessionId: response.session_id,
-          messages: mappedMessages,
+          // TRI-120: RACE CONDITION FIX - merge с существующими сообщениями вместо перезаписи
+          messages: mergeAndSortMessages(baseSession.messages, mappedMessages),
           // updatedAt обновляем только если сообщения действительно изменились
           updatedAt:
             JSON.stringify(baseSession.messages) !== JSON.stringify(mappedMessages)
@@ -876,7 +888,8 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
 
           const nextSession: ChatSession = {
             ...freshTarget,
-            messages: mappedMessages,
+            // TRI-120: RACE CONDITION FIX - merge с существующими сообщениями
+            messages: mergeAndSortMessages(freshTarget.messages, mappedMessages),
           };
 
           const nextSessions = {
@@ -1044,6 +1057,33 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         [activeSessionId]: {
           ...session,
           messages: [...session.messages, message],
+          updatedAt: new Date().toISOString(),
+        },
+      };
+      return {
+        sessions: updatedSessions,
+        activeSessionId,
+        ...syncLegacyFields(updatedSessions, activeSessionId),
+      };
+    });
+  },
+
+  // TRI-120: RACE CONDITION FIX - добавляет историю чата из WebSocket с merge
+  addChatHistory: (newMessages) => {
+    set((state) => {
+      const { sessions, activeSessionId } = ensureActiveSession(state);
+      const session = sessions[activeSessionId];
+
+      if (!session) return state;
+
+      // Merge новых сообщений с существующими
+      const combined = mergeAndSortMessages(session.messages, newMessages);
+
+      const updatedSessions = {
+        ...sessions,
+        [activeSessionId]: {
+          ...session,
+          messages: combined,
           updatedAt: new Date().toISOString(),
         },
       };

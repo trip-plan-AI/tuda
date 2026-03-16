@@ -55,21 +55,29 @@ export function useChatSync(tripId: string) {
         role: 'assistant',
         content: data.content,
         timestamp: data.timestamp,
-        routePlan: data.route_plan as ChatMessage['routePlan'] ?? undefined,
+        routePlan: (data.route_plan as ChatMessage['routePlan']) ?? undefined,
       };
       useAiQueryStore.getState().addLocalMessage(agentMessage);
     };
 
     // Load persisted chat history when joining the trip room
     const handleChatHistory = (messages: RemoteChatPayload[]) => {
-      for (const msg of messages) {
-        useAiQueryStore.getState().addLocalMessage({
-          id: msg.id,
-          role: 'user',
-          content: `${msg.user_name}: ${msg.content}`,
-          timestamp: msg.timestamp,
-        });
+      console.log('✅ Получена история чата:', messages);
+      if (!Array.isArray(messages) || messages.length === 0) {
+        console.warn('⚠️  chat:history получил пустой или не массив:', messages);
+        return;
       }
+
+      // TRI-120: RACE CONDITION FIX - передаём весь массив одним вызовом
+      const mappedHistory: ChatMessage[] = messages.map((data) => ({
+        id: data.id,
+        role: 'user',
+        content: `${data.user_name}: ${data.content}`,
+        timestamp: data.timestamp,
+      }));
+
+      console.log('📦 Добавляем историю в стейт:', mappedHistory.length, 'сообщений');
+      useAiQueryStore.getState().addChatHistory(mappedHistory);
     };
 
     socket.on('chat:history', handleChatHistory);
