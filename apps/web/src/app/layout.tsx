@@ -9,9 +9,9 @@ export const metadata: Metadata = {
   title: 'Travel Planner',
   description: 'Совместное планирование путешествий в реальном времени',
   icons: {
-    icon: '/favicon.ico',
-    shortcut: '/favicon.ico',
-    apple: '/logo.png',
+    icon: '/icon.svg',
+    shortcut: '/icon.svg',
+    apple: '/logo.svg',
   },
   appleWebApp: {
     capable: true,

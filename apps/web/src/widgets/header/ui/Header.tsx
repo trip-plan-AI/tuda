@@ -184,7 +184,7 @@ export function Header() {
           {/* Логотип */}
           <Link href="/" className="flex items-center gap-3 transition-colors">
             <Image
-              src="/logo.png"
+              src="/logo.svg"
               alt="Tuda logo"
               width={40}
               height={40}
