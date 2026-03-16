@@ -1,15 +1,20 @@
 'use client';
 
-import { Mail, Github, Map } from 'lucide-react';
+import { Mail, Github } from 'lucide-react';
+import Image from 'next/image';
 
 export function Footer() {
   return (
     <footer className="bg-[#2f2f2f] py-12 z-20 hidden md:block">
       <div className="max-w-5xl mx-auto px-4 md:px-6 flex flex-col md:flex-row justify-between items-center gap-8 w-full">
         <div className="flex items-center gap-3">
-          <div className="bg-white/10 text-white p-2 rounded-xl">
-            <Map size={24} />
-          </div>
+          <Image
+            src="/logo.png"
+            alt="Tuda logo"
+            width={40}
+            height={40}
+            className="h-10 w-10 rounded-xl object-cover"
+          />
           <div className="flex flex-col text-left">
             <span className="font-bold text-xl leading-none text-white">
               Tuda
