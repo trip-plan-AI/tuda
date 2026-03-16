@@ -44,7 +44,7 @@ export class OverpassClientService {
     // Широкий поиск: берем вообще все популярные туристические/досуговые теги,
     // ИГНОРИРУЯ запрошенные юзером категории, чтобы отдать максимум данных на откуп LLM
     const query = `
-      [out:json][timeout:15];
+      [out:json][timeout:25];
       (
         nwr["tourism"](around:${center});
         nwr["historic"](around:${center});
@@ -56,7 +56,7 @@ export class OverpassClientService {
     `;
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
+    const timer = setTimeout(() => controller.abort(), 30000);
 
     try {
       const response = await fetch(this.baseUrl, {
@@ -83,11 +83,14 @@ export class OverpassClientService {
         .filter((item): item is PoiItem => item !== null)
         .filter((item) => !intent.excluded_categories.includes(item.category));
     } catch (e) {
-      this.logger.error(`Error fetching from Overpass:`, e);
+      if (e instanceof Error && e.name === 'AbortError') {
+        this.logger.warn('Overpass request timed out');
+      } else {
+        this.logger.error(`Error fetching from Overpass:`, e);
+      }
       return [];
     } finally {
       clearTimeout(timer);
-      controller.abort();
     }
   }
 
