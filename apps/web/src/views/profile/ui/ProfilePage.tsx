@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Pencil, Map as MapIcon, ArrowUp } from 'lucide-react';
+import { User as UserIcon, Pencil, Map as MapIcon, ArrowUp, Route, MapPin, Ruler } from 'lucide-react';
 import { useUserStore, usersApi } from '@/entities/user';
 import { useTripStore, type Trip } from '@/entities/trip';
 import { useAuthStore } from '@/features/auth';
@@ -111,6 +111,10 @@ export function ProfilePage() {
   const statsDistanceKm = Math.round(
     finishedOrActiveTrips.reduce((acc, t) => acc + getTripDistanceKm(t), 0),
   );
+  const formatStatValue = (value: number) =>
+    value
+      .toLocaleString('ru-RU')
+      .replace(/\u00A0/g, ' ');
 
   const progressColor =
     scrollProgress < 0.4 ? '#0ea5e9' : scrollProgress < 0.8 ? '#4f46e5' : '#9333ea';
@@ -651,27 +655,37 @@ export function ProfilePage() {
           </div>
         </div>
 
-        {/* Stats row */}
-        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-100">
-          <div className="flex flex-col items-center">
-            <span className="text-base font-black text-brand-indigo leading-none">
-              {statsTripsCount}
-            </span>
-            <span className="text-[10px] text-slate-400 font-semibold mt-0.5">Поездок</span>
-          </div>
-          <div className="w-px h-6 bg-slate-100" />
-          <div className="flex flex-col items-center">
-            <span className="text-base font-black text-brand-indigo leading-none">
-              {statsPointsCount}
-            </span>
-            <span className="text-[10px] text-slate-400 font-semibold mt-0.5">Точек</span>
-          </div>
-          <div className="w-px h-6 bg-slate-100" />
-          <div className="flex flex-col items-center">
-            <span className="text-base font-black text-brand-indigo leading-none">
-              {statsDistanceKm}
-            </span>
-            <span className="text-[10px] text-slate-400 font-semibold mt-0.5">км</span>
+        <div className="mt-3 pt-3 border-t border-slate-100">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5 sm:p-3.5">
+              <div className="flex items-center gap-1.5 text-slate-500">
+                <MapPin size={12} className="sm:w-3.5 sm:h-3.5" />
+                <p className="text-[10px] sm:text-xs font-semibold leading-none">Точки</p>
+              </div>
+              <p className="text-lg sm:text-2xl font-black text-brand-indigo leading-none mt-2">
+                {formatStatValue(statsPointsCount)}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5 sm:p-3.5">
+              <div className="flex items-center gap-1.5 text-slate-500">
+                <Route size={12} className="sm:w-3.5 sm:h-3.5" />
+                <p className="text-[10px] sm:text-xs font-semibold leading-none">Поездки</p>
+              </div>
+              <p className="text-lg sm:text-2xl font-black text-brand-indigo leading-none mt-2">
+                {formatStatValue(statsTripsCount)}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5 sm:p-3.5">
+              <div className="flex items-center gap-1.5 text-slate-500">
+                <Ruler size={12} className="sm:w-3.5 sm:h-3.5" />
+                <p className="text-[10px] sm:text-xs font-semibold leading-none">Километры</p>
+              </div>
+              <p className="text-lg sm:text-2xl font-black text-brand-indigo leading-none mt-2">
+                {formatStatValue(statsDistanceKm)}
+              </p>
+            </div>
           </div>
         </div>
       </div>
