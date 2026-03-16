@@ -62,24 +62,8 @@ export function PlannerConflictModal({
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(newOpen) => {
-        // Закрываем модалку только если пользователь кликнул на overlay или нажал Escape
-        // Если newOpen = false, значит пользователь кликнул вне модалки
-        if (!newOpen) {
-          onOpenChange(false);
-        }
-      }}
-    >
-      <DialogContent
-        className="sm:max-w-xl border-none shadow-2xl rounded-3xl p-8 overflow-hidden z-[1100] gap-8"
-        onPointerDownOutside={(e) => {
-          // Разрешаем закрытие по клику на overlay
-          e.preventDefault();
-          onOpenChange(false);
-        }}
-      >
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl border-none shadow-2xl rounded-3xl p-8 overflow-hidden gap-8">
         <DialogHeader className="gap-2">
           <DialogTitle className="text-2xl font-semibold text-slate-900 leading-tight">
             {title}
@@ -104,7 +88,7 @@ export function PlannerConflictModal({
             className="w-full font-medium h-12 rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-all active:scale-[0.98]"
             onClick={onGoToPlannerOnly}
           >
-            Текущий маршрут
+            Перейти в планнер (посмотреть текущий)
           </Button>
 
           <div className="grid grid-cols-2 gap-3 mt-2">

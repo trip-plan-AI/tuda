@@ -1,61 +1,54 @@
 const fs = require('fs');
-const file = 'apps/api/src/collaboration/collaboration.gateway.ts';
-let code = fs.readFileSync(file, 'utf8');
+const path = './apps/web/src/widgets/route-map/ui/RouteMap.tsx';
+let content = fs.readFileSync(path, 'utf8');
 
-if (!code.includes('import { TripsService }')) {
-  code = code.replace(
-    "import { PointsService } from '../points/points.service';",
-    "import { PointsService } from '../points/points.service';\nimport { TripsService } from '../trips/trips.service';\nimport { ForbiddenException } from '@nestjs/common';"
+const searchStr = `  return (
+    <div
+      ref={containerRef}
+      className="w-full h-full relative"
+      data-testid="route-map"
+      data-readonly={String(readonly)}
+      data-draggable={String(draggable)}
+    />
   );
-  code = code.replace(
-    "private pointsService: PointsService,",
-    "private pointsService: PointsService,\n    private tripsService: TripsService,"
+}`;
+
+const replaceStr = `  return (
+    <div className="w-full h-full relative">
+      <div
+        ref={containerRef}
+        className="absolute inset-0 z-0"
+        data-testid="route-map"
+        data-readonly={String(readonly)}
+        data-draggable={String(draggable)}
+      />
+      {!readonly && onAddPointModeChange && (
+        <button
+          data-testid="route-map-add-point-toggle"
+          data-active={String(isAddPointMode)}
+          onClick={() => onAddPointModeChange(!isAddPointMode)}
+          className="absolute left-[12px] top-[60px] w-[40px] h-[40px] rounded-[12px] border-none flex items-center justify-center cursor-pointer transition-all duration-200 z-[2500]"
+          style={{
+            background: isAddPointMode ? '#0ea5e9' : 'white',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          }}
+        >
+          {isAddPointMode ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#0ea5e9" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+              <circle cx="12" cy="10" r="3" fill="none" stroke="white" strokeWidth="1.5"/>
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="#4d4d4d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+              <circle cx="12" cy="10" r="3" fill="none" stroke="#4d4d4d" strokeWidth="1.5"/>
+            </svg>
+          )}
+        </button>
+      )}
+    </div>
   );
-}
+}`;
 
-// Add checkAccess helper
-if (!code.includes('async checkAccess(userId: string, tripId: string)')) {
-  code = code.replace(
-    "handleConnection(client: TypedSocket) {",
-    "async checkAccess(userId: string, tripId: string) {\n    const trip = await this.tripsService.findByIdWithAccess(tripId, userId);\n    if (trip.ownerId !== userId && !trip.ownerIsActive) {\n      throw new ForbiddenException('Route editing is disabled by the owner');\n    }\n    return trip;\n  }\n\n  handleConnection(client: TypedSocket) {"
-  );
-}
-
-// Update point:add
-code = code.replace(
-  "async handlePointAdd(\n    @ConnectedSocket() _client: TypedSocket,\n    @MessageBody() data: CreatePointDto & { trip_id: string },\n  ) {\n    const { trip_id, ...dto } = data;",
-  "async handlePointAdd(\n    @ConnectedSocket() _client: TypedSocket,\n    @MessageBody() data: CreatePointDto & { trip_id: string },\n  ) {\n    await this.checkAccess(_client.data.userId, data.trip_id);\n    const { trip_id, ...dto } = data;"
-);
-
-// Update point:move
-code = code.replace(
-  "async handlePointMove(\n    @ConnectedSocket() _client: TypedSocket,\n    @MessageBody()\n    data: { trip_id: string; point_id: string; lat: number; lon: number },\n  ) {\n    await this.pointsService.update(data.point_id, data.trip_id, {",
-  "async handlePointMove(\n    @ConnectedSocket() _client: TypedSocket,\n    @MessageBody()\n    data: { trip_id: string; point_id: string; lat: number; lon: number },\n  ) {\n    await this.checkAccess(_client.data.userId, data.trip_id);\n    await this.pointsService.update(data.point_id, data.trip_id, {"
-);
-
-// Update point:delete
-code = code.replace(
-  "async handlePointDelete(\n    @ConnectedSocket() _client: TypedSocket,\n    @MessageBody() data: { trip_id: string; point_id: string },\n  ) {\n    await this.pointsService.remove(data.point_id, data.trip_id);",
-  "async handlePointDelete(\n    @ConnectedSocket() _client: TypedSocket,\n    @MessageBody() data: { trip_id: string; point_id: string },\n  ) {\n    await this.checkAccess(_client.data.userId, data.trip_id);\n    await this.pointsService.remove(data.point_id, data.trip_id);"
-);
-
-// Update point:update
-code = code.replace(
-  "handlePointUpdate(\n    @ConnectedSocket() client: TypedSocket,\n    @MessageBody()\n    data: { trip_id: string; point_id: string } & Record<string, unknown>,\n  ) {\n    const { trip_id, ...rest } = data;",
-  "async handlePointUpdate(\n    @ConnectedSocket() client: TypedSocket,\n    @MessageBody()\n    data: { trip_id: string; point_id: string } & Record<string, unknown>,\n  ) {\n    await this.checkAccess(client.data.userId, data.trip_id);\n    const { trip_id, ...rest } = data;"
-);
-
-// Update point:reorder
-code = code.replace(
-  "handlePointReorder(\n    @ConnectedSocket() client: TypedSocket,\n    @MessageBody() data: { trip_id: string; pointIds: string[] },\n  ) {",
-  "async handlePointReorder(\n    @ConnectedSocket() client: TypedSocket,\n    @MessageBody() data: { trip_id: string; pointIds: string[] },\n  ) {\n    await this.checkAccess(client.data.userId, data.trip_id);"
-);
-
-// Update trip:update
-code = code.replace(
-  "handleTripUpdate(\n    @ConnectedSocket() client: TypedSocket,\n    @MessageBody() data: { trip_id: string } & Record<string, unknown>,\n  ) {\n    const { trip_id, ...patch } = data;",
-  "async handleTripUpdate(\n    @ConnectedSocket() client: TypedSocket,\n    @MessageBody() data: { trip_id: string } & Record<string, unknown>,\n  ) {\n    await this.checkAccess(client.data.userId, data.trip_id);\n    const { trip_id, ...patch } = data;"
-);
-
-fs.writeFileSync(file, code);
-console.log('patched');
+content = content.replace(searchStr, replaceStr);
+fs.writeFileSync(path, content, 'utf8');

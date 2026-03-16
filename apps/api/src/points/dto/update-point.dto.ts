@@ -37,4 +37,10 @@ export class UpdatePointDto {
   @IsOptional()
   @IsString()
   transportMode?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  duration?: number;
 }

@@ -22,6 +22,7 @@ import { YandexBatchRefinementService } from './pipeline/yandex-batch-refinement
 import { LogicalIdSelectorService } from './pipeline/logical-id-selector.service';
 import { MutationParserService } from './services/mutation-parser.service';
 import { PointMutationService } from './services/point-mutation.service';
+import { GeocodingFallbackService } from './services/geocoding-fallback.service';
 import { CollaborationModule } from '../collaboration/collaboration.module';
 
 @Module({
@@ -57,6 +58,7 @@ import { CollaborationModule } from '../collaboration/collaboration.module';
     LogicalIdSelectorService,
     MutationParserService,
     PointMutationService,
+    GeocodingFallbackService,
   ],
   exports: [
     AiSessionsService,

@@ -40,4 +40,5 @@ export interface LlmGeneratedPoiResponse {
 
 export interface FilteredPoi extends PoiItem {
   description: string;
+  needs_geocoding?: boolean; // Flag to indicate this point needs geocoding
 }
