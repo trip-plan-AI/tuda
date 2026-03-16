@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Map, Home, MessageSquare, MapPin, User, LogOut, Mail } from 'lucide-react';
+import { Home, MessageSquare, MapPin, User, LogOut, Mail } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
@@ -182,9 +183,14 @@ export function Header() {
         <div className="max-w-5xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between w-full">
           {/* Логотип */}
           <Link href="/" className="flex items-center gap-3 transition-colors">
-            <div className="bg-brand-sky text-white p-2 rounded-xl shadow-sm">
-              <Map size={24} />
-            </div>
+            <Image
+              src="/logo.svg"
+              alt="Tuda logo"
+              width={40}
+              height={40}
+              className="h-10 w-10 rounded-xl object-cover shadow-sm"
+              priority
+            />
             <span
               className={cn('font-bold text-xl leading-none', isHome ? 'text-white' : 'text-black')}
             >

@@ -8,6 +8,11 @@ const inter = Inter({ subsets: ["cyrillic", "latin"], variable: "--font-sans" })
 export const metadata: Metadata = {
   title: 'Travel Planner',
   description: 'Совместное планирование путешествий в реальном времени',
+  icons: {
+    icon: '/icon.svg',
+    shortcut: '/icon.svg',
+    apple: '/logo.svg',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
