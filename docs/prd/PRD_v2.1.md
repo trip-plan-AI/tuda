@@ -391,12 +391,14 @@ apps/api/src/
 | `point:move` | client → server | `{ trip_id, point_id, coords }` |
 | `point:delete` | client → server | `{ trip_id, point_id }` |
 | `cursor:move` | client → server | `{ trip_id, x, y }` |
+| `message:send` | client → server | `{ trip_id, id, content, timestamp }` |
 | `point:added` | server → clients | `{ point, user_id }` |
 | `point:moved` | server → clients | `{ point_id, coords, user_id }` |
 | `point:deleted` | server → clients | `{ point_id, user_id }` |
 | `cursor:moved` | server → clients | `{ user_id, x, y, color }` |
 | `presence:join` | server → clients | `{ user_id, name, color }` |
 | `presence:leave` | server → clients | `{ user_id }` |
+| `message:receive` | server → clients | `{ trip_id, id, content, timestamp, user_id, user_name }` |
 
 ### 4.3 Admin CLI (v2.1)
 
@@ -560,6 +562,13 @@ export const aiSessions = pgTable('ai_sessions', {
 - При `join:trip` → broadcast `presence:join` с данными пользователя
 - При disconnect → broadcast `presence:leave`
 - Список онлайн-участников хранится в памяти NestJS (Map)
+
+**Chat Sync (TRI-120):**
+- Клиент отправляет `message:send` — сервер ретранслирует через `message:receive` всем участникам комнаты (кроме отправителя)
+- AI-агент (Dual-AI Engine) реагирует **только** на сообщения с тегом `/help` в начале строки
+- Сообщения без `/help` транслируются участникам, но не вызывают AI-pipeline
+- При получении `/help` тег удаляется перед передачей в Orchestrator
+- Входящие `message:receive` добавляются в активную AI-сессию получателя локально (без персистентности — только на время сессии браузера)
 
 ### 6.2 TSP Route Optimization
 

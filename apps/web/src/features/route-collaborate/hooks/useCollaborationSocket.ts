@@ -20,10 +20,12 @@ export function useCollaborationSocket(tripId: string) {
       // Load actual trip and points concurrently to avoid partial state updates
       Promise.all([tripsApi.getOne(tripId), pointsApi.getAll(tripId)])
         .then(([trip, points]) => {
-          const currentStoreTrip = useTripStore.getState().currentTrip;
-          // 🛡 ЗАЩИТА: Если в сторе лежит локальный черновик (guest-) или другой маршрут,
-          // а сокет пытается загрузить чужой ID, мы НЕ перезаписываем стор!
-          if (currentStoreTrip && currentStoreTrip.id !== tripId) {
+          const storeState = useTripStore.getState();
+          const currentStoreTrip = storeState.currentTrip;
+          // 🛡 ЗАЩИТА: не перезаписываем стор, если пользователь редактирует другой маршрут
+          // с несохранёнными изменениями (isDirty). Без isDirty-проверки страница AI-чата
+          // не могла загрузить маршрут сессии, если Planner оставил в сторе другой tripId.
+          if (currentStoreTrip && currentStoreTrip.id !== tripId && storeState.isDirty) {
             return;
           }
 
