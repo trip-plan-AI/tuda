@@ -78,6 +78,143 @@ export class SchedulerService {
     };
   }
 
+  injectPoints(
+    existingPlan: RoutePlan,
+    newPois: FilteredPoi[],
+    intent: ParsedIntent,
+  ): RoutePlan {
+    this.logger.log(
+      `Injecting ${newPois.length} new POIs into existing plan for ${existingPlan.city}...`,
+    );
+
+    // TRI-115: Deep copy and filter out invalid points from history/existing plan
+    const days: PlanDay[] = existingPlan.days.map((day) => ({
+      ...day,
+      points: day.points
+          .filter((p) => {
+            const lat = p.poi?.coordinates?.lat;
+            const lon = p.poi?.coordinates?.lon;
+            return (
+              lat !== undefined &&
+              lon !== undefined &&
+              Number.isFinite(lat) &&
+              Number.isFinite(lon) &&
+              (Math.abs(lat) > 0.001 || Math.abs(lon) > 0.001) &&
+              !(lat === 0 && lon === 0) // Explicitly exclude (0,0) coordinates
+            );
+          })
+        .map((p) => ({ ...p })),
+    }));
+
+    const endMinutes = this.timeToMinutes(intent.end_time || '21:00');
+    const dayBudget =
+      intent.budget_per_day ??
+      (intent.budget_total ? Math.round(intent.budget_total / intent.days) : 0);
+
+    for (const poi of newPois) {
+      // Avoid duplicate names
+      const isDuplicate = days.some((d) =>
+        d.points.some(
+          (p) => p.poi.name.toLowerCase().trim() === poi.name.toLowerCase().trim(),
+        ),
+      );
+      if (isDuplicate) continue;
+
+      let bestDayIndex = -1;
+      let minDistance = Infinity;
+
+      // Find the best day/position (currently just appending to best day)
+      for (let i = 0; i < days.length; i += 1) {
+        const day = days[i];
+        const lastPoint = day.points[day.points.length - 1];
+
+        if (lastPoint) {
+          const dist = this.haversineKm(
+            lastPoint.poi.coordinates.lat,
+            lastPoint.poi.coordinates.lon,
+            poi.coordinates.lat,
+            poi.coordinates.lon,
+          );
+
+          // Check if it fits temporally
+          const currentTime = this.timeToMinutes(lastPoint.departure_time);
+          const transit = Math.max(15, Math.round((dist / 25) * 60 + 10));
+          const arrival = currentTime + transit;
+          const duration = VISIT_DURATION[poi.category] || 60;
+
+          if (arrival + duration <= endMinutes + 30) {
+            if (dist < minDistance) {
+              minDistance = dist;
+              bestDayIndex = i;
+            }
+          }
+        } else if (bestDayIndex === -1) {
+          bestDayIndex = i;
+        }
+      }
+
+      if (bestDayIndex !== -1) {
+        const day = days[bestDayIndex];
+        const lastPoint = day.points[day.points.length - 1];
+        const currentTime = lastPoint
+          ? this.timeToMinutes(lastPoint.departure_time)
+          : this.timeToMinutes(day.day_start_time);
+
+        const dist = lastPoint
+          ? this.haversineKm(
+              lastPoint.poi.coordinates.lat,
+              lastPoint.poi.coordinates.lon,
+              poi.coordinates.lat,
+              poi.coordinates.lon,
+            )
+          : 0;
+
+        const transit = lastPoint ? Math.max(15, Math.round((dist / 25) * 60 + 10)) : 0;
+        const arrival = currentTime + transit;
+        const duration = VISIT_DURATION[poi.category] || 60;
+        const departure = arrival + duration;
+
+        const cost = this.estimatePointCost(poi, dayBudget);
+
+         const lat = poi.coordinates?.lat;
+         const lon = poi.coordinates?.lon;
+         const isCoordValid =
+           lat !== undefined &&
+           lon !== undefined &&
+           Number.isFinite(lat) &&
+           Number.isFinite(lon) &&
+           (Math.abs(lat) > 0.001 || Math.abs(lon) > 0.001) &&
+           !(lat === 0 && lon === 0); // Explicitly exclude (0,0) coordinates
+
+         if (!isCoordValid) {
+           this.logger.error(
+             `[Inject] Skipping point "${poi.name}" due to invalid coordinates: (${lat}, ${lon})`,
+           );
+           continue;
+         }
+
+        day.points.push({
+          poi_id: poi.id,
+          poi,
+          order: day.points.length + 1,
+          arrival_time: this.minutesToTime(arrival),
+          departure_time: this.minutesToTime(departure),
+          visit_duration_min: duration,
+          travel_from_prev_min: transit || undefined,
+          estimated_cost: cost,
+        });
+        day.day_budget_estimated += cost;
+
+        this.logger.log(`  [Inject] Added ${poi.name} to Day ${day.day_number}`);
+      } else {
+        this.logger.warn(`  [Inject] Could not fit ${poi.name} into any day`);
+      }
+    }
+
+    const totalBudget = days.reduce((s, d) => s + d.day_budget_estimated, 0);
+    return { ...existingPlan, days, total_budget_estimated: totalBudget };
+  }
+
   buildPlan(pois: FilteredPoi[], intent: ParsedIntent): RoutePlan {
     this.logger.log(
       `Starting to build route plan for ${intent.days} days with ${pois.length} selected POIs...`,
@@ -177,6 +314,23 @@ export class SchedulerService {
           );
           return false;
         }
+
+         const lat = poi.coordinates?.lat;
+         const lon = poi.coordinates?.lon;
+         const isCoordValid =
+           lat !== undefined &&
+           lon !== undefined &&
+           Number.isFinite(lat) &&
+           Number.isFinite(lon) &&
+           (Math.abs(lat) > 0.001 || Math.abs(lon) > 0.001) &&
+           !(lat === 0 && lon === 0); // Explicitly exclude (0,0) coordinates
+
+         if (!isCoordValid) {
+           this.logger.error(
+             `[Scheduler] Skipping point "${poi.name}" due to invalid coordinates: (${lat}, ${lon})`,
+           );
+           return false;
+         }
 
         points.push({
           poi_id: poi.id,

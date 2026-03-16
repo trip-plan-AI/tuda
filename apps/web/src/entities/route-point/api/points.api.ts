@@ -10,6 +10,7 @@ export interface CreatePointPayload {
   imageUrl?: string
   order?: number
   address?: string
+  duration?: number
   transportMode?: 'driving' | 'foot' | 'bike' | 'direct'
 }
 
@@ -21,6 +22,7 @@ export interface UpdatePointPayload {
   visitDate?: string
   imageUrl?: string
   address?: string | null
+  duration?: number
   transportMode?: 'driving' | 'foot' | 'bike' | 'direct'
 }
 

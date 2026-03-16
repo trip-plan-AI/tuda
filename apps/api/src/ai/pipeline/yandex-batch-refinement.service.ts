@@ -75,7 +75,6 @@ export class YandexBatchRefinementService {
       return candidates[0];
     } finally {
       clearTimeout(timer);
-      controller.abort();
     }
   }
 
@@ -149,7 +148,7 @@ export class YandexBatchRefinementService {
       10,
     );
     if (!Number.isFinite(parsed) || parsed <= 0) {
-      return 8_000;
+      return 30_000;
     }
 
     return parsed;
@@ -240,7 +239,6 @@ export class YandexBatchRefinementService {
       throw error;
     } finally {
       clearTimeout(timer);
-      controller.abort();
     }
   }
 
@@ -291,13 +289,19 @@ export class YandexBatchRefinementService {
     const cityHint = options?.intent?.city
       ? `Город: ${options.intent.city}.`
       : '';
-    return `Ты улучшаешь описания уже отобранных POI для маршрута. ${cityHint}
+    return `Ты — профессиональный гид. Твоя задача — написать СОЧНЫЕ и КОНКРЕТНЫЕ микро-описания для мест в городе ${cityHint}.
 Контекст пользователя: ${userPersonaSummary}
+
+ПРАВИЛА:
+1. Описание должно быть коротким (1-2 предложения).
+2. Запрещено использовать фразы: "хороший рейтинг", "отличное место", "пользуется популярностью", "приятная атмосфера".
+3. Пиши про ФАКТЫ: какая там кухня (итальянская, грузинская), что за вид (на Неву, на крыши), какая фишка (секретный бар, старейшая аптека, лучший кофе в городе).
+4. Тон: вдохновляющий, но деловой.
 
 Верни только JSON без markdown в формате:
 {
   "selected": [
-    { "id": "1", "description": "1-2 предложения на русском" }
+    { "id": "1", "description": "Аутентичный грузинский ресторан с домашним вином и лучшими хинкали в районе Таврического сада." }
   ]
 }
 

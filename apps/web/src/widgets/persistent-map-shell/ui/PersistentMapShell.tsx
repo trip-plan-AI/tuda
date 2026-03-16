@@ -30,6 +30,8 @@ export function PersistentMapShell() {
       onRouteInfoUpdate={config.onRouteInfoUpdate}
       onRouteInfoLoading={config.onRouteInfoLoading}
       onAffectedSegmentsChange={config.onAffectedSegmentsChange}
+      onPointClick={config.onPointClick}
+      selectedDays={config.selectedDays}
       fitKey={config.fitKey}
     />
   );

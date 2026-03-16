@@ -144,23 +144,33 @@ export class AiSessionsService {
         .where(eq(schema.routePoints.tripId, trip.id));
     }
 
+    let globalOrder = 1;
     const pointsToInsert = routePlan.days.flatMap((day) =>
-      day.points.map((point, index) => ({
-        tripId: trip.id,
-        title: point.poi?.name || `Точка ${index + 1}`,
-        description: null,
-        lat: point.poi?.coordinates?.lat ?? 0,
-        lon: point.poi?.coordinates?.lon ?? 0,
-        budget:
-          typeof point.estimated_cost === 'number'
-            ? Math.round(point.estimated_cost)
-            : null,
-        visitDate: day.date || null,
-        imageUrl: point.poi?.image_url || null,
-        address: point.poi?.address || null,
-        transportMode: 'driving',
-        order: point.order,
-      })),
+      day.points.map((point) => {
+        let visitDate = day.date || null;
+        if (visitDate && point.arrival_time) {
+          // Комбинируем дату (YYYY-MM-DD) и время (HH:mm)
+          visitDate = `${visitDate}T${point.arrival_time}:00`;
+        }
+
+        return {
+          tripId: trip.id,
+          title: point.poi?.name || `Точка ${globalOrder}`,
+          description: null,
+          lat: point.poi?.coordinates?.lat ?? 0,
+          lon: point.poi?.coordinates?.lon ?? 0,
+          budget:
+            typeof point.estimated_cost === 'number'
+              ? Math.round(point.estimated_cost)
+              : null,
+          visitDate,
+          imageUrl: point.poi?.image_url || null,
+          address: point.poi?.address || null,
+          transportMode: 'driving',
+          order: globalOrder++,
+          duration: point.visit_duration_min || 0,
+        };
+      }),
     );
 
     if (pointsToInsert.length > 0) {

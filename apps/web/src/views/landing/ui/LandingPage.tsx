@@ -9,7 +9,6 @@ import {
   Cloud,
   CloudSun,
   MapPin,
-  Mic,
   Search,
   Sun,
   Wind,
@@ -167,7 +166,7 @@ export function LandingPage() {
   const debounceFromRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceToRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createNewSession = useAiQueryStore((state) => state.createNewSession);
-  const { currentTrip, setCurrentTrip, addPoint, clearPlanner } = useTripStore();
+  const { currentTrip, setCurrentTrip, addPoint, setPoints, clearPlanner } = useTripStore();
   const points = currentTrip?.points || [];
   const { isAuthenticated } = useAuthStore();
   const [showConfirmOverwrite, setShowConfirmOverwrite] = useState(false);
@@ -329,6 +328,8 @@ export function LandingPage() {
           geocodePlace(manualForm.to),
         ]);
 
+        const guestPoints: RoutePoint[] = [];
+
         if (fromCoords) {
           const fromCityName = manualForm.from.split(/[,.]/).shift()?.trim() || manualForm.from;
           const fromPoint: RoutePoint = {
@@ -343,8 +344,9 @@ export function LandingPage() {
             imageUrl: null,
             order: 0,
             createdAt: new Date().toISOString(),
+            duration: 0,
           };
-          addPoint(fromPoint);
+          guestPoints.push(fromPoint);
         }
 
         if (toCoords) {
@@ -361,8 +363,13 @@ export function LandingPage() {
             imageUrl: null,
             order: 1,
             createdAt: new Date().toISOString(),
+            duration: 0,
           };
-          addPoint(toPoint);
+          guestPoints.push(toPoint);
+        }
+
+        if (guestPoints.length > 0) {
+          setPoints(guestPoints, false);
         }
       }
 
@@ -398,6 +405,8 @@ export function LandingPage() {
           ]);
           console.log('✓ Geocoding done:', { fromCoords, toCoords });
 
+          const newPoints: RoutePoint[] = [];
+
           if (fromCoords) {
             try {
               const fromCityName = manualForm.from.split(/[,.]/).shift()?.trim() || manualForm.from;
@@ -409,8 +418,10 @@ export function LandingPage() {
                 budget: 0,
                 visitDate: manualForm.dateFrom || undefined,
                 order: 0,
+                duration: 0,
               });
               console.log('✓ Created from point:', fromPoint);
+              newPoints.push(fromPoint);
             } catch (e) {
               console.error('✗ Failed to create from point:', e);
             }
@@ -427,11 +438,17 @@ export function LandingPage() {
                 budget: 0,
                 visitDate: manualForm.dateTo || undefined,
                 order: 1,
+                duration: 0,
               });
               console.log('✓ Created to point:', toPoint);
+              newPoints.push(toPoint);
             } catch (e) {
               console.error('✗ Failed to create to point:', e);
             }
+          }
+
+          if (newPoints.length > 0) {
+            setPoints(newPoints, false);
           }
         } catch (e) {
           console.error('✗ Geocoding failed:', e);
@@ -572,12 +589,6 @@ export function LandingPage() {
                         rows={inputRows}
                         className="w-full py-2 md:py-4 lg:py-6 !px-6 md:!pl-12 md:!pr-14 lg:!pl-14 bg-transparent outline-none text-slate-800 font-bold text-[clamp(0.875rem,1.5vw,1.25rem)] placeholder:text-slate-400 placeholder:font-normal resize-none overflow-hidden leading-snug md:leading-normal transition-none"
                       />
-                      <button
-                        type="button"
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-brand-blue transition-none"
-                      >
-                        <Mic size={24} />
-                      </button>
                     </div>
                     <Link
                       href="/ai-assistant"

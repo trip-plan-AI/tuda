@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { X, MapPin } from 'lucide-react';
 import type { ChatMessage } from '@/shared/types/ai-chat';
 
 interface MessageBubbleProps {
@@ -109,10 +110,10 @@ export function MessageBubble({
                           <button
                             type="button"
                             onClick={() => onDeletePoint(poi.name)}
-                            className="absolute top-1 right-1 text-red-500 hover:text-red-700 text-lg leading-none"
+                            className="absolute top-1 right-1 w-7 h-7 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all active:scale-95 z-10"
                             title="Удалить точку"
                           >
-                            ✕
+                            <X size={14} strokeWidth={2.5} />
                           </button>
                         )}
                         <p className="text-sm font-medium text-slate-800 pr-5">{poi.name}</p>
@@ -120,12 +121,16 @@ export function MessageBubble({
                         {poi.description && (
                           <p className="mt-1 text-xs text-slate-500">{poi.description}</p>
                         )}
-                        <p className="mt-1 text-xs text-slate-600">
-                          {point.arrival_time}–{point.departure_time}
-                          {typeof point.estimated_cost === 'number'
-                            ? ` · ${Math.round(point.estimated_cost).toLocaleString('ru-RU')} ₽`
-                            : ''}
-                        </p>
+                        <div className="mt-1 flex flex-col gap-0.5">
+                          <p className="text-xs text-slate-600">
+                            Прибытие: {point.arrival_time}
+                          </p>
+                          {typeof point.estimated_cost === 'number' && (
+                            <p className="text-xs text-slate-600 font-medium">
+                              Стоимость: {Math.round(point.estimated_cost).toLocaleString('ru-RU')} ₽
+                            </p>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -145,25 +150,8 @@ export function MessageBubble({
               </p>
             )}
 
-            {onApplyPlan && (
-              <div className="flex flex-wrap items-center gap-2">
-                {!hasLinkedTrip && (
-                  <button
-                    type="button"
-                    onClick={() => onApplyPlan(message.id)}
-                    className={[
-                      'rounded-lg px-3 py-2 text-xs font-semibold transition',
-                      wasApplied
-                        ? 'cursor-default bg-emerald-100 text-emerald-700'
-                        : 'bg-brand-sky text-white hover:bg-brand-sky/90',
-                    ].join(' ')}
-                  >
-                    {wasApplied ? '✓ План применен' : 'Применить план в маршрут'}
-                  </button>
-                )}
-
-              </div>
-            )}
+             <div className="flex flex-wrap items-center gap-2">
+             </div>
           </div>
         )}
       </div>

@@ -96,6 +96,8 @@ export class PopularDestinationsService implements OnModuleInit {
     return scored.slice(0, limit).map((dest) => ({
       displayName: dest.displayName,
       uri: `ymapsbm1://geo?ll=${dest.lon},${dest.lat}&z=12`,
+      lat: Number(dest.lat),
+      lon: Number(dest.lon),
       // Add standard score for tier 0 (higher than standard geosearch results)
       score: 5.0 + dest.popularity + dest.matchScore / 100, // ensure it's high enough to be at the top
       type: dest.type, // to differentiate on frontend if needed

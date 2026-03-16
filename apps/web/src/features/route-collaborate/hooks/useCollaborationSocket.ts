@@ -20,6 +20,13 @@ export function useCollaborationSocket(tripId: string) {
       // Load actual trip and points concurrently to avoid partial state updates
       Promise.all([tripsApi.getOne(tripId), pointsApi.getAll(tripId)])
         .then(([trip, points]) => {
+          const currentStoreTrip = useTripStore.getState().currentTrip;
+          // 🛡 ЗАЩИТА: Если в сторе лежит локальный черновик (guest-) или другой маршрут,
+          // а сокет пытается загрузить чужой ID, мы НЕ перезаписываем стор!
+          if (currentStoreTrip && currentStoreTrip.id !== tripId) {
+            return;
+          }
+
           if (trip && points) {
             useTripStore.setState((state) => ({
               ...state,
@@ -56,9 +63,14 @@ export function useCollaborationSocket(tripId: string) {
       removeCollaborator(userId),
     );
 
+    const checkTripId = () => useTripStore.getState().currentTrip?.id === tripId;
+
     // Real-time point sync (changes from other users)
-    socket.on('point:added', ({ point }: { point: any }) => addPoint(point));
+    socket.on('point:added', ({ point }: { point: any }) => {
+      if (checkTripId()) addPoint(point);
+    });
     socket.on('point:reorder', ({ pointIds }: { pointIds: string[] }) => {
+      if (!checkTripId()) return;
       try {
         useTripStore.getState().reorderPoints(pointIds);
       } catch (e) {
@@ -68,20 +80,21 @@ export function useCollaborationSocket(tripId: string) {
     socket.on(
       'point:moved',
       ({ point_id, coords }: { point_id: string; coords: { lat: number; lon: number } }) => {
-        updatePoint(point_id, { lat: coords.lat, lon: coords.lon });
+        if (checkTripId()) updatePoint(point_id, { lat: coords.lat, lon: coords.lon });
       },
     );
     socket.on('point:deleted', ({ point_id }: { point_id: string }) => {
-      removePoint(point_id);
+      if (checkTripId()) removePoint(point_id);
     });
     socket.on(
       'point:updated',
       ({ point_id, trip_id: _trip_id, ...patch }: { point_id: string; trip_id?: string } & Record<string, unknown>) => {
-        updatePoint(point_id, patch as Parameters<typeof updatePoint>[1]);
+        if (checkTripId()) updatePoint(point_id, patch as Parameters<typeof updatePoint>[1]);
       },
     );
 
     socket.on('trip:update', (patch: Record<string, unknown>) => {
+      if (!checkTripId()) return;
       try {
         const { trip_id, ...data } = patch;
         useTripStore.getState().updateCurrentTrip(data);
@@ -91,13 +104,13 @@ export function useCollaborationSocket(tripId: string) {
     });
 
     socket.on('trip:refresh', () => {
-      loadTripData();
+      if (checkTripId()) loadTripData();
     });
 
     socket.on('trip_version_updated', (data: { version: number; points: any[] }) => {
       try {
         useTripStore.setState((state) => {
-          if (!state.currentTrip) return state;
+          if (!state.currentTrip || state.currentTrip.id !== tripId) return state;
           return {
             ...state,
             currentTrip: {
