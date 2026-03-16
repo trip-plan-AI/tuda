@@ -28,7 +28,14 @@ export function useCollaborationSocket(tripId: string) {
             }));
           }
         })
-        .catch(console.error);
+        .catch((err) => {
+          // Игнорируем ошибки сети - это нормально если бэкенд недоступен
+          if (err instanceof TypeError && err.message.includes('fetch')) {
+            // Silent fail for network errors
+          } else {
+            console.error('[Collaboration] Failed to load trip:', err);
+          }
+        });
     };
 
     loadTripData();
@@ -76,7 +83,11 @@ export function useCollaborationSocket(tripId: string) {
     });
     socket.on(
       'point:updated',
-      ({ point_id, trip_id: _trip_id, ...patch }: { point_id: string; trip_id?: string } & Record<string, unknown>) => {
+      ({
+        point_id,
+        trip_id: _trip_id,
+        ...patch
+      }: { point_id: string; trip_id?: string } & Record<string, unknown>) => {
         updatePoint(point_id, patch as Parameters<typeof updatePoint>[1]);
       },
     );

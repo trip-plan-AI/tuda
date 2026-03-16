@@ -885,6 +885,9 @@ export function PlannerPage() {
     useTripStore.getState().setCachedRouteInfo(null);
   }, []);
 
+  // Отслеживаем, какие tripId уже загружали points, чтобы избежать дублирования
+  const loadedTripIdsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     if (!currentTrip?.id || currentTrip.id.startsWith('guest-')) return;
     if (justMigratedRef.current) {
@@ -892,9 +895,12 @@ export function PlannerPage() {
       return;
     }
 
-    // Если точки уже есть в store (например, применены из AI-чата),
-    // не перетираем их пустым ответом с бэкенда при первом открытии Planner.
-    if ((currentTrip.points?.length ?? 0) > 0) return;
+    // Загружаем points только если еще не загружали для этого tripId
+    if (loadedTripIdsRef.current.has(currentTrip.id)) {
+      return;
+    }
+
+    loadedTripIdsRef.current.add(currentTrip.id);
 
     pointsApi
       .getAll(currentTrip.id)
@@ -907,6 +913,7 @@ export function PlannerPage() {
         // чтобы ниже сработала загрузка доступных поездок текущего пользователя.
         if (message.includes('Access denied') || message.includes('403')) {
           setCurrentTrip(null as unknown as Trip);
+          loadedTripIdsRef.current.clear();
           return;
         }
 
