@@ -145,6 +145,8 @@ export function ProfilePage() {
       })
       .catch((err) => {
         console.error('Failed to load trips:', err);
+        setAllTrips([]);
+        toast.error('Не удалось загрузить маршруты профиля. Попробуйте обновить страницу.');
         setIsLoadingTrips(false);
       });
   }, [isAuthenticated, isAuthResolved, router]);
