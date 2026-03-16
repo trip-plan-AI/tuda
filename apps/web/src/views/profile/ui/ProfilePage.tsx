@@ -805,6 +805,8 @@ export function ProfilePage() {
                 <TripCard
                   key={trip.id}
                   trip={trip}
+                  isSelected={selectedTripId === trip.id}
+                  onCardClick={setSelectedTripId}
                   onDatesUpdate={handleDatesUpdate}
                   onInvite={() => {
                     setInviteTripId(trip.id);
