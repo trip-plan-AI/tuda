@@ -2,7 +2,17 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Pencil, Map as MapIcon, ArrowUp, Route, MapPin, Ruler } from 'lucide-react';
+import {
+  User as UserIcon,
+  Pencil,
+  Map as MapIcon,
+  ArrowUp,
+  Route,
+  MapPin,
+  Ruler,
+  CheckCircle2,
+  ArrowRight,
+} from 'lucide-react';
 import { useUserStore, usersApi } from '@/entities/user';
 import { useTripStore, type Trip } from '@/entities/trip';
 import { useAuthStore } from '@/features/auth';
@@ -195,6 +205,46 @@ export function ProfilePage() {
       setHighlightedTripId((prev) => (prev === tripId ? null : prev));
     }, 1800);
   }, []);
+
+  const showTripMovedToast = useCallback(
+    (tripId: string, nextTab: TabKey) => {
+      toast.custom(
+        (toastId) => (
+          <div className="relative overflow-hidden rounded-2xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50/95 via-white to-emerald-100/80 shadow-xl backdrop-blur-md">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.15),transparent_45%)]" />
+            <div className="relative flex items-center gap-3 px-4 py-3.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 ring-1 ring-emerald-200">
+                <CheckCircle2 size={16} />
+              </div>
+
+              <div className="min-w-0">
+                <p className="text-[15px] font-black text-emerald-900 leading-tight">Даты обновлены</p>
+                <p className="mt-0.5 text-[12px] font-medium text-emerald-700/90 leading-snug">
+                  Маршрут изменил позицию в списке. Перейдите к нему в один клик.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  focusTripCard(tripId, nextTab);
+                  toast.dismiss(toastId);
+                }}
+                className="ml-1 inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-brand-indigo px-3 py-2 text-[12px] font-bold text-white shadow-sm transition-all hover:bg-brand-indigo-hover hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-sky/60"
+              >
+                Показать
+                <ArrowRight size={13} />
+              </button>
+            </div>
+          </div>
+        ),
+        {
+          duration: 7000,
+        },
+      );
+    },
+    [focusTripCard],
+  );
 
   const evaluateScrollState = useCallback(() => {
     const scrollTop = window.scrollY;
@@ -614,12 +664,7 @@ export function ProfilePage() {
       const hasPositionChanged = prevIndex !== -1 && nextIndex !== -1 && prevIndex !== nextIndex;
 
       if (hasTabChanged || hasPositionChanged) {
-        toast.success('Даты сохранены. Маршрут переместился в списке.', {
-          action: {
-            label: 'Показать маршрут',
-            onClick: () => focusTripCard(tripId, nextTab),
-          },
-        });
+        showTripMovedToast(tripId, nextTab);
         return;
       }
 
