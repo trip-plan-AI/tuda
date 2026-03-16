@@ -680,7 +680,7 @@ export function ProfilePage() {
           {/* Scroll-to-top button */}
           <div
             className={cn(
-              'sticky top-[calc(100vh-5rem)] z-30 px-4 flex justify-end pointer-events-none',
+              'sticky top-[calc(100vh-5rem)] z-30 h-0 px-4 flex justify-end pointer-events-none',
               'transition-all duration-300',
               showScrollTop
                 ? 'opacity-100 translate-y-0 visible'
