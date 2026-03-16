@@ -350,7 +350,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         Object.keys(mergedSessions).forEach((id) => {
           const localSess = state.sessions[id];
           if (localSess && localSess.messages.length > 0) {
-            mergedSessions[id] = { ...mergedSessions[id], messages: localSess.messages };
+            mergedSessions[id] = { ...mergedSessions[id]!, messages: localSess.messages };
           }
         });
 
