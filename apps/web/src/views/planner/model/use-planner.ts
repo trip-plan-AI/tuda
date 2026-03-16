@@ -944,6 +944,7 @@ export function usePlanner() {
     const params = new URLSearchParams(searchParams.toString());
     params.delete('applyTripId');
     params.delete('draftMessageId');
+    params.delete('from');
     const nextQuery = params.toString();
     router.replace(nextQuery ? `/planner?${nextQuery}` : '/planner');
   }, [router, searchParams]);
@@ -974,14 +975,25 @@ export function usePlanner() {
 
       const params = new URLSearchParams(searchParams.toString());
       const draftId = params.get('draftMessageId');
+      const source = params.get('from');
+      const autosavedRouteTitle = params.get('autosavedRouteTitle');
+      const isProfileCardAutosaveFlow = source === 'profile-card-autosave';
       params.delete('applyTripId');
       params.delete('draftMessageId');
+      params.delete('from');
+      params.delete('autosavedRouteTitle');
       const nextQuery = params.toString();
       router.replace(nextQuery ? `/planner?${nextQuery}` : '/planner');
 
-      toast.success(draftId ? 'Маршрут из AI чата открыт' : 'Маршрут открыт в конструкторе', {
-        id: 'planner-apply-success',
-      });
+      if (isProfileCardAutosaveFlow && autosavedRouteTitle) {
+        toast.success(`Маршрут «${autosavedRouteTitle}» сохранен`, {
+          id: 'profile-planner-autosave',
+        });
+      } else if (!isProfileCardAutosaveFlow) {
+        toast.success(draftId ? 'Маршрут из AI чата открыт' : 'Маршрут открыт в конструкторе', {
+          id: 'planner-apply-success',
+        });
+      }
       void openOrCreateSessionFromTrip(tripId);
     },
     [router, searchParams, setCurrentTrip, setSaved, openOrCreateSessionFromTrip],
@@ -1007,6 +1019,8 @@ export function usePlanner() {
 
     const incomingTripId = searchParams.get('applyTripId');
     const draftMessageId = searchParams.get('draftMessageId');
+    const source = searchParams.get('from');
+    const isProfileCardAutosaveFlow = source === 'profile-card-autosave';
 
     if (!incomingTripId || incomingTripId.startsWith('guest-')) {
       handledApplyTripIdRef.current = null;
@@ -1021,7 +1035,7 @@ export function usePlanner() {
     const hasPoints = (currentTrip?.points?.length ?? 0) > 0;
     const hasRealContentToLose = hasPoints || isDirty;
 
-    if (!hasRealContentToLose || !isDifferentRoute) {
+    if (isProfileCardAutosaveFlow || !hasRealContentToLose || !isDifferentRoute) {
       handledApplyTripIdRef.current = currentKey;
       void applyIncomingTrip(incomingTripId);
       return;
