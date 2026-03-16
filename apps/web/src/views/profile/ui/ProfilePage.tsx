@@ -642,7 +642,7 @@ export function ProfilePage() {
   };
 
   const autoSaveCurrentTripBeforePlannerSwitch = useCallback(async (): Promise<string | null> => {
-    if (!currentTrip?.id) return;
+    if (!currentTrip?.id) return null;
 
     const currentPoints = useTripStore.getState().currentTrip?.points || currentTrip.points || [];
     let tripId = currentTrip.id;
@@ -655,11 +655,11 @@ export function ProfilePage() {
           : 'Мой маршрут';
 
     if (isLocalDraft) {
-      if (!isAuthenticated) return;
+      if (!isAuthenticated) return null;
       const createdTrip = await tripsApi.create({
         title: autoTitle,
         isActive: currentTrip.isActive,
-        budget: currentTrip.budget ?? 0,
+        budget: currentTrip?.budget ?? 0,
       });
       tripId = createdTrip.id;
       setCurrentTrip({ ...createdTrip, points: currentPoints });

@@ -5,6 +5,7 @@ export interface CreateTripPayload {
   title: string
   description?: string
   isActive?: boolean
+  budget?: number
 }
 
 export interface UpdateTripPayload {
