@@ -1,5 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { Server } from 'socket.io';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { desc, eq } from 'drizzle-orm';
+import { DRIZZLE } from '../db/db.module';
+import * as schema from '../db/schema';
 
 interface PresenceInfo {
   userId: string;
@@ -20,6 +24,34 @@ const COLORS = [
 @Injectable()
 export class CollaborationService {
   private presence = new Map<string, PresenceInfo>();
+
+  constructor(@Inject(DRIZZLE) private db: NodePgDatabase<typeof schema>) {}
+
+  async saveMessage(data: {
+    tripId: string;
+    userId: string;
+    userEmail: string;
+    content: string;
+  }): Promise<{ id: string; createdAt: Date }> {
+    const [row] = await this.db
+      .insert(schema.tripChatMessages)
+      .values(data)
+      .returning({
+        id: schema.tripChatMessages.id,
+        createdAt: schema.tripChatMessages.createdAt,
+      });
+    return row;
+  }
+
+  async getRecentMessages(tripId: string, limit = 50) {
+    const rows = await this.db
+      .select()
+      .from(schema.tripChatMessages)
+      .where(eq(schema.tripChatMessages.tripId, tripId))
+      .orderBy(desc(schema.tripChatMessages.createdAt))
+      .limit(limit);
+    return rows.reverse(); // chronological order
+  }
 
   getUserColor(userId: string): string {
     let hash = 0;

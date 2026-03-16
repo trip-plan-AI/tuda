@@ -103,6 +103,8 @@ interface AiQueryStore {
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   clearChat: (keepLastPlan?: boolean) => void;
+  // TRI-120: добавляет сообщение в активную сессию без вызова AI (для ретрансляции из сокетов).
+  addLocalMessage: (message: ChatMessage) => void;
 }
 
 interface ChatSession {
@@ -330,10 +332,11 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         // if we have real sessions from the server (prevents chat duplication/cloning)
         const mergedSessions = { ...remoteSessions };
 
-        Object.values(localTransientSessions).forEach(localSession => {
+        Object.values(localTransientSessions).forEach((localSession) => {
           // Only keep empty local drafts if we have NO remote sessions
           // Or keep non-empty drafts (ones with messages)
-          const isCompletelyEmptyDraft = localSession.sessionId === null && localSession.messages.length === 0;
+          const isCompletelyEmptyDraft =
+            localSession.sessionId === null && localSession.messages.length === 0;
           if (!isCompletelyEmptyDraft || Object.keys(remoteSessions).length === 0) {
             mergedSessions[localSession.id] = localSession;
           }
@@ -809,8 +812,8 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
 
     set((state) => {
       // Ищем пустой чат с названием "Новый чат"
-      const emptySession = Object.values(state.sessions).find((s) => 
-        s.messages.length === 0 && s.title === 'Новый чат'
+      const emptySession = Object.values(state.sessions).find(
+        (s) => s.messages.length === 0 && s.title === 'Новый чат',
       );
 
       if (emptySession) {
@@ -949,7 +952,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     // Если точек нет — чистим всё.
     const tripState = useTripStore.getState();
     // Если keepLastPlan не определен, используем старую логику
-    const hasPoints = keepLastPlan ?? ((tripState.currentTrip?.points?.length ?? 0) > 0);
+    const hasPoints = keepLastPlan ?? (tripState.currentTrip?.points?.length ?? 0) > 0;
 
     try {
       // Вызываем бэкенд для очистки сообщений
@@ -1016,6 +1019,38 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           ...state.sessions,
           [targetSessionId]: { ...session, title, updatedAt: new Date().toISOString() },
         },
+      };
+    });
+  },
+
+  // TRI-120: добавляет сообщение в активную сессию без вызова AI.
+  // Используется для отображения сообщений других участников, пришедших через сокет,
+  // и для отображения собственных сообщений, не требующих ответа AI.
+  addLocalMessage: (message) => {
+    set((state) => {
+      const { sessions, activeSessionId } = ensureActiveSession(state);
+      const session = sessions[activeSessionId];
+
+      // Если сессии нет, не добавляем сообщение
+      if (!session) return state;
+
+      // ЗАЩИТА ОТ ДУБЛИКАТОВ: если сообщение с таким ID уже есть, игнорируем его
+      if (session.messages.some((m) => m.id === message.id)) {
+        return state;
+      }
+
+      const updatedSessions = {
+        ...sessions,
+        [activeSessionId]: {
+          ...session,
+          messages: [...session.messages, message],
+          updatedAt: new Date().toISOString(),
+        },
+      };
+      return {
+        sessions: updatedSessions,
+        activeSessionId,
+        ...syncLegacyFields(updatedSessions, activeSessionId),
       };
     });
   },

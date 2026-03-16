@@ -141,7 +141,7 @@ export class CollaborationGateway
   }
 
   @SubscribeMessage('join:trip')
-  handleJoin(
+  async handleJoin(
     @ConnectedSocket() client: TypedSocket,
     @MessageBody() data: { trip_id: string },
   ) {
@@ -149,7 +149,7 @@ export class CollaborationGateway
     void client.join(room);
     client.data.tripId = data.trip_id;
 
-    const presenceData = this.collabService.addPresence(client.id, {
+    this.collabService.addPresence(client.id, {
       userId: client.data.userId,
       tripId: data.trip_id,
       name: client.data.email,
@@ -159,6 +159,19 @@ export class CollaborationGateway
     this.server.to(room).emit('presence:update', {
       onlineUserIds: this.collabService.getOnlineUsers(data.trip_id),
     });
+
+    // Send chat history to the newly joined client
+    const history = await this.collabService.getRecentMessages(data.trip_id);
+    (client as any).emit(
+      'chat:history',
+      history.map((msg: any) => ({
+        id: msg.id,
+        content: msg.content,
+        timestamp: msg.createdAt.toISOString(),
+        user_id: msg.userId,
+        user_name: msg.userEmail,
+      })),
+    );
   }
 
   @SubscribeMessage('leave:trip')
@@ -194,7 +207,7 @@ export class CollaborationGateway
       lat: data.lat,
       lon: data.lon,
     });
-    this.server.to(`trip_${data.trip_id}`).emit('point:moved', {
+    _client.to(`trip_${data.trip_id}`).emit('point:moved', {
       trip_id: data.trip_id,
       point_id: data.point_id,
       coords: { lat: data.lat, lon: data.lon },
@@ -294,6 +307,55 @@ export class CollaborationGateway
       color: this.collabService.getUserColor(client.data.userId),
       x: data.x,
       y: data.y,
+    });
+  }
+
+  /**
+   * Ретранслирует сообщение чата всем участникам поездки (кроме отправителя).
+   * AI-агент реагирует ТОЛЬКО на сообщения с тегом /help — проверяется на фронтенде.
+   */
+  @SubscribeMessage('message:send')
+  async handleChatMessage(
+    @ConnectedSocket() client: TypedSocket,
+    @MessageBody()
+    data: { trip_id: string; id: string; content: string; timestamp: string },
+  ) {
+    // Persist before broadcast so history is available on rejoin
+    await this.collabService.saveMessage({
+      tripId: data.trip_id,
+      userId: client.data.userId,
+      userEmail: client.data.email,
+      content: data.content,
+    });
+
+    client.to(`trip_${data.trip_id}`).emit('message:receive', {
+      trip_id: data.trip_id,
+      id: data.id,
+      content: data.content,
+      timestamp: data.timestamp,
+      user_id: client.data.userId,
+      user_name: client.data.email,
+    });
+  }
+
+  @SubscribeMessage('agent:response')
+  handleAgentResponse(
+    @ConnectedSocket() client: TypedSocket,
+    @MessageBody()
+    data: {
+      trip_id: string;
+      id: string;
+      content: string;
+      timestamp: string;
+      route_plan: unknown | null;
+    },
+  ) {
+    client.to(`trip_${data.trip_id}`).emit('agent:receive', {
+      trip_id: data.trip_id,
+      id: data.id,
+      content: data.content,
+      timestamp: data.timestamp,
+      route_plan: data.route_plan,
     });
   }
 }
