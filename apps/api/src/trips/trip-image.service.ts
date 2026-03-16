@@ -8,16 +8,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 
-type ReverseAddress = {
-  city?: string;
-  town?: string;
-  village?: string;
-  settlement?: string;
-  suburb?: string;
-  state_district?: string;
-  state?: string;
-};
-
 type PixabayHit = {
   largeImageURL?: string;
   webformatURL?: string;
@@ -40,6 +30,8 @@ const MAX_DOWNLOAD_SIZE_BYTES = 8 * 1024 * 1024;
 export class TripImageService implements OnModuleInit {
   private readonly logger = new Logger(TripImageService.name);
   private imagesDir = '';
+  private pixabayAvailable = false;
+  private googleAvailable = false;
 
   constructor(
     @Inject(DRIZZLE)
@@ -50,6 +42,25 @@ export class TripImageService implements OnModuleInit {
   async onModuleInit() {
     this.imagesDir = await this.resolveImagesDir();
     await fs.mkdir(this.imagesDir, { recursive: true });
+
+    // Проверка доступности API ключей
+    this.pixabayAvailable = !!process.env.PIXABAY_API_KEY;
+    this.googleAvailable =
+      !!process.env.GOOGLE_API_KEY && !!process.env.GOOGLE_SEARCH_CX;
+
+    if (!this.googleAvailable) {
+      this.logger.warn('⚠️  GOOGLE_API_KEY or GOOGLE_SEARCH_CX not set');
+    } else {
+      this.logger.log('✅ Google Custom Search API configured');
+    }
+
+    if (!this.pixabayAvailable) {
+      this.logger.warn(
+        '⚠️  PIXABAY_API_KEY not set — fallback will be unavailable',
+      );
+    } else {
+      this.logger.log('✅ Pixabay API configured');
+    }
   }
 
   async resolveTripCover(tripId: string): Promise<void> {
@@ -81,24 +92,21 @@ export class TripImageService implements OnModuleInit {
       if (!selectedPoint) return;
 
       this.logger.debug(
-        `[${tripId}] selected point lat=${selectedPoint.lat} lon=${selectedPoint.lon}`,
+        `[${tripId}] selected point: "${selectedPoint.title}" (address="${selectedPoint.address}", lat=${selectedPoint.lat}, lon=${selectedPoint.lon})`,
       );
 
-      const address = await this.fetchCityFromCoords(
-        selectedPoint.lat,
-        selectedPoint.lon,
-      );
-
-      const city = this.extractCity(address);
+      // Приоритет: address (пользовательский input) > title (автозаполненный)
+      const city = selectedPoint.address || selectedPoint.title;
       if (!city) {
-        this.logger.warn(
-          `[${tripId}] could not extract city from address: ${JSON.stringify(address)}`,
-        );
+        this.logger.warn(`[${tripId}] selected point has no title or address`);
         return;
       }
 
-      const slug = this.toSlug(city);
-      this.logger.debug(`[${tripId}] city="${city}" slug="${slug}"`);
+      const cleanedCity = this.cleanCityName(city);
+      const slug = this.toSlug(cleanedCity);
+      this.logger.debug(
+        `[${tripId}] city="${city}" cleaned="${cleanedCity}" slug="${slug}"`,
+      );
       if (!slug) return;
 
       const localPath = await this.findLocalImage(slug);
@@ -108,32 +116,36 @@ export class TripImageService implements OnModuleInit {
         return;
       }
 
-      this.logger.debug(`[${tripId}] no local image, querying Google`);
-      let downloaded = await this.downloadFromGoogle(slug, city);
+      this.logger.debug(`[${tripId}] no local image, querying APIs`);
 
-      if (downloaded) {
-        this.logger.log(
-          `📸  [${tripId}] Image found via Google: ${downloaded}`,
-        );
-        await this.updateTripImageIfChanged(tripId, downloaded);
-        return;
+      let downloaded: string | null = null;
+
+      if (this.googleAvailable) {
+        downloaded = await this.downloadFromGoogle(slug, cleanedCity);
+        if (downloaded) {
+          this.logger.log(
+            `📸  [${tripId}] Image found via Google: ${downloaded}`,
+          );
+          await this.updateTripImageIfChanged(tripId, downloaded);
+          return;
+        }
+      }
+
+      if (this.pixabayAvailable) {
+        this.logger.debug(`[${tripId}] Trying Pixabay fallback`);
+        downloaded = await this.downloadFromPixabay(slug, cleanedCity);
+        if (downloaded) {
+          this.logger.log(
+            `📸  [${tripId}] Image found via Pixabay: ${downloaded}`,
+          );
+          await this.updateTripImageIfChanged(tripId, downloaded);
+          return;
+        }
       }
 
       this.logger.warn(
-        `🚫  [${tripId}] Google failed or rate-limited for "${slug}", trying Pixabay fallback`,
+        `🚫  [${tripId}] No image sources available or all failed for "${cleanedCity}"`,
       );
-
-      downloaded = await this.downloadFromPixabay(slug, city);
-      if (downloaded) {
-        this.logger.log(
-          `📸  [${tripId}] Image found via Pixabay: ${downloaded}`,
-        );
-        await this.updateTripImageIfChanged(tripId, downloaded);
-      } else {
-        this.logger.warn(
-          `🚫  [${tripId}] Both Google and Pixabay failed for "${slug}"`,
-        );
-      }
     } finally {
       await unlock();
     }
@@ -154,54 +166,30 @@ export class TripImageService implements OnModuleInit {
     return points[index] ?? points[1] ?? null;
   }
 
-  private async fetchCityFromCoords(
-    lat: number,
-    lon: number,
-  ): Promise<ReverseAddress | null> {
-    const params = new URLSearchParams({
-      lat: lat.toString(),
-      lon: lon.toString(),
-      format: 'json',
-      'accept-language': 'ru',
-      zoom: '10',
-    });
+  private cleanCityName(city: string): string {
+    if (!city) return city;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    // Удаляем "технические" слова Nominatim
+    const cleanPatterns = [
+      /городской\s+округ\s+/gi,
+      /муниципальный\s+округ\s+/gi,
+      /административный\s+округ\s+/gi,
+      /городской\s+округ$/gi,
+      /муниципальный\s+округ$/gi,
+      /административный\s+округ$/gi,
+    ];
 
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?${params}`,
-        {
-          headers: { 'User-Agent': 'TravelPlanner/1.0' },
-          signal: controller.signal,
-        },
-      );
-      if (!res.ok) return null;
-      const data = (await res.json()) as { address?: ReverseAddress };
-      return data?.address ?? null;
-    } catch {
-      return null;
-    } finally {
-      clearTimeout(timeout);
+    let cleaned = city;
+    for (const pattern of cleanPatterns) {
+      cleaned = cleaned.replace(pattern, '').trim();
     }
-  }
 
-  private extractCity(addr: ReverseAddress | null): string | null {
-    if (!addr) return null;
-    return (
-      addr.city ??
-      addr.town ??
-      addr.village ??
-      addr.settlement ??
-      addr.suburb ??
-      addr.state_district ??
-      addr.state ??
-      null
-    );
+    return cleaned;
   }
 
   private toSlug(value: string): string {
+    // Полная карта транслитерации кириллицы в латиницу
+    // Обрабатывает все русские буквы перед удалением спецсимволов
     const translitMap: Record<string, string> = {
       а: 'a',
       б: 'b',
@@ -238,6 +226,7 @@ export class TripImageService implements OnModuleInit {
       я: 'ya',
     };
 
+    // Порядок: lowercase → нормализация → транслитерация → очистка спецсимволов
     const normalized = value
       .toLowerCase()
       .normalize('NFKD')
@@ -271,41 +260,51 @@ export class TripImageService implements OnModuleInit {
     slug: string,
     city: string,
   ): Promise<string | null> {
+    if (!this.googleAvailable) {
+      return null;
+    }
+
     const apiKey = process.env.GOOGLE_API_KEY;
     const cx = process.env.GOOGLE_SEARCH_CX;
 
     if (!apiKey || !cx) {
-      this.logger.warn('⚠️   GOOGLE_API_KEY or GOOGLE_SEARCH_CX not set');
+      this.logger.error('Google API key not available at runtime');
       return null;
     }
 
-    const query = `эстетика красивого города  ${city} `;
-    const params = new URLSearchParams({
-      key: apiKey,
-      cx,
-      q: query,
-      searchType: 'image',
-      num: '1',
-      imgSize: 'xlarge',
-      imgType: 'photo',
-    });
+    const query = `эстетика красивого города ${city} `;
+
+    // Построение URL с корректным кодированием кириллицы
+    const url = new URL('https://www.googleapis.com/customsearch/v1');
+    url.searchParams.set('key', apiKey);
+    url.searchParams.set('cx', cx);
+    url.searchParams.set('q', query);
+    url.searchParams.set('searchType', 'image');
+    url.searchParams.set('num', '1');
+    url.searchParams.set('imgSize', 'large');
+    url.searchParams.set('imgType', 'photo');
 
     this.logger.log(`🔍  Searching Google: "${query}"`);
+
+    // Лог URL со скрытым ключом для отладки
+    const debugUrl = url.toString().replace(apiKey, '***');
+    this.logger.debug(`   Request URL: ${debugUrl}`);
 
     let response: GoogleSearchResponse | null = null;
     try {
       response = await this.fetchWithRetry<GoogleSearchResponse>(
-        `https://www.googleapis.com/customsearch/v1?${params.toString()}`,
+        url.toString(),
         { timeoutMs: 6000, retries: 1 },
         'Google',
       );
-    } catch {
+    } catch (error) {
+      this.logger.error(`Google request failed: ${String(error)}`);
       return null;
     }
 
     const imageUrl = response?.items?.[0]?.link;
     if (!imageUrl) {
-      this.logger.warn(`❌  Google: No image found for "${slug}"`);
+      this.logger.warn(`❌  Google: No image found for "${city}"`);
       return null;
     }
 
@@ -321,13 +320,17 @@ export class TripImageService implements OnModuleInit {
     slug: string,
     city: string,
   ): Promise<string | null> {
-    const apiKey = process.env.PIXABAY_API_KEY;
-    if (!apiKey) {
-      this.logger.warn('⚠️   PIXABAY_API_KEY not set');
+    if (!this.pixabayAvailable) {
       return null;
     }
 
-    const query = `красивый город ${city}`;
+    const apiKey = process.env.PIXABAY_API_KEY;
+    if (!apiKey) {
+      this.logger.error('Pixabay API key not available at runtime');
+      return null;
+    }
+
+    const query = `эстетика красивого города ${city}`;
     const params = new URLSearchParams({
       key: apiKey,
       q: query,
@@ -353,7 +356,7 @@ export class TripImageService implements OnModuleInit {
       response?.hits?.[0]?.largeImageURL ??
       response?.hits?.[0]?.webformatURL;
     if (!imageUrl) {
-      this.logger.warn(`❌  Pixabay: No image found for "${slug}"`);
+      this.logger.warn(`❌  Pixabay: No image found for "${city}"`);
       return null;
     }
 
