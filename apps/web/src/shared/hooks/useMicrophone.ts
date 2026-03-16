@@ -6,6 +6,7 @@ interface UseMicrophoneOptions {
   onTranscript?: (text: string) => void;
   onTranscriptUpdate?: (text: string) => void;
   language?: string;
+  continuous?: boolean; // Непрерывное слушание (по умолчанию true)
 }
 
 interface UseMicrophoneReturn {
@@ -19,14 +20,8 @@ interface UseMicrophoneReturn {
   mediaStream: MediaStream | null;
 }
 
-export function useMicrophone(
-  options: UseMicrophoneOptions = {}
-): UseMicrophoneReturn {
-  const {
-    onTranscript,
-    onTranscriptUpdate,
-    language = 'ru-RU',
-  } = options;
+export function useMicrophone(options: UseMicrophoneOptions = {}): UseMicrophoneReturn {
+  const { onTranscript, onTranscriptUpdate, language = 'ru-RU', continuous = true } = options;
 
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -40,8 +35,7 @@ export function useMicrophone(
     // Проверяем поддержку Web Speech API
     const SpeechRecognition =
       typeof window !== 'undefined' &&
-      ('webkitSpeechRecognition' in window ||
-        'SpeechRecognition' in window);
+      ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
 
     if (!SpeechRecognition) {
       setIsSupported(false);
@@ -49,11 +43,10 @@ export function useMicrophone(
     }
 
     const RecognitionAPI =
-      (window as any).webkitSpeechRecognition ||
-      (window as any).SpeechRecognition;
+      (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
 
     const recognition = new RecognitionAPI();
-    recognition.continuous = true;
+    recognition.continuous = continuous;
     recognition.interimResults = true;
     recognition.lang = language;
 

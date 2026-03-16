@@ -82,6 +82,14 @@ export class TripImageService implements OnModuleInit {
       const points = await this.db.query.routePoints.findMany({
         where: eq(schema.routePoints.tripId, tripId),
         orderBy: [asc(schema.routePoints.order)],
+        columns: {
+          id: true,
+          order: true,
+          lat: true,
+          lon: true,
+          title: true,
+          address: true,
+        },
       });
       if (points.length === 0) {
         this.logger.debug(`[${tripId}] no points — skip`);
@@ -95,17 +103,19 @@ export class TripImageService implements OnModuleInit {
         `[${tripId}] selected point: "${selectedPoint.title}" (address="${selectedPoint.address}", lat=${selectedPoint.lat}, lon=${selectedPoint.lon})`,
       );
 
-      // Приоритет: address (пользовательский input) > title (автозаполненный)
-      const city = selectedPoint.address || selectedPoint.title;
-      if (!city) {
+      // Приоритет: то, что ввел пользователь (title) > полный адрес из поиска
+      const rawCity = selectedPoint.title || selectedPoint.address || '';
+      const baseCity = rawCity.split(',')[0].trim();
+
+      if (!baseCity) {
         this.logger.warn(`[${tripId}] selected point has no title or address`);
         return;
       }
 
-      const cleanedCity = this.cleanCityName(city);
+      const cleanedCity = this.cleanCityName(baseCity);
       const slug = this.toSlug(cleanedCity);
       this.logger.debug(
-        `[${tripId}] city="${city}" cleaned="${cleanedCity}" slug="${slug}"`,
+        `[${tripId}] city="${baseCity}" cleaned="${cleanedCity}" slug="${slug}"`,
       );
       if (!slug) return;
 
@@ -152,9 +162,23 @@ export class TripImageService implements OnModuleInit {
   }
 
   private pickPoint(
-    points: Array<{ id: string; order: number; lat: number; lon: number }>,
+    points: Array<{
+      id: string;
+      order: number;
+      lat: number;
+      lon: number;
+      title: string | null;
+      address: string | null;
+    }>,
     tripId: string,
-  ): { id: string; order: number; lat: number; lon: number } | null {
+  ): {
+    id: string;
+    order: number;
+    lat: number;
+    lon: number;
+    title: string | null;
+    address: string | null;
+  } | null {
     if (points.length === 1) {
       return points[0] ?? null;
     }
@@ -169,7 +193,9 @@ export class TripImageService implements OnModuleInit {
   private cleanCityName(city: string): string {
     if (!city) return city;
 
-    // Удаляем "технические" слова Nominatim
+    let cleaned = city.trim();
+
+    // Удаляем "технические" слова Nominatim (округа, районы)
     const cleanPatterns = [
       /городской\s+округ\s+/gi,
       /муниципальный\s+округ\s+/gi,
@@ -177,9 +203,12 @@ export class TripImageService implements OnModuleInit {
       /городской\s+округ$/gi,
       /муниципальный\s+округ$/gi,
       /административный\s+округ$/gi,
+      /\s+район$/gi, // "Чегемский район" → "Чегемский"
+      /^район\s+/gi, // "район Сочи" → "Сочи"
+      /\s+город$/gi, // "Москва город" → "Москва"
+      /^город\s+/gi, // "город Москва" → "Москва"
     ];
 
-    let cleaned = city;
     for (const pattern of cleanPatterns) {
       cleaned = cleaned.replace(pattern, '').trim();
     }
@@ -353,8 +382,7 @@ export class TripImageService implements OnModuleInit {
     }
 
     const imageUrl =
-      response?.hits?.[0]?.largeImageURL ??
-      response?.hits?.[0]?.webformatURL;
+      response?.hits?.[0]?.largeImageURL ?? response?.hits?.[0]?.webformatURL;
     if (!imageUrl) {
       this.logger.warn(`❌  Pixabay: No image found for "${city}"`);
       return null;
