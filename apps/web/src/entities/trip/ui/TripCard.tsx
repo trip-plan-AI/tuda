@@ -102,6 +102,8 @@ function BudgetSummary({
 interface TripCardProps {
   trip: Trip;
   isSelected?: boolean;
+  highlighted?: boolean;
+  cardRef?: (node: HTMLDivElement | null) => void;
   onCardClick?: (tripId: string) => void;
   onInvite?: (tripId: string) => void;
   onCollaboratorsClick?: (tripId: string) => void;
@@ -122,6 +124,8 @@ const formatDate = (d?: string | null) =>
 export function TripCard({
   trip,
   isSelected,
+  highlighted,
+  cardRef,
   onCardClick,
   onInvite,
   onCollaboratorsClick,
@@ -256,13 +260,15 @@ export function TripCard({
 
   return (
     <div
+      ref={cardRef}
       onClick={() => onCardClick?.(trip.id)}
       className={`group cursor-pointer rounded-2xl overflow-hidden bg-white transition-all duration-200
         ${
           isSelected
             ? 'ring-2 ring-brand-sky shadow-lg shadow-brand-sky/20'
             : 'border border-slate-100 shadow-sm hover:shadow-md'
-        }`}
+        }
+        ${highlighted ? 'ring-2 ring-amber-400 shadow-lg shadow-amber-200/70' : ''}`}
     >
       {/* ── HEADER: Owner + Invite button ── */}
       <div className="px-3 py-2 flex items-center justify-between border-b border-slate-100">

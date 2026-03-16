@@ -23,6 +23,8 @@ import { setConfig, clearConfig } from '@/features/persistent-map';
 import { TripCard } from '@/entities/trip/ui/TripCard';
 import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 
+type TabKey = 'routes' | 'saved';
+
 export function ProfilePage() {
   const router = useRouter();
   const { user, setUser } = useUserStore();
@@ -34,7 +36,7 @@ export function ProfilePage() {
   const clearPlanner = useTripStore((state) => state.clearPlanner);
   const { isAuthenticated } = useAuthStore();
 
-  const [activeTab, setActiveTab] = useState<'routes' | 'saved'>('routes');
+  const [activeTab, setActiveTab] = useState<TabKey>('routes');
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(user?.name || '');
   const [allTrips, setAllTrips] = useState<Trip[]>([]);
@@ -50,6 +52,7 @@ export function ProfilePage() {
   const [inviteTripId, setInviteTripId] = useState<string | null>(null);
   const [collaboratorsTripId, setCollaboratorsTripId] = useState<string | null>(null);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const [highlightedTripId, setHighlightedTripId] = useState<string | null>(null);
   const { setCollaborators } = useCollaborateStore();
 
   // Sync local allTrips into the Zustand store so selectors/filtered arrays stay up-to-date
@@ -124,6 +127,74 @@ export function ProfilePage() {
   const savedListScrollRef = useRef<HTMLDivElement>(null);
   const routePointsScrollRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
+  const highlightTimeoutRef = useRef<number | null>(null);
+  const tripCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const getTripTab = useCallback((trip?: Pick<Trip, 'startDate' | 'endDate'> | null): TabKey => {
+    return trip?.startDate && trip?.endDate ? 'routes' : 'saved';
+  }, []);
+
+  const getTripIdsByTab = useCallback((tripsList: Trip[], tab: TabKey): string[] => {
+    if (tab === 'saved') {
+      return tripsList
+        .filter((t) => !t.startDate || !t.endDate)
+        .map((t) => t.id);
+    }
+
+    const currentTime = new Date();
+    const travelList = tripsList.filter((t) => t.startDate && t.endDate);
+    const currentList = travelList
+      .filter((t) => new Date(t.startDate!) <= currentTime && new Date(t.endDate!) >= currentTime)
+      .sort((a, b) => new Date(a.endDate!).getTime() - new Date(b.endDate!).getTime());
+    const upcomingList = travelList
+      .filter((t) => new Date(t.startDate!) > currentTime)
+      .sort((a, b) => new Date(a.startDate!).getTime() - new Date(b.startDate!).getTime());
+    const pastList = travelList
+      .filter((t) => new Date(t.endDate!) < currentTime)
+      .sort((a, b) => new Date(b.endDate!).getTime() - new Date(a.endDate!).getTime());
+
+    return [...currentList, ...upcomingList, ...pastList].map((t) => t.id);
+  }, []);
+
+  const registerTripCardRef = useCallback((tripId: string, node: HTMLDivElement | null) => {
+    if (node) {
+      tripCardRefs.current.set(tripId, node);
+      return;
+    }
+    tripCardRefs.current.delete(tripId);
+  }, []);
+
+  const focusTripCard = useCallback((tripId: string, targetTab: TabKey) => {
+    setActiveTab(targetTab);
+    setSelectedTripId(tripId);
+
+    const tryFocus = () => {
+      const node = tripCardRefs.current.get(tripId);
+      if (!node) {
+        window.setTimeout(() => {
+          const delayedNode = tripCardRefs.current.get(tripId);
+          if (!delayedNode) return;
+          delayedNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setHighlightedTripId(tripId);
+        }, 120);
+        return;
+      }
+
+      node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightedTripId(tripId);
+    };
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(tryFocus);
+    });
+
+    if (highlightTimeoutRef.current != null) {
+      window.clearTimeout(highlightTimeoutRef.current);
+    }
+    highlightTimeoutRef.current = window.setTimeout(() => {
+      setHighlightedTripId((prev) => (prev === tripId ? null : prev));
+    }, 1800);
+  }, []);
 
   const evaluateScrollState = useCallback(() => {
     const scrollTop = window.scrollY;
@@ -203,6 +274,7 @@ export function ProfilePage() {
   useEffect(() => {
     return () => {
       if (scrollRafRef.current != null) window.cancelAnimationFrame(scrollRafRef.current);
+      if (highlightTimeoutRef.current != null) window.clearTimeout(highlightTimeoutRef.current);
     };
   }, []);
 
@@ -525,7 +597,32 @@ export function ProfilePage() {
   ) => {
     try {
       await tripsApi.update(tripId, dates);
-      setAllTrips((prev) => prev.map((t) => (t.id === tripId ? { ...t, ...dates } : t)));
+      const prevTrip = allTrips.find((t) => t.id === tripId);
+      const prevTab = getTripTab(prevTrip ?? null);
+      const prevOrder = getTripIdsByTab(allTrips, prevTab);
+      const prevIndex = prevOrder.indexOf(tripId);
+
+      const nextTrips = allTrips.map((t) => (t.id === tripId ? { ...t, ...dates } : t));
+      setAllTrips(nextTrips);
+
+      const nextTrip = nextTrips.find((t) => t.id === tripId);
+      const nextTab = getTripTab(nextTrip ?? null);
+      const nextOrder = getTripIdsByTab(nextTrips, nextTab);
+      const nextIndex = nextOrder.indexOf(tripId);
+
+      const hasTabChanged = prevTab !== nextTab;
+      const hasPositionChanged = prevIndex !== -1 && nextIndex !== -1 && prevIndex !== nextIndex;
+
+      if (hasTabChanged || hasPositionChanged) {
+        toast.success('Даты сохранены. Маршрут переместился в списке.', {
+          action: {
+            label: 'Показать маршрут',
+            onClick: () => focusTripCard(tripId, nextTab),
+          },
+        });
+        return;
+      }
+
       toast.success('Даты сохранены');
     } catch {
       toast.error('Не удалось сохранить даты');
@@ -794,6 +891,9 @@ export function ProfilePage() {
                           trip={trip}
                           isSelected={selectedTripId === trip.id}
                           onCardClick={setSelectedTripId}
+                          highlighted={highlightedTripId === trip.id}
+                          cardRef={(node) => registerTripCardRef(trip.id, node)}
+                          onDatesUpdate={handleDatesUpdate}
                           onInvite={() => { setInviteTripId(trip.id); setInviteModalOpen(true); }}
                           onCollaboratorsClick={() => { setCollaboratorsTripId(trip.id); setCollaboratorsModalOpen(true); }}
                         />
@@ -816,6 +916,9 @@ export function ProfilePage() {
                           trip={trip}
                           isSelected={selectedTripId === trip.id}
                           onCardClick={setSelectedTripId}
+                          highlighted={highlightedTripId === trip.id}
+                          cardRef={(node) => registerTripCardRef(trip.id, node)}
+                          onDatesUpdate={handleDatesUpdate}
                           onInvite={() => { setInviteTripId(trip.id); setInviteModalOpen(true); }}
                           onCollaboratorsClick={() => { setCollaboratorsTripId(trip.id); setCollaboratorsModalOpen(true); }}
                         />
@@ -838,6 +941,9 @@ export function ProfilePage() {
                           trip={trip}
                           isSelected={selectedTripId === trip.id}
                           onCardClick={setSelectedTripId}
+                          highlighted={highlightedTripId === trip.id}
+                          cardRef={(node) => registerTripCardRef(trip.id, node)}
+                          onDatesUpdate={handleDatesUpdate}
                           onInvite={() => { setInviteTripId(trip.id); setInviteModalOpen(true); }}
                           onCollaboratorsClick={() => { setCollaboratorsTripId(trip.id); setCollaboratorsModalOpen(true); }}
                         />
@@ -870,6 +976,8 @@ export function ProfilePage() {
                   trip={trip}
                   isSelected={selectedTripId === trip.id}
                   onCardClick={setSelectedTripId}
+                          highlighted={highlightedTripId === trip.id}
+                          cardRef={(node) => registerTripCardRef(trip.id, node)}
                   onDatesUpdate={handleDatesUpdate}
                   onInvite={() => {
                     setInviteTripId(trip.id);
