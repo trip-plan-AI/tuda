@@ -5,8 +5,6 @@ import {
   Moon,
   ArrowRight,
   Plus,
-  AlertTriangle,
-  CheckCircle2,
   MoreVertical,
   Crown,
   CalendarIcon,
@@ -84,31 +82,18 @@ function BudgetSummary({
 
       <div className="grid grid-cols-2 gap-2 text-[9px] font-bold text-slate-400">
         <span>{plan > 0 ? `Использовано ${progressPercent}%` : 'Лимит не задан'}</span>
-        <span className="text-right">{plan > 0 ? `${formatRub(plan - total)} ₽` : '—'}</span>
-      </div>
-
-      <div
-        className={cn(
-          'flex items-start gap-1.5 rounded-lg border px-2 py-1 text-[9px] font-black leading-tight',
-          isOverBudget
-            ? 'border-red-100 bg-red-50/70 text-red-600'
-            : 'border-emerald-100 bg-emerald-50/70 text-emerald-600',
-        )}
-      >
-        {isOverBudget ? (
-          <AlertTriangle size={10} className="shrink-0 mt-px" />
-        ) : (
-          <CheckCircle2 size={10} className="shrink-0 mt-px" />
-        )}
-        {plan > 0 ? (
-          isOverBudget ? (
-            <span>Перерасход: +{formatRub(total - plan)} ₽</span>
-          ) : (
-            <span>Остаток: {formatRub(plan - total)} ₽</span>
-          )
-        ) : (
-          <span>Задайте планируемый бюджет для контроля расхода</span>
-        )}
+        <span
+          className={cn(
+            'text-right',
+            plan > 0 && (isOverBudget ? 'text-red-600' : 'text-emerald-600'),
+          )}
+        >
+          {plan > 0
+            ? isOverBudget
+              ? `Перерасход: +${formatRub(total - plan)} ₽`
+              : `Остаток: ${formatRub(plan - total)} ₽`
+            : '—'}
+        </span>
       </div>
     </div>
   );
