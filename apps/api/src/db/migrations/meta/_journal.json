@@ -8,6 +8,13 @@
       "when": 1773704387434,
       "tag": "0000_pale_jack_power",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1773691200000,
+      "tag": "0004_add_trip_distance_km",
+      "breakpoints": true
     }
   ]
 }

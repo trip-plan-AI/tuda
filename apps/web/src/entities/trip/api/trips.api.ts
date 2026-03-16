@@ -11,6 +11,7 @@ export interface UpdateTripPayload {
   title?: string
   description?: string | null
   budget?: number | null
+  distanceKm?: number
   isActive?: boolean
   startDate?: string | null
   endDate?: string | null
