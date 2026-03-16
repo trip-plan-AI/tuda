@@ -1902,25 +1902,19 @@ export function PlannerPage() {
     const currentKey = `${incomingTripId}-${draftMessageId || 'nodraft'}`;
     if (handledApplyTripIdRef.current === currentKey) return;
 
-    const hasPlannerContent = (currentTrip?.points?.length ?? 0) > 0 || isDirty;
+    // Intelligent conflict detection: only show modal if there's real content to lose
     const isDifferentRoute = currentTrip?.id !== incomingTripId;
     const hasIncomingDraftVersion = Boolean(draftMessageId);
+    const hasPoints = (currentTrip?.points?.length ?? 0) > 0;
+    const hasRealContentToLose = hasPoints || isDirty;
 
-    // TRI-114: if current points are missing but we have an incomingTripId, always load.
-    const pointsMissing = (currentTrip?.points?.length ?? 0) === 0;
-
-    if (!hasPlannerContent || !currentTrip || (pointsMissing && !isDirty)) {
+    if (!hasRealContentToLose || !isDifferentRoute) {
       handledApplyTripIdRef.current = currentKey;
       void applyIncomingTrip(incomingTripId);
       return;
     }
 
-    if (!isDifferentRoute && !hasIncomingDraftVersion && !pointsMissing) {
-      handledApplyTripIdRef.current = currentKey;
-      clearApplyTripParams();
-      return;
-    }
-
+    // Only show modal if there's real content to lose AND it's a different route
     handledApplyTripIdRef.current = currentKey;
     setPendingApplyTripId(incomingTripId);
     setPendingDraftMessageId(draftMessageId);
@@ -1930,11 +1924,9 @@ export function PlannerPage() {
     _hasHydrated,
     applyIncomingTrip,
     searchParams,
-    points.length,
     currentTrip?.id,
     currentTrip?.points,
     isDirty,
-    clearApplyTripParams,
   ]);
 
   return (

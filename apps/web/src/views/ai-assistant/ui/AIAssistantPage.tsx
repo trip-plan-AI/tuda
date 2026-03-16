@@ -32,6 +32,7 @@ export function AIAssistantPage() {
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [pendingDraftMessageId, setPendingDraftMessageId] = useState<string | null>(null);
   const [conflictType, setConflictType] = useState<PlannerConflictType>('different_route');
+  const [pendingAction, setPendingAction] = useState<'navigate' | 'apply' | null>(null);
   
   const handleClearChat = async () => {
     // Используем displayPoints для определения, есть ли точки на карте
@@ -192,7 +193,7 @@ export function AIAssistantPage() {
     createNewSession(currentTrip?.id ?? null);
   };
 
-  const handleOpenPlanner = (tripIdOverride?: string | null, messageId?: string) => {
+  const handleOpenPlanner = (tripIdOverride?: string | null, messageId?: string, skipEmptyPointCheck?: boolean) => {
     // feature/TRI-104-ai-planner-interaction: переход в Planner через applyTripId.
     // Потребность: передать целевой маршрут в PlannerPage для корректной синхронизации состояния.
     // Если убрать: Planner не поймёт, какой маршрут нужно открыть из AI-чата.
@@ -208,20 +209,14 @@ export function AIAssistantPage() {
         setConflictType('different_route');
         setPendingPlannerTripId(targetTripId);
         setPendingDraftMessageId(messageId ?? null);
-        setShowPlannerConflictModal(true);
-        return;
-      } else if (messageId && messageId !== lastAppliedPlanMessageId) {
-        // Тот же маршрут, но применяется новая версия из чата
-        setConflictType('same_route');
-        setPendingPlannerTripId(targetTripId);
-        setPendingDraftMessageId(messageId);
+        setPendingAction('navigate');
         setShowPlannerConflictModal(true);
         return;
       }
     }
 
     // Проверяем, есть ли точки в чате (в сообщении с планом), если их нет - может потребоваться очистка конструктора
-    if (targetTripId && openedPlannerTripId && openedPlannerTripId === targetTripId) {
+    if (!skipEmptyPointCheck && targetTripId && openedPlannerTripId && openedPlannerTripId === targetTripId) {
       // Проверяем, есть ли точки в последнем сообщении с планом
       let hasPointsInChat = false;
       if (messageId) {
@@ -243,6 +238,7 @@ export function AIAssistantPage() {
         setConflictType('same_route'); // Используем тот же тип конфликта
         setPendingPlannerTripId(targetTripId);
         setPendingDraftMessageId(messageId ?? null);
+        setPendingAction('navigate');
         setShowPlannerConflictModal(true);
         return;
       }
@@ -259,32 +255,57 @@ export function AIAssistantPage() {
     router.push(`/planner?${query.toString()}`);
   };
 
-  const handleConfirmPlannerReplace = async () => {
-    const targetTripId = pendingPlannerTripId;
-    const draftMessageId = pendingDraftMessageId;
+  // Применяет план, очищает локальный стейт и переходит
+  const executeApplyPlan = async (messageId: string) => {
+    const appliedTripId = await applyPlanToCurrentTrip(messageId);
+    if (!appliedTripId) {
+      toast.error('Не удалось применить маршрут');
+      return;
+    }
+
+    // ПОЛНОСТЬЮ очищаем локальный конструктор перед переходом
+    // Это обнулит флаг isDirty и гарантирует, что на странице Planner не вылезет вторая модалка
+    const currentTripState = useTripStore.getState();
+    currentTripState.clearPlanner();
+    currentTripState.setSaved();
+
+    const query = new URLSearchParams();
+    query.set('applyTripId', appliedTripId);
+    query.set('draftMessageId', messageId);
+    router.push(`/planner?${query.toString()}`);
+
+    // Закрываем модалки
     setShowPlannerConflictModal(false);
     setPendingPlannerTripId(null);
     setPendingDraftMessageId(null);
+    setPendingAction(null);
+  };
+
+  const handleConfirmPlannerReplace = async () => {
+    // Если подтвердили применение нового плана:
+    if (pendingAction === 'apply' && pendingDraftMessageId) {
+      await executeApplyPlan(pendingDraftMessageId);
+      return;
+    }
+
+    // Если подтвердили просто переход (кнопка Открыть Planner):
+    const targetTripId = pendingPlannerTripId;
+    const draftMessageId = pendingDraftMessageId;
+
+    setShowPlannerConflictModal(false);
+    setPendingPlannerTripId(null);
+    setPendingDraftMessageId(null);
+    setPendingAction(null);
 
     if (!targetTripId || targetTripId.startsWith('guest-')) {
       router.push('/planner');
       return;
     }
 
-    // Удаляем все существующие точки из конструктора перед применением новых
-    try {
-      const currentPoints = useTripStore.getState().currentTrip?.points || [];
-      
-      // Удаляем точки последовательно, чтобы избежать проблем с одновременными запросами
-      for (const point of currentPoints) {
-        await pointsApi.remove(targetTripId, point.id);
-      }
-      
-      // Обновляем состояние
-      useTripStore.getState().setPoints([]);
-    } catch (error) {
-      console.error('Failed to clear existing points:', error);
-    }
+    // Сбрасываем стейт полностью, чтобы PlannerPage молча загрузил маршрут
+    const currentTripState = useTripStore.getState();
+    currentTripState.clearPlanner();
+    currentTripState.setSaved();
 
     const query = new URLSearchParams();
     query.set('applyTripId', targetTripId);
@@ -572,7 +593,6 @@ export function AIAssistantPage() {
               variant="brand-yellow"
               size="lg"
               onClick={async () => {
-                // Используем последнее сообщение с маршрутным планом
                 let lastPlanMessage = null;
                 for (let i = messages.length - 1; i >= 0; i--) {
                   const message = messages[i];
@@ -587,33 +607,24 @@ export function AIAssistantPage() {
                   return;
                 }
 
-                // Применяем план в БД
-                const appliedTripId = await applyPlanToCurrentTrip(lastPlanMessage.id);
-                if (!appliedTripId) {
-                  toast.error('Не удалось применить маршрут');
-                  return;
-                }
-
-                // Проверяем, есть ли точки в этом сообщении
-                let hasPointsInMessage = false;
-                if (lastPlanMessage && lastPlanMessage.routePlan) {
-                  hasPointsInMessage = lastPlanMessage.routePlan.days.some(day => day?.points?.length > 0);
-                }
-
-                // Если точек в сообщении нет, но в конструкторе они есть, показываем модальное окно
-                const hasPointsInPlanner = (currentTrip?.points?.length ?? 0) > 0;
-                const targetTripId = appliedTripId;
+                const targetTripId = activeSession?.tripId ?? currentTrip?.id ?? null;
                 const openedPlannerTripId = currentTrip?.id ?? null;
 
-                if (!hasPointsInMessage && hasPointsInPlanner && targetTripId && openedPlannerTripId && openedPlannerTripId === targetTripId) {
-                  setConflictType('same_route');
+                const currentTripState = useTripStore.getState();
+                const hasPlannerContent = (currentTrip?.points?.length ?? 0) > 0 || currentTripState.isDirty;
+
+                // Проверяем конфликт ДО применения и перехода (ловит наличие любых точек или несохраненных изменений)
+                if (hasPlannerContent) {
+                  setConflictType(targetTripId === openedPlannerTripId ? 'same_route' : 'different_route');
                   setPendingPlannerTripId(targetTripId);
-                  setPendingDraftMessageId(lastPlanMessage?.id || null);
+                  setPendingDraftMessageId(lastPlanMessage.id);
+                  setPendingAction('apply');
                   setShowPlannerConflictModal(true);
-                  return;
+                  return; // Останавливаемся и ждем решения в окне!
                 }
 
-                handleOpenPlanner(appliedTripId, lastPlanMessage.id);
+                // Если конструктор абсолютно пустой - применяем и переходим без вопросов
+                await executeApplyPlan(lastPlanMessage.id);
               }}
             >
               Применить в конструкторе
@@ -632,6 +643,7 @@ export function AIAssistantPage() {
               setShowPlannerConflictModal(false);
               setPendingPlannerTripId(null);
               setPendingDraftMessageId(null);
+              setPendingAction(null);
             }}
             onReplaceWithoutSave={handleConfirmPlannerReplace}
             onSaveAndReplace={async () => {
@@ -648,6 +660,7 @@ export function AIAssistantPage() {
               setShowPlannerConflictModal(false);
               setPendingPlannerTripId(null);
               setPendingDraftMessageId(null);
+              setPendingAction(null);
               router.push('/planner');
             }}
           />
