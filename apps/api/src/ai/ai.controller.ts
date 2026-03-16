@@ -65,6 +65,7 @@ import { MutationParserService } from './services/mutation-parser.service';
 import { PointMutationService } from './services/point-mutation.service';
 import { PointMutation } from './types/mutations';
 import { CollaborationEventsService } from '../collaboration/collaboration-events.service';
+import { GeocodingFallbackService } from './services/geocoding-fallback.service';
 
 @Controller('ai')
 @UseGuards(JwtAuthGuard)
@@ -120,6 +121,7 @@ export class AiController {
     private readonly mutationParser: MutationParserService,
     private readonly pointMutationService: PointMutationService,
     private readonly eventsService: CollaborationEventsService,
+    private readonly geocodingFallbackService: GeocodingFallbackService,
   ) {}
 
   private isNeedCityError(error: unknown): boolean {
@@ -217,8 +219,49 @@ export class AiController {
   }
 
   private toFilteredPoi(poi: PoiItem, descriptionFallback = ''): FilteredPoi {
+    let coords = poi.coordinates;
+
+    const isInvalid =
+      !coords ||
+      coords.lat === undefined ||
+      coords.lon === undefined ||
+      !Number.isFinite(coords.lat) ||
+      !Number.isFinite(coords.lon) ||
+      (Math.abs(coords.lat) < 0.001 && Math.abs(coords.lon) < 0.001);
+
+    if (isInvalid) {
+      this.logger.warn(
+        `[toFilteredPoi] Invalid coords for "${poi.name}": ${JSON.stringify(coords)}. Attempting URI recovery...`,
+      );
+      const uri = (poi as any).uri || (poi as any).source_uri;
+      if (typeof uri === 'string') {
+        const match = uri.match(/ll=([^&]+)/);
+        if (match) {
+          try {
+            const raw = decodeURIComponent(match[1]);
+            const [lon, lat] = raw.split(',').map(Number);
+            if (
+              Number.isFinite(lat) &&
+              Number.isFinite(lon) &&
+              (Math.abs(lat) > 0.001 || Math.abs(lon) > 0.001)
+            ) {
+              coords = { lat, lon };
+              this.logger.log(
+                `[toFilteredPoi] ✅ Recovered coords for "${poi.name}" from URI: (${lat}, ${lon})`,
+              );
+            }
+          } catch (e) {
+            this.logger.error(
+              `[toFilteredPoi] Failed to parse URI for "${poi.name}": ${e}`,
+            );
+          }
+        }
+      }
+    }
+
     return {
       ...poi,
+      coordinates: coords,
       description: (
         descriptionFallback || `Интересное место: ${poi.name}.`
       ).trim(),
@@ -312,6 +355,23 @@ export class AiController {
     }
 
     return current >= start || current <= end;
+  }
+
+  private removeDuplicatePoi(items: FilteredPoi[]): FilteredPoi[] {
+    const seenNames = new Set<string>();
+    const uniqueItems: FilteredPoi[] = [];
+
+    for (const item of items) {
+      // Use a normalized version of the name and city for comparison to be more robust
+      const normalizedName = item.name.toLowerCase().replace(/\s+/g, ' ').trim();
+      
+      if (!seenNames.has(normalizedName)) {
+        seenNames.add(normalizedName);
+        uniqueItems.push(item);
+      }
+    }
+
+    return uniqueItems;
   }
 
   private haversineKm(
@@ -551,6 +611,14 @@ ${JSON.stringify(points)}
     const history = session.messages;
     const llmContext = history.slice(-10);
     const orchestratorStart = Date.now();
+    const existingRoutePlan = this.extractCurrentRoutePlan(history);
+    const mutationMeta: {
+      mutation_applied?: boolean;
+      mutation_type?: IntentRouterActionType;
+      mutation_fallback_reason?: string;
+    } = {
+      mutation_applied: false,
+    };
     const currentRoutePois = this.extractCurrentRoutePois(history);
     this.logger.log(
       `Current route POIs for router: ${JSON.stringify(currentRoutePois)}`,
@@ -617,13 +685,32 @@ ${JSON.stringify(points)}
 
     const providerStart = Date.now();
     const fallbacks: string[] = [];
-    const providerResult = await this.providerSearchService.fetchAndFilter(
-      intent,
-      fallbacks,
-    );
-    const rawPoi = providerResult.pois;
-    const massCollectionShadowMeta: MassCollectionShadowMeta =
-      providerResult.shadowDiagnostics ?? {
+
+    // Если нужно просто удалить точку, нам не нужно искать новые (Kudago, Overpass, Yandex).
+    const skipSearch = intentRouterDecision.action_type === 'REMOVE_POI';
+
+    let rawPoi: any[] = [];
+    let providerDuration = 0;
+    let massCollectionShadowMeta: MassCollectionShadowMeta | null = null;
+    let vectorPrefilterShadowMeta: VectorPrefilterShadowMeta | null = null;
+    let logicalIdShadowMeta: LogicalIdShadowMeta | null = null;
+    let semanticDuration = 0;
+    let selectedForScheduler: any[] = [];
+    let yandexBatchRefinementDiagnostics: YandexBatchRefinementDiagnostics | null =
+      null;
+    let logicalSelectorResult: any = { selected_ids: [] };
+    let logicalSelectedPool: any[] = [];
+    let selected: any[] = [];
+    let yandexPersonaSummary: string =
+      policySnapshot.user_persona_summary ?? dto.user_query;
+
+    if (!skipSearch) {
+      const providerResult = await this.providerSearchService.fetchAndFilter(
+        intent,
+        fallbacks,
+      );
+      rawPoi = providerResult.pois;
+      massCollectionShadowMeta = providerResult.shadowDiagnostics ?? {
         provider_stats: [],
         totals: {
           before_dedup: rawPoi.length,
@@ -631,97 +718,160 @@ ${JSON.stringify(points)}
           returned: rawPoi.length,
         },
       };
-    const providerDuration = Date.now() - providerStart;
+      providerDuration = Date.now() - providerStart;
 
-    const personaSummary =
-      policySnapshot.user_persona_summary ?? dto.user_query;
-    const vectorPrefilterShadowMeta: VectorPrefilterShadowMeta =
-      await this.vectorPrefilterService.runShadowPrefilter(
-        personaSummary,
-        rawPoi,
-        this.resolveVectorTopK(),
-      );
+      const personaSummary =
+        policySnapshot.user_persona_summary ?? dto.user_query;
+      vectorPrefilterShadowMeta =
+        await this.vectorPrefilterService.runShadowPrefilter(
+          personaSummary,
+          rawPoi,
+          this.resolveVectorTopK(),
+        );
 
-    const logicalSelectorResult = await this.logicalIdSelectorService.selectIds(
-      {
+      // RESERVE POOL: We need more candidates to have a backup in case geocoding fails
+      const reserveFactor = 3;
+      const baseTarget = intent.days * 4;
+      const logicalTarget = Math.min(Math.max(baseTarget * reserveFactor, 20), rawPoi.length);
+
+      logicalSelectorResult = await this.logicalIdSelectorService.selectIds({
         candidates: rawPoi.map((poi) => ({
           id: poi.id,
           name: poi.name,
           category: poi.category,
         })),
-        required_capacity: policySnapshot.required_capacity,
+        required_capacity: logicalTarget,
         food_policy: policySnapshot.food_policy,
-      },
-    );
-    const selectedIdSet = new Set(logicalSelectorResult.selected_ids);
-    const logicalSelectedPool = rawPoi.filter((poi) =>
-      selectedIdSet.has(poi.id),
-    );
+      });
+      const selectedIdSet = new Set(logicalSelectorResult.selected_ids);
+      logicalSelectedPool = rawPoi.filter((poi) => selectedIdSet.has(poi.id));
 
-    const enrichedWithLogicalIds = this.logicalIdFilterService.attachLogicalIds(
-      rawPoi,
-      intent.city,
-    );
-    const duplicateGroups =
-      this.logicalIdFilterService.analyzeDuplicatesByLogicalId(
-        enrichedWithLogicalIds,
+      const enrichedWithLogicalIds =
+        this.logicalIdFilterService.attachLogicalIds(rawPoi, intent.city);
+      const duplicateGroups =
+        this.logicalIdFilterService.analyzeDuplicatesByLogicalId(
+          enrichedWithLogicalIds,
+        );
+
+      logicalIdShadowMeta = {
+        total_candidates: enrichedWithLogicalIds.length,
+        duplicates_groups: duplicateGroups.length,
+        duplicates_total: duplicateGroups.reduce(
+          (sum, group) => sum + group.count,
+          0,
+        ),
+      };
+
+      const semanticStart = Date.now();
+      selected = await this.semanticFilterService.select(
+        logicalSelectedPool,
+        intent,
+        fallbacks,
       );
 
-    const logicalIdShadowMeta: LogicalIdShadowMeta = {
-      total_candidates: enrichedWithLogicalIds.length,
-      duplicates_groups: duplicateGroups.length,
-      duplicates_total: duplicateGroups.reduce(
-        (sum, group) => sum + group.count,
-        0,
-      ),
-    };
+      this.logger.log(
+        `Ranked POIs from AI: ${selected.length}. Starting batch geocoding with Reserve Pool...`,
+      );
 
-    const semanticStart = Date.now();
-    const selected = await this.semanticFilterService.select(
-      logicalSelectedPool,
-      intent,
-      fallbacks,
-    );
+      // --- RESERVE POOL / BUCKET FILLING LOGIC ---
+      // Мы геокодируем ВСЕ отобранные AI точки, чтобы иметь максимальный резерв для планировщика
+      // и компенсировать возможные потери при уточнении (Yandex Refinement) или валидации.
+      const geocodedResult = await this.geocodingFallbackService.geocodePointsWithFallback(
+        selected.map((point) => ({
+          id: point.id,
+          name: point.name,
+          coordinates: point.coordinates,
+        })),
+        intent.city,
+      );
 
-    const yandexPersonaSummary =
-      policySnapshot.user_persona_summary ?? dto.user_query;
-    let selectedForScheduler = selected;
-    let yandexBatchRefinementDiagnostics: YandexBatchRefinementDiagnostics | null =
-      null;
+      const successfullyGeocoded: FilteredPoi[] = [];
+      for (const point of selected) {
+        if (geocodedResult.has(point.id)) {
+          const coords = geocodedResult.get(point.id)!;
+          successfullyGeocoded.push({
+            ...point,
+            coordinates: {
+              ...point.coordinates,
+              lat: coords.lat,
+              lon: coords.lon,
+            },
+          });
+        }
+      }
 
-    try {
-      const refinementResult =
-        await this.yandexBatchRefinementService.refineSelectedInBatches(
-          selected,
-          yandexPersonaSummary,
-          { intent },
+      this.logger.log(
+        `[GEOCODING] Successfully geocoded ${successfullyGeocoded.length}/${selected.length} points.`,
+      );
+
+      yandexPersonaSummary =
+        policySnapshot.user_persona_summary ?? dto.user_query;
+      selectedForScheduler = successfullyGeocoded;
+
+      try {
+        const refinementResult =
+          await this.yandexBatchRefinementService.refineSelectedInBatches(
+            successfullyGeocoded,
+            yandexPersonaSummary,
+            { intent },
+          );
+        selectedForScheduler = refinementResult.refined;
+
+        // Final coordinate safety check
+        const initialCount = selectedForScheduler.length;
+        const droppedPoiNames: string[] = [];
+
+        const validPoints = selectedForScheduler.filter((point) => {
+          const isValid =
+            point.coordinates &&
+            point.coordinates.lat !== undefined &&
+            point.coordinates.lon !== undefined &&
+            (Math.abs(point.coordinates.lat) > 0.001 ||
+              Math.abs(point.coordinates.lon) > 0.001) &&
+            !(point.coordinates.lat === 0 && point.coordinates.lon === 0);
+
+          if (!isValid) {
+            droppedPoiNames.push(point.name);
+          }
+          return isValid;
+        });
+
+        if (validPoints.length !== initialCount) {
+          this.logger.log(
+            `Filtered out ${initialCount - validPoints.length} points with invalid coordinates after refinement. Valid points: ${validPoints.length}. Dropped: ${droppedPoiNames.join(', ')}`,
+          );
+        }
+
+        // Store dropped names in mutationMeta for the final assistant response (only for mutations)
+        if (droppedPoiNames.length > 0) {
+          (mutationMeta as any).dropped_poi_names = droppedPoiNames;
+        }
+
+        // Remove duplicates after refinement
+        selectedForScheduler = this.removeDuplicatePoi(validPoints);
+
+        this.logger.log(
+          `Final POIs for Scheduler: ${selectedForScheduler.length}. Coords: ${selectedForScheduler.map((p) => `${p.name}(${p.coordinates?.lat},${p.coordinates?.lon})`).join(', ')}`,
         );
-      selectedForScheduler = refinementResult.refined;
-      yandexBatchRefinementDiagnostics = refinementResult.diagnostics;
-    } catch (error) {
-      const reason =
-        error instanceof Error && typeof error.message === 'string'
-          ? error.message
-          : 'UNKNOWN';
-      fallbacks.push(`YANDEX_BATCH_REFINEMENT_FAILED:${reason}`);
-      yandexBatchRefinementDiagnostics = {
-        batch_count: 0,
-        failed_batches: 1,
-        fallback_reasons: [`service_error:${reason}`],
-      };
+
+        yandexBatchRefinementDiagnostics = refinementResult.diagnostics;
+      } catch (error) {
+        const reason =
+          error instanceof Error && typeof error.message === 'string'
+            ? error.message
+            : 'UNKNOWN';
+        fallbacks.push(`YANDEX_BATCH_REFINEMENT_FAILED:${reason}`);
+        yandexBatchRefinementDiagnostics = {
+          batch_count: 0,
+          failed_batches: 1,
+          fallback_reasons: [`service_error:${reason}`],
+        };
+      }
+
+      semanticDuration = Date.now() - semanticStart;
     }
 
-    const semanticDuration = Date.now() - semanticStart;
-
     const schedulerStart = Date.now();
-    const existingRoutePlan = this.extractCurrentRoutePlan(history);
-    const mutationMeta: {
-      mutation_applied?: boolean;
-      mutation_type?: IntentRouterActionType;
-      mutation_fallback_reason?: string;
-    } = {
-      mutation_applied: false,
-    };
 
     const buildRoutePlanFromDays = (
       city: string,
@@ -737,7 +887,6 @@ ${JSON.stringify(points)}
 
     let routePlan: RoutePlan;
 
-    // Решаем, нужно ли сохранять старые точки
     const isNewRouteRequested =
       intentRouterDecision.action_type === 'NEW_ROUTE' || !existingRoutePlan;
 
@@ -752,7 +901,21 @@ ${JSON.stringify(points)}
       );
 
       const combinePool = (newPois: FilteredPoi[]): FilteredPoi[] => {
-        const combined = [...oldPois, ...newPois];
+        // TRI-115-COORDS-PROTECTION: Фильтруем точки с некорректными координатами (напр. 0,0)
+        // из любых источников (старый план из истории, новые точки).
+        const filterInvalidCoords = (p: FilteredPoi) => {
+          const lat = p.coordinates?.lat;
+          const lon = p.coordinates?.lon;
+          return (
+            lat !== undefined &&
+            lon !== undefined &&
+            Number.isFinite(lat) &&
+            Number.isFinite(lon) &&
+            (Math.abs(lat) > 0.001 || Math.abs(lon) > 0.001)
+          );
+        };
+
+        const combined = [...oldPois, ...newPois].filter(filterInvalidCoords);
         const seen = new Set<string>();
         return combined.filter((p) => {
           const k = p.name.toLowerCase().trim();
@@ -767,8 +930,9 @@ ${JSON.stringify(points)}
 
         switch (intentRouterDecision.action_type) {
           case 'ADD_POI': {
-            routePlan = this.schedulerService.buildPlan(
-              combinePool(selectedForScheduler),
+            routePlan = this.schedulerService.injectPoints(
+              existingRoutePlan,
+              selectedForScheduler,
               {
                 ...intent,
                 days: Math.max(intent.days, existingRoutePlan.days.length),
@@ -870,7 +1034,7 @@ ${JSON.stringify(points)}
               break;
             }
 
-            const rebuiltDays = existingRoutePlan.days.map((day) => {
+            const rebuiltDays = existingRoutePlan!.days.map((day) => {
               // Удаляем точку и пересчитываем времена оставшихся (без пересортировки)
               const filteredPoints = day.points.filter(
                 (point) => point.poi_id !== targetPoiId,
@@ -909,7 +1073,7 @@ ${JSON.stringify(points)}
             });
 
             routePlan = buildRoutePlanFromDays(
-              existingRoutePlan.city,
+              existingRoutePlan!.city,
               rebuiltDays,
             );
             mutationMeta.mutation_applied = true;
@@ -1151,6 +1315,18 @@ ${JSON.stringify(points)}
       });
     }
 
+    const droppedPoiNames = (mutationMeta as any).dropped_poi_names as string[] | undefined;
+    const isSpecificMutation = intentRouterDecision.action_type === 'ADD_POI' || intentRouterDecision.action_type === 'REPLACE_POI';
+
+    if (isSpecificMutation && droppedPoiNames && droppedPoiNames.length > 0) {
+      const warningText = `⚠️ К сожалению, мне не удалось найти точные координаты для: ${droppedPoiNames.join(', ')}. Эти точки не были добавлены.`;
+      
+      assistantMessages.push({
+        role: 'assistant' as const,
+        content: warningText,
+      });
+    }
+
     assistantMessages.push({
       role: 'assistant' as const,
       content: 'Маршрут готов',
@@ -1160,6 +1336,17 @@ ${JSON.stringify(points)}
     const newMessages: SessionMessage[] = [...history, ...assistantMessages];
 
     await this.aiSessionsService.saveMessages(session.id, newMessages);
+
+    this.logger.log(
+      `Final plan for ${intent.city}: ${routePlan.days.flatMap((d) => d.points).length} points.`,
+    );
+    routePlan.days.forEach((d) => {
+      d.points.forEach((p) => {
+        this.logger.log(
+          `  [POINT] ${p.poi.name}: ${p.poi.coordinates?.lat}, ${p.poi.coordinates?.lon}`,
+        );
+      });
+    });
 
     if (session.tripId) {
       this.eventsService.emitTripRefresh(session.tripId);
@@ -1482,11 +1669,7 @@ ${JSON.stringify(points)}
       currentTitles.size !== lastTitles.size ||
       [...currentTitles].some((t) => !lastTitles.has(t));
 
-    const isNewSession = session.messages.length === 0;
-    const hasPoints = points.length > 0;
-
-    if (!lastRoutePlan && isNewSession && hasPoints) {
-      // Только для совсем новой сессии с точками — добавляем приветствие + план
+    if (!lastRoutePlan) {
       await this.aiSessionsService.appendMessages(session.id, [
         {
           role: 'assistant',
@@ -1500,8 +1683,7 @@ ${JSON.stringify(points)}
           route_plan: routePlan,
         },
       ]);
-    } else if (routeChanged && hasPoints) {
-      // Маршрут изменился в Planner — добавляем обновление
+    } else if (routeChanged) {
       await this.aiSessionsService.appendMessages(session.id, [
         {
           role: 'assistant',
@@ -1511,14 +1693,8 @@ ${JSON.stringify(points)}
       ]);
     }
 
-    // Эмитим события только если реально что-то добавили.
-    if (
-      (isNewSession && hasPoints && !lastRoutePlan) ||
-      (routeChanged && hasPoints)
-    ) {
-      this.eventsService.emitTripRefresh(tripId);
-      this.eventsService.emitAiUpdate(tripId, session.id);
-    }
+    this.eventsService.emitTripRefresh(tripId);
+    this.eventsService.emitAiUpdate(tripId, session.id);
 
     return { session_id: session.id, trip_id: tripId };
   }

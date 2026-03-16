@@ -6,7 +6,10 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { InvitationsModal, type Invitation } from '@/features/route-collaborate/ui/InvitationsModal';
+import {
+  InvitationsModal,
+  type Invitation,
+} from '@/features/route-collaborate/ui/InvitationsModal';
 
 import {
   Button,
@@ -149,9 +152,7 @@ export function Header() {
     const socket = getSocket();
 
     const onInviteReceived = (invite: Invitation) => {
-      setInvitations((prev) =>
-        prev.some((i) => i.id === invite.id) ? prev : [...prev, invite],
-      );
+      setInvitations((prev) => (prev.some((i) => i.id === invite.id) ? prev : [...prev, invite]));
       toast(`Приглашение в маршрут «${invite.tripTitle}»`, {
         description: `${invite.inviterName} приглашает вас`,
         action: {
@@ -216,9 +217,11 @@ export function Header() {
                           isHome ? 'bg-grey/21 text-white' : 'bg-slate-100 text-brand-indigo',
                         )}
                       >
-                        {user?.name
-                          ? user.name.trim().slice(0, 2).toUpperCase()
-                          : <User size={28} strokeWidth={3} />}
+                        {user?.name ? (
+                          user.name.trim().slice(0, 2).toUpperCase()
+                        ) : (
+                          <User size={28} strokeWidth={3} />
+                        )}
                       </AvatarFallback>
                     </Avatar>
                   </Button>
@@ -279,9 +282,7 @@ export function Header() {
                           <span
                             className={cn(
                               'absolute -top-1 -right-1 text-[10px] font-black px-1 py-0.5 rounded-full',
-                              isHome
-                                ? 'bg-brand-sky text-white'
-                                : 'bg-brand-sky text-white',
+                              isHome ? 'bg-brand-sky text-white' : 'bg-brand-sky text-white',
                             )}
                           >
                             {invitations.length}
@@ -323,7 +324,10 @@ export function Header() {
                                       : iconIdle,
                                 )}
                               >
-                                <Icon size={16} stroke={isActive || isHome ? '#fff' : 'currentColor'} />
+                                <Icon
+                                  size={16}
+                                  stroke={isActive || isHome ? '#fff' : 'currentColor'}
+                                />
                               </div>
                               {label}
                             </Link>
