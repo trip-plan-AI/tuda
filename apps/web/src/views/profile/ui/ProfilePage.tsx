@@ -659,34 +659,6 @@ export function ProfilePage() {
 
       {/* ── КОНТЕНТ ТАБОВ ── */}
       <div className="w-full flex flex-col relative">
-        {/* Scroll-to-top button */}
-        <div
-          className={cn(
-            'absolute right-3 bottom-3 md:right-4 md:bottom-4 z-30',
-            'transition-all duration-300',
-            showScrollTop
-              ? 'opacity-100 translate-y-0 visible'
-              : 'opacity-0 translate-y-2 invisible pointer-events-none',
-          )}
-        >
-          <button
-            type="button"
-            onClick={handleScrollToTop}
-            className="relative h-10 w-10 rounded-full shadow-md transition-transform hover:scale-105 active:scale-95"
-          >
-            <span
-              className="absolute inset-0 rounded-full"
-              style={{
-                background: `conic-gradient(${progressColor} ${progressDegrees}deg, ${progressTrackColor} ${progressDegrees}deg)`,
-              }}
-            />
-            <span className="absolute inset-[2px] rounded-full bg-white" />
-            <span className="relative z-10 flex h-full w-full items-center justify-center text-brand-indigo">
-              <ArrowUp size={14} />
-            </span>
-          </button>
-        </div>
-
         {/* Sub-header: count + create button */}
         <div className="flex items-center justify-between px-4 py-2 shrink-0 border-b border-slate-100 bg-white">
           <span className="text-[13px] font-bold text-slate-500">
@@ -704,7 +676,35 @@ export function ProfilePage() {
         </div>
 
         {/* Cards area */}
-        <div className="w-full flex flex-col">
+        <div className="w-full flex flex-col relative">
+          {/* Scroll-to-top button */}
+          <div
+            className={cn(
+              'sticky top-[calc(100vh-5rem)] z-30 px-4 flex justify-end pointer-events-none',
+              'transition-all duration-300',
+              showScrollTop
+                ? 'opacity-100 translate-y-0 visible'
+                : 'opacity-0 translate-y-2 invisible',
+            )}
+          >
+            <button
+              type="button"
+              onClick={handleScrollToTop}
+              className="pointer-events-auto relative h-10 w-10 rounded-full shadow-md transition-transform hover:scale-105 active:scale-95"
+            >
+              <span
+                className="absolute inset-0 rounded-full"
+                style={{
+                  background: `conic-gradient(${progressColor} ${progressDegrees}deg, ${progressTrackColor} ${progressDegrees}deg)`,
+                }}
+              />
+              <span className="absolute inset-[2px] rounded-full bg-white" />
+              <span className="relative z-10 flex h-full w-full items-center justify-center text-brand-indigo">
+                <ArrowUp size={14} />
+              </span>
+            </button>
+          </div>
+
           {activeTab === 'routes' ? (
             isLoadingTrips ? (
               <div className="px-4 space-y-3 pb-4 pt-3 w-full">
