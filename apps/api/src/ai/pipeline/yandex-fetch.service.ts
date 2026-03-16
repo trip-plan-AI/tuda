@@ -109,7 +109,7 @@ export class YandexFetchService {
     intent: ParsedIntent,
   ): Promise<PoiItem[]> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15_000);
+    const timer = setTimeout(() => controller.abort(), 30000);
 
     try {
       const queries = this.categorySearchQueries(category, intent.city);
@@ -146,11 +146,14 @@ export class YandexFetchService {
 
       return [];
     } catch (e) {
-      this.logger.error(`Error fetching POIs for category=${category}:`, e);
+      if (e instanceof Error && e.name === 'AbortError') {
+        this.logger.warn(`Fetch timed out for category=${category}`);
+      } else {
+        this.logger.error(`Error fetching POIs for category=${category}:`, e);
+      }
       return [];
     } finally {
       clearTimeout(timer);
-      controller.abort();
     }
   }
 

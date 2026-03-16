@@ -5,10 +5,11 @@
 // Потребность: унифицировать UX модалок предупреждений о перезаписи маршрутов (сохранение старого/открытие нового).
 // Если убрать этот код: пользователь будет "молча" терять старый маршрут в Planner при открытии нового из чата.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useAiQueryStore } from '@/features/ai-query';
+import { useShallow } from 'zustand/react/shallow';
 import { useTripStore } from '@/entities/trip';
 import { useCollaborationSocket, CollaboratorsAvatarGroup } from '@/features/route-collaborate';
 import { AiChat } from '@/widgets/ai-chat';
@@ -17,6 +18,7 @@ import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 import type { PlannerConflictType } from '@/widgets/planner-conflict-modal';
 import { toast } from 'sonner';
 import { tripsApi } from '@/entities/trip';
+import { pointsApi } from '@/entities/route-point';
 import { clearConfig, setConfig } from '@/features/persistent-map';
 
 const AI_QUICK_ACTIONS = ['Сделать дешевле', 'Добавить больше музеев', 'Убрать пешие прогулки'];
@@ -30,6 +32,23 @@ export function AIAssistantPage() {
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [pendingDraftMessageId, setPendingDraftMessageId] = useState<string | null>(null);
   const [conflictType, setConflictType] = useState<PlannerConflictType>('different_route');
+  
+  const handleClearChat = async () => {
+    // Используем displayPoints для определения, есть ли точки на карте
+    const lastMessage = messages[messages.length - 1];
+    const hasPlan = !!lastMessage?.routePlan;
+    // Предложение считается "новым" (черновиком), только если оно еще не было применено в этот трип
+    const isNewAIProposal = hasPlan && lastMessage.id !== lastAppliedPlanMessageId;
+
+    // Если чат связан с маршрутом, и мы не смотрим на свежее (непримененное) предложение ИИ,
+    // то показываем актуальное состояние маршрута из базы (синхронизируется сокетами).
+    const hasDisplayPoints = (activeSession?.tripId && !isNewAIProposal)
+      ? (currentTrip?.points?.length || 0) > 0
+      : (aiPoints.length > 0);
+
+    // Вызовем clearChat, передав ему информацию о наличии точек
+    await clearChat(hasDisplayPoints);
+  };
   const {
     sessions,
     activeSessionId,
@@ -47,7 +66,26 @@ export function AIAssistantPage() {
     isSessionsLoading,
     openOrCreateSessionFromTrip,
     clearChat,
-  } = useAiQueryStore();
+  } = useAiQueryStore(
+    useShallow((state) => ({
+      sessions: state.sessions,
+      activeSessionId: state.activeSessionId,
+      messages: state.messages,
+      isLoading: state.isLoading,
+      sendQuery: state.sendQuery,
+      sendMutationQuery: state.sendMutationQuery,
+      applyPlanToCurrentTrip: state.applyPlanToCurrentTrip,
+      lastAppliedPlanMessageId: state.lastAppliedPlanMessageId,
+      createNewSession: state.createNewSession,
+      switchSession: state.switchSession,
+      deleteSession: state.deleteSession,
+      renameSession: state.renameSession,
+      loadSessions: state.loadSessions,
+      isSessionsLoading: state.isSessionsLoading,
+      openOrCreateSessionFromTrip: state.openOrCreateSessionFromTrip,
+      clearChat: state.clearChat,
+    })),
+  );
   const currentTrip = useTripStore((state) => state.currentTrip);
 
   const activeSession = activeSessionId ? sessions[activeSessionId] : null;
@@ -59,6 +97,8 @@ export function AIAssistantPage() {
   const sessionsList = useMemo(
     () =>
       Object.values(sessions).sort((left, right) => {
+        // Сортируем только по дате обновления, без учета активной сессии
+        // Это обеспечивает стабильный порядок при переключении между чатами
         const diff = new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
         // Если время обновления совпадает, сортируем по ID для стабильности
         return diff !== 0 ? diff : right.id.localeCompare(left.id);
@@ -146,29 +186,7 @@ export function AIAssistantPage() {
     toast.success('Маршрут синхронизирован с Planner');
   };
 
-  useEffect(() => {
-    // feature/TRI-104-ai-planner-interaction: автоинициализация чата.
-    // Потребность: при открытом trip в Planner заранее поднимаем связанный чат (или создаем новый),
-    // чтобы пользователь попадал в нужный контекст AI-чата без ручного выбора.
-    // Если убрать этот код: при переходе в чат из Planner будет открыт последний активный чат,
-    // не связанный с текущим маршрутом, что нарушит контекст UX.
-    // Возможен конфликт: при изменении логики active trip/session (сохранить приоритет tripId -> session.tripId).
-    //
-    // ВАЖНО: sessions намеренно НЕ в deps — эффект должен срабатывать только при смене tripId,
-    // но не при изменении списка сессий (например, после удаления), иначе удалённый чат сразу
-    // пересоздаётся через openOrCreateSessionFromTrip.
-    if (isSessionsLoading) return;
-    const tripId = currentTrip?.id;
-    if (!tripId || tripId.startsWith('guest-')) return;
-
-    // Всегда вызываем from-trip при смене currentTrip — бэкенд сам определит,
-    // нужно ли добавлять контекст (если маршрут изменился) или нет.
-    // hasTripSession-проверку намеренно убрали: она блокировала синхронизацию
-    // при переходе из Planner в AI-чат с уже существующей сессией.
-    // sessions намеренно НЕ в deps (см. ниже), поэтому эффект не срабатывает
-    // после удаления сессии — только при смене trip или завершении загрузки.
-    void openOrCreateSessionFromTrip(tripId);
-  }, [currentTrip?.id, isSessionsLoading]);
+  const initiatedTripIdRef = useRef<string | null>(null);
 
   const handleCreateSession = () => {
     createNewSession(currentTrip?.id ?? null);
@@ -202,6 +220,34 @@ export function AIAssistantPage() {
       }
     }
 
+    // Проверяем, есть ли точки в чате (в сообщении с планом), если их нет - может потребоваться очистка конструктора
+    if (targetTripId && openedPlannerTripId && openedPlannerTripId === targetTripId) {
+      // Проверяем, есть ли точки в последнем сообщении с планом
+      let hasPointsInChat = false;
+      if (messageId) {
+        const messageWithPlan = messages.find(m => m.id === messageId && m.routePlan);
+        if (messageWithPlan && messageWithPlan.routePlan) {
+          hasPointsInChat = messageWithPlan.routePlan.days.some(day => day?.points?.length > 0);
+        }
+      } else {
+        // Если messageId не передан, проверяем последнее сообщение с планом
+        const lastPlanMessage = [...messages].reverse().find(msg => msg.routePlan);
+        if (lastPlanMessage && lastPlanMessage.routePlan) {
+          hasPointsInChat = lastPlanMessage.routePlan.days.some(day => day?.points?.length > 0);
+        }
+      }
+
+      // Если в чате нет точек, а в конструкторе они есть, показываем модальное окно для очистки
+      const hasPointsInPlanner = (currentTrip?.points?.length ?? 0) > 0;
+      if (!hasPointsInChat && hasPointsInPlanner) {
+        setConflictType('same_route'); // Используем тот же тип конфликта
+        setPendingPlannerTripId(targetTripId);
+        setPendingDraftMessageId(messageId ?? null);
+        setShowPlannerConflictModal(true);
+        return;
+      }
+    }
+
     if (!targetTripId || targetTripId.startsWith('guest-')) {
       router.push('/planner');
       return;
@@ -213,7 +259,7 @@ export function AIAssistantPage() {
     router.push(`/planner?${query.toString()}`);
   };
 
-  const handleConfirmPlannerReplace = () => {
+  const handleConfirmPlannerReplace = async () => {
     const targetTripId = pendingPlannerTripId;
     const draftMessageId = pendingDraftMessageId;
     setShowPlannerConflictModal(false);
@@ -225,6 +271,21 @@ export function AIAssistantPage() {
       return;
     }
 
+    // Удаляем все существующие точки из конструктора перед применением новых
+    try {
+      const currentPoints = useTripStore.getState().currentTrip?.points || [];
+      
+      // Удаляем точки последовательно, чтобы избежать проблем с одновременными запросами
+      for (const point of currentPoints) {
+        await pointsApi.remove(targetTripId, point.id);
+      }
+      
+      // Обновляем состояние
+      useTripStore.getState().setPoints([]);
+    } catch (error) {
+      console.error('Failed to clear existing points:', error);
+    }
+
     const query = new URLSearchParams();
     query.set('applyTripId', targetTripId);
     if (draftMessageId) query.set('draftMessageId', draftMessageId);
@@ -232,15 +293,20 @@ export function AIAssistantPage() {
   };
 
   const handleDeleteAllPoints = async () => {
-    if (!activeSession?.tripId) return;
-    const currentPointsContext = currentTrip?.points?.map((p: any) => p.title).join(', ') || '';
-    await sendMutationQuery('удали все точки', activeSession.tripId, currentPointsContext);
+    const tripId = activeSession?.tripId || currentTrip?.id;
+    if (!tripId || tripId.startsWith('guest-')) return;
+    
+    // Удаляем точки только из локального состояния (на карте)
+    useTripStore.getState().setPoints([]);
+    
+    toast.success('Все точки удалены с карты');
   };
 
   const handleDeletePoint = async (pointName: string) => {
-    if (!activeSession?.tripId) return;
+    const tripId = activeSession?.tripId || currentTrip?.id;
+    if (!tripId || tripId.startsWith('guest-')) return;
     const currentPointsContext = currentTrip?.points?.map((p: any) => p.title).join(', ') || '';
-    await sendMutationQuery(`удали точку ${pointName}`, activeSession.tripId, currentPointsContext);
+    await sendMutationQuery(`удали точку ${pointName}`, tripId, currentPointsContext);
   };
 
   const plannerRouteTitle = currentTrip?.title?.trim() || 'без названия';
@@ -254,7 +320,7 @@ export function AIAssistantPage() {
 
   const aiPoints = useMemo(() => {
     if (!lastPlanMessage?.routePlan) return [];
-    
+
     let globalIndex = 0;
     return lastPlanMessage.routePlan.days.flatMap((day: any) =>
       day.points.flatMap((point: any) => {
@@ -266,19 +332,22 @@ export function AIAssistantPage() {
           return [];
         }
 
-        return [{
-          id: poi.id || `ai-point-${globalIndex++}`,
-          tripId: currentTrip?.id || 'temp',
-          title: poi.name || `Точка #${point.order}`,
-          lat,
-          lon,
-          budget: point.estimated_cost ?? null,
-          visitDate: day.date || null,
-          imageUrl: poi.image_url ?? null,
-          address: poi.address || '',
-          order: point.order ?? globalIndex,
-        }];
-      })
+        return [
+          {
+            id: poi.id || `ai-point-${globalIndex++}`,
+            tripId: currentTrip?.id || 'temp',
+            title: poi.name || `Точка #${point.order}`,
+            lat,
+            lon,
+            budget: point.estimated_cost ?? null,
+            visitDate: day.date || null,
+            duration: point.visit_duration_min ?? 0,
+            imageUrl: poi.image_url ?? null,
+            address: poi.address || '',
+            order: point.order ?? globalIndex,
+          },
+        ];
+      }),
     );
   }, [lastPlanMessage?.routePlan, currentTrip?.id]);
 
@@ -293,7 +362,7 @@ export function AIAssistantPage() {
     if (activeSession?.tripId && !isNewAIProposal) {
       return currentTrip?.points || [];
     }
-    
+
     // В противном случае показываем черновик ИИ из истории чата
     return aiPoints;
   }, [activeSession?.tripId, currentTrip?.points, aiPoints, messages, lastAppliedPlanMessageId]);
@@ -301,18 +370,35 @@ export function AIAssistantPage() {
   const socketTripId = activeSession?.tripId || '';
   useCollaborationSocket(socketTripId);
 
-  // TRI-114: Real-time sync for AI chat map
-  // When currentTrip.points changes (due to socket events or edits), 
-  // we update aiPoints to reflect changes on the map if we are in the same trip.
-  useEffect(() => {
-    if (activeSession?.tripId && currentTrip?.id === activeSession.tripId) {
-      if (currentTrip.points && currentTrip.points.length > 0) {
-        setAiPoints(currentTrip.points);
-      }
-    }
-  }, [currentTrip?.points, activeSession?.tripId, currentTrip?.id, setAiPoints]);
-
   const [isAddPointMode, setIsAddPointMode] = useState(false);
+
+  const handleAddPointFromMap = useCallback(
+    async (coords: { lat: number; lon: number }) => {
+      const tripId = activeSession?.tripId;
+      if (!tripId) {
+        toast.error('Сначала создайте или выберите маршрут');
+        return;
+      }
+
+      try {
+        const address = 'Новая точка'; // Simplified, Map usually provides address but let's keep it simple
+        const newPoint = await pointsApi.create(tripId, {
+          title: address,
+          lat: coords.lat,
+          lon: coords.lon,
+          order: displayPoints.length,
+        });
+
+        // Update state if necessary or let socket handle it
+        toast.success('Точка добавлена');
+        setIsAddPointMode(false);
+      } catch (e) {
+        console.error('Failed to add point from map in AI chat:', e);
+        toast.error('Не удалось добавить точку');
+      }
+    },
+    [activeSession?.tripId, displayPoints.length],
+  );
 
   useEffect(() => {
     // Показываем точки согласно логике displayPoints.
@@ -331,43 +417,18 @@ export function AIAssistantPage() {
         // Logic similar to PlannerPage: add point from map
         // Since AIAssistantPage doesn't have usePointCrud directly, we might need to add it or use a simplified version
         void handleAddPointFromMap(coords);
-      }
+      },
     });
 
     return () => {
       clearConfig('ai-assistant-page');
     };
-  }, [displayPoints, isAddPointMode]);
-
-  const handleAddPointFromMap = async (coords: { lat: number, lon: number }) => {
-    const tripId = activeSession?.tripId;
-    if (!tripId) {
-      toast.error('Сначала создайте или выберите маршрут');
-      return;
-    }
-
-    try {
-      const address = 'Новая точка'; // Simplified, Map usually provides address but let's keep it simple
-      const newPoint = await pointsApi.create(tripId, {
-        title: address,
-        lat: coords.lat,
-        lon: coords.lon,
-        order: displayPoints.length,
-      });
-
-      // Update state if necessary or let socket handle it
-      toast.success('Точка добавлена');
-      setIsAddPointMode(false);
-    } catch (e) {
-      console.error('Failed to add point from map in AI chat:', e);
-      toast.error('Не удалось добавить точку');
-    }
-  };
+  }, [displayPoints, isAddPointMode, handleAddPointFromMap]);
 
   return (
     <div className="min-h-full w-full">
       <div className="mx-auto flex w-full max-w-6xl gap-4 px-4 py-6 md:px-6 md:py-10">
-        <aside className="hidden w-72 flex-col rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:flex">
+        <aside className="hidden w-72 flex-col rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:flex sticky top-20 self-start max-h-[calc(100vh-100px)]">
           {activeSession?.tripId && (
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-sm font-bold text-brand-indigo">Кто в маршруте</h3>
@@ -409,7 +470,8 @@ export function AIAssistantPage() {
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
-                          if (renameValue.trim()) void renameSession(session.id, renameValue.trim());
+                          if (renameValue.trim())
+                            void renameSession(session.id, renameValue.trim());
                           setRenamingSessionId(null);
                         }
                         if (e.key === 'Escape') setRenamingSessionId(null);
@@ -421,7 +483,10 @@ export function AIAssistantPage() {
                     <button
                       type="button"
                       className="w-full text-left"
-                      onClick={() => switchSession(session.id)}
+                      onClick={() => {
+                        // Переключаемся на другую сессию без подтверждения
+                        switchSession(session.id);
+                      }}
                     >
                       <p className="line-clamp-1 text-sm font-semibold text-slate-800">
                         {session.title}
@@ -493,19 +558,67 @@ export function AIAssistantPage() {
             appliedTripId={activeSession?.tripId ?? null}
           />
 
-          {activeSession?.tripId && (
-            <div className="mt-3 flex flex-wrap justify-end gap-3">
+          <div className="mt-3 flex flex-wrap justify-end gap-3">
+            {currentTrip?.points && currentTrip.points.length > 0 && (
               <Button type="button" variant="outline" size="lg" onClick={handleDeleteAllPoints}>
                 Удалить все точки 🗑️
               </Button>
-              <Button type="button" variant="outline" size="lg" onClick={() => clearChat()}>
-                Очистить историю 📜
-              </Button>
-              <Button type="button" variant="outline" size="lg" onClick={() => handleOpenPlanner()}>
-                Открыть Planner 🗺️
-              </Button>
-            </div>
-          )}
+            )}
+            <Button type="button" variant="outline" size="lg" onClick={handleClearChat}>
+              Очистить историю 📜
+            </Button>
+            <Button
+              type="button"
+              variant="brand-yellow"
+              size="lg"
+              onClick={async () => {
+                // Используем последнее сообщение с маршрутным планом
+                let lastPlanMessage = null;
+                for (let i = messages.length - 1; i >= 0; i--) {
+                  const message = messages[i];
+                  if (message && message.routePlan) {
+                    lastPlanMessage = message;
+                    break;
+                  }
+                }
+
+                if (!lastPlanMessage) {
+                  toast.error('Нет маршрута для применения');
+                  return;
+                }
+
+                // Применяем план в БД
+                const appliedTripId = await applyPlanToCurrentTrip(lastPlanMessage.id);
+                if (!appliedTripId) {
+                  toast.error('Не удалось применить маршрут');
+                  return;
+                }
+
+                // Проверяем, есть ли точки в этом сообщении
+                let hasPointsInMessage = false;
+                if (lastPlanMessage && lastPlanMessage.routePlan) {
+                  hasPointsInMessage = lastPlanMessage.routePlan.days.some(day => day?.points?.length > 0);
+                }
+
+                // Если точек в сообщении нет, но в конструкторе они есть, показываем модальное окно
+                const hasPointsInPlanner = (currentTrip?.points?.length ?? 0) > 0;
+                const targetTripId = appliedTripId;
+                const openedPlannerTripId = currentTrip?.id ?? null;
+
+                if (!hasPointsInMessage && hasPointsInPlanner && targetTripId && openedPlannerTripId && openedPlannerTripId === targetTripId) {
+                  setConflictType('same_route');
+                  setPendingPlannerTripId(targetTripId);
+                  setPendingDraftMessageId(lastPlanMessage?.id || null);
+                  setShowPlannerConflictModal(true);
+                  return;
+                }
+
+                handleOpenPlanner(appliedTripId, lastPlanMessage.id);
+              }}
+            >
+              Применить в конструкторе
+            </Button>
+          </div>
 
           {/* feature/TRI-104-ai-planner-interaction: единый компонент модалки конфликтов (добавлен вместо разрозненных Dialog)
               Закрывает потребность в унифицированном дизайне и 4-х вариантах действий.

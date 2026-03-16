@@ -63,7 +63,7 @@ export function PlannerConflictModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl border-none shadow-2xl rounded-3xl p-8 overflow-hidden z-[100] gap-8">
+      <DialogContent className="sm:max-w-xl border-none shadow-2xl rounded-3xl p-8 overflow-hidden gap-8">
         <DialogHeader className="gap-2">
           <DialogTitle className="text-2xl font-semibold text-slate-900 leading-tight">
             {title}

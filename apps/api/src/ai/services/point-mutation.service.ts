@@ -69,6 +69,7 @@ export class PointMutationService {
         order: 0,
         address: null,
         transportMode: 'driving',
+        duration: 0,
         isTitleLocked: false,
         createdAt: new Date(),
       }));

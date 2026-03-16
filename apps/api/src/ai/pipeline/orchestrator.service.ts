@@ -97,11 +97,13 @@ export class OrchestratorService {
     this.logger.log(
       `Calling LLM model=${this.llmClientService.model} for intent parsing...`,
     );
-    const parsed = await this.callWithTimeout(messages, 20_000);
+    const t0 = Date.now();
+    const parsed = await this.callWithTimeout(messages, 30_000);
+    const duration = Date.now() - t0;
 
     const intent = this.normalizeIntent(parsed);
     this.logger.log(
-      `LLM returned city: "${intent.city}", budget: ${intent.budget_total}`,
+      `Intent parsed in ${duration}ms. City: "${intent.city}", budget: ${intent.budget_total}`,
     );
 
     if (!intent.city) {
@@ -187,8 +189,15 @@ export class OrchestratorService {
       const content = response.choices[0]?.message?.content ?? '{}';
       return JSON.parse(content) as PartialIntent;
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'unknown error';
+      const isAbort = e instanceof Error && e.name === 'AbortError';
+      const message = isAbort
+        ? 'request timed out'
+        : e instanceof Error
+          ? e.message
+          : 'unknown error';
+
       this.logger.error(`Failed to parse intent: ${message}`);
+
       if (!isRetry) {
         this.logger.warn('Retrying intent parsing...');
         return this.callWithTimeout(messages, timeoutMs, true);
@@ -197,7 +206,6 @@ export class OrchestratorService {
       throw new ServiceUnavailableException('AI orchestrator unavailable');
     } finally {
       clearTimeout(timer);
-      controller.abort();
     }
   }
 
@@ -302,19 +310,25 @@ export class OrchestratorService {
   // Quantity extraction from user preferences
   private extractPoiCount(text: string): number | null {
     // Match patterns like "3 места", "3 интересных места", "find 5 places", "3 лучших", "5 достопримечательностей"
-    const matches = text.match(/(\d+)\s+(?:[а-яёa-z]+\s+)*(мест|место|places?|достопримечательностей?|points?|point)/i);
+    const matches = text.match(
+      /(\d+)\s+(?:[а-яёa-z]+\s+)*(мест|место|places?|достопримечательностей?|points?|point)/i,
+    );
     return matches ? Math.max(1, Math.min(20, parseInt(matches[1], 10))) : null;
   }
 
   private extractMinRestaurants(text: string): number | null {
     // Match patterns like "2 ресторана", "2 best restaurants", "2 хороших ресторана"
-    const matches = text.match(/(\d+)\s+(?:[а-яёa-z]+\s+)*(best\s+)?рестора(ны?|нов)|(\d+)\s+(?:[а-яёa-z]+\s+)*restaurant/i);
+    const matches = text.match(
+      /(\d+)\s+(?:[а-яёa-z]+\s+)*(best\s+)?рестора(ны?|нов)|(\d+)\s+(?:[а-яёa-z]+\s+)*restaurant/i,
+    );
     return matches ? Math.max(1, parseInt(matches[1] || matches[4], 10)) : null;
   }
 
   private extractMinCafes(text: string): number | null {
     // Match patterns like "2 кафе", "2 хороших кафе", "2 cafes"
-    const matches = text.match(/(\d+)\s+(?:[а-яёa-z]+\s+)*(best\s+)?кафе|(\d+)\s+(?:[а-яёa-z]+\s+)*cafe?s?/i);
+    const matches = text.match(
+      /(\d+)\s+(?:[а-яёa-z]+\s+)*(best\s+)?кафе|(\d+)\s+(?:[а-яёa-z]+\s+)*cafe?s?/i,
+    );
     return matches ? Math.max(1, parseInt(matches[1] || matches[3], 10)) : null;
   }
 

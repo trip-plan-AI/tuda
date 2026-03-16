@@ -105,6 +105,7 @@ export const routePoints = pgTable('route_points', {
   order: integer('order').notNull().default(0),
   address: text('address'),
   transportMode: text('transport_mode').notNull().default('driving'),
+  duration: integer('duration').notNull().default(0),
   isTitleLocked: boolean('is_title_locked').notNull().default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
