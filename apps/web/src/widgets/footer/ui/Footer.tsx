@@ -9,7 +9,7 @@ export function Footer() {
       <div className="max-w-5xl mx-auto px-4 md:px-6 flex flex-col md:flex-row justify-between items-center gap-8 w-full">
         <div className="flex items-center gap-3">
           <Image
-            src="/logo.png"
+            src="/logo.svg"
             alt="Tuda logo"
             width={40}
             height={40}
