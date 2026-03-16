@@ -105,6 +105,7 @@ interface TripCardProps {
   highlighted?: boolean;
   cardRef?: (node: HTMLDivElement | null) => void;
   onCardClick?: (tripId: string) => void;
+  onOpenPlanner?: (trip: Trip) => void | Promise<void>;
   onInvite?: (tripId: string) => void;
   onCollaboratorsClick?: (tripId: string) => void;
   onDatesUpdate?: (tripId: string, dates: { startDate: string; endDate: string }) => void;
@@ -127,6 +128,7 @@ export function TripCard({
   highlighted,
   cardRef,
   onCardClick,
+  onOpenPlanner,
   onInvite,
   onCollaboratorsClick,
   onDatesUpdate,
@@ -610,6 +612,10 @@ export function TripCard({
           <button
             onClick={(e) => {
               e.stopPropagation();
+              if (onOpenPlanner) {
+                void onOpenPlanner(trip);
+                return;
+              }
               if (trip.id && !trip.id.startsWith('guest-')) {
                 // TRI-114: use robust applyTripId flow to handle points loading and conflicts
                 router.push(`/planner?applyTripId=${encodeURIComponent(trip.id)}`);
