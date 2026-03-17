@@ -24,7 +24,7 @@ import type { Trip } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point';
 import { useAuthStore, LoginModal, RegisterModal } from '@/features/auth';
 import { useAiQueryStore } from '@/features/ai-query';
-import { useMicrophone, useStreamingText } from '@/shared/hooks';
+import { useMicrophone } from '@/shared/hooks';
 import {
   Popover,
   PopoverContent,
@@ -188,9 +188,6 @@ export function LandingPage() {
     },
     language: 'ru-RU',
   });
-
-  // Анимация текста при потоковом вводе
-  const displayText = useStreamingText(searchQuery, { speed: 20 });
 
   // Адаптивный размер textarea, как в исходном прототипе
   useEffect(() => {
@@ -598,7 +595,7 @@ export function LandingPage() {
                   <div className="bg-white rounded-[2.2rem] md:rounded-[3.5rem] flex items-center p-1 md:p-2 pr-2 md:pr-4 focus-within:ring-4 focus-within:ring-brand-blue/10 transition-none">
                     <div className="flex-1 relative group flex items-center">
                       <textarea
-                        value={displayText}
+                        value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey) {
