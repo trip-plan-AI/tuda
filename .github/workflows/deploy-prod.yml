@@ -96,6 +96,7 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           EXPECTED_SHA: ${{ github.sha }}
+          DEPLOY_ALLOW_DB_PUSH_FALLBACK: ${{ secrets.DEPLOY_ALLOW_DB_PUSH_FALLBACK }}
         shell: bash
         run: |
           set -euo pipefail
@@ -132,11 +133,33 @@ jobs:
             echo "[deploy][warn] db backup failed, continue deploy"
           fi
 
-          echo "[deploy][step] db:push started"
-          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T --no-deps api pnpm --filter api db:push --force < /dev/null; then
-            echo "[deploy][step] db:push finished"
+          echo "[deploy][step] db:migrate started"
+          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T --no-deps api pnpm --filter api db:migrate < /dev/null; then
+            echo "[deploy][step] db:migrate finished"
           else
-            echo "[deploy][error] db:push failed"
+            echo "[deploy][error] db:migrate failed"
+            echo "[debug] available migration files"
+            docker compose -f docker-compose.prod.yml run --rm -T --no-deps api sh -lc 'ls -lah apps/api/src/db/migrations || true; ls -lah apps/api/src/db/migrations/meta || true; cat apps/api/src/db/migrations/meta/_journal.json || true' < /dev/null || true
+
+            if [ "${DEPLOY_ALLOW_DB_PUSH_FALLBACK:-false}" = "true" ]; then
+              echo "[deploy][warn] fallback enabled: running db:push --force"
+              if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T --no-deps api pnpm --filter api db:push --force < /dev/null; then
+                echo "[deploy][warn] fallback db:push finished"
+              else
+                echo "[deploy][error] fallback db:push failed"
+                exit 1
+              fi
+            else
+              echo "[deploy][error] fallback disabled: set secret DEPLOY_ALLOW_DB_PUSH_FALLBACK=true only for emergency"
+              exit 1
+            fi
+          fi
+
+          echo "[deploy][step] schema verification started"
+          if docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '\''public'\'' AND table_name = '\''trips'\'' AND column_name IN ('\''distance_km'\'') ORDER BY column_name;"'; then
+            echo "[deploy][step] schema verification finished"
+          else
+            echo "[deploy][error] schema verification failed"
             exit 1
           fi
 
