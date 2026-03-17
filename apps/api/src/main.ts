@@ -5,6 +5,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { AppModule } from './app.module';
+import { AllHttpExceptionsFilter } from './http-exception.filter';
 import * as path from 'path';
 const logger = new Logger('Bootstrap');
 
@@ -48,6 +49,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalFilters(new AllHttpExceptionsFilter());
   app.enableCors({
     origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
   });
