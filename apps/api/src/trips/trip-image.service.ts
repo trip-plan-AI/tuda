@@ -4,6 +4,7 @@ import { asc, eq } from 'drizzle-orm';
 import { DRIZZLE } from '../db/db.module';
 import * as schema from '../db/schema';
 import { RedisService } from '../redis/redis.service';
+import { CityExtractionService } from './city-extraction.service';
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
@@ -37,6 +38,7 @@ export class TripImageService implements OnModuleInit {
     @Inject(DRIZZLE)
     private readonly db: NodePgDatabase<typeof schema>,
     private readonly redisService: RedisService,
+    private readonly cityExtractionService: CityExtractionService,
   ) {}
 
   async onModuleInit() {
@@ -103,19 +105,81 @@ export class TripImageService implements OnModuleInit {
         `[${tripId}] selected point: "${selectedPoint.title}" (address="${selectedPoint.address}", lat=${selectedPoint.lat}, lon=${selectedPoint.lon})`,
       );
 
-      // Приоритет: то, что ввел пользователь (title) > полный адрес из поиска
-      const rawCity = selectedPoint.title || selectedPoint.address || '';
-      const baseCity = rawCity.split(',')[0].trim();
+      // ============================================
+      // КОНТУР 1: Reverse Geocoding по координатам
+      // ============================================
+      let cityForSearch: string | null = null;
 
-      if (!baseCity) {
-        this.logger.warn(`[${tripId}] selected point has no title or address`);
+      try {
+        const geosearchModule = await import('../geosearch/geosearch.service');
+        // Примитивный reverse geocoding через Nominatim
+        const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${selectedPoint.lat}&lon=${selectedPoint.lon}&zoom=10&accept-language=ru`;
+        const response = await fetch(nominatimUrl, {
+          headers: { 'User-Agent': 'TravelPlanner/1.0' },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const addr = data?.address;
+          // Каскад: city → town → village → state_district
+          cityForSearch =
+            addr?.city ||
+            addr?.town ||
+            addr?.village ||
+            addr?.state_district ||
+            addr?.county ||
+            null;
+
+          if (cityForSearch) {
+            this.logger.debug(
+              `[${tripId}] Reverse geocoding success: ${cityForSearch}`,
+            );
+          }
+        }
+      } catch (error) {
+        this.logger.warn(
+          `[${tripId}] Reverse geocoding failed: ${error}, trying GPT fallback`,
+        );
+      }
+
+      // ============================================
+      // КОНТУР 2: GPT-4o-mini (fallback)
+      // ============================================
+      if (!cityForSearch) {
+        const input = selectedPoint.title || selectedPoint.address || '';
+        if (input) {
+          this.logger.debug(
+            `[${tripId}] Reverse geocoding failed, trying GPT with: "${input}"`,
+          );
+
+          const gptResult = await this.cityExtractionService.extractCity(input);
+          if (gptResult?.city) {
+            cityForSearch = gptResult.city;
+            this.logger.log(
+              `[${tripId}] ✅ GPT extracted city: ${cityForSearch} (region: ${gptResult.region || 'N/A'}, confidence: ${(gptResult.confidence * 100).toFixed(0)}%)`,
+            );
+          } else {
+            this.logger.warn(
+              `[${tripId}] ❌ GPT failed to extract city (input: "${input}")`,
+            );
+          }
+        }
+      }
+
+      if (!cityForSearch) {
+        this.logger.warn(
+          `[${tripId}] No city found via reverse geocoding or GPT`,
+        );
         return;
       }
 
-      const cleanedCity = this.cleanCityName(baseCity);
+      // Для поиска API используем оригинальное название (без транслитерации)
+      const cleanedCity = this.cleanCityName(cityForSearch);
+      // Для имени файла используем транслитерированный slug
       const slug = this.toSlug(cleanedCity);
+
       this.logger.debug(
-        `[${tripId}] city="${baseCity}" cleaned="${cleanedCity}" slug="${slug}"`,
+        `[${tripId}] city="${cityForSearch}" cleaned="${cleanedCity}" slug="${slug}"`,
       );
       if (!slug) return;
 
@@ -364,6 +428,8 @@ export class TripImageService implements OnModuleInit {
       key: apiKey,
       q: query,
       image_type: 'photo',
+      safesearch: 'true',
+      orientation: 'horizontal',
       order: 'popular',
       per_page: '1',
     });

@@ -98,6 +98,7 @@ export class PointsService {
       ),
     );
 
+    // Reorder не меняет состав/содержимое точек — пересчет обложки не нужен
     return this.findByTrip(tripId);
   }
 
