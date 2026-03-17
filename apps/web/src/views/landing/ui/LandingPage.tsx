@@ -104,12 +104,15 @@ function filterUniqueSuggestions(results: any[]): GeoSuggestion[] {
   return unique;
 }
 
-const QUICK_FILTERS = [
-  { icon: '👍', label: 'Очень хвалят' },
-  { icon: '🌊', label: 'Хочу на море' },
-  { icon: '🔥', label: 'Хит сезона' },
-  { icon: '⚡', label: 'Лучшее из недорогих' },
-];
+// TODO: Для каждой кнопки нужно определить конкретный промпт для AI (что именно искать),
+// потому что сейчас при нажатии на эти кнопки AI просит указать город вместо того,
+// чтобы сразу предложить релевантные варианты по заданному критерию.
+// const QUICK_FILTERS = [
+//   { icon: '👍', label: 'Очень хвалят' },
+//   { icon: '🌊', label: 'Хочу на море' },
+//   { icon: '🔥', label: 'Хит сезона' },
+//   { icon: '⚡', label: 'Лучшее из недорогих' },
+// ];
 
 const FAQ_CARDS = [
   {
@@ -907,6 +910,7 @@ export function LandingPage() {
               </div>
 
               {/* Context suggestions */}
+              {/*
               <div className="mt-6 flex flex-wrap gap-2 justify-center">
                 {QUICK_FILTERS.map((filter, idx) => (
                   <button
@@ -931,6 +935,7 @@ export function LandingPage() {
                   </button>
                 ))}
               </div>
+              */}
             </div>
           </div>
         </div>
