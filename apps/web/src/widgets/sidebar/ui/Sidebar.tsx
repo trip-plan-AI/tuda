@@ -40,7 +40,10 @@ export function Sidebar() {
   const router = useRouter();
   const { isAuthenticated } = useAuthStore();
   const [modal, setModal] = useState<Modal>(null);
+  const [isHovered, setIsHovered] = useState(false);
   const { openExpenseModal } = useBudgetStore();
+
+  const isExpanded = isPlanner && isHovered;
 
   const isLanding = pathname === '/';
   const isPlanner = pathname.startsWith('/planner');
@@ -63,13 +66,15 @@ export function Sidebar() {
   return (
     <>
       <aside
+        onMouseEnter={() => isPlanner && setIsHovered(true)}
+        onMouseLeave={() => isPlanner && setIsHovered(false)}
         className={cn(
           'hidden md:flex h-full backdrop-blur-md flex-col py-8 gap-4 shrink-0',
           'overflow-hidden border-r',
-          'transition-[width,opacity,transform] duration-700 ease-[cubic-bezier(0.4,0,0.2,1)]',
+          'transition-[width,opacity,transform] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
           isLanding
             ? 'w-0 opacity-0 -translate-x-6 pointer-events-none border-transparent'
-            : isPlanner
+            : isExpanded
               ? 'w-52 opacity-100 translate-x-0 border-slate-200'
               : 'w-20 opacity-100 translate-x-0 border-slate-200',
         )}
@@ -78,7 +83,7 @@ export function Sidebar() {
         <div
           className={cn(
             'flex-1 flex flex-col gap-4 mt-0 min-w-0',
-            isPlanner ? 'items-start px-4' : 'items-center pr-2',
+            isExpanded ? 'items-start px-4' : 'items-center pr-2',
           )}
         >
           {NAV.map(({ href, icon: Icon, label }) => {
@@ -93,14 +98,14 @@ export function Sidebar() {
                   onClick={(e) => handleNavClick(href, e)}
                   className={cn(
                     'flex items-center gap-3 rounded-2xl transition-all relative group',
-                    isPlanner ? 'px-3 py-2 w-full' : 'p-3',
+                    isExpanded ? 'px-3 py-2 w-full' : 'p-3',
                     isActive
                       ? 'bg-brand-sky text-white shadow-lg shadow-brand-sky/20'
                       : 'text-slate-400 hover:text-brand-indigo hover:bg-slate-50',
                   )}
                 >
                   <Icon size={24} className={isActive ? 'stroke-white shrink-0' : 'shrink-0'} />
-                  {isPlanner && (
+                  {isExpanded && (
                     <span
                       className={cn(
                         'text-sm font-semibold truncate',
@@ -113,7 +118,7 @@ export function Sidebar() {
                 </Link>
 
                 {/* Planner sub-nav */}
-                {isPlanner && href === '/planner' && (
+                {isExpanded && href === '/planner' && (
                   <>
                     <hr className="border-slate-100 my-2" />
                     <div className="flex flex-col gap-1 pl-4">
@@ -144,8 +149,8 @@ export function Sidebar() {
           })}
         </div>
 
-        {/* Bottom section — visible when budget tab is active */}
-        {isPlanner && currentView === 'budget' && (
+        {/* Bottom section — visible when budget tab is active and expanded */}
+        {isExpanded && currentView === 'budget' && (
           <div className="px-4 pb-2 flex flex-col gap-3">
             <button
               onClick={openExpenseModal}
