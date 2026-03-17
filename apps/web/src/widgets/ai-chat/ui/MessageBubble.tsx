@@ -37,6 +37,11 @@ export function MessageBubble({
   // MERGE-NOTE: если переносите кнопки из bubble в другой компонент, сохраните эту развилку,
   // иначе сломается UX-логика one-to-one связи.
   const isAssistant = message.role === 'assistant';
+  // Чужое сообщение — если заполнен userName (пришло через сокет от другого участника)
+  const isRemoteUser = !isAssistant && !!message.userName;
+
+  const formatTime = (timestamp: string) =>
+    new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const getFallbackPoi = (point: {
     poi_id?: string;
@@ -57,16 +62,37 @@ export function MessageBubble({
   };
 
   return (
-    <div className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}>
+    <div className={`flex items-end gap-2 ${isAssistant || isRemoteUser ? 'justify-start' : 'justify-end'}`}>
+      {/* Аватарка слева — только для чужих сообщений */}
+      {isRemoteUser && (
+        <img
+          src={message.userAvatar}
+          alt={message.userName}
+          className="h-7 w-7 flex-shrink-0 rounded-full object-cover"
+        />
+      )}
+
       <div
         className={[
           'max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm',
           isAssistant
             ? 'bg-white text-slate-800 border border-slate-100'
-            : 'bg-brand-indigo text-white',
+            : isRemoteUser
+              ? 'bg-white border border-slate-200 text-slate-800'
+              : 'bg-brand-indigo text-white',
         ].join(' ')}
       >
+        {/* Имя отправителя для чужих сообщений */}
+        {isRemoteUser && (
+          <p className="text-xs text-brand-indigo font-medium mb-1">{message.userName}</p>
+        )}
+
         <p className="whitespace-pre-wrap">{message.content}</p>
+
+        {/* Время в правом нижнем углу */}
+        <p className="text-[10px] text-slate-400/80 float-right ml-3 mt-1">
+          {formatTime(message.timestamp)}
+        </p>
 
         {message.routePlan && isAssistant && (
           <div className="mt-3 flex flex-col gap-3">
