@@ -246,8 +246,6 @@ jobs:
             exit 1
           fi
 
-          echo "[deploy] docker images"
-          docker compose -f docker-compose.prod.yml images
           echo "[deploy] docker status"
           docker compose -f docker-compose.prod.yml ps
           echo "[deploy][done] all deploy steps completed"
