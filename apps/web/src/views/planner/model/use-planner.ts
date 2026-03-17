@@ -15,11 +15,7 @@ import type { RoutePoint } from '@/entities/route-point';
 import { toast } from 'sonner';
 import { setConfig, clearConfig } from '@/features/persistent-map';
 import type { PlannerConflictType } from '@/widgets/planner-conflict-modal';
-import {
-  type GeoSuggestion,
-  filterUniqueSuggestions,
-  hasTime,
-} from '@/shared/lib/route-utils';
+import { type GeoSuggestion, filterUniqueSuggestions, hasTime } from '@/shared/lib/route-utils';
 import { UUID_RE, computeDateCascade } from '@/views/planner/lib/utils';
 import {
   DndContext,
@@ -611,13 +607,20 @@ export function usePlanner() {
       const locSuffix = loc ? `&lat=${loc.lat}&lon=${loc.lon}` : '';
       const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}${locSuffix}`;
       const res = await fetch(url);
+
+      if (!res.ok) {
+        console.error(`[Geosearch] HTTP ${res.status}: ${res.statusText}`);
+        throw new Error(`Suggest request failed: ${res.status}`);
+      }
+
       const data = await res.json();
       const found = filterUniqueSuggestions(data.results ?? []);
       setSuggestions(found);
       setShowDropdown(true);
-    } catch {
+    } catch (e) {
+      console.error('[Geosearch] Failed to fetch suggestions:', e);
       setSuggestions([]);
-      setShowDropdown(true);
+      setShowDropdown(false);
     } finally {
       setIsSearching(false);
     }
@@ -1067,8 +1070,7 @@ export function usePlanner() {
       const result = await tripsApi.optimize(tripId, routeProfile, latestPoints);
       if (result?.optimizedPoints) {
         const pointsChanged = !points.every(
-          (p, i) =>
-            result.optimizedPoints?.[i] && p.id === result.optimizedPoints[i].id,
+          (p, i) => result.optimizedPoints?.[i] && p.id === result.optimizedPoints[i].id,
         );
         const hasRealImprovement =
           result.metrics && result.metrics.newKm < result.metrics.originalKm - 0.05;
