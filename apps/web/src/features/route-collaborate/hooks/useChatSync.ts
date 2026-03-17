@@ -42,8 +42,9 @@ export function useChatSync(tripId: string) {
       const incomingMessage: ChatMessage = {
         id: data.id,
         role: 'user',
-        // Префикс с именем отправителя, чтобы отличить чужие сообщения
-        content: `${data.user_name}: ${data.content}`,
+        content: data.content,
+        userName: data.user_name,
+        userAvatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user_name || 'U')}&background=random&color=fff`,
         timestamp: data.timestamp,
       };
       useAiQueryStore.getState().addLocalMessage(incomingMessage);
@@ -72,7 +73,9 @@ export function useChatSync(tripId: string) {
       const mappedHistory: ChatMessage[] = messages.map((data) => ({
         id: data.id,
         role: 'user',
-        content: `${data.user_name}: ${data.content}`,
+        content: data.content,
+        userName: data.user_name,
+        userAvatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user_name || 'U')}&background=random&color=fff`,
         timestamp: data.timestamp,
       }));
 

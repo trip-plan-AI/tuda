@@ -4,6 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { desc, eq } from 'drizzle-orm';
 import { DRIZZLE } from '../db/db.module';
 import * as schema from '../db/schema';
+import { users } from '../db/schema';
 
 interface PresenceInfo {
   userId: string;
@@ -46,8 +47,17 @@ export class CollaborationService {
 
   async getRecentMessages(tripId: string, limit = 50) {
     const rows = await this.db
-      .select()
+      .select({
+        id: schema.tripChatMessages.id,
+        tripId: schema.tripChatMessages.tripId,
+        userId: schema.tripChatMessages.userId,
+        userEmail: schema.tripChatMessages.userEmail,
+        userName: users.name,
+        content: schema.tripChatMessages.content,
+        createdAt: schema.tripChatMessages.createdAt,
+      })
       .from(schema.tripChatMessages)
+      .leftJoin(users, eq(users.id, schema.tripChatMessages.userId))
       .where(eq(schema.tripChatMessages.tripId, tripId))
       .orderBy(desc(schema.tripChatMessages.createdAt))
       .limit(limit);
