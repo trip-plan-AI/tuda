@@ -134,7 +134,7 @@ jobs:
           fi
 
           echo "[deploy][step] db:migrate started"
-          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T --no-deps api pnpm --filter api db:migrate < /dev/null; then
+          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --build --rm -T --no-deps api pnpm --filter api db:migrate < /dev/null; then
             echo "[deploy][step] db:migrate finished"
           else
             echo "[deploy][error] db:migrate failed"
@@ -143,7 +143,7 @@ jobs:
 
             if [ "${DEPLOY_ALLOW_DB_PUSH_FALLBACK:-false}" = "true" ]; then
               echo "[deploy][warn] fallback enabled: running db:push --force"
-              if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T --no-deps api pnpm --filter api db:push --force < /dev/null; then
+              if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --build --rm -T --no-deps api pnpm --filter api db:push --force < /dev/null; then
                 echo "[deploy][warn] fallback db:push finished"
               else
                 echo "[deploy][error] fallback db:push failed"
@@ -164,7 +164,7 @@ jobs:
           fi
 
           echo "[deploy][step] db:seed started"
-          if docker compose -f docker-compose.prod.yml --profile seed run --rm -T db-seed < /dev/null; then
+          if docker compose -f docker-compose.prod.yml --profile seed run --build --rm -T db-seed < /dev/null; then
             echo "[deploy][step] db:seed finished"
           else
             echo "[deploy][error] db:seed failed"
