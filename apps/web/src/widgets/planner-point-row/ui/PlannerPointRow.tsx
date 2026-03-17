@@ -21,12 +21,7 @@ import type { RoutePoint } from '@/entities/route-point';
 import { env } from '@/shared/config/env';
 import { cn } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/button';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-  Calendar,
-} from '@/shared/ui';
+import { Popover, PopoverContent, PopoverTrigger, Calendar } from '@/shared/ui';
 import {
   type GeoSuggestion,
   filterUniqueSuggestions,
@@ -135,13 +130,20 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
       const locSuffix = userLocation ? `&lat=${userLocation.lat}&lon=${userLocation.lon}` : '';
       const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}${locSuffix}`;
       const res = await fetch(url);
-      const data = await res.json();
 
+      if (!res.ok) {
+        console.error(`[Geosearch] HTTP ${res.status}: ${res.statusText}`);
+        throw new Error(`Suggest request failed: ${res.status}`);
+      }
+
+      const data = await res.json();
       const found = filterUniqueSuggestions(data.results ?? []);
       setSuggestions(found);
       setShowDropdownState(true);
-    } catch {
+    } catch (e) {
+      console.error('[Geosearch] Failed to fetch suggestions:', e);
       setSuggestions([]);
+      setShowDropdownState(false);
     } finally {
       setIsSearching(false);
     }
