@@ -389,6 +389,14 @@ export class TripImageService implements OnModuleInit {
         url.toString(),
         { timeoutMs: 6000, retries: 1 },
         'Google',
+        {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            Accept: 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
+        },
       );
     } catch (error) {
       this.logger.error(`Google request failed: ${String(error)}`);
@@ -446,6 +454,15 @@ export class TripImageService implements OnModuleInit {
         pixabayUrl,
         { timeoutMs: 6000, retries: 1 },
         'Pixabay',
+        {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            Accept: 'application/json',
+            Referer: 'https://pixabay.com/',
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
+        },
       );
     } catch (error) {
       this.logger.error(`Pixabay request failed: ${error}`);
@@ -578,13 +595,17 @@ export class TripImageService implements OnModuleInit {
     url: string,
     options: { timeoutMs: number; retries: number },
     provider = 'API',
+    fetchOptions?: { headers?: Record<string, string> },
   ): Promise<T | null> {
     for (let attempt = 0; attempt <= options.retries; attempt += 1) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
 
       try {
-        const res = await fetch(url, { signal: controller.signal });
+        const res = await fetch(url, {
+          signal: controller.signal,
+          headers: fetchOptions?.headers,
+        });
 
         if (res.status === 429) {
           this.logger.warn(`${provider} rate limited (429), skipping`);
