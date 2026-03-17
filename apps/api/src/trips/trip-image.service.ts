@@ -424,6 +424,7 @@ export class TripImageService implements OnModuleInit {
     }
 
     // Pixabay требует латиницу, используем slug
+    // per_page мин=3, макс=100
     const query = `beautiful cityscape ${slug}`;
     const params = new URLSearchParams({
       key: apiKey,
@@ -432,19 +433,22 @@ export class TripImageService implements OnModuleInit {
       safesearch: 'true',
       orientation: 'horizontal',
       order: 'popular',
-      per_page: '1',
+      per_page: '3', // Минимальное значение для Pixabay
     });
 
+    const pixabayUrl = `https://pixabay.com/api/?${params.toString()}`;
     this.logger.log(`🔍  Searching Pixabay: "${query}"`);
+    this.logger.debug(`   Pixabay URL: ${pixabayUrl.replace(apiKey, '***')}`);
 
     let response: PixabayResponse | null = null;
     try {
       response = await this.fetchWithRetry<PixabayResponse>(
-        `https://pixabay.com/api/?${params.toString()}`,
+        pixabayUrl,
         { timeoutMs: 6000, retries: 1 },
         'Pixabay',
       );
-    } catch {
+    } catch (error) {
+      this.logger.error(`Pixabay request failed: ${error}`);
       return null;
     }
 
