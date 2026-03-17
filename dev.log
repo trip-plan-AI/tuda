@@ -1,0 +1,272 @@
+
+> travel-planner@ dev C:\Users\sveta\Desktop\elbrus-part-time\phase-3\travel-planner
+> turbo run dev
+
+• Packages in scope: @repo/eslint-config, @repo/types, @repo/typescript-config, @repo/ui, api, web
+• Running dev in 6 packages
+• Remote caching disabled
+web:dev: cache bypass, force executing 19f9514acd417404
+api:dev: cache bypass, force executing 7e68ab11c36861d7
+web:dev: 
+web:dev: > web@0.1.0 dev C:\Users\sveta\Desktop\elbrus-part-time\phase-3\travel-planner\apps\web
+web:dev: > next dev --port 3000
+web:dev: 
+api:dev: 
+api:dev: > api@0.0.1 dev C:\Users\sveta\Desktop\elbrus-part-time\phase-3\travel-planner\apps\api
+api:dev: > nest start --watch
+api:dev: 
+web:dev: ▲ Next.js 16.1.5 (Turbopack)
+web:dev: - Local:         http://localhost:3000
+web:dev: - Network:       http://192.168.1.14:3000
+web:dev: - Environments: .env.local
+web:dev: 
+web:dev: ✓ Starting...
+api:dev: [2J[3J[H[[90m07:20:24[0m] Starting compilation in watch mode...
+api:dev: 
+web:dev: ✓ Ready in 1107ms
+web:dev:  GET /profile 200 in 1180ms (compile: 425ms, proxy.ts: 162ms, render: 594ms)
+api:dev: [[90m07:20:36[0m] Found 0 errors. Watching for file changes.
+api:dev: 
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[Bootstrap] [39m[32mSkip runtime migrations (managed by deploy pipeline, use RUN_MIGRATIONS_ON_BOOT=true only for manual recovery)[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m[38;5;3m +190ms[39m
+api:dev: [33m[Nest] 26308  - [39m17.03.2026, 07:20:38 [33m   WARN[39m [38;5;3m[LlmClientService] [39m[33mOPENROUTER_API_KEY is not set, using OPENAI_API_KEY because it contains an OpenRouter token (sk-or-*)[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[LlmClientService] [39m[32mLLM client initialized: provider=openrouter model=openai/gpt-4o-mini[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mRedisModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPassportModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCityExtractionModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +6ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +2ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +2ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCollaborationModule dependencies initialized[39m[38;5;3m +4ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mGeosearchModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mUsersModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mOptimizationModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mTripsModule dependencies initialized[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPointsModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAiModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "join:trip" message[39m[38;5;3m +22ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "leave:trip" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:add" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:move" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:delete" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:update" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:reorder" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "trip:update" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "cursor:move" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "message:send" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "agent:response" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/auth}:[39m[38;5;3m +3ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/register, POST} route[39m[38;5;3m +7ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/login, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mTripsController {/api/trips}:[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/predefined, GET} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips, GET} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:id, GET} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:id, PATCH} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:id, DELETE} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCollaboratorsController {/api/trips/:tripId/collaborators}:[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/collaborators, GET} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/collaborators, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/collaborators/:userId, DELETE} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mInvitationsController {/api}:[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/invitations, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/invitations/:id/accept, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/invitations/:id, DELETE} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mPointsController {/api/trips/:tripId/points}:[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points, GET} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points/reorder, PATCH} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points/:id, PATCH} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points/:id, DELETE} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mUsersController {/api/users}:[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/search, GET} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/me, GET} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/me, PATCH} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAiController {/api/ai}:[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions, GET} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id, GET} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id, PATCH} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id, DELETE} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id/clear, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/plan, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/plan/stream, GET} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id/apply, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/from-trip/:tripId, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/test/compare-providers, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/test/strategy/llm-only, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/test/strategy/provider-only, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/test/strategy/hybrid, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/mutations/parse, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/mutations/:tripId/apply, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mGeosearchController {/api/geosearch}:[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/geosearch/suggest, GET} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/geosearch/reverse, GET} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/geosearch/route, GET} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mOptimizationController {/api/trips}:[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:id/optimize, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[CityExtractionService] [39m[32m✅ CityExtractionService: OpenRouter initialized[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:38 [32m    LOG[39m [38;5;3m[RedisService] [39m[32mRedis connected[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:39 [32m    LOG[39m [38;5;3m[CityExtractionService] [39m[32m✅ CityExtractionService: OpenRouter initialized[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:39 [32m    LOG[39m [38;5;3m[TripImageService] [39m[32m✅ Google Custom Search API configured[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:39 [32m    LOG[39m [38;5;3m[TripImageService] [39m[32m✅ Pixabay API configured[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:20:39 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +3ms[39m
+web:dev:  GET /profile 200 in 267ms (compile: 33ms, proxy.ts: 23ms, render: 211ms)
+web:dev:  GET /planner?applyTripId=1e05e3a6-ef00-4822-b5d1-8971f8db8b2e&from=profile-card-autosave 200 in 273ms (compile: 162ms, render: 111ms)
+web:dev:  GET /planner 200 in 55ms (compile: 13ms, render: 42ms)
+web:dev:  GET /planner 200 in 91ms (compile: 14ms, render: 77ms)
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:21:19 [32m    LOG[39m [38;5;3m[AiSessionsService] [39m[32mAppended 1 message(s) to AI session 25fa9345-367f-4794-8006-44c239754699[39m
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [CollaborationGateway] Received internal event: ai:update for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [CollaborationGateway] Received internal event: ai:update for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:25 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] selected point: "г Омск" (address="г Омск", lat=54.9849581, lon=73.3675684)[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:25 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] Reverse geocoding success: Омск[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:25 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] city="Омск" cleaned="Омск" slug="omsk"[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:25 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] no local image, querying APIs[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:21:25 [32m    LOG[39m [38;5;3m[TripImageService] [39m[32m🔍  Searching Google: "beautiful cityscape of omsk"[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:25 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m   Request URL: https://www.googleapis.com/customsearch/v1?key=***&cx=928f13ee6c3c14e84&q=beautiful+cityscape+of+omsk&searchType=image&num=1&imgSize=large&imgType=photo[39m
+api:dev: [33m[Nest] 26308  - [39m17.03.2026, 07:21:26 [33m   WARN[39m [38;5;3m[TripImageService] [39m[33mGoogle rate limited (429), skipping[39m
+api:dev: [33m[Nest] 26308  - [39m17.03.2026, 07:21:26 [33m   WARN[39m [38;5;3m[TripImageService] [39m[33m❌  Google: No image found for "omsk"[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:26 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] Trying Pixabay fallback[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:21:26 [32m    LOG[39m [38;5;3m[TripImageService] [39m[32m🔍  Searching Pixabay: "beautiful cityscape omsk"[39m
+api:dev: [33m[Nest] 26308  - [39m17.03.2026, 07:21:26 [33m   WARN[39m [38;5;3m[TripImageService] [39m[33mPixabay responded with status 400[39m
+api:dev: [33m[Nest] 26308  - [39m17.03.2026, 07:21:26 [33m   WARN[39m [38;5;3m[TripImageService] [39m[33m❌  Pixabay: No image found for "Омск"[39m
+api:dev: [33m[Nest] 26308  - [39m17.03.2026, 07:21:26 [33m   WARN[39m [38;5;3m[TripImageService] [39m[33m🚫  [1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] No image sources available or all failed for "Омск"[39m
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] lock not acquired — skipping[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] selected point: "Тюмень" (address="Тюмень, Россия", lat=57.1522, lon=68.9585)[39m
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] lock not acquired — skipping[39m
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] lock not acquired — skipping[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] lock not acquired — skipping[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] lock not acquired — skipping[39m
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] lock not acquired — skipping[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] Reverse geocoding success: Аромашевский муниципальный округ[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] city="Аромашевский муниципальный округ" cleaned="Аромашевский" slug="aromashevskii"[39m
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] lock not acquired — skipping[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] lock not acquired — skipping[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] lock not acquired — skipping[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] no local image, querying APIs[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:21:32 [32m    LOG[39m [38;5;3m[TripImageService] [39m[32m🔍  Searching Google: "beautiful cityscape of aromashevskii"[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m   Request URL: https://www.googleapis.com/customsearch/v1?key=***&cx=928f13ee6c3c14e84&q=beautiful+cityscape+of+aromashevskii&searchType=image&num=1&imgSize=large&imgType=photo[39m
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] lock not acquired — skipping[39m
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [CollaborationGateway] Received internal event: trip:refresh for trip 1e05e3a6-ef00-4822-b5d1-8971f8db8b2e
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] lock not acquired — skipping[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] lock not acquired — skipping[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:32 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] lock not acquired — skipping[39m
+api:dev: [33m[Nest] 26308  - [39m17.03.2026, 07:21:33 [33m   WARN[39m [38;5;3m[TripImageService] [39m[33mGoogle rate limited (429), skipping[39m
+api:dev: [33m[Nest] 26308  - [39m17.03.2026, 07:21:33 [33m   WARN[39m [38;5;3m[TripImageService] [39m[33m❌  Google: No image found for "aromashevskii"[39m
+api:dev: [95m[Nest] 26308  - [39m17.03.2026, 07:21:33 [95m  DEBUG[39m [38;5;3m[TripImageService] [39m[95m[1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] Trying Pixabay fallback[39m
+api:dev: [32m[Nest] 26308  - [39m17.03.2026, 07:21:33 [32m    LOG[39m [38;5;3m[TripImageService] [39m[32m🔍  Searching Pixabay: "beautiful cityscape aromashevskii"[39m
+api:dev: [33m[Nest] 26308  - [39m17.03.2026, 07:21:33 [33m   WARN[39m [38;5;3m[TripImageService] [39m[33mPixabay responded with status 400[39m
+api:dev: [33m[Nest] 26308  - [39m17.03.2026, 07:21:33 [33m   WARN[39m [38;5;3m[TripImageService] [39m[33m❌  Pixabay: No image found for "Аромашевский"[39m
+api:dev: [33m[Nest] 26308  - [39m17.03.2026, 07:21:33 [33m   WARN[39m [38;5;3m[TripImageService] [39m[33m🚫  [1e05e3a6-ef00-4822-b5d1-8971f8db8b2e] No image sources available or all failed for "Аромашевский"[39m
+api:dev: [2J[3J[H[[90m07:23:22[0m] File change detected. Starting incremental compilation...
+api:dev: 
+api:dev: [[90m07:23:24[0m] Found 0 errors. Watching for file changes.
+api:dev: 
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[Bootstrap] [39m[32mSkip runtime migrations (managed by deploy pipeline, use RUN_MIGRATIONS_ON_BOOT=true only for manual recovery)[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m[38;5;3m +184ms[39m
+api:dev: [33m[Nest] 27628  - [39m17.03.2026, 07:23:26 [33m   WARN[39m [38;5;3m[LlmClientService] [39m[33mOPENROUTER_API_KEY is not set, using OPENAI_API_KEY because it contains an OpenRouter token (sk-or-*)[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[LlmClientService] [39m[32mLLM client initialized: provider=openrouter model=openai/gpt-4o-mini[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +2ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mRedisModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPassportModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCityExtractionModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +3ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCollaborationModule dependencies initialized[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mGeosearchModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mUsersModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mOptimizationModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mTripsModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPointsModule dependencies initialized[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAiModule dependencies initialized[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "join:trip" message[39m[38;5;3m +16ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "leave:trip" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:add" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:move" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:delete" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:update" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:reorder" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "trip:update" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "cursor:move" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "message:send" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "agent:response" message[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/auth}:[39m[38;5;3m +3ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/register, POST} route[39m[38;5;3m +4ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/login, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mTripsController {/api/trips}:[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/predefined, GET} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips, GET} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:id, GET} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:id, PATCH} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:id, DELETE} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCollaboratorsController {/api/trips/:tripId/collaborators}:[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/collaborators, GET} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/collaborators, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/collaborators/:userId, DELETE} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mInvitationsController {/api}:[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/invitations, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/invitations/:id/accept, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/invitations/:id, DELETE} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mPointsController {/api/trips/:tripId/points}:[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points, GET} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points/reorder, PATCH} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points/:id, PATCH} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points/:id, DELETE} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mUsersController {/api/users}:[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/search, GET} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/me, GET} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/me, PATCH} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAiController {/api/ai}:[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions, GET} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id, GET} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id, PATCH} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id, DELETE} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id/clear, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/plan, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/plan/stream, GET} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id/apply, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/from-trip/:tripId, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/test/compare-providers, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/test/strategy/llm-only, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/test/strategy/provider-only, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/test/strategy/hybrid, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/mutations/parse, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/mutations/:tripId/apply, POST} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mGeosearchController {/api/geosearch}:[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/geosearch/suggest, GET} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/geosearch/reverse, GET} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/geosearch/route, GET} route[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mOptimizationController {/api/trips}:[39m[38;5;3m +0ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:id/optimize, POST} route[39m[38;5;3m +1ms[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[CityExtractionService] [39m[32m✅ CityExtractionService: OpenRouter initialized[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:26 [32m    LOG[39m [38;5;3m[RedisService] [39m[32mRedis connected[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:27 [32m    LOG[39m [38;5;3m[CityExtractionService] [39m[32m✅ CityExtractionService: OpenRouter initialized[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:27 [32m    LOG[39m [38;5;3m[TripImageService] [39m[32m✅ Google Custom Search API configured[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:27 [32m    LOG[39m [38;5;3m[TripImageService] [39m[32m✅ Pixabay API configured[39m
+api:dev: [32m[Nest] 27628  - [39m17.03.2026, 07:23:27 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +1ms[39m
