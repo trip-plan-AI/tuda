@@ -253,10 +253,10 @@ export class CityExtractionService implements OnModuleInit {
     if (!this.redisAvailable) return;
 
     try {
-      const keys: string[] = await this.redisService.executeCommand(
+      const keys = (await this.redisService.executeCommand(
         'KEYS',
         'city:extract:*',
-      );
+      )) as string[];
       if (keys && keys.length > 0) {
         await this.redisService.executeCommand('DEL', ...keys);
         this.logger.log(`🗑️  Cleared ${keys.length} cache entries`);
@@ -275,10 +275,10 @@ export class CityExtractionService implements OnModuleInit {
     }
 
     try {
-      const keys: string[] = await this.redisService.executeCommand(
+      const keys = (await this.redisService.executeCommand(
         'KEYS',
         'city:extract:*',
-      );
+      )) as string[];
       return { keys: keys?.length ?? 0, available: true };
     } catch {
       return { keys: 0, available: true };

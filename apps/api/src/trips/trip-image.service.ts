@@ -111,7 +111,6 @@ export class TripImageService implements OnModuleInit {
       let cityForSearch: string | null = null;
 
       try {
-        const geosearchModule = await import('../geosearch/geosearch.service');
         // Примитивный reverse geocoding через Nominatim
         const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${selectedPoint.lat}&lon=${selectedPoint.lon}&zoom=10&accept-language=ru`;
         const response = await fetch(nominatimUrl, {
@@ -365,9 +364,10 @@ export class TripImageService implements OnModuleInit {
       return null;
     }
 
-    const query = `эстетика красивого города ${city} `;
+    // Google лучше работает с латиницей + английский запрос
+    const query = `beautiful cityscape of ${slug}`;
 
-    // Построение URL с корректным кодированием кириллицы
+    // Построение URL с корректным кодированием
     const url = new URL('https://www.googleapis.com/customsearch/v1');
     url.searchParams.set('key', apiKey);
     url.searchParams.set('cx', cx);
@@ -397,7 +397,7 @@ export class TripImageService implements OnModuleInit {
 
     const imageUrl = response?.items?.[0]?.link;
     if (!imageUrl) {
-      this.logger.warn(`❌  Google: No image found for "${city}"`);
+      this.logger.warn(`❌  Google: No image found for "${slug}"`);
       return null;
     }
 
@@ -423,7 +423,8 @@ export class TripImageService implements OnModuleInit {
       return null;
     }
 
-    const query = `эстетика красивого города ${city}`;
+    // Pixabay требует латиницу, используем slug
+    const query = `beautiful cityscape ${slug}`;
     const params = new URLSearchParams({
       key: apiKey,
       q: query,
@@ -581,9 +582,15 @@ export class TripImageService implements OnModuleInit {
       try {
         const res = await fetch(url, { signal: controller.signal });
 
-        if (res.status === 429 || res.status === 403) {
-          this.logger.warn(
-            `${provider} rate limited or forbidden (${res.status}), skipping`,
+        if (res.status === 429) {
+          this.logger.warn(`${provider} rate limited (429), skipping`);
+          return null;
+        }
+
+        if (res.status === 403) {
+          const errorBody = await res.text().catch(() => '');
+          this.logger.error(
+            `${provider} forbidden (403): ${errorBody.slice(0, 200)}`,
           );
           return null;
         }
