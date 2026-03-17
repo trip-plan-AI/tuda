@@ -19,6 +19,7 @@ import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 import { PopularRoutes } from '@/widgets/popular-routes';
 import { usePlanner } from '@/views/planner/model/use-planner';
 import { ConstructorTab } from '@/views/planner/ui/ConstructorTab';
+import { BudgetDashboard } from '@/views/planner/ui/BudgetDashboard';
 
 type PlannerView = 'route' | 'budget' | 'todo';
 
@@ -49,7 +50,7 @@ export function PlannerPage() {
 
   const renderContent = () => {
     if (currentView === 'budget') {
-      return <div className="p-8 h-full bg-slate-50 text-slate-400">Бюджет загружается...</div>;
+      return <BudgetDashboard />;
     }
     if (currentView === 'todo') {
       return <div className="p-8 h-full bg-slate-50 text-slate-400">Todo загружается...</div>;
