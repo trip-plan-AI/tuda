@@ -12,6 +12,8 @@ import { DESTINATIONS } from './seed-destinations';
 
 type ContractRow = { table_name: string; column_name: string };
 
+type ColumnExistsRow = { exists: boolean };
+
 const SYSTEM_EMAIL = 'system@travel-planner.local';
 const SYSTEM_PASSWORD = 'system-no-login';
 
@@ -257,6 +259,36 @@ const TOURS = [
   },
 ];
 
+function toRad(value: number): number {
+  return (value * Math.PI) / 180;
+}
+
+function haversineKm(
+  from: { lat: number; lon: number },
+  to: { lat: number; lon: number },
+): number {
+  const R = 6371;
+  const dLat = toRad(to.lat - from.lat);
+  const dLon = toRad(to.lon - from.lon);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(from.lat)) *
+      Math.cos(toRad(to.lat)) *
+      Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function calcRouteDistanceKm(
+  points: Array<{ lat: number; lon: number }>,
+): number | null {
+  if (points.length < 2) return null;
+  let total = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    total += haversineKm(points[i - 1], points[i]);
+  }
+  return Math.round(total * 10) / 10;
+}
+
 async function seed() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const db = drizzle(pool, { schema });
@@ -278,7 +310,6 @@ async function seed() {
       'start_date',
       'end_date',
       'version',
-      'distance_km',
       'created_at',
       'updated_at',
     ],
@@ -330,6 +361,17 @@ async function seed() {
     );
   }
 
+  const distanceColumnCheck = await db.execute(sql<ColumnExistsRow>`
+    select exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'trips'
+        and column_name = 'distance_km'
+    ) as exists;
+  `);
+  const hasDistanceKmColumn = Boolean(distanceColumnCheck.rows[0]?.exists);
+
   console.log('Seeding predefined tours...\n');
 
   let systemUser = await db.query.users.findFirst({
@@ -358,6 +400,9 @@ async function seed() {
         title: tour.title,
         description: tour.description,
         budget: tour.budget,
+        ...(hasDistanceKmColumn
+          ? { distanceKm: calcRouteDistanceKm(tour.attractions) }
+          : {}),
         ownerId: systemUser.id,
         isPredefined: true,
         img: tour.img,
