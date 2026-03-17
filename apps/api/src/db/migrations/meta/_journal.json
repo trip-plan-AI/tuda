@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1771946028051,
-      "tag": "0000_chunky_ultron",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1771946100000,
-      "tag": "0001_collaborator_is_active",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1773465598022,
-      "tag": "0002_sparkling_gladiator",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1773502169922,
-      "tag": "0003_aberrant_raider",
+      "when": 1773704387434,
+      "tag": "0000_pale_jack_power",
       "breakpoints": true
     },
     {
