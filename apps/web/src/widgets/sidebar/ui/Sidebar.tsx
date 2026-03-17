@@ -43,10 +43,9 @@ export function Sidebar() {
   const [isHovered, setIsHovered] = useState(false);
   const { openExpenseModal } = useBudgetStore();
 
-  const isExpanded = isPlanner && isHovered;
-
   const isLanding = pathname === '/';
   const isPlanner = pathname.startsWith('/planner');
+  const isExpanded = isPlanner && isHovered;
 
   const currentView = (searchParams.get('view') as PlannerView) ?? 'budget';
 
