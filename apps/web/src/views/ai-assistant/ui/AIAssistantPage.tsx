@@ -17,6 +17,7 @@ import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 import type { PlannerConflictType } from '@/widgets/planner-conflict-modal';
 import { toast } from 'sonner';
 import { tripsApi } from '@/entities/trip';
+import { pointsApi } from '@/entities/route-point';
 import { clearConfig, setConfig } from '@/features/persistent-map';
 
 const AI_QUICK_ACTIONS = ['Сделать дешевле', 'Добавить больше музеев', 'Убрать пешие прогулки'];
@@ -254,7 +255,7 @@ export function AIAssistantPage() {
 
   const aiPoints = useMemo(() => {
     if (!lastPlanMessage?.routePlan) return [];
-    
+
     let globalIndex = 0;
     return lastPlanMessage.routePlan.days.flatMap((day: any) =>
       day.points.flatMap((point: any) => {
@@ -266,19 +267,21 @@ export function AIAssistantPage() {
           return [];
         }
 
-        return [{
-          id: poi.id || `ai-point-${globalIndex++}`,
-          tripId: currentTrip?.id || 'temp',
-          title: poi.name || `Точка #${point.order}`,
-          lat,
-          lon,
-          budget: point.estimated_cost ?? null,
-          visitDate: day.date || null,
-          imageUrl: poi.image_url ?? null,
-          address: poi.address || '',
-          order: point.order ?? globalIndex,
-        }];
-      })
+        return [
+          {
+            id: poi.id || `ai-point-${globalIndex++}`,
+            tripId: currentTrip?.id || 'temp',
+            title: poi.name || `Точка #${point.order}`,
+            lat,
+            lon,
+            budget: point.estimated_cost ?? null,
+            visitDate: day.date || null,
+            imageUrl: poi.image_url ?? null,
+            address: poi.address || '',
+            order: point.order ?? globalIndex,
+          },
+        ];
+      }),
     );
   }, [lastPlanMessage?.routePlan, currentTrip?.id]);
 
@@ -293,7 +296,7 @@ export function AIAssistantPage() {
     if (activeSession?.tripId && !isNewAIProposal) {
       return currentTrip?.points || [];
     }
-    
+
     // В противном случае показываем черновик ИИ из истории чата
     return aiPoints;
   }, [activeSession?.tripId, currentTrip?.points, aiPoints, messages, lastAppliedPlanMessageId]);
@@ -302,15 +305,9 @@ export function AIAssistantPage() {
   useCollaborationSocket(socketTripId);
 
   // TRI-114: Real-time sync for AI chat map
-  // When currentTrip.points changes (due to socket events or edits), 
-  // we update aiPoints to reflect changes on the map if we are in the same trip.
-  useEffect(() => {
-    if (activeSession?.tripId && currentTrip?.id === activeSession.tripId) {
-      if (currentTrip.points && currentTrip.points.length > 0) {
-        setAiPoints(currentTrip.points);
-      }
-    }
-  }, [currentTrip?.points, activeSession?.tripId, currentTrip?.id, setAiPoints]);
+  // When currentTrip.points changes (due to socket events or edits),
+  // the map will automatically reflect changes via setConfig below.
+  // No need to update aiPoints here since it's derived from messages.
 
   const [isAddPointMode, setIsAddPointMode] = useState(false);
 
@@ -331,7 +328,7 @@ export function AIAssistantPage() {
         // Logic similar to PlannerPage: add point from map
         // Since AIAssistantPage doesn't have usePointCrud directly, we might need to add it or use a simplified version
         void handleAddPointFromMap(coords);
-      }
+      },
     });
 
     return () => {
@@ -339,7 +336,7 @@ export function AIAssistantPage() {
     };
   }, [displayPoints, isAddPointMode]);
 
-  const handleAddPointFromMap = async (coords: { lat: number, lon: number }) => {
+  const handleAddPointFromMap = async (coords: { lat: number; lon: number }) => {
     const tripId = activeSession?.tripId;
     if (!tripId) {
       toast.error('Сначала создайте или выберите маршрут');
@@ -409,7 +406,8 @@ export function AIAssistantPage() {
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
-                          if (renameValue.trim()) void renameSession(session.id, renameValue.trim());
+                          if (renameValue.trim())
+                            void renameSession(session.id, renameValue.trim());
                           setRenamingSessionId(null);
                         }
                         if (e.key === 'Escape') setRenamingSessionId(null);

@@ -106,6 +106,7 @@ export const routePoints = pgTable('route_points', {
   address: text('address'),
   transportMode: text('transport_mode').notNull().default('driving'),
   isTitleLocked: boolean('is_title_locked').notNull().default(false),
+  duration: doublePrecision('duration'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
@@ -165,11 +166,17 @@ export const popularDestinations = pgTable(
 export const invitations = pgTable(
   'invitations',
   {
-    id:            uuid('id').primaryKey().defaultRandom(),
-    tripId:        uuid('trip_id').notNull().references(() => trips.id, { onDelete: 'cascade' }),
-    invitedUserId: uuid('invited_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    inviterId:     uuid('inviter_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    createdAt:     timestamp('created_at').notNull().defaultNow(),
+    id: uuid('id').primaryKey().defaultRandom(),
+    tripId: uuid('trip_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'cascade' }),
+    invitedUserId: uuid('invited_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    inviterId: uuid('inviter_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (t) => [unique().on(t.tripId, t.invitedUserId)],
 );
