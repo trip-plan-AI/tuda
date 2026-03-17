@@ -20,6 +20,7 @@ import { PopularRoutes } from '@/widgets/popular-routes';
 import { usePlanner } from '@/views/planner/model/use-planner';
 import { ConstructorTab } from '@/views/planner/ui/ConstructorTab';
 import { BudgetDashboard } from '@/views/planner/ui/BudgetDashboard';
+import { AddExpenseModal } from '@/views/planner/ui/AddExpenseModal';
 
 type PlannerView = 'route' | 'budget' | 'todo';
 
@@ -48,52 +49,52 @@ export function PlannerPage() {
 
   useCollaborationSocket(currentTrip?.id || '');
 
-  const renderContent = () => {
-    if (currentView === 'budget') {
-      return <BudgetDashboard />;
-    }
-    if (currentView === 'todo') {
-      return <div className="p-8 h-full bg-slate-50 text-slate-400">Todo загружается...</div>;
-    }
-    // currentView === 'route' — показываем конструктор маршрута
-    return (
-      <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
-        <div className="w-full mx-auto px-4 md:px-8 py-6 md:py-8 flex-1 flex flex-col relative min-h-0">
-          <div className="mb-8 bg-white md:p-0 rounded-none w-full max-w-7xl mx-auto shrink-0">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight text-left">
-                Маршруты
-              </h2>
-              {currentTrip?.id && !currentTrip.id.startsWith('guest-') && (
-                <CollaboratorsAvatarGroup tripId={currentTrip.id} />
+  return (
+    <>
+      {/* ── Tab content ── */}
+      {currentView === 'budget' ? (
+        <BudgetDashboard />
+      ) : currentView === 'todo' ? (
+        <div className="p-8 h-full bg-slate-50 text-slate-400">Todo загружается...</div>
+      ) : (
+        /* ── Original route view — logic and markup unchanged ── */
+        <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
+          <div className="w-full mx-auto px-4 md:px-8 py-6 md:py-8 flex-1 flex flex-col relative min-h-0">
+            <div className="mb-8 bg-white md:p-0 rounded-none w-full max-w-7xl mx-auto shrink-0">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight text-left">
+                  Маршруты
+                </h2>
+                {currentTrip?.id && !currentTrip.id.startsWith('guest-') && (
+                  <CollaboratorsAvatarGroup tripId={currentTrip.id} />
+                )}
+              </div>
+              <SegmentedControl
+                options={[
+                  { label: 'Конструктор', value: 'my' },
+                  { label: 'Популярные', value: 'popular' },
+                ]}
+                value={activeTab}
+                onChange={(val) => {
+                  setActiveTab(val as 'my' | 'popular');
+                  router.push(`/planner?tab=${val}`);
+                }}
+              />
+            </div>
+
+            <div className="flex-1">
+              {activeTab === 'my' ? (
+                <ConstructorTab {...planner} />
+              ) : (
+                <PopularRoutes />
               )}
             </div>
-            <SegmentedControl
-              options={[
-                { label: 'Конструктор', value: 'my' },
-                { label: 'Популярные', value: 'popular' },
-              ]}
-              value={activeTab}
-              onChange={(val) => {
-                setActiveTab(val as 'my' | 'popular');
-                const params = new URLSearchParams(searchParams.toString());
-                params.set('tab', val);
-                router.push(`/planner?${params.toString()}`);
-              }}
-            />
-          </div>
-
-          <div className="flex-1">
-            {activeTab === 'my' ? <ConstructorTab {...planner} /> : <PopularRoutes />}
           </div>
         </div>
-      </div>
-    );
-  };
+      )}
 
-  return (
-    <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
-      <div className="flex-1">{renderContent()}</div>
+      {/* ── Modals — always in tree regardless of view ── */}
+      <AddExpenseModal />
 
       <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
         <DialogContent
@@ -169,6 +170,6 @@ export function PlannerPage() {
         }}
         onGoToPlannerOnly={() => finalizeApplyFlow(true)}
       />
-    </div>
+    </>
   );
 }
