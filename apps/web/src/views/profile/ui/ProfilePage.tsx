@@ -358,20 +358,22 @@ export function ProfilePage() {
     : (displayedActiveRoute ?? travelTrips[0] ?? null);
 
   // Feed points to PersistentMapShell (right aside in layout)
+  // Show all points from current and past trips on the map
   useEffect(() => {
+    const allPoints = [...currentTrips, ...pastTrips].flatMap((t) => t.points || []);
     setConfig({
       source: 'profile-page',
       priority: 80,
-      points: selectedTrip?.points || [],
+      points: allPoints,
       readonly: true,
       draggable: false,
       routeProfile: 'driving',
-      fitKey: selectedTrip?.id,
+      fitKey: 'profile-all-trips',
     });
     return () => {
       clearConfig('profile-page');
     };
-  }, [selectedTrip?.id, selectedTrip?.points]);
+  }, [currentTrips, pastTrips]);
 
   // Join all trip sockets for real-time card updates
   useEffect(() => {

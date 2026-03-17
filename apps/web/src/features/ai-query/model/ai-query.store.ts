@@ -1087,8 +1087,10 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
 
       if (!session) return state;
 
-      // Merge новых сообщений с существующими
-      const combined = mergeAndSortMessages(session.messages, newMessages);
+      // Merge: existing messages take precedence over incoming history so that
+      // the owner's own locally-stored messages (clean content, no email prefix)
+      // are not overwritten by the prefixed versions coming from chat:history.
+      const combined = mergeAndSortMessages(newMessages, session.messages);
 
       const updatedSessions = {
         ...sessions,
