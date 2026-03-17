@@ -33,17 +33,16 @@ async function runMigrations() {
 }
 
 async function bootstrap() {
-  // В production миграции применяются на этапе деплоя (db:push/db:seed в CI),
-  // поэтому при старте API не запускаем migrate(), чтобы избежать конфликтов
-  // с уже существующей схемой и дублирующими migration-файлами.
-  // DEV: schema sync via `pnpm db:push` instead of runtime migrations.
-  // runMigrations() disabled because __drizzle_migrations table does not exist
-  // in DB — Drizzle would try to CREATE all tables from scratch and fail.
-  // To apply: cd apps/api && pnpm db:push
-  if (process.env.NODE_ENV === 'production') {
+  // Enterprise-подход: миграции должны применяться отдельным этапом деплоя,
+  // а не во время старта API. Это делает запуск приложения детерминированным
+  // и убирает риск гонок между несколькими инстансами при старте.
+  // Для редких случаев оставляем явный opt-in через RUN_MIGRATIONS_ON_BOOT=true.
+  if (process.env.RUN_MIGRATIONS_ON_BOOT === 'true') {
     await runMigrations();
   } else {
-    logger.log('Skip runtime migrations in development (use pnpm db:push)');
+    logger.log(
+      'Skip runtime migrations (managed by deploy pipeline, use RUN_MIGRATIONS_ON_BOOT=true only for manual recovery)',
+    );
   }
 
   const app = await NestFactory.create(AppModule);
