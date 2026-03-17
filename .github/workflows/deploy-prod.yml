@@ -30,9 +30,13 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 20
+          package-manager-cache: false
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
 
       - name: Compute push SHAs
         id: sha
@@ -56,11 +60,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p "$LOG_DIR"
           chmod +x ./scripts/ci/predeploy-guard.sh
           ./scripts/ci/predeploy-guard.sh
 
       - name: Upload predeploy logs
-        if: always()
+        if: ${{ always() && hashFiles('artifacts/predeploy/**') != '' }}
         uses: actions/upload-artifact@v5
         with:
           name: predeploy-guard-logs
