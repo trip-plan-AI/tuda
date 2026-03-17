@@ -42,7 +42,10 @@ export class AllHttpExceptionsFilter implements ExceptionFilter {
       statusCode: status,
       message,
       ...(isDev && {
-        error: exception instanceof HttpException ? exception.getName() : 'Internal Server Error',
+        error:
+          exception instanceof HttpException
+            ? exception.constructor.name
+            : 'Internal Server Error',
         ...(exception instanceof Error && { stack: exception.stack }),
       }),
     });
