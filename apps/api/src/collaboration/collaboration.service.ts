@@ -28,6 +28,7 @@ export class CollaborationService {
   constructor(@Inject(DRIZZLE) private db: NodePgDatabase<typeof schema>) {}
 
   async saveMessage(data: {
+    id?: string;
     tripId: string;
     userId: string;
     userEmail: string;

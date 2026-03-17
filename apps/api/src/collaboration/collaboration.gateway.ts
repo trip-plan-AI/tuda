@@ -320,8 +320,11 @@ export class CollaborationGateway
     @MessageBody()
     data: { trip_id: string; id: string; content: string; timestamp: string },
   ) {
-    // Persist before broadcast so history is available on rejoin
+    // Persist before broadcast so history is available on rejoin.
+    // Use the frontend-generated id so chat:history returns the same id
+    // that the sender already stored locally — enabling deduplication.
     await this.collabService.saveMessage({
+      id: data.id,
       tripId: data.trip_id,
       userId: client.data.userId,
       userEmail: client.data.email,
