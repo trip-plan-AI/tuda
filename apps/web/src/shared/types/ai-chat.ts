@@ -66,4 +66,6 @@ export interface ChatMessage {
   meta?: ChatMeta;
   timestamp: string;
   isError?: boolean;
+  userName?: string;
+  userAvatar?: string;
 }

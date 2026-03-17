@@ -21,6 +21,7 @@ import { CollaborationEventsService } from './collaboration-events.service';
 interface SocketData {
   userId: string;
   email: string;
+  name: string;
   tripId?: string;
 }
 
@@ -81,11 +82,12 @@ export class CollaborationGateway
   handleConnection(client: TypedSocket) {
     try {
       const token = String(client.handshake.auth?.token ?? '');
-      const payload = this.jwtService.verify<{ sub: string; email: string }>(
+      const payload = this.jwtService.verify<{ sub: string; email: string; name?: string }>(
         token,
       );
       client.data.userId = payload.sub;
       client.data.email = payload.email;
+      client.data.name = payload.name ?? payload.email;
       // Personal room so we can push notifications directly to this user
       client.join(`user_${payload.sub}`);
     } catch {
@@ -169,7 +171,7 @@ export class CollaborationGateway
         content: msg.content,
         timestamp: new Date(msg.createdAt).toISOString(), // 🛡 Защита: Drizzle может возвращать строку
         user_id: msg.userId,
-        user_name: msg.userEmail,
+        user_name: msg.userName ?? msg.userEmail,
       })),
     );
   }
@@ -337,7 +339,7 @@ export class CollaborationGateway
       content: data.content,
       timestamp: data.timestamp,
       user_id: client.data.userId,
-      user_name: client.data.email,
+      user_name: client.data.name,
     });
   }
 

@@ -180,10 +180,10 @@ export function AIAssistantPage() {
     // Транслируем сообщение другим участникам комнаты, используя единый ID
     sendChatMessage(query, messageId);
 
-    const isHelpRequest = query.startsWith('/help');
+    const isAiRequest = query.startsWith('/ai');
 
-    if (isHelpRequest) {
-      const cleanQuery = query.replace(/^\/help\s*/, '').trim() || query;
+    if (isAiRequest) {
+      const cleanQuery = query.replace(/^\/ai\s*/, '').trim() || query;
       await sendQuery(cleanQuery, activeSession?.tripId ?? undefined);
 
       const updatedMessages = useAiQueryStore.getState().messages;
