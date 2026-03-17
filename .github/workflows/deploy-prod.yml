@@ -22,12 +22,12 @@ jobs:
       head_sha: ${{ steps.sha.outputs.head_sha }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
 
@@ -61,7 +61,7 @@ jobs:
 
       - name: Upload predeploy logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: predeploy-guard-logs
           path: artifacts/predeploy
@@ -73,7 +73,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup SSH key
         env:
@@ -122,6 +122,10 @@ jobs:
           echo "[deploy] docker services"
           docker compose -f docker-compose.prod.yml config --services
 
+          echo "[deploy][step] docker build (single pass) started"
+          docker compose -f docker-compose.prod.yml build api web nginx
+          echo "[deploy][step] docker build (single pass) finished"
+
           echo "[deploy] ensure db is running before backup"
           docker compose -f docker-compose.prod.yml up -d db
           docker compose -f docker-compose.prod.yml ps db
@@ -136,10 +140,18 @@ jobs:
             echo "[deploy][warn] db backup failed, continue deploy"
           fi
 
+          echo "[deploy][step] preflight db structure started"
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "\\d+ public.trips"' || true
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "\\d+ public.route_points"' || true
+          if ! docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT * FROM __drizzle_migrations ORDER BY id;"'; then
+            echo "[deploy][warn] __drizzle_migrations table is missing"
+          fi
+          echo "[deploy][step] preflight db structure finished"
+
           echo "[deploy][step] db:migrate started"
           MIGRATE_LOG="/tmp/deploy_db_migrate.log"
           rm -f "$MIGRATE_LOG"
-          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --build --rm -T --no-deps api pnpm --filter api db:migrate < /dev/null 2>&1 | tee "$MIGRATE_LOG"; then
+          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T --no-deps api pnpm --filter api db:migrate < /dev/null 2>&1 | tee "$MIGRATE_LOG"; then
             echo "[deploy][step] db:migrate finished"
           else
             echo "[deploy][error] db:migrate failed"
@@ -148,7 +160,7 @@ jobs:
 
             if grep -Eqi "already exists|code: '42710'|DuplicateObject|relation .* already exists" "$MIGRATE_LOG"; then
               echo "[deploy][warn] detected legacy baseline conflict, enabling controlled db:push fallback"
-              if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --build --rm -T --no-deps api pnpm --filter api db:push --force < /dev/null; then
+              if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T --no-deps api pnpm --filter api db:push --force < /dev/null; then
                 echo "[deploy][warn] fallback db:push finished"
               else
                 echo "[deploy][error] fallback db:push failed"
@@ -156,7 +168,7 @@ jobs:
               fi
             elif [ "${DEPLOY_ALLOW_DB_PUSH_FALLBACK:-false}" = "true" ]; then
               echo "[deploy][warn] fallback enabled: running db:push --force"
-              if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --build --rm -T --no-deps api pnpm --filter api db:push --force < /dev/null; then
+              if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T --no-deps api pnpm --filter api db:push --force < /dev/null; then
                 echo "[deploy][warn] fallback db:push finished"
               else
                 echo "[deploy][error] fallback db:push failed"
@@ -168,19 +180,28 @@ jobs:
             fi
           fi
 
-          echo "[deploy][step] schema verification started"
-          if docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '\''public'\'' AND table_name = '\''trips'\'' AND column_name IN ('\''distance_km'\'') ORDER BY column_name;"'; then
-            echo "[deploy][step] schema verification finished"
-          else
-            echo "[deploy][error] schema verification failed"
+          echo "[deploy][step] schema preflight started"
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema = '\''public'\'' AND table_name IN ('\''trips'\'','\''route_points'\'') ORDER BY table_name, ordinal_position;"'
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT typname FROM pg_type WHERE typnamespace = '\''public'\''::regnamespace AND typname IN ('\''collaborator_role'\'','\''transport_mode'\'','\''poi_category'\'') ORDER BY typname;"'
+
+          echo "[deploy][step] schema contract verification started"
+          SCHEMA_MISSING="$(docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -t -A -c "WITH required(table_name, column_name) AS ( VALUES ('\''trips'\'','\''id'\''),('\''trips'\'','\''title'\''),('\''trips'\'','\''description'\''),('\''trips'\'','\''budget'\''),('\''trips'\'','\''owner_id'\''),('\''trips'\'','\''is_active'\''),('\''trips'\'','\''is_predefined'\''),('\''trips'\'','\''img'\''),('\''trips'\'','\''tags'\''),('\''trips'\'','\''temp'\''),('\''trips'\'','\''start_date'\''),('\''trips'\'','\''end_date'\''),('\''trips'\'','\''version'\''),('\''trips'\'','\''distance_km'\''),('\''trips'\'','\''created_at'\''),('\''trips'\'','\''updated_at'\''),('\''route_points'\'','\''id'\''),('\''route_points'\'','\''trip_id'\''),('\''route_points'\'','\''title'\''),('\''route_points'\'','\''description'\''),('\''route_points'\'','\''lat'\''),('\''route_points'\'','\''lon'\''),('\''route_points'\'','\''budget'\''),('\''route_points'\'','\''visit_date'\''),('\''route_points'\'','\''image_url'\''),('\''route_points'\'','\''order'\''),('\''route_points'\'','\''address'\''),('\''route_points'\'','\''transport_mode'\''),('\''route_points'\'','\''duration'\''),('\''route_points'\'','\''is_title_locked'\''),('\''route_points'\'','\''created_at'\'') ) SELECT r.table_name || '\''.'\'' || r.column_name FROM required r LEFT JOIN information_schema.columns c ON c.table_schema = '\''public'\'' AND c.table_name = r.table_name AND c.column_name = r.column_name WHERE c.column_name IS NULL ORDER BY r.table_name, r.column_name;"')"
+          if [ -n "$SCHEMA_MISSING" ]; then
+            echo "[deploy][error] schema contract check failed — missing columns:"
+            echo "$SCHEMA_MISSING"
             exit 1
+          else
+            echo "[deploy][step] schema contract verification finished"
           fi
 
           echo "[deploy][step] db:seed started"
-          if docker compose -f docker-compose.prod.yml --profile seed run --build --rm -T db-seed < /dev/null; then
+          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T --no-deps api pnpm --filter api db:seed < /dev/null; then
             echo "[deploy][step] db:seed finished"
           else
             echo "[deploy][error] db:seed failed"
+            echo "[debug] seed failed schema snapshot (trips + route_points)"
+            docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema = '\''public'\'' AND table_name IN ('\''trips'\'','\''route_points'\'') ORDER BY table_name, ordinal_position;"' || true
+            echo "[debug] db-seed logs"
             docker compose -f docker-compose.prod.yml logs --no-color --tail=200 db-seed || true
             exit 1
           fi
@@ -191,10 +212,6 @@ jobs:
           else
             echo "[deploy][warn] schema log failed, continue deploy"
           fi
-
-          echo "[deploy][step] docker build started"
-          docker compose -f docker-compose.prod.yml build api web nginx
-          echo "[deploy][step] docker build finished"
 
           echo "[deploy][step] docker up started"
           if ! docker compose -f docker-compose.prod.yml up -d --wait; then
