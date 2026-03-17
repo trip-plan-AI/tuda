@@ -10,6 +10,8 @@ import * as schema from './schema';
 import * as bcrypt from 'bcrypt';
 import { DESTINATIONS } from './seed-destinations';
 
+type ContractRow = { table_name: string; column_name: string };
+
 const SYSTEM_EMAIL = 'system@travel-planner.local';
 const SYSTEM_PASSWORD = 'system-no-login';
 
@@ -258,6 +260,75 @@ const TOURS = [
 async function seed() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const db = drizzle(pool, { schema });
+
+  // Контракт схемы для сидирования: если обязательных колонок нет,
+  // падаем сразу с понятной диагностикой, не доходя до массовых insert.
+  const requiredColumnsByTable: Record<string, string[]> = {
+    trips: [
+      'id',
+      'title',
+      'description',
+      'budget',
+      'owner_id',
+      'is_active',
+      'is_predefined',
+      'img',
+      'tags',
+      'temp',
+      'start_date',
+      'end_date',
+      'version',
+      'distance_km',
+      'created_at',
+      'updated_at',
+    ],
+    route_points: [
+      'id',
+      'trip_id',
+      'title',
+      'description',
+      'lat',
+      'lon',
+      'budget',
+      'visit_date',
+      'image_url',
+      'order',
+      'address',
+      'transport_mode',
+      'duration',
+      'is_title_locked',
+      'created_at',
+    ],
+  };
+
+  const requiredPairs = Object.entries(requiredColumnsByTable)
+    .flatMap(([table, columns]) => columns.map((column) => ({ table, column })))
+    .map(({ table, column }) => `('${table}', '${column}')`)
+    .join(', ');
+
+  const contractResult = await db.execute(sql<ContractRow>`
+    with required(table_name, column_name) as (
+      values ${sql.raw(requiredPairs)}
+    )
+    select r.table_name, r.column_name
+    from required r
+    left join information_schema.columns c
+      on c.table_schema = 'public'
+      and c.table_name = r.table_name
+      and c.column_name = r.column_name
+    where c.column_name is null
+    order by r.table_name, r.column_name;
+  `);
+
+  if (contractResult.rows.length > 0) {
+    const missing = contractResult.rows
+      .map((row) => `${row.table_name}.${row.column_name}`)
+      .join(', ');
+    throw new Error(
+      `[seed][contract] missing required columns: ${missing}. ` +
+        `Run deploy schema reconcile/migrations before db:seed.`,
+    );
+  }
 
   console.log('Seeding predefined tours...\n');
 
