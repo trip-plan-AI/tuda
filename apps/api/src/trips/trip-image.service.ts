@@ -447,6 +447,9 @@ export class TripImageService implements OnModuleInit {
     const pixabayUrl = `https://pixabay.com/api/?${params.toString()}`;
     this.logger.log(`🔍  Searching Pixabay: "${query}"`);
     this.logger.debug(`   Pixabay URL: ${pixabayUrl.replace(apiKey, '***')}`);
+    this.logger.debug(
+      `   Headers: User-Agent=Mozilla/5.0..., Accept=application/json, Referer=pixabay.com`,
+    );
 
     let response: PixabayResponse | null = null;
     try {
