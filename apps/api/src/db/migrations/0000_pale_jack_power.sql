@@ -6,7 +6,17 @@ CREATE TABLE "ai_sessions" (
 	"trip_id" uuid,
 	"user_id" uuid NOT NULL,
 	"messages" jsonb DEFAULT '[]' NOT NULL,
+	"title" text,
 	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "invitations" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"trip_id" uuid NOT NULL,
+	"invited_user_id" uuid NOT NULL,
+	"inviter_id" uuid NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "invitations_trip_id_invited_user_id_unique" UNIQUE("trip_id","invited_user_id")
 );
 --> statement-breakpoint
 CREATE TABLE "optimization_results" (
@@ -47,7 +57,17 @@ CREATE TABLE "route_points" (
 	"order" integer DEFAULT 0 NOT NULL,
 	"address" text,
 	"transport_mode" text DEFAULT 'driving' NOT NULL,
+	"duration" integer DEFAULT 0 NOT NULL,
 	"is_title_locked" boolean DEFAULT false NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "trip_chat_messages" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"trip_id" uuid NOT NULL,
+	"user_id" uuid NOT NULL,
+	"user_email" text NOT NULL,
+	"content" text NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -55,8 +75,27 @@ CREATE TABLE "trip_collaborators" (
 	"trip_id" uuid NOT NULL,
 	"user_id" uuid NOT NULL,
 	"role" "collaborator_role" DEFAULT 'viewer' NOT NULL,
+	"is_active" boolean DEFAULT false NOT NULL,
 	"joined_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "trip_collaborators_trip_id_user_id_pk" PRIMARY KEY("trip_id","user_id")
+);
+--> statement-breakpoint
+CREATE TABLE "trips" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"title" text NOT NULL,
+	"description" text,
+	"budget" integer,
+	"owner_id" uuid NOT NULL,
+	"is_active" boolean DEFAULT false NOT NULL,
+	"is_predefined" boolean DEFAULT false NOT NULL,
+	"img" text,
+	"tags" jsonb,
+	"temp" text,
+	"start_date" text,
+	"end_date" text,
+	"version" integer DEFAULT 0 NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "users" (
@@ -69,21 +108,17 @@ CREATE TABLE "users" (
 	CONSTRAINT "users_email_unique" UNIQUE("email")
 );
 --> statement-breakpoint
-ALTER TABLE "trips" ALTER COLUMN "title" SET DATA TYPE text;--> statement-breakpoint
-ALTER TABLE "trips" ALTER COLUMN "start_date" SET DATA TYPE text;--> statement-breakpoint
-ALTER TABLE "trips" ALTER COLUMN "end_date" SET DATA TYPE text;--> statement-breakpoint
-ALTER TABLE "trips" ADD COLUMN "owner_id" uuid NOT NULL;--> statement-breakpoint
-ALTER TABLE "trips" ADD COLUMN "is_active" boolean DEFAULT false NOT NULL;--> statement-breakpoint
-ALTER TABLE "trips" ADD COLUMN "is_predefined" boolean DEFAULT false NOT NULL;--> statement-breakpoint
-ALTER TABLE "trips" ADD COLUMN "img" text;--> statement-breakpoint
-ALTER TABLE "trips" ADD COLUMN "tags" jsonb;--> statement-breakpoint
-ALTER TABLE "trips" ADD COLUMN "temp" text;--> statement-breakpoint
 ALTER TABLE "ai_sessions" ADD CONSTRAINT "ai_sessions_trip_id_trips_id_fk" FOREIGN KEY ("trip_id") REFERENCES "public"."trips"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ai_sessions" ADD CONSTRAINT "ai_sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "invitations" ADD CONSTRAINT "invitations_trip_id_trips_id_fk" FOREIGN KEY ("trip_id") REFERENCES "public"."trips"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "invitations" ADD CONSTRAINT "invitations_invited_user_id_users_id_fk" FOREIGN KEY ("invited_user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "invitations" ADD CONSTRAINT "invitations_inviter_id_users_id_fk" FOREIGN KEY ("inviter_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "optimization_results" ADD CONSTRAINT "optimization_results_trip_id_trips_id_fk" FOREIGN KEY ("trip_id") REFERENCES "public"."trips"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "route_points" ADD CONSTRAINT "route_points_trip_id_trips_id_fk" FOREIGN KEY ("trip_id") REFERENCES "public"."trips"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "trip_chat_messages" ADD CONSTRAINT "trip_chat_messages_trip_id_trips_id_fk" FOREIGN KEY ("trip_id") REFERENCES "public"."trips"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "trip_chat_messages" ADD CONSTRAINT "trip_chat_messages_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "trip_collaborators" ADD CONSTRAINT "trip_collaborators_trip_id_trips_id_fk" FOREIGN KEY ("trip_id") REFERENCES "public"."trips"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "trip_collaborators" ADD CONSTRAINT "trip_collaborators_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "trips" ADD CONSTRAINT "trips_owner_id_users_id_fk" FOREIGN KEY ("owner_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "popular_destinations_name_ru_idx" ON "popular_destinations" USING btree ("name_ru");--> statement-breakpoint
-CREATE INDEX "popular_destinations_country_idx" ON "popular_destinations" USING btree ("country_code");--> statement-breakpoint
-ALTER TABLE "trips" ADD CONSTRAINT "trips_owner_id_users_id_fk" FOREIGN KEY ("owner_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
+CREATE INDEX "popular_destinations_country_idx" ON "popular_destinations" USING btree ("country_code");
