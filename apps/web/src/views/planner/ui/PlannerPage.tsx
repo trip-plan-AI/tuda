@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCollaborationSocket, CollaboratorsAvatarGroup } from '@/features/route-collaborate';
 import { LoginModal, RegisterModal } from '@/features/auth';
 import { SegmentedControl } from '@/shared/ui/segmented-control';
@@ -20,9 +20,14 @@ import { PopularRoutes } from '@/widgets/popular-routes';
 import { usePlanner } from '@/views/planner/model/use-planner';
 import { ConstructorTab } from '@/views/planner/ui/ConstructorTab';
 
+type PlannerView = 'route' | 'budget' | 'todo';
+
 export function PlannerPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const planner = usePlanner();
+
+  const currentView = (searchParams.get('view') as PlannerView) ?? 'budget';
 
   const {
     activeTab,
@@ -38,44 +43,56 @@ export function PlannerPage() {
     handleConfirmClear,
     handleConfirmPlannerReplace,
     finalizeApplyFlow,
-    applyIncomingTrip,
   } = planner;
 
   useCollaborationSocket(currentTrip?.id || '');
 
-  return (
-    <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
-      <div className="w-full mx-auto px-4 md:px-8 py-6 md:py-8 flex-1 flex flex-col relative min-h-0">
-        <div className="mb-8 bg-white md:p-0 rounded-none w-full max-w-7xl mx-auto shrink-0">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight text-left">
-              Маршруты
-            </h2>
-            {currentTrip?.id && !currentTrip.id.startsWith('guest-') && (
-              <CollaboratorsAvatarGroup tripId={currentTrip.id} />
-            )}
+  const renderContent = () => {
+    if (currentView === 'budget') {
+      return <div className="p-8 h-full bg-slate-50 text-slate-400">Бюджет загружается...</div>;
+    }
+    if (currentView === 'todo') {
+      return <div className="p-8 h-full bg-slate-50 text-slate-400">Todo загружается...</div>;
+    }
+    // currentView === 'route' — показываем конструктор маршрута
+    return (
+      <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
+        <div className="w-full mx-auto px-4 md:px-8 py-6 md:py-8 flex-1 flex flex-col relative min-h-0">
+          <div className="mb-8 bg-white md:p-0 rounded-none w-full max-w-7xl mx-auto shrink-0">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl md:text-4xl font-black text-brand-indigo tracking-tight text-left">
+                Маршруты
+              </h2>
+              {currentTrip?.id && !currentTrip.id.startsWith('guest-') && (
+                <CollaboratorsAvatarGroup tripId={currentTrip.id} />
+              )}
+            </div>
+            <SegmentedControl
+              options={[
+                { label: 'Конструктор', value: 'my' },
+                { label: 'Популярные', value: 'popular' },
+              ]}
+              value={activeTab}
+              onChange={(val) => {
+                setActiveTab(val as 'my' | 'popular');
+                const params = new URLSearchParams(searchParams.toString());
+                params.set('tab', val);
+                router.push(`/planner?${params.toString()}`);
+              }}
+            />
           </div>
-          <SegmentedControl
-            options={[
-              { label: 'Конструктор', value: 'my' },
-              { label: 'Популярные', value: 'popular' },
-            ]}
-            value={activeTab}
-            onChange={(val) => {
-              setActiveTab(val as 'my' | 'popular');
-              router.push(`/planner?tab=${val}`);
-            }}
-          />
-        </div>
 
-        <div className="flex-1">
-          {activeTab === 'my' ? (
-            <ConstructorTab {...planner} />
-          ) : (
-            <PopularRoutes />
-          )}
+          <div className="flex-1">
+            {activeTab === 'my' ? <ConstructorTab {...planner} /> : <PopularRoutes />}
+          </div>
         </div>
       </div>
+    );
+  };
+
+  return (
+    <div className="bg-white min-h-screen w-full max-w-full flex flex-col">
+      <div className="flex-1">{renderContent()}</div>
 
       <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
         <DialogContent
