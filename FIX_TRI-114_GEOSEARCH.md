@@ -12,6 +12,7 @@ Failed to fetch suggestions: Error: Suggest request failed: 500
 ## Причина
 
 После рефакторинга TRI-118 (коммит e4f9b1c) код был перемещён из `PlannerPage.tsx` в:
+
 - `use-planner.ts` — хук состояния и логики
 - `ConstructorTab.tsx` — JSX конструктора
 - `route-utils.ts` — утилиты
@@ -19,6 +20,7 @@ Failed to fetch suggestions: Error: Suggest request failed: 500
 В процессе рефакторинга была утеряна проверка `res.ok` в функции `geocode()`, что приводило к попытке парсинга JSON из error response и последующей ошибке.
 
 Дополнительно найдена проблема в `geosearch.service.ts`:
+
 - Использование `item.uri.match()` без проверки на `undefined`
 - Вызывало `TypeError: Cannot read property 'match' of undefined`
 - Приводило к 500 ошибке при обработке результатов без `uri` поля
@@ -73,18 +75,17 @@ export class AllHttpExceptionsFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    const status = exception instanceof HttpException
-      ? exception.getStatus()
-      : HttpStatus.INTERNAL_SERVER_ERROR;
+    const status =
+      exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
 
     // Логируем только 5xx ошибки
     if (status >= 500) {
-      this.logger.error(
-        `${request.method} ${request.url} - ${status}: ${exception}`,
-      );
+      this.logger.error(`${request.method} ${request.url} - ${status}: ${exception}`);
     }
 
-    response.status(status).json({ /* ... */ });
+    response.status(status).json({
+      /* ... */
+    });
   }
 }
 ```
@@ -118,15 +119,18 @@ const coordDeduped = allScored.filter((item) => {
 ```
 
 Исправлено 2 места:
+
 - Строка 231: `suggestInternalWithBbox()`
 - Строка 422: `suggestInternal()`
 
 ## Коммиты
 
 ```
-a2118e0 fix(TRI-114): restore geosearch error handling in PlannerPage
-60be9f8 fix(api): add global HTTP exception filter for better error logging
+dba7cb8 fix(TRI-114): restore geosearch error handling in PlannerPointRow
+a2b72c2 fix(api): correct HttpException error name access
 9fea54a fix(api): prevent crashes in geosearch dedup logic
+60be9f8 fix(api): add global HTTP exception filter for better error logging
+a2118e0 fix(TRI-114): restore geosearch error handling in PlannerPage
 ```
 
 ## Тестирование
@@ -150,5 +154,31 @@ a2118e0 fix(TRI-114): restore geosearch error handling in PlannerPage
 ## Примечания
 
 - `LandingPage.tsx` уже имел правильную обработку ошибок (коммит 7300e946)
-- Проблема была только в `PlannerPage` → `use-planner.ts`
+- Проблема была в трёх местах после рефакторинга TRI-118:
+  1. `use-planner.ts` → `geocode()` — **исправлено**
+  2. `PlannerPointRow.tsx` → `getSuggestions()` — **исправлено**
+  3. `geosearch.service.ts` → `item.uri.match()` — **исправлено**
 - Redis недоступен — не является проблемой, сервис gracefully деградирует
+
+## Полный анализ рефакторинга TRI-118
+
+### Что могло пострадать (проверено):
+
+| Компонент            | Файл                  | Проблема              | Статус        |
+| -------------------- | --------------------- | --------------------- | ------------- |
+| PlannerPage (search) | `use-planner.ts`      | ❌ `!res.ok` проверка | ✅ Исправлено |
+| PlannerPointRow      | `PlannerPointRow.tsx` | ❌ `!res.ok` проверка | ✅ Исправлено |
+| LandingPage          | `LandingPage.tsx`     | ✅ Уже ок             | ✅ Ок         |
+| ConstructorTab       | `ConstructorTab.tsx`  | Нет fetch             | ✅ Ок         |
+| PopularRoutes        | `PopularRoutes.tsx`   | Нет fetch             | ✅ Ок         |
+| AIAssistantPage      | `AIAssistantPage.tsx` | Нет fetch             | ✅ Ок         |
+| ProfilePage          | `ProfilePage.tsx`     | Нет fetch             | ✅ Ок         |
+| TripCard             | `TripCard.tsx`        | Нет fetch             | ✅ Ок         |
+
+### Backend (проверено):
+
+| Сервис           | Файл                   | Проблема              | Статус        |
+| ---------------- | ---------------------- | --------------------- | ------------- |
+| Geosearch        | `geosearch.service.ts` | ❌ `item.uri.match()` | ✅ Исправлено |
+| Redis            | `redis.service.ts`     | Graceful degradation  | ✅ Ок         |
+| Exception Filter | —                      | ❌ Отсутствовал       | ✅ Добавлен   |
