@@ -147,11 +147,21 @@ export class GeosearchService {
     return this.suggestInternal(query, biasLat, biasLon);
   }
 
-  async suggestWithBbox(query: string, bbox: string, userLat?: number, userLon?: number) {
+  async suggestWithBbox(
+    query: string,
+    bbox: string,
+    userLat?: number,
+    userLon?: number,
+  ) {
     return this.suggestInternalWithBbox(query, bbox, userLat, userLon);
   }
-  
-  private async suggestInternalWithBbox(query: string, bbox: string, userLat?: number, userLon?: number) {
+
+  private async suggestInternalWithBbox(
+    query: string,
+    bbox: string,
+    userLat?: number,
+    userLon?: number,
+  ) {
     const normalized = query.trim();
     if (normalized.length < 2) return [];
 
@@ -206,7 +216,9 @@ export class GeosearchService {
     const dadataItems =
       dadataRes.status === 'fulfilled' ? (dadataRes.value ?? []) : [];
     const nominatimBboxItems =
-      nominatimBboxRes.status === 'fulfilled' ? (nominatimBboxRes.value ?? []) : [];
+      nominatimBboxRes.status === 'fulfilled'
+        ? (nominatimBboxRes.value ?? [])
+        : [];
 
     // Score сначала — чтобы dedup оставлял наиболее релевантный результат в ячейке
     const allScored = [...tier0Items, ...dadataItems, ...nominatimBboxItems]
@@ -228,7 +240,7 @@ export class GeosearchService {
     // Dedup pass 1: координаты (0.02° ≈ 2км) — highest-scored в ячейке
     const seenCoords = new Set<string>();
     const coordDeduped = allScored.filter((item) => {
-      const match = item.uri.match(/ll=([^&]+)/);
+      const match = item.uri?.match(/ll=([^&]+)/);
       if (!match) return true;
       const [lon, lat] = decodeURIComponent(match[1]).split(',').map(Number);
       if (isNaN(lon) || isNaN(lat)) return true;
@@ -320,7 +332,11 @@ export class GeosearchService {
     return this.applyProximity(yandexResults ?? [], userLat, userLon);
   }
 
-  private async suggestInternal(query: string, userLat?: number, userLon?: number) {
+  private async suggestInternal(
+    query: string,
+    userLat?: number,
+    userLon?: number,
+  ) {
     const normalized = query.trim();
     if (normalized.length < 2) return [];
 
@@ -342,7 +358,11 @@ export class GeosearchService {
           if (match) {
             const raw = decodeURIComponent(match[1]);
             const [lon, lat] = raw.split(',').map(Number);
-            if (!isNaN(lon) && !isNaN(lat) && (Math.abs(lat) > 0.001 || Math.abs(lon) > 0.001)) {
+            if (
+              !isNaN(lon) &&
+              !isNaN(lat) &&
+              (Math.abs(lat) > 0.001 || Math.abs(lon) > 0.001)
+            ) {
               return { ...item, lat, lon };
             }
           }
@@ -359,7 +379,13 @@ export class GeosearchService {
         : Promise.resolve(null),
       userLat && userLon
         ? this.withTimeout(
-            this.getNominatimSuggestionsWithBias(normalized, userLat, userLon, 'ru,en', false),
+            this.getNominatimSuggestionsWithBias(
+              normalized,
+              userLat,
+              userLon,
+              'ru,en',
+              false,
+            ),
             800,
           )
         : this.withTimeout(
@@ -368,22 +394,32 @@ export class GeosearchService {
           ),
     ]);
 
-    const tier0Items = tier0Res.status === 'fulfilled' ? (tier0Res.value ?? []) : [];
-    const dadataItems = dadataRes.status === 'fulfilled' ? (dadataRes.value ?? []) : [];
-    const nominatimWwItems = nominatimWwRes.status === 'fulfilled' ? (nominatimWwRes.value ?? []) : [];
+    const tier0Items =
+      tier0Res.status === 'fulfilled' ? (tier0Res.value ?? []) : [];
+    const dadataItems =
+      dadataRes.status === 'fulfilled' ? (dadataRes.value ?? []) : [];
+    const nominatimWwItems =
+      nominatimWwRes.status === 'fulfilled' ? (nominatimWwRes.value ?? []) : [];
 
     const allScored = [...tier0Items, ...dadataItems, ...nominatimWwItems]
       .map((item) => {
-        if ('score' in item && typeof (item as any).score === 'number' && isFinite((item as any).score)) {
+        if (
+          'score' in item &&
+          typeof (item as any).score === 'number' &&
+          isFinite((item as any).score)
+        ) {
           return item as any;
         }
-        return { ...item, score: this.scoreResult(item.displayName, normalized) };
+        return {
+          ...item,
+          score: this.scoreResult(item.displayName, normalized),
+        };
       })
       .sort((a, b) => b.score - a.score);
 
     const seenCoords = new Set<string>();
     const coordDeduped = allScored.filter((item) => {
-      const match = item.uri.match(/ll=([^&]+)/);
+      const match = item.uri?.match(/ll=([^&]+)/);
       if (!match) return true;
       const [lon, lat] = decodeURIComponent(match[1]).split(',').map(Number);
       if (isNaN(lon) || isNaN(lat)) return true;
@@ -396,7 +432,9 @@ export class GeosearchService {
     const seenName = new Set<string>();
     const scored = coordDeduped
       .filter((item) => {
-        const firstName = yo(item.displayName.split(',')[0].trim().toLowerCase());
+        const firstName = yo(
+          item.displayName.split(',')[0].trim().toLowerCase(),
+        );
         if (!firstName) return true;
         if (seenName.has(firstName)) return false;
         seenName.add(firstName);
@@ -416,15 +454,20 @@ export class GeosearchService {
       });
 
       if (filtered.length > 0) {
-        await this.redis.set(cacheKey, JSON.stringify(filtered), 60 * 60 * 24 * 7);
+        await this.redis.set(
+          cacheKey,
+          JSON.stringify(filtered),
+          60 * 60 * 24 * 7,
+        );
         return this.applyProximity(filtered, userLat, userLon);
       }
     }
 
-    const photonResults = userLat && userLon
-      ? await this.getPhotonSuggestionsWithBias(normalized, userLon, userLat)
-      : await this.getPhotonSuggestions(normalized);
-      
+    const photonResults =
+      userLat && userLon
+        ? await this.getPhotonSuggestionsWithBias(normalized, userLon, userLat)
+        : await this.getPhotonSuggestions(normalized);
+
     if (photonResults && photonResults.length > 0) {
       const filteredPhoton = photonResults.filter((item) => {
         const match = item.uri?.match(/ll=([^&]+)/);
@@ -437,7 +480,11 @@ export class GeosearchService {
       });
 
       if (filteredPhoton.length > 0) {
-        await this.redis.set(cacheKey, JSON.stringify(filteredPhoton), 60 * 60 * 24 * 7);
+        await this.redis.set(
+          cacheKey,
+          JSON.stringify(filteredPhoton),
+          60 * 60 * 24 * 7,
+        );
         return this.applyProximity(filteredPhoton, userLat, userLon);
       }
     }
@@ -455,14 +502,22 @@ export class GeosearchService {
       });
 
       if (filteredYandex.length > 0) {
-        await this.redis.set(cacheKey, JSON.stringify(filteredYandex), 60 * 60 * 24 * 7);
+        await this.redis.set(
+          cacheKey,
+          JSON.stringify(filteredYandex),
+          60 * 60 * 24 * 7,
+        );
       }
       return this.applyProximity(filteredYandex, userLat, userLon);
     }
     return this.applyProximity(yandexResults ?? [], userLat, userLon);
   }
 
-  private applyProximity(results: any[], userLat?: number, userLon?: number): any[] {
+  private applyProximity(
+    results: any[],
+    userLat?: number,
+    userLon?: number,
+  ): any[] {
     if (userLat === undefined || userLon === undefined) return results;
     return results
       .map((item) => {
@@ -501,7 +556,9 @@ export class GeosearchService {
     const houseNums = words.filter((w) => /^\d+[а-яa-z]?$/.test(w));
     let houseBonus = 0;
     for (const num of houseNums) {
-      const strictRe = new RegExp(`(д\\.?\\s*|дом\\s*|,\\s*|/\\s*)${num}(\\s|,|к\\s*\\d|$)`);
+      const strictRe = new RegExp(
+        `(д\\.?\\s*|дом\\s*|,\\s*|/\\s*)${num}(\\s|,|к\\s*\\d|$)`,
+      );
       const startRe = new RegExp(`^${num}(\\s|,|к\\s*\\d)`);
       if (strictRe.test(dn) || startRe.test(dn)) {
         houseBonus = 2.5;
@@ -513,9 +570,15 @@ export class GeosearchService {
 
     let typeBonus = 0;
     if (/\b(аэропорт|airport|aerodrome|aeroporto)\b/i.test(dn)) typeBonus = 2.0;
-    else if (/\b(город|г\.|city|town|capitale|столица|capital)\b/i.test(dn)) typeBonus = 2.0;
+    else if (/\b(город|г\.|city|town|capitale|столица|capital)\b/i.test(dn))
+      typeBonus = 2.0;
     else if (/\b(курорт|resort|остров|island|île)\b/i.test(dn)) typeBonus = 1.5;
-    else if (/\b(улица|ул\.|проспект|пр-т|переулок|шоссе|street|avenue|road)\b/i.test(dn)) typeBonus = -0.5;
+    else if (
+      /\b(улица|ул\.|проспект|пр-т|переулок|шоссе|street|avenue|road)\b/i.test(
+        dn,
+      )
+    )
+      typeBonus = -0.5;
 
     return textScore * 2 + houseBonus + typeBonus;
   }
@@ -525,29 +588,44 @@ export class GeosearchService {
     bbox: string,
     acceptLanguage = 'ru',
     excludeAmenity = false,
-  ): Promise<Array<{ displayName: string; uri: string; lat: number; lon: number }>> {
+  ): Promise<
+    Array<{ displayName: string; uri: string; lat: number; lon: number }>
+  > {
     try {
       const [minLon, minLat, maxLon, maxLat] = bbox.split(',').map(Number);
       const params = new URLSearchParams({
-        q, format: 'json', limit: '10',
+        q,
+        format: 'json',
+        limit: '10',
         viewbox: `${minLon},${minLat},${maxLon},${maxLat}`,
-        bounded: '1', 'accept-language': acceptLanguage, dedupe: '1',
+        bounded: '1',
+        'accept-language': acceptLanguage,
+        dedupe: '1',
       });
-      
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
-        headers: { 'User-Agent': 'TravelPlanner/1.0' }
-      });
+
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?${params}`,
+        {
+          headers: { 'User-Agent': 'TravelPlanner/1.0' },
+        },
+      );
       if (!res.ok) return [];
 
       const data = await res.json();
       if (!Array.isArray(data)) return [];
 
-      const matchWords = yo(q.toLowerCase()).split(/\s+/).filter((w) => w.length >= 3);
+      const matchWords = yo(q.toLowerCase())
+        .split(/\s+/)
+        .filter((w) => w.length >= 3);
       return data
         .filter((item: NominatimItem) => {
-          if (excludeAmenity && NOMINATIM_GEO_EXCLUDED.has(item.class)) return false;
+          if (excludeAmenity && NOMINATIM_GEO_EXCLUDED.has(item.class))
+            return false;
           const dn = yo(item.display_name.toLowerCase());
-          return matchWords.length === 0 || matchWords.every((w) => fuzzyIncludes(dn, w));
+          return (
+            matchWords.length === 0 ||
+            matchWords.every((w) => fuzzyIncludes(dn, w))
+          );
         })
         .map((item: NominatimItem) => ({
           displayName: normalizeAddress(item.display_name),
@@ -555,20 +633,35 @@ export class GeosearchService {
           lat: Number(item.lat),
           lon: Number(item.lon),
         }));
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   }
 
-  private async getDaDataSuggestions(q: string): Promise<Array<{ displayName: string; uri: string; lat: number; lon: number }>> {
+  private async getDaDataSuggestions(
+    q: string,
+  ): Promise<
+    Array<{ displayName: string; uri: string; lat: number; lon: number }>
+  > {
     if (!this.dadataApiKey) return [];
     try {
-      const res = await fetch('https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Token ${this.dadataApiKey}` },
-        body: JSON.stringify({ query: q, count: 10 }),
-      });
+      const res = await fetch(
+        'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Token ${this.dadataApiKey}`,
+          },
+          body: JSON.stringify({ query: q, count: 10 }),
+        },
+      );
       if (!res.ok) return [];
       const data = await res.json();
-      const suggestions = Array.isArray(data?.suggestions) ? data.suggestions : [];
+      const suggestions = Array.isArray(data?.suggestions)
+        ? data.suggestions
+        : [];
       return suggestions
         .filter((item: any) => item.data.geo_lon && item.data.geo_lat)
         .map((item: any) => ({
@@ -577,24 +670,40 @@ export class GeosearchService {
           lat: Number(item.data.geo_lat),
           lon: Number(item.data.geo_lon),
         }));
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   }
 
   private async geolocateDaData(lat: number, lon: number): Promise<any | null> {
     if (!this.dadataApiKey) return null;
     try {
-      const res = await fetch('https://suggestions.dadata.ru/suggestions/api/4_1/rs/geolocate/address', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Token ${this.dadataApiKey}` },
-        body: JSON.stringify({ lat, lon, count: 1 }),
-      });
+      const res = await fetch(
+        'https://suggestions.dadata.ru/suggestions/api/4_1/rs/geolocate/address',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Token ${this.dadataApiKey}`,
+          },
+          body: JSON.stringify({ lat, lon, count: 1 }),
+        },
+      );
       if (!res.ok) return null;
       const data = await res.json();
       return data.suggestions?.[0] || null;
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   }
 
-  private async getPhotonSuggestions(q: string, lonLat?: [number, number]): Promise<Array<{ displayName: string; uri: string; lat: number; lon: number }>> {
+  private async getPhotonSuggestions(
+    q: string,
+    lonLat?: [number, number],
+  ): Promise<
+    Array<{ displayName: string; uri: string; lat: number; lon: number }>
+  > {
     try {
       const params = new URLSearchParams({ q, limit: '10', lang: 'en' });
       if (lonLat) {
@@ -607,11 +716,15 @@ export class GeosearchService {
       if (!res.ok) return [];
       const data = await res.json();
       if (!data || !data.features) return [];
-      const matchWords = yo(q.toLowerCase()).split(/\s+/).filter((w) => w.length >= 3);
+      const matchWords = yo(q.toLowerCase())
+        .split(/\s+/)
+        .filter((w) => w.length >= 3);
       return data.features
         .map((f: any) => {
           const p = f.properties;
-          const displayParts = [p.name, p.city, p.street, p.housenumber].filter(Boolean);
+          const displayParts = [p.name, p.city, p.street, p.housenumber].filter(
+            Boolean,
+          );
           return {
             displayName: displayParts.join(', ') || p.state || p.country,
             uri: `ymapsbm1://geo?ll=${f.geometry.coordinates[0]},${f.geometry.coordinates[1]}&z=12`,
@@ -621,40 +734,89 @@ export class GeosearchService {
         })
         .filter((item: any) => {
           const dn = yo(item.displayName.toLowerCase());
-          return matchWords.length === 0 || matchWords.every((w) => fuzzyIncludes(dn, w));
+          return (
+            matchWords.length === 0 ||
+            matchWords.every((w) => fuzzyIncludes(dn, w))
+          );
         });
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   }
 
-  private async getPhotonSuggestionsWithBias(q: string, lon: number, lat: number): Promise<Array<{ displayName: string; uri: string; lat: number; lon: number }>> {
+  private async getPhotonSuggestionsWithBias(
+    q: string,
+    lon: number,
+    lat: number,
+  ): Promise<
+    Array<{ displayName: string; uri: string; lat: number; lon: number }>
+  > {
     return this.getPhotonSuggestions(q, [lon, lat]);
   }
 
   private async reversePhoton(lat: number, lon: number): Promise<any | null> {
     try {
-      const params = new URLSearchParams({ lat: lat.toString(), lon: lon.toString(), lang: 'ru' });
+      const params = new URLSearchParams({
+        lat: lat.toString(),
+        lon: lon.toString(),
+        lang: 'ru',
+      });
       const res = await fetch(`https://photon.komoot.io/reverse?${params}`, {
         headers: { 'User-Agent': 'TravelPlanner/1.0' },
       });
       if (!res.ok) return null;
       const data = await res.json();
       return data.features?.[0] || null;
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   }
 
   async reverse(lat: number, lon: number) {
     try {
-      const params = new URLSearchParams({ lat: lat.toString(), lon: lon.toString(), format: 'json', 'accept-language': 'ru', zoom: '18' });
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`, { headers: { 'User-Agent': 'TravelPlanner/1.0' } });
+      const params = new URLSearchParams({
+        lat: lat.toString(),
+        lon: lon.toString(),
+        format: 'json',
+        'accept-language': 'ru',
+        zoom: '18',
+      });
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?${params}`,
+        { headers: { 'User-Agent': 'TravelPlanner/1.0' } },
+      );
       if (!res.ok) return null;
       const data = await res.json();
       if (!data || !data.address) return null;
       const addr = data.address;
-      const poi = data.name || addr.historic || addr.amenity || addr.shop || addr.tourism || addr.office || addr.leisure || addr.man_made || addr.ruins;
-      let street = addr.road || addr.street || addr.pedestrian || addr.footway || addr.cycleway || addr.path || addr.square || addr.place || addr.allotments;
+      const poi =
+        data.name ||
+        addr.historic ||
+        addr.amenity ||
+        addr.shop ||
+        addr.tourism ||
+        addr.office ||
+        addr.leisure ||
+        addr.man_made ||
+        addr.ruins;
+      let street =
+        addr.road ||
+        addr.street ||
+        addr.pedestrian ||
+        addr.footway ||
+        addr.cycleway ||
+        addr.path ||
+        addr.square ||
+        addr.place ||
+        addr.allotments;
       const houseParts: string[] = [];
       if (addr.house_number) houseParts.push(addr.house_number);
-      if (addr.building && addr.building !== addr.house_number && !/^(yes|static|industrial)$/.test(addr.building)) houseParts.push(addr.building);
+      if (
+        addr.building &&
+        addr.building !== addr.house_number &&
+        !/^(yes|static|industrial)$/.test(addr.building)
+      )
+        houseParts.push(addr.building);
       if (addr.house_name) houseParts.push(addr.house_name);
 
       if (houseParts.length === 0) {
@@ -674,7 +836,8 @@ export class GeosearchService {
         if (dadataRes?.data) {
           const d = dadataRes.data;
           if (d.house || d.block || d.struc) {
-            if (d.street_with_type || d.street) street = d.street_with_type || d.street;
+            if (d.street_with_type || d.street)
+              street = d.street_with_type || d.street;
             if (d.house) houseParts.push(d.house);
             if (d.block) houseParts.push(`${d.block_type || 'к'} ${d.block}`);
             if (d.struc) houseParts.push(`${d.struc_type || 'стр'} ${d.struc}`);
@@ -684,49 +847,108 @@ export class GeosearchService {
       }
 
       const houseInfo = houseParts.join(', ');
-      const settlement = addr.village || addr.town || addr.hamlet || addr.allotments || addr.suburb || addr.city_district;
+      const settlement =
+        addr.village ||
+        addr.town ||
+        addr.hamlet ||
+        addr.allotments ||
+        addr.suburb ||
+        addr.city_district;
       const city = addr.city;
       let title = '';
-      if (poi && poi !== street && poi !== settlement && poi !== city) title = poi;
+      if (poi && poi !== street && poi !== settlement && poi !== city)
+        title = poi;
       else if (street && houseInfo) title = `${street}, ${houseInfo}`;
       else if (settlement && houseInfo) title = `${settlement}, ${houseInfo}`;
       else if (street) title = street;
       else if (settlement) title = settlement;
       else if (city) title = houseInfo ? `${city}, ${houseInfo}` : city;
-      else title = houseInfo ? `${addr.state || data.display_name.split(',')[0]}, ${houseInfo}` : (addr.state || data.display_name.split(',')[0]);
+      else
+        title = houseInfo
+          ? `${addr.state || data.display_name.split(',')[0]}, ${houseInfo}`
+          : addr.state || data.display_name.split(',')[0];
 
       const finalParts: string[] = [];
-      if (poi && poi !== street && poi !== settlement && !houseInfo) finalParts.push(street ? `${poi}, ${street}` : poi);
-      else if (street) finalParts.push(houseInfo ? `${street}, ${houseInfo}` : street);
-      else if (settlement) finalParts.push(houseInfo ? `${settlement}, ${houseInfo}` : settlement);
+      if (poi && poi !== street && poi !== settlement && !houseInfo)
+        finalParts.push(street ? `${poi}, ${street}` : poi);
+      else if (street)
+        finalParts.push(houseInfo ? `${street}, ${houseInfo}` : street);
+      else if (settlement)
+        finalParts.push(houseInfo ? `${settlement}, ${houseInfo}` : settlement);
       else if (houseInfo) finalParts.push(houseInfo);
 
       const district = addr.suburb || addr.city_district || addr.neighbourhood;
-      if (district && !finalParts.some((p) => p.includes(district))) finalParts.push(district);
-      if (settlement && !finalParts.some((p) => p.includes(settlement))) finalParts.push(settlement);
-      if (city && city !== settlement && !finalParts.some((p) => p.includes(city))) finalParts.push(city);
+      if (district && !finalParts.some((p) => p.includes(district)))
+        finalParts.push(district);
+      if (settlement && !finalParts.some((p) => p.includes(settlement)))
+        finalParts.push(settlement);
+      if (
+        city &&
+        city !== settlement &&
+        !finalParts.some((p) => p.includes(city))
+      )
+        finalParts.push(city);
       if (addr.country) finalParts.push(addr.country);
 
       return { displayName: finalParts.join(', ').trim(), title: title.trim() };
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   }
 
   async osrmRoute(profile: string, coords: string) {
-    if (coords.includes('0,0') || coords.includes('NaN') || coords.includes('undefined')) {
+    if (
+      coords.includes('0,0') ||
+      coords.includes('NaN') ||
+      coords.includes('undefined')
+    ) {
       const points = this.parseCoords(coords);
-      const validPoints = points.filter(p => p.lat !== 0 && p.lon !== 0 && !isNaN(p.lat) && !isNaN(p.lon));
+      const validPoints = points.filter(
+        (p) => p.lat !== 0 && p.lon !== 0 && !isNaN(p.lat) && !isNaN(p.lon),
+      );
       if (validPoints.length >= 2) {
-        let totalDistance = 0, totalDuration = 0;
+        let totalDistance = 0,
+          totalDuration = 0;
         for (let i = 0; i < validPoints.length - 1; i++) {
-          const p1 = validPoints[i], p2 = validPoints[i + 1];
-          const R = 6371e3, f1 = p1.lat * Math.PI / 180, f2 = p2.lat * Math.PI / 180, df = (p2.lat - p1.lat) * Math.PI / 180, dl = (p2.lon - p1.lon) * Math.PI / 180;
-          const a = Math.sin(df/2)**2 + Math.cos(f1)*Math.cos(f2)*Math.sin(dl/2)**2;
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)), d = R * c;
-          totalDistance += d; totalDuration += d / 11.11;
+          const p1 = validPoints[i],
+            p2 = validPoints[i + 1];
+          const R = 6371e3,
+            f1 = (p1.lat * Math.PI) / 180,
+            f2 = (p2.lat * Math.PI) / 180,
+            df = ((p2.lat - p1.lat) * Math.PI) / 180,
+            dl = ((p2.lon - p1.lon) * Math.PI) / 180;
+          const a =
+            Math.sin(df / 2) ** 2 +
+            Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) ** 2;
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)),
+            d = R * c;
+          totalDistance += d;
+          totalDuration += d / 11.11;
         }
-        return { code: 'Ok', routes: [{ geometry: { type: 'LineString', coordinates: validPoints.map(p => [p.lon, p.lat]) }, distance: totalDistance, duration: totalDuration }] };
+        return {
+          code: 'Ok',
+          routes: [
+            {
+              geometry: {
+                type: 'LineString',
+                coordinates: validPoints.map((p) => [p.lon, p.lat]),
+              },
+              distance: totalDistance,
+              duration: totalDuration,
+            },
+          ],
+        };
       }
-      return { code: 'Ok', routes: [{ geometry: { type: 'LineString', coordinates: [] }, distance: 0, duration: 0 }] };
+      return {
+        code: 'Ok',
+        routes: [
+          {
+            geometry: { type: 'LineString', coordinates: [] },
+            distance: 0,
+            duration: 0,
+          },
+        ],
+      };
     }
     const normalizedProfile = profile || 'driving';
     const routeCacheKey = `route:${normalizedProfile}:${coords}`;
@@ -743,7 +965,11 @@ export class GeosearchService {
         if (res.ok) {
           const data = await res.json();
           if (data.code === 'Ok') {
-            await this.redis.set(routeCacheKey, JSON.stringify(data), 60 * 60 * 24 * 30);
+            await this.redis.set(
+              routeCacheKey,
+              JSON.stringify(data),
+              60 * 60 * 24 * 30,
+            );
             return data;
           }
         }
@@ -756,10 +982,53 @@ export class GeosearchService {
     const geoapifyKey = process.env.GEOAPIFY_API_KEY;
     const orsKey = process.env.ORS_API_KEY;
 
-    const providers: Array<{ name: RouteProvider; request: () => Promise<Response> }> = [
-      ...(locationIqKey ? [{ name: 'locationiq' as const, request: () => fetch(`https://us1.locationiq.com/v1/directions/driving/${coords}?key=${locationIqKey}&overview=full&geometries=geojson`) }] : []),
-      ...(geoapifyKey ? [{ name: 'geoapify' as const, request: () => fetch(`https://api.geoapify.com/v1/routing?waypoints=${waypoints}&mode=drive&details=instruction_details&apiKey=${geoapifyKey}`) }] : []),
-      ...(orsKey ? [{ name: 'openrouteservice' as const, request: () => fetch(`https://api.openrouteservice.org/v2/directions/driving-car/geojson`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: orsKey }, body: JSON.stringify({ coordinates: points.map(p => [p.lon, p.lat]) }) }) }] : []),
+    const providers: Array<{
+      name: RouteProvider;
+      request: () => Promise<Response>;
+    }> = [
+      ...(locationIqKey
+        ? [
+            {
+              name: 'locationiq' as const,
+              request: () =>
+                fetch(
+                  `https://us1.locationiq.com/v1/directions/driving/${coords}?key=${locationIqKey}&overview=full&geometries=geojson`,
+                ),
+            },
+          ]
+        : []),
+      ...(geoapifyKey
+        ? [
+            {
+              name: 'geoapify' as const,
+              request: () =>
+                fetch(
+                  `https://api.geoapify.com/v1/routing?waypoints=${waypoints}&mode=drive&details=instruction_details&apiKey=${geoapifyKey}`,
+                ),
+            },
+          ]
+        : []),
+      ...(orsKey
+        ? [
+            {
+              name: 'openrouteservice' as const,
+              request: () =>
+                fetch(
+                  `https://api.openrouteservice.org/v2/directions/driving-car/geojson`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: orsKey,
+                    },
+                    body: JSON.stringify({
+                      coordinates: points.map((p) => [p.lon, p.lat]),
+                    }),
+                  },
+                ),
+            },
+          ]
+        : []),
       {
         name: 'project_osrm' as const,
         request: () =>
@@ -779,10 +1048,16 @@ export class GeosearchService {
         const data = await res.json();
         const normalizedData = this.normalizeRouteResponse(provider.name, data);
         if (normalizedData) {
-          await this.redis.set(routeCacheKey, JSON.stringify(normalizedData), 60 * 60 * 24 * 30);
+          await this.redis.set(
+            routeCacheKey,
+            JSON.stringify(normalizedData),
+            60 * 60 * 24 * 30,
+          );
           return normalizedData;
         }
-      } catch { continue; }
+      } catch {
+        continue;
+      }
     }
     return null;
   }
@@ -811,25 +1086,48 @@ export class GeosearchService {
   }
 
   private normalizeRouteResponse(provider: RouteProvider, data: any) {
-    if (data?.code === 'Ok' && Array.isArray(data?.routes) && data.routes[0]?.geometry) return data;
+    if (
+      data?.code === 'Ok' &&
+      Array.isArray(data?.routes) &&
+      data.routes[0]?.geometry
+    )
+      return data;
     if (provider === 'geoapify' || provider === 'openrouteservice') {
       const feature = data?.features?.[0];
       const geometry = feature?.geometry;
-      const distance = feature?.properties?.distance ?? feature?.properties?.summary?.distance;
-      const duration = feature?.properties?.time ?? feature?.properties?.summary?.duration;
-      if (geometry && typeof distance === 'number' && typeof duration === 'number') {
+      const distance =
+        feature?.properties?.distance ?? feature?.properties?.summary?.distance;
+      const duration =
+        feature?.properties?.time ?? feature?.properties?.summary?.duration;
+      if (
+        geometry &&
+        typeof distance === 'number' &&
+        typeof duration === 'number'
+      ) {
         return { code: 'Ok', routes: [{ geometry, distance, duration }] };
       }
     }
     return null;
   }
 
-  private async getYandexSuggestions(q: string): Promise<Array<{ displayName: string; uri: string; lat: number; lon: number }>> {
+  private async getYandexSuggestions(
+    q: string,
+  ): Promise<
+    Array<{ displayName: string; uri: string; lat: number; lon: number }>
+  > {
     if (!this.yandexApiKey) return [];
     try {
       const res = await fetch('https://suggest-maps.yandex.ru/v1/suggest', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: q, ll: '55.7558,37.6173', spn: '10,10', limit: 10, types: ['biz', 'geo'], apikey: this.yandexApiKey }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: q,
+          ll: '55.7558,37.6173',
+          spn: '10,10',
+          limit: 10,
+          types: ['biz', 'geo'],
+          apikey: this.yandexApiKey,
+        }),
       });
       if (!res.ok) return [];
       const data = await res.json();
@@ -841,22 +1139,50 @@ export class GeosearchService {
           lat: item.geometry.point.lat,
           lon: item.geometry.point.lon,
         }));
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   }
 
-  private async getNominatimSuggestions(q: string, userLonLat?: [number, number], acceptLanguage = 'ru', excludeAmenity = true): Promise<Array<{ displayName: string; uri: string; lat: number; lon: number }>> {
+  private async getNominatimSuggestions(
+    q: string,
+    userLonLat?: [number, number],
+    acceptLanguage = 'ru',
+    excludeAmenity = true,
+  ): Promise<
+    Array<{ displayName: string; uri: string; lat: number; lon: number }>
+  > {
     try {
-      const params = new URLSearchParams({ q, format: 'json', addressdetails: '1', limit: '10', 'accept-language': acceptLanguage });
-      if (userLonLat) { params.append('lon', String(userLonLat[0])); params.append('lat', String(userLonLat[1])); params.append('zoom', '12'); }
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, { headers: { 'User-Agent': 'TravelPlanner/1.0' } });
+      const params = new URLSearchParams({
+        q,
+        format: 'json',
+        addressdetails: '1',
+        limit: '10',
+        'accept-language': acceptLanguage,
+      });
+      if (userLonLat) {
+        params.append('lon', String(userLonLat[0]));
+        params.append('lat', String(userLonLat[1]));
+        params.append('zoom', '12');
+      }
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?${params}`,
+        { headers: { 'User-Agent': 'TravelPlanner/1.0' } },
+      );
       if (!res.ok) return [];
       const data = await res.json();
-      const matchWords = yo(q.toLowerCase()).split(/\s+/).filter((w) => w.length >= 3);
+      const matchWords = yo(q.toLowerCase())
+        .split(/\s+/)
+        .filter((w) => w.length >= 3);
       return data
         .filter((item: NominatimItem) => {
-          if (excludeAmenity && NOMINATIM_GEO_EXCLUDED.has(item.class)) return false;
+          if (excludeAmenity && NOMINATIM_GEO_EXCLUDED.has(item.class))
+            return false;
           const dn = yo(item.display_name.toLowerCase());
-          return matchWords.length === 0 || matchWords.every((w) => fuzzyIncludes(dn, w));
+          return (
+            matchWords.length === 0 ||
+            matchWords.every((w) => fuzzyIncludes(dn, w))
+          );
         })
         .map((item: NominatimItem) => ({
           displayName: normalizeAddress(item.display_name),
@@ -864,16 +1190,35 @@ export class GeosearchService {
           lat: Number(item.lat),
           lon: Number(item.lon),
         }));
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   }
 
-  private async getNominatimSuggestionsWithBias(q: string, lat: number, lon: number, acceptLanguage = 'ru', excludeAmenity = false): Promise<Array<{ displayName: string; uri: string; lat: number; lon: number }>> {
+  private async getNominatimSuggestionsWithBias(
+    q: string,
+    lat: number,
+    lon: number,
+    acceptLanguage = 'ru',
+    excludeAmenity = false,
+  ): Promise<
+    Array<{ displayName: string; uri: string; lat: number; lon: number }>
+  > {
     const buffer = 0.5;
     const bbox = `${lon - buffer},${lat - buffer},${lon + buffer},${lat + buffer}`;
-    return this.getNominatimSuggestionsWithBbox(q, bbox, acceptLanguage, excludeAmenity);
+    return this.getNominatimSuggestionsWithBbox(
+      q,
+      bbox,
+      acceptLanguage,
+      excludeAmenity,
+    );
   }
 
-  private async getPopularDestinationsSuggestions(q: string): Promise<Array<{ displayName: string; uri: string; lat: number; lon: number }>> {
+  private async getPopularDestinationsSuggestions(
+    q: string,
+  ): Promise<
+    Array<{ displayName: string; uri: string; lat: number; lon: number }>
+  > {
     try {
       const results = await this.popularDestinations.search(q);
       return results.map((item) => ({
@@ -882,6 +1227,8 @@ export class GeosearchService {
         lat: item.lat,
         lon: item.lon,
       }));
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   }
 }
