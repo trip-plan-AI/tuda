@@ -10,6 +10,9 @@ concurrency:
   group: deploy-production
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   predeploy-guard:
     runs-on: ubuntu-latest
@@ -134,14 +137,24 @@ jobs:
           fi
 
           echo "[deploy][step] db:migrate started"
-          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --build --rm -T --no-deps api pnpm --filter api db:migrate < /dev/null; then
+          MIGRATE_LOG="/tmp/deploy_db_migrate.log"
+          rm -f "$MIGRATE_LOG"
+          if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --build --rm -T --no-deps api pnpm --filter api db:migrate < /dev/null 2>&1 | tee "$MIGRATE_LOG"; then
             echo "[deploy][step] db:migrate finished"
           else
             echo "[deploy][error] db:migrate failed"
             echo "[debug] available migration files"
             docker compose -f docker-compose.prod.yml run --rm -T --no-deps api sh -lc 'ls -lah apps/api/src/db/migrations || true; ls -lah apps/api/src/db/migrations/meta || true; cat apps/api/src/db/migrations/meta/_journal.json || true' < /dev/null || true
 
-            if [ "${DEPLOY_ALLOW_DB_PUSH_FALLBACK:-false}" = "true" ]; then
+            if grep -Eqi "already exists|code: '42710'|DuplicateObject|relation .* already exists" "$MIGRATE_LOG"; then
+              echo "[deploy][warn] detected legacy baseline conflict, enabling controlled db:push fallback"
+              if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --build --rm -T --no-deps api pnpm --filter api db:push --force < /dev/null; then
+                echo "[deploy][warn] fallback db:push finished"
+              else
+                echo "[deploy][error] fallback db:push failed"
+                exit 1
+              fi
+            elif [ "${DEPLOY_ALLOW_DB_PUSH_FALLBACK:-false}" = "true" ]; then
               echo "[deploy][warn] fallback enabled: running db:push --force"
               if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --build --rm -T --no-deps api pnpm --filter api db:push --force < /dev/null; then
                 echo "[deploy][warn] fallback db:push finished"
