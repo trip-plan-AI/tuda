@@ -70,6 +70,8 @@ export function AIAssistantPage() {
     openOrCreateSessionFromTrip,
     clearChat,
     addLocalMessage,
+    deletePointFromLatestRoutePlan,
+    clearLatestRoutePlanPoints,
   } = useAiQueryStore(
     useShallow((state) => ({
       sessions: state.sessions,
@@ -89,6 +91,8 @@ export function AIAssistantPage() {
       openOrCreateSessionFromTrip: state.openOrCreateSessionFromTrip,
       clearChat: state.clearChat,
       addLocalMessage: state.addLocalMessage,
+      deletePointFromLatestRoutePlan: state.deletePointFromLatestRoutePlan,
+      clearLatestRoutePlanPoints: state.clearLatestRoutePlanPoints,
     })),
   );
   const currentTrip = useTripStore((state) => state.currentTrip);
@@ -98,6 +102,17 @@ export function AIAssistantPage() {
   useEffect(() => {
     void loadSessions();
   }, [loadSessions]);
+
+  // При смене активной сессии загружаем её трип, чтобы карта показывала правильные точки
+  useEffect(() => {
+    const tripId = activeSession?.tripId;
+    if (!tripId || tripId.startsWith('guest-')) return;
+    if (useTripStore.getState().currentTrip?.id === tripId) return;
+
+    tripsApi.getOne(tripId).then((trip) => {
+      useTripStore.getState().setCurrentTrip(trip);
+    }).catch(() => {});
+  }, [activeSession?.tripId]);
 
   const sessionsList = useMemo(
     () =>
@@ -366,32 +381,51 @@ export function AIAssistantPage() {
   const handleDeleteAllPoints = async () => {
     const tripId = activeSession?.tripId || currentTrip?.id;
     const points = currentTrip?.points ?? [];
-    if (points.length === 0) return;
+    const hasAiPoints = aiPoints.length > 0;
 
-    // Оптимистично очищаем локальный стейт
-    useTripStore.getState().setPoints([]);
+    if (points.length === 0 && !hasAiPoints) return;
 
-    // Для реальных трипов — удаляем с бэкенда и рассылаем по сокету
-    if (tripId && !tripId.startsWith('guest-')) {
-      await Promise.all(
-        points.map(async (p: any) => {
-          await pointsApi.remove(tripId, p.id);
-          getSocket().emit('point:delete', { trip_id: tripId, point_id: p.id });
-        }),
-      );
+    // Очищаем routePlan в чате (это обновит aiPoints → displayPoints → карта)
+    clearLatestRoutePlanPoints();
+
+    if (points.length > 0) {
+      // Оптимистично очищаем локальный стейт
+      useTripStore.getState().setPoints([]);
+
+      // Для реальных трипов — удаляем с бэкенда и рассылаем по сокету
+      if (tripId && !tripId.startsWith('guest-')) {
+        await Promise.all(
+          points.map(async (p: any) => {
+            await pointsApi.remove(tripId, p.id);
+            getSocket().emit('point:delete', { trip_id: tripId, point_id: p.id });
+          }),
+        );
+      }
     }
 
     toast.success('Все точки удалены');
   };
 
   const handleDeletePoint = async (pointName: string) => {
+    // Удаляем из routePlan в чате — aiPoints пересчитаются → displayPoints → карта обновится
+    deletePointFromLatestRoutePlan(pointName);
+
+    // Если план уже применён к трипу — удаляем и оттуда
     const tripId = activeSession?.tripId;
-    if (!tripId || tripId.startsWith('guest-')) {
-      toast.error('Сначала примените маршрут к поездке, затем можно удалять точки');
-      return;
+    if (tripId && !tripId.startsWith('guest-')) {
+      const point = currentTrip?.points?.find((p: any) => p.title === pointName);
+      if (point) {
+        useTripStore.getState().setPoints(
+          (currentTrip?.points ?? []).filter((p: any) => p.id !== point.id),
+        );
+        try {
+          await pointsApi.remove(tripId, point.id);
+          getSocket().emit('point:delete', { trip_id: tripId, point_id: point.id });
+        } catch (e) {
+          console.error('Failed to delete point from trip:', e);
+        }
+      }
     }
-    const currentPointsContext = currentTrip?.points?.map((p: any) => p.title).join(', ') || '';
-    await sendMutationQuery(`удали точку ${pointName}`, tripId, currentPointsContext);
   };
 
   const plannerRouteTitle = currentTrip?.title?.trim() || 'без названия';
@@ -710,7 +744,7 @@ export function AIAssistantPage() {
           />
 
           <div className="mt-3 flex flex-wrap justify-end gap-3">
-            {currentTrip?.points && currentTrip.points.length > 0 && (
+            {displayPoints.length > 0 && (
               <Button type="button" variant="outline" size="lg" onClick={handleDeleteAllPoints}>
                 Удалить все точки 🗑️
               </Button>

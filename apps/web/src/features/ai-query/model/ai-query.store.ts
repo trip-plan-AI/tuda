@@ -111,6 +111,10 @@ interface AiQueryStore {
   addLocalMessage: (message: ChatMessage) => void;
   // TRI-120: добавляет массив сообщений истории чата (chat:history) без дубликатов.
   addChatHistory: (messages: ChatMessage[]) => void;
+  // Удаляет точку по имени из routePlan последнего сообщения с планом (только внутри чата, не трогает конструктор).
+  deletePointFromLatestRoutePlan: (pointName: string) => void;
+  // Очищает все точки из routePlan последнего сообщения с планом (только внутри чата, не трогает конструктор).
+  clearLatestRoutePlanPoints: () => void;
 }
 
 interface ChatSession {
@@ -1064,6 +1068,12 @@ export const useAiQueryStore = create<AiQueryStore>()(
       const session = state.sessions[activeId];
       if (!session) return state;
 
+      // Не загружаем WebSocket-историю в только что созданную сессию (sessionId=null, messages=[]).
+      // Это предотвращает появление старых сообщений трипа при создании нового чата:
+      // useCollaborationSocket отправляет trip:join → сервер отвечает chat:history → addChatHistory
+      // попадает в пустую новую сессию и заполняет её старыми сообщениями.
+      if (session.sessionId === null && session.messages.length === 0) return state;
+
       const existingMap = new Map(session.messages.map((m) => [m.id, m]));
       const newMessages = [...session.messages];
 
@@ -1091,6 +1101,81 @@ export const useAiQueryStore = create<AiQueryStore>()(
           messages: newMessages,
           updatedAt: new Date().toISOString(),
         },
+      };
+
+      return {
+        sessions: nextSessions,
+        ...syncLegacyFields(nextSessions, activeId),
+      };
+    });
+  },
+
+  deletePointFromLatestRoutePlan: (pointName) => {
+    set((state) => {
+      const activeId = state.activeSessionId;
+      if (!activeId) return state;
+      const session = state.sessions[activeId];
+      if (!session) return state;
+
+      // Ищем последнее сообщение с routePlan
+      const msgIdx = [...session.messages].map((m, i) => ({ m, i })).reverse()
+        .find(({ m }) => m.routePlan)?.i;
+      if (msgIdx === undefined) return state;
+
+      const msg = session.messages[msgIdx]!;
+      if (!msg.routePlan) return state;
+
+      const updatedRoutePlan = {
+        ...msg.routePlan,
+        days: msg.routePlan.days.map((day) => ({
+          ...day,
+          points: day.points.filter((p) => p.poi?.name !== pointName),
+        })),
+      };
+
+      const updatedMessages = session.messages.map((m, i) =>
+        i === msgIdx ? { ...m, routePlan: updatedRoutePlan } : m,
+      );
+
+      const nextSessions = {
+        ...state.sessions,
+        [activeId]: { ...session, messages: updatedMessages },
+      };
+
+      return {
+        sessions: nextSessions,
+        ...syncLegacyFields(nextSessions, activeId),
+      };
+    });
+  },
+
+  clearLatestRoutePlanPoints: () => {
+    set((state) => {
+      const activeId = state.activeSessionId;
+      if (!activeId) return state;
+      const session = state.sessions[activeId];
+      if (!session) return state;
+
+      // Ищем последнее сообщение с routePlan
+      const msgIdx = [...session.messages].map((m, i) => ({ m, i })).reverse()
+        .find(({ m }) => m.routePlan)?.i;
+      if (msgIdx === undefined) return state;
+
+      const msg = session.messages[msgIdx]!;
+      if (!msg.routePlan) return state;
+
+      const updatedRoutePlan = {
+        ...msg.routePlan,
+        days: msg.routePlan.days.map((day) => ({ ...day, points: [] })),
+      };
+
+      const updatedMessages = session.messages.map((m, i) =>
+        i === msgIdx ? { ...m, routePlan: updatedRoutePlan } : m,
+      );
+
+      const nextSessions = {
+        ...state.sessions,
+        [activeId]: { ...session, messages: updatedMessages },
       };
 
       return {
