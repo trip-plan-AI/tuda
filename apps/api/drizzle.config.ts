@@ -12,4 +12,9 @@ export default defineConfig({
   },
   verbose: true,
   strict: true,
+  // Применяем идемпотентные ENUM перед основными миграциями
+  migrations: {
+    table: '__drizzle_migrations',
+    prefix: './migrations/',
+  },
 });
