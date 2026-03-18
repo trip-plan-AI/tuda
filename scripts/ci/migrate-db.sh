@@ -75,29 +75,8 @@ bootstrap_drizzle_history_if_needed() {
           WHEN to_regclass('\''public.__drizzle_migrations'\'') IS NULL THEN 0
           ELSE (SELECT COUNT(*)::int FROM public.__drizzle_migrations)
         END || '\''|'\'' ||
-        (
-          to_regclass('\''public.trips'\'') IS NOT NULL
-          AND to_regclass('\''public.route_points'\'') IS NOT NULL
-          AND to_regclass('\''public.trip_chat_messages'\'') IS NOT NULL
-          AND to_regclass('\''public.ai_cities'\'') IS NOT NULL
-          AND to_regclass('\''public.ai_clusters'\'') IS NOT NULL
-          AND to_regclass('\''public.ai_pois'\'') IS NOT NULL
-          AND EXISTS (
-            SELECT 1
-            FROM information_schema.columns
-            WHERE table_schema = '\''public'\''
-              AND table_name = '\''trips'\''
-              AND column_name = '\''distance_km'\''
-          )
-          AND EXISTS (
-            SELECT 1
-            FROM information_schema.columns
-            WHERE table_schema = '\''public'\''
-              AND table_name = '\''route_points'\''
-              AND column_name = '\''duration'\''
-          )
-          AND EXISTS (SELECT 1 FROM pg_type WHERE typname = '\''collaborator_role'\'')
-        )::int;
+        (to_regclass('\''public.trips'\'') IS NOT NULL AND to_regclass('\''public.route_points'\'') IS NOT NULL)::int || '\''|'\'' ||
+        (EXISTS (SELECT 1 FROM pg_type WHERE typnamespace = '\''public'\''::regnamespace AND typname = '\''collaborator_role'\''))::int;
     "
   ' 2>&1) || {
     log_error "failed to detect drizzle baseline state"
@@ -106,20 +85,22 @@ bootstrap_drizzle_history_if_needed() {
 
   baseline_state="$(echo "$baseline_state" | tr -d '[:space:]')"
 
-  local table_exists rows_count schema_ready
-  IFS='|' read -r table_exists rows_count schema_ready <<< "$baseline_state"
+  local table_exists rows_count core_tables_ready enum_ready
+  IFS='|' read -r table_exists rows_count core_tables_ready enum_ready <<< "$baseline_state"
 
-  log "baseline state: table_exists=$table_exists rows_count=$rows_count schema_ready=$schema_ready"
-
-  if [ "$schema_ready" != "1" ]; then
-    log "schema is not in initialized state, baseline bootstrap is not required"
-    return 0
-  fi
+  log "baseline state: table_exists=$table_exists rows_count=$rows_count core_tables_ready=$core_tables_ready enum_ready=$enum_ready"
 
   if [ "$rows_count" != "0" ]; then
     log "drizzle baseline is not required"
     return 0
   fi
+
+  if [ "$core_tables_ready" != "1" ] && [ "$enum_ready" != "1" ]; then
+    log "schema looks fresh (no core tables and no enums), baseline bootstrap is not required"
+    return 0
+  fi
+
+  log "detected partially initialized schema with empty drizzle history, bootstrapping baseline from journal..."
 
   log "drizzle history is empty on initialized schema, bootstrapping baseline from journal..."
 
