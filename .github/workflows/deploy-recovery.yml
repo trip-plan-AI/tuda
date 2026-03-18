@@ -1,0 +1,102 @@
+name: Deploy Recovery (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+      expected_sha:
+        description: "Expected commit SHA (40 chars)"
+        required: true
+        type: string
+      confirm_recovery:
+        description: "Type EXACTLY: I_UNDERSTAND_PROD_RECOVERY"
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-recovery-production
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Validate manual confirmation and SHA format
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ github.event.inputs.environment }}" = "production"
+          test "${{ github.event.inputs.confirm_recovery }}" = "I_UNDERSTAND_PROD_RECOVERY"
+          echo "${{ github.event.inputs.expected_sha }}" | grep -E '^[0-9a-f]{40}$' >/dev/null
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup SSH key
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY"
+          install -m 700 -d ~/.ssh
+          cat > ~/.ssh/id_ed25519 << 'KEY'
+          ${{ secrets.DEPLOY_SSH_KEY }}
+          KEY
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Recovery migrate on server (manual)
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          EXPECTED_SHA: ${{ github.event.inputs.expected_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "EXPECTED_SHA=$EXPECTED_SHA bash -se" << 'EOF'
+          set -euo pipefail
+          export GIT_SSH_COMMAND='ssh -i ~/.ssh/github_pull_ci_ed25519 -o IdentitiesOnly=yes'
+
+          echo "[recovery] expected commit: $EXPECTED_SHA"
+          cd /opt/apps/travel-planner
+          git fetch origin main
+          git reset --hard "$EXPECTED_SHA"
+
+          CURRENT_SHA="$(git rev-parse HEAD)"
+          echo "[recovery] current commit: $CURRENT_SHA"
+          if [ "$CURRENT_SHA" != "$EXPECTED_SHA" ]; then
+            echo "[recovery][error] commit mismatch: expected=$EXPECTED_SHA actual=$CURRENT_SHA"
+            exit 1
+          fi
+
+          docker compose -f docker-compose.prod.yml up -d db
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT postgis_full_version();" >/dev/null'
+
+          test -f ./apps/api/drizzle.config.ts
+          test -f ./apps/api/src/db/00-enums.sql
+          test -f ./apps/api/src/db/migrations/meta/_journal.json
+          ls ./apps/api/src/db/migrations/*.sql >/dev/null
+
+          chmod +x ./scripts/ci/migrate-db.sh
+          ./scripts/ci/migrate-db.sh
+
+          echo "[recovery][done] manual recovery migrate finished"
+          EOF

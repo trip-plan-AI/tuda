@@ -103,7 +103,6 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           EXPECTED_SHA: ${{ github.sha }}
-          DEPLOY_ALLOW_DB_PUSH_FALLBACK: ${{ secrets.DEPLOY_ALLOW_DB_PUSH_FALLBACK }}
         shell: bash
         run: |
           set -euo pipefail
@@ -134,6 +133,14 @@ jobs:
           docker compose -f docker-compose.prod.yml up -d db
           docker compose -f docker-compose.prod.yml ps db
           docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT postgis_full_version();" >/dev/null'
+
+          echo "[deploy][step] migration assets preflight started"
+          test -f ./apps/api/drizzle.config.ts
+          test -f ./apps/api/src/db/00-enums.sql
+          test -f ./apps/api/src/db/migrations/meta/_journal.json
+          ls ./apps/api/src/db/migrations/*.sql >/dev/null
+          echo "[deploy][step] migration assets preflight finished"
 
           echo "[deploy] start db backup"
           mkdir -p /opt/apps/travel-planner/backups

@@ -12,9 +12,10 @@ export default defineConfig({
   },
   verbose: true,
   strict: true,
-  // Применяем идемпотентные ENUM перед основными миграциями
+  // Важно: prefix должен быть enum-значением drizzle-kit,
+  // иначе `drizzle-kit migrate` падает на валидации конфига.
   migrations: {
     table: '__drizzle_migrations',
-    prefix: './migrations/',
+    prefix: 'index',
   },
 });
