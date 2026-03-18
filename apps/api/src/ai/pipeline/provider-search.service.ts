@@ -111,6 +111,28 @@ export class ProviderSearchService {
   }> {
     const city = this.normalizeCityName(intent.city || 'Москва');
 
+    // --- POI POOL CACHE ---
+    // Cache-Aside: POI pool is city-specific and reusable across different user intents.
+    // CIS cities include KudaGo event data (changes daily) → shorter TTL.
+    // Non-CIS cities rely only on static OSM data → longer TTL.
+    const isCisCity = this.llmClientService.isCisRegion(intent.country_code, city);
+    const POI_CACHE_TTL = isCisCity
+      ? 60 * 60 * 24       // 24h  — KudaGo events may change daily
+      : 60 * 60 * 24 * 7;  // 7d   — OSM static data is stable
+    const poiCacheKey = `poi_pool:v2:${city.toLowerCase().replace(/\s+/g, '_')}`;
+    const cachedPool = await this.redis.get(poiCacheKey);
+    if (cachedPool) {
+      try {
+        const pois = JSON.parse(cachedPool) as PoiItem[];
+        this.logger.log(
+          `[POICache] HIT for "${city}" — returning ${pois.length} cached pois, skipping external APIs`,
+        );
+        return { pois };
+      } catch {
+        this.logger.warn(`[POICache] Parse error for "${city}", rebuilding from scratch`);
+      }
+    }
+
     const stats = {
       kudago: this.buildEmptyProviderStat('kudago'),
       overpass: this.buildEmptyProviderStat('overpass'),
@@ -208,7 +230,7 @@ export class ProviderSearchService {
           p.coordinates.lat,
           p.coordinates.lon,
         );
-        const limitKm = (searchRadius + 2000) / 1000;
+        const limitKm = (searchRadius + 5000) / 1000;
         if (d > limitKm) return false;
       }
       return true;
@@ -441,7 +463,7 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     if (citySuggestions && citySuggestions.length > 0) {
       const firstSuggestion = citySuggestions[0] as GeosearchResult;
       const { lat, lon } = firstSuggestion;
-      const delta = 0.1; // ~10-12km
+      const delta = 0.3; // ~33km — expanded for large cities (e.g. Сочи spans ~100km coastline)
       cityBbox = `${lon - delta},${lat - delta},${lon + delta},${lat + delta}`;
     }
 
@@ -489,8 +511,9 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
             rating: 4.8,
             description: hypo.reason as string,
             price_segment: 'mid',
-            score: 0.85, // High score for verified hidden gems
-          });
+            score: 0.95, // Raised score to ensure they survive synthesis
+            isProtected: true, // Hidden gems get protected status to pull neighbors in remote clusters
+          } as any);
         }
       }
     }
@@ -562,6 +585,10 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
       `[Stage 4] Pipeline finished. Total points: ${resultPois.length} (Food: ${foodPois.length}, Non-Food: ${nonFoodPois.length})`,
     );
 
+    // Store full POI pool in cache for subsequent requests for the same city
+    await this.redis.set(poiCacheKey, JSON.stringify(resultPois), POI_CACHE_TTL);
+    this.logger.log(`[POICache] Stored "${city}" (${resultPois.length} pois, TTL: 24h)`);
+
     return {
       pois: resultPois,
       shadowDiagnostics: {
@@ -625,7 +652,7 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
   }
 
   // --- Smart Enrichment (Stage 1.5) ---
-  // Group A: pure category words → drop immediately
+  // Group A: pure category words → drop immediately (utility/service, not attractions)
   private readonly GENERIC_NAMES = new Set([
     'кафе',
     'ресторан',
@@ -654,16 +681,36 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     'химчистка',
     'салон',
     'парикмахерская',
-    'пляж',
-    'парк',
-    'сквер',
     'стадион',
     'спортзал',
     'фитнес',
     'кинотеатр',
     'клуб',
-    'бар',
     'кальянная',
+  ]);
+
+  // Geographic/natural feature names — single-word but represent real landmarks.
+  // These are ALWAYS enriched (mandatory, bypasses ENRICH_THRESHOLD).
+  private readonly GEOGRAPHIC_CATEGORY_NAMES = new Set([
+    'пляж',
+    'парк',
+    'сквер',
+    'каньон',
+    'водопад',
+    'гора',
+    'озеро',
+    'мыс',
+    'бухта',
+    'ущелье',
+    'скала',
+    'роща',
+    'поляна',
+    'родник',
+    'река',
+    'маяк',
+    'пещера',
+    'плато',
+    'хребет',
   ]);
 
   // Group B: short (≤6) or single-word brands that look uninformative
@@ -770,14 +817,22 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     const shouldDropNonFood = nonFoodCount >= ENRICH_THRESHOLD;
 
     const groupA: PoiItem[] = []; // generic non-food → drop
-    const groupB: PoiItem[] = []; // uninformative → enrich
+    const groupB: PoiItem[] = []; // uninformative → enrich (pool-limited)
+    const groupGeo: PoiItem[] = []; // geographic categories → ALWAYS enrich (mandatory)
     const clean: PoiItem[] = [];
 
     for (const poi of pois) {
       const lower = poi.name.toLowerCase().trim();
       const isFood = this.FOOD_CATEGORIES.has(poi.category);
 
-      if (this.GENERIC_NAMES.has(lower)) {
+      const isShortCanyonOrWaterfall =
+        poi.name.length < 7 &&
+        ['canyon', 'waterfall'].includes(poi.category);
+
+      if (this.GEOGRAPHIC_CATEGORY_NAMES.has(lower) || isShortCanyonOrWaterfall) {
+        // Single-word geographic/natural feature: always enrich — could be "Каньон Псахо" etc.
+        groupGeo.push(poi);
+      } else if (this.GENERIC_NAMES.has(lower)) {
         // Food with generic name: always try to enrich (keep if fails and foodCount < 4)
         if (isFood) {
           groupB.push(poi);
@@ -792,15 +847,18 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     }
 
     this.logger.debug(
-      `[Stage 1.5] Smart Enrichment: ${clean.length} clean, ${groupA.length} generic non-food (drop), ${groupB.length} to enrich (food: ${currentFoodCount})`,
+      `[Stage 1.5] Smart Enrichment: ${clean.length} clean, ${groupA.length} generic non-food (drop), ${groupGeo.length} geo-mandatory, ${groupB.length} to enrich (food: ${currentFoodCount})`,
     );
 
-    if (groupB.length === 0) return [...clean];
+    if (groupB.length === 0 && groupGeo.length === 0) return [...clean];
 
-    // Always enrich food; enrich non-food only if pool is small enough
-    const toEnrich = groupB.filter(
-      (p) => this.FOOD_CATEGORIES.has(p.category) || !shouldDropNonFood,
-    );
+    // Always enrich food and geographic features; enrich non-food only if pool is small enough
+    const toEnrich = [
+      ...groupGeo, // geographic names: always enrich, no threshold
+      ...groupB.filter(
+        (p) => this.FOOD_CATEGORIES.has(p.category) || !shouldDropNonFood,
+      ),
+    ];
     const toDrop = groupB.filter(
       (p) => !this.FOOD_CATEGORIES.has(p.category) && shouldDropNonFood,
     );
@@ -842,6 +900,11 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
         const newName = results[i];
         const isFood = this.FOOD_CATEGORIES.has(poi.category);
 
+        const isGeo =
+          this.GEOGRAPHIC_CATEGORY_NAMES.has(poi.name.toLowerCase().trim()) ||
+          (poi.name.length < 7 &&
+            ['canyon', 'waterfall'].includes(poi.category));
+
         if (newName) {
           enriched.push({ ...poi, name: newName });
           this.logger.debug(
@@ -852,6 +915,12 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
           enriched.push(poi);
           this.logger.debug(
             `[Stage 1.5] Food protected (kept as-is): "${poi.name}"`,
+          );
+        } else if (isGeo) {
+          // Geographic feature: keep as-is if enrichment failed (better than dropping)
+          enriched.push(poi);
+          this.logger.debug(
+            `[Stage 1.5] Geo feature kept (no enrichment found): "${poi.name}"`,
           );
         } else if (!isFood && clean.length < 8) {
           enriched.push(poi);

@@ -239,6 +239,7 @@ describe('AiController plan contract fields', () => {
       {} as never, // geocodingFallbackService
       {} as never, // analyzer
       {} as never, // explainer
+      {} as never, // cacheWarmup
     );
 
     return {
@@ -684,6 +685,7 @@ describe('AiController targeted mutations (phase 3)', () => {
       {} as never, // geocodingFallbackService
       {} as never, // analyzer
       {} as never, // explainer
+      {} as never, // cacheWarmup
     );
 
     return {
