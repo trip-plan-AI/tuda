@@ -239,22 +239,38 @@ export class OverpassClientService {
     const description =
       descriptionParts.length > 0 ? descriptionParts.join('. ') : undefined;
 
-    // TAG WISDOM: score boost based on OSM significance signals
+    // TAG WISDOM: score from OSM significance signals
     const tags = item.tags ?? {};
     let tagScore = 0.5; // default
     let isProtected = false;
 
-    // Heritage tag → confirmed cultural significance, hard protect
-    if (tags.heritage || tags.protection_title || tags['heritage:operator']) {
-      tagScore += 0.4;
-      isProtected = true;
+    // TECHNICAL PENALTY first — cap score before any boost
+    // railway=*, man_made=signal/pipeline/mast, power=* (except plant) → utility objects
+    const isTechnical =
+      !!tags.railway ||
+      tags.man_made === 'signal' ||
+      tags.man_made === 'pipeline' ||
+      tags.man_made === 'mast' ||
+      tags.man_made === 'pole' ||
+      (tags.power && tags.power !== 'plant') || // power plant is interesting, pole is not
+      tags.amenity === 'parking' ||
+      tags.amenity === 'fuel';
+
+    if (isTechnical) {
+      tagScore = 0.15; // hard cap — will not win anchor election or top-15
+    } else {
+      // Heritage tag → confirmed cultural significance, hard protect
+      if (tags.heritage || tags.protection_title || tags['heritage:operator']) {
+        tagScore += 0.4;
+        isProtected = true;
+      }
+      // Wikidata link → global notability confirmed
+      if (tags.wikidata) tagScore += 0.1;
+      // tourism=attraction or tourism=museum → explicit tourist marker
+      if (tags.tourism === 'attraction' || tags.tourism === 'museum') tagScore += 0.2;
+      // Large city park
+      if (tags.leisure === 'park') tagScore += 0.1;
     }
-    // Wikidata link → global notability confirmed
-    if (tags.wikidata) tagScore += 0.1;
-    // tourism=attraction or tourism=museum → explicit tourist marker
-    if (tags.tourism === 'attraction' || tags.tourism === 'museum') tagScore += 0.2;
-    // Large city park
-    if (tags.leisure === 'park') tagScore += 0.1;
 
     tagScore = Math.min(tagScore, 1.0);
 

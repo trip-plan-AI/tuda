@@ -198,6 +198,9 @@ export class ProviderSearchService {
 
     const hardPois = this.deduplicate(allHardPois).filter((p) => {
       if (this.isToxicPoi(p.name)) return false;
+      // isProtected points are NEVER dropped by radius — they are proven landmarks.
+      // Аквариум / Дача Сталина may be 20+ km from city centroid but are genuine MustVisit.
+      if ((p as any).isProtected) return true;
       if (center) {
         const d = this.haversineKm(
           center.lat,
@@ -205,11 +208,7 @@ export class ProviderSearchService {
           p.coordinates.lat,
           p.coordinates.lon,
         );
-        // Protected points get 2× radius — they may be farther from city center
-        // (e.g. Дача Сталина, Парк Ривьера) but are proven landmarks
-        const limitKm = (p as any).isProtected
-          ? (searchRadius + 2000) / 1000 * 2
-          : (searchRadius + 2000) / 1000;
+        const limitKm = (searchRadius + 2000) / 1000;
         if (d > limitKm) return false;
       }
       return true;
@@ -870,6 +869,7 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
 
   private isToxicPoi(name: string): boolean {
     const TOXIC = [
+      // War memorials / political
       'ликвидаторам',
       'чернобыль',
       'афганцам',
@@ -878,6 +878,14 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
       'участникам',
       'обелиск славы',
       'вечный огонь',
+      // Technical infrastructure — not tourist attractions
+      'светофор',
+      'семафор',
+      'железнодорожный светофор',
+      'дорожный знак',
+      'будка охраны',
+      'трансформаторная',
+      'водонапорная башня',
     ];
     const lower = name.toLowerCase();
     return TOXIC.some((kw) => lower.includes(kw));

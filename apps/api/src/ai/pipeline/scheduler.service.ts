@@ -613,7 +613,21 @@ export class SchedulerService {
     // Used in scoring as a soft penalty (not a hard filter).
     const dayAnchors = new Map<number, FilteredPoi>();
     if (cities.length === 1 && totalDays > 1 && preAssignedMap.size === 0 && availablePois.length > 0) {
-      const sorted = [...availablePois].sort((a, b) => b.score - a.score);
+      // ANCHOR QUALIFICATION: only isProtected or score > 0.9 can be anchors.
+      // Prevents "Старый светофор" from dictating the day's geography.
+      const qualifiedAnchors = availablePois.filter(
+        (p) => (p as any).isProtected || p.score > 0.9,
+      );
+      // Fallback: if not enough qualified, fill up with top-scored non-food points
+      const fallbackPool = availablePois
+        .filter((p) => !this.isFoodCategory(p.category))
+        .sort((a, b) => b.score - a.score);
+      const anchorPool =
+        qualifiedAnchors.length >= totalDays
+          ? qualifiedAnchors.sort((a, b) => b.score - a.score)
+          : fallbackPool;
+
+      const sorted = anchorPool;
       const anchors: FilteredPoi[] = [sorted[0]];
       const unselected = new Set(sorted.slice(1));
 
@@ -1106,6 +1120,71 @@ export class SchedulerService {
           this.logger.log(
             `[Weather] Skipping micro-walk due to poor conditions.`,
           );
+        }
+      }
+
+      // GEO-BALANCE: detect lone outlier points (> 20 km from day's centroid)
+      // If a non-protected outlier has no neighbors in the pool → eject it.
+      // If a protected outlier exists → pull up to 2 nearest neighbors from the global pool.
+      if (points.length >= 2) {
+        const nonFoodPoints = points.filter(
+          (p) => !this.isFoodCategory(p.poi.category),
+        );
+        if (nonFoodPoints.length >= 2) {
+          // Compute centroid of non-food points
+          const centLat =
+            nonFoodPoints.reduce((s, p) => s + p.poi.coordinates.lat, 0) /
+            nonFoodPoints.length;
+          const centLon =
+            nonFoodPoints.reduce((s, p) => s + p.poi.coordinates.lon, 0) /
+            nonFoodPoints.length;
+
+          for (let pi = points.length - 1; pi >= 0; pi--) {
+            const pt = points[pi];
+            const d = this.haversineKm(
+              centLat, centLon,
+              pt.poi.coordinates.lat, pt.poi.coordinates.lon,
+            );
+
+            if (d > 20) {
+              const poi = pt.poi as FilteredPoi;
+              if ((poi as any).isProtected) {
+                // Protected outlier: pull 2 nearest neighbors from global unused pool
+                const neighbors = availablePois
+                  .filter((p) => !usedPoiIds.has(p.id) && !this.isFoodCategory(p.category))
+                  .sort((a, b) =>
+                    this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, a.coordinates.lat, a.coordinates.lon) -
+                    this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, b.coordinates.lat, b.coordinates.lon),
+                  )
+                  .slice(0, 2)
+                  .filter((p) =>
+                    this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, p.coordinates.lat, p.coordinates.lon) < 8,
+                  );
+                for (const nb of neighbors) {
+                  tryAddPoint(nb, undefined, true);
+                }
+                if (neighbors.length > 0) {
+                  this.logger.log(
+                    `[GeoBalance] Protected outlier "${poi.name}" pulled ${neighbors.length} neighbor(s)`,
+                  );
+                }
+              } else {
+                // Non-protected outlier with no neighbors → eject
+                const hasNearbyUnused = availablePois.some(
+                  (p) =>
+                    !usedPoiIds.has(p.id) &&
+                    this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, p.coordinates.lat, p.coordinates.lon) < 5,
+                );
+                if (!hasNearbyUnused) {
+                  this.logger.log(
+                    `[GeoBalance] Ejecting lone outlier "${poi.name}" (${d.toFixed(1)} km from centroid, no neighbors)`,
+                  );
+                  usedPoiIds.delete(poi.id); // return to pool for next day
+                  points.splice(pi, 1);
+                }
+              }
+            }
+          }
         }
       }
 
