@@ -91,7 +91,6 @@ jobs:
           docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT postgis_full_version();" >/dev/null'
 
           test -f ./apps/api/drizzle.config.ts
-          test -f ./apps/api/src/db/00-enums.sql
           test -f ./apps/api/src/db/migrations/meta/_journal.json
           ls ./apps/api/src/db/migrations/*.sql >/dev/null
 
