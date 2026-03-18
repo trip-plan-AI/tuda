@@ -613,9 +613,16 @@ ${JSON.stringify(points)}
     const history = session.messages;
 
     // Guard Layer: Deduplication
-    const lastUserMessage = [...history].reverse().find((m) => m.role === 'user');
-    if (lastUserMessage && lastUserMessage.content.trim() === dto.user_query.trim()) {
-      this.logger.warn(`Duplicate message detected for session ${session.id}: "${dto.user_query}"`);
+    const lastUserMessage = [...history]
+      .reverse()
+      .find((m) => m.role === 'user');
+    if (
+      lastUserMessage &&
+      lastUserMessage.content.trim() === dto.user_query.trim()
+    ) {
+      this.logger.warn(
+        `Duplicate message detected for session ${session.id}: "${dto.user_query}"`,
+      );
       // Optionally, we could just return the last plan. Here we throw to avoid re-running the heavy pipeline.
       throw new UnprocessableEntityException({
         code: 'DUPLICATE_MESSAGE',
@@ -662,8 +669,9 @@ ${JSON.stringify(points)}
       intentRouterDecision.action_type === 'OFF_TOPIC' ||
       intentRouterDecision.action_type === 'SMALL_TALK'
     ) {
-      const fallbackMsg = 'Я помогаю с планированием маршрутов и поездок. Можешь уточнить, в каком городе ты хочешь маршрут или какие места найти? 🙂';
-      
+      const fallbackMsg =
+        'Я помогаю с планированием маршрутов и поездок. Можешь уточнить, в каком городе ты хочешь маршрут или какие места найти? 🙂';
+
       const clarificationMessages: SessionMessage[] = [
         ...history,
         { role: 'user' as const, content: dto.user_query },
@@ -700,7 +708,9 @@ ${JSON.stringify(points)}
         throw error;
       }
 
-      const errorResponse = (error as UnprocessableEntityException).getResponse() as any;
+      const errorResponse = (
+        error as UnprocessableEntityException
+      ).getResponse() as any;
       const clarificationMsg = errorResponse.message || this.needCityMessage;
 
       const clarificationMessages: SessionMessage[] = [
@@ -737,10 +747,12 @@ ${JSON.stringify(points)}
     }
 
     const hasMultipleCitiesInArray = intent.cities && intent.cities.length > 1;
-    const hasDifferentFromAndTo = intent.city_from && intent.city_to && intent.city_from !== intent.city_to;
+    const hasDifferentFromAndTo =
+      intent.city_from && intent.city_to && intent.city_from !== intent.city_to;
 
     if (hasMultipleCitiesInArray || hasDifferentFromAndTo) {
-      const multiCityMessage = 'Я могу построить маршрут по местам в рамках одного города. Пожалуйста, укажите его название.';
+      const multiCityMessage =
+        'Я могу построить маршрут по местам в рамках одного города. Пожалуйста, укажите его название.';
       const clarificationMessages: SessionMessage[] = [
         ...history,
         { role: 'user' as const, content: dto.user_query },
@@ -777,19 +789,19 @@ ${JSON.stringify(points)}
     // Если нужно просто удалить точку, нам не нужно искать новые (Kudago, Overpass, Yandex).
     const skipSearch = intentRouterDecision.action_type === 'REMOVE_POI';
 
-    let rawPoi: any[] = [];
+    const rawPoi: any[] = [];
     let providerDuration = 0;
     let massCollectionShadowMeta: MassCollectionShadowMeta | null = null;
-    let vectorPrefilterShadowMeta: VectorPrefilterShadowMeta | null = null;
-    let logicalIdShadowMeta: LogicalIdShadowMeta | null = null;
+    const vectorPrefilterShadowMeta: VectorPrefilterShadowMeta | null = null;
+    const logicalIdShadowMeta: LogicalIdShadowMeta | null = null;
     let semanticDuration = 0;
     let selectedForScheduler: any[] = [];
     let yandexBatchRefinementDiagnostics: YandexBatchRefinementDiagnostics | null =
       null;
-    let logicalSelectorResult: any = { selected_ids: [] };
-    let logicalSelectedPool: any[] = [];
-    let selected: any[] = [];
-    let yandexPersonaSummary: string =
+    const logicalSelectorResult: any = { selected_ids: [] };
+    const logicalSelectedPool: any[] = [];
+    const selected: any[] = [];
+    const yandexPersonaSummary: string =
       policySnapshot.user_persona_summary ?? dto.user_query;
 
     if (!skipSearch) {
@@ -907,7 +919,9 @@ ${JSON.stringify(points)}
           throw error;
         }
 
-        const errorResponse = (error as UnprocessableEntityException).getResponse() as any;
+        const errorResponse = (
+          error as UnprocessableEntityException
+        ).getResponse() as any;
         const clarificationMsg = errorResponse.message || this.needCityMessage;
 
         const clarificationMessages: SessionMessage[] = [
@@ -956,7 +970,9 @@ ${JSON.stringify(points)}
 
       const semanticStart = Date.now();
       // Dedup before refinement to avoid 3x same POI in batches
-      const dedupedForRefinement = this.removeDuplicatePoi(allSuccessfullyGeocoded);
+      const dedupedForRefinement = this.removeDuplicatePoi(
+        allSuccessfullyGeocoded,
+      );
       selectedForScheduler = dedupedForRefinement;
 
       try {
@@ -1506,7 +1522,11 @@ ${JSON.stringify(points)}
 
     const totalPointsGenerated = routePlan.days.flatMap((d) => d.points).length;
     let warningPrefix = '';
-    if (totalPointsGenerated > 0 && totalPointsGenerated < intent.days * 2 && isNewRouteRequested) {
+    if (
+      totalPointsGenerated > 0 &&
+      totalPointsGenerated < intent.days * 2 &&
+      isNewRouteRequested
+    ) {
       warningPrefix = `⚠️ В городе ${intent.city} мало известных мест, нашел только ${totalPointsGenerated}. Маршрут может быть короче.\n\n`;
     }
 
@@ -1822,6 +1842,7 @@ ${JSON.stringify(points)}
               description: point.description,
               coordinates: { lat: point.lat ?? 0, lon: point.lon ?? 0 },
               category: 'attraction' as const,
+              score: 0.5, // Default score for trip points
             },
           })),
       }));

@@ -23,23 +23,34 @@ export class MutationParserService {
 
   constructor(private readonly llm: LlmClientService) {}
 
-  async parseMutations(query: string, tripContext?: string): Promise<PointMutation[]> {
+  async parseMutations(
+    query: string,
+    tripContext?: string,
+  ): Promise<PointMutation[]> {
     this.logger.log(`Parsing mutations for query: "${query}"`);
-    
+
     try {
       const response = await this.llm.client.chat.completions.create({
         model: this.llm.model,
         messages: [
           { role: 'system', content: MUTATION_SYSTEM_PROMPT },
-          { role: 'user', content: tripContext ? `Current trip context: ${tripContext}\n\nUser query: ${query}` : query }
+          {
+            role: 'user',
+            content: tripContext
+              ? `Current trip context: ${tripContext}\n\nUser query: ${query}`
+              : query,
+          },
         ],
         response_format: { type: 'json_object' },
       });
 
-      const content = response.choices[0]?.message?.content || '{"mutations": []}';
+      const content =
+        response.choices[0]?.message?.content || '{"mutations": []}';
       const parsed = JSON.parse(content);
-      this.logger.log(`Parsed mutations from LLM: ${JSON.stringify(parsed.mutations)}`);
-      
+      this.logger.log(
+        `Parsed mutations from LLM: ${JSON.stringify(parsed.mutations)}`,
+      );
+
       return parsed.mutations || [];
     } catch (err) {
       this.logger.error('Failed to parse mutations', err);

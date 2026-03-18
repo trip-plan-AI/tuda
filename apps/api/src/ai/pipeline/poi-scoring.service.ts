@@ -86,8 +86,10 @@ export class PoiScoringService {
       score += dnaAlignment * 15;
 
       score +=
-        this.calculateUniquenessBoost(ctx.cityProfile.featureRarity, poiFeatures) *
-        5;
+        this.calculateUniquenessBoost(
+          ctx.cityProfile.featureRarity,
+          poiFeatures,
+        ) * 5;
     }
 
     // === 4. КАТЕГОРИЙНЫЙ ВЕС И МУЛЬТИПЛИКАТОРЫ ===
@@ -133,7 +135,8 @@ export class PoiScoringService {
       return 0.3; // Обычный мемориал (не в черном списке, но и не музей)
     }
 
-    if (tags['tourism'] === 'museum' || tags['historic'] === 'manor') return 1.5;
+    if (tags['tourism'] === 'museum' || tags['historic'] === 'manor')
+      return 1.5;
     if (tags['power'] === 'plant' || tags['man_made'] === 'dam') return 1.4; // ГЭС/Плотины
 
     return 1.0;

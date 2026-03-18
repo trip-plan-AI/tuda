@@ -85,13 +85,17 @@ export class OverpassClientService {
     }
 
     // 3. Формируем запрос around (теперь это основной метод)
-    const radiusSteps = [cityCoords.radius, 10000, 15000, 25000].filter(r => r >= cityCoords.radius);
+    const radiusSteps = [cityCoords.radius, 10000, 15000, 25000].filter(
+      (r) => r >= cityCoords.radius,
+    );
     const uniqueSteps = [...new Set(radiusSteps)].sort((a, b) => a - b);
 
     let elements: OverpassElement[] = [];
 
     for (const stepRadius of uniqueSteps) {
-      this.logger.log(`Overpass: searching around ${city} with radius ${stepRadius}m...`);
+      this.logger.log(
+        `Overpass: searching around ${city} with radius ${stepRadius}m...`,
+      );
       const center = `${stepRadius},${cityCoords.lat},${cityCoords.lon}`;
       const query = `
         [out:json][timeout:25];
@@ -109,7 +113,9 @@ export class OverpassClientService {
       elements = await this.executeOverpass(query);
       if (elements.length >= 10) break;
       if (stepRadius < uniqueSteps[uniqueSteps.length - 1]) {
-        this.logger.log(`Overpass: only ${elements.length} points found, expanding radius...`);
+        this.logger.log(
+          `Overpass: only ${elements.length} points found, expanding radius...`,
+        );
       }
     }
 
@@ -185,7 +191,9 @@ export class OverpassClientService {
           continue;
         }
 
-        const data = (await response.json()) as { elements?: OverpassElement[] };
+        const data = (await response.json()) as {
+          elements?: OverpassElement[];
+        };
         return data.elements ?? [];
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') {
@@ -222,7 +230,8 @@ export class OverpassClientService {
       descriptionParts.push('Веганское меню');
     if (item.tags?.['dog:welcomed'] === 'yes')
       descriptionParts.push('Можно с собаками');
-    if (item.tags?.cuisine) descriptionParts.push(`Кухня: ${item.tags.cuisine}`);
+    if (item.tags?.cuisine)
+      descriptionParts.push(`Кухня: ${item.tags.cuisine}`);
 
     const description =
       descriptionParts.length > 0 ? descriptionParts.join('. ') : undefined;
@@ -235,6 +244,7 @@ export class OverpassClientService {
       coordinates: { lat, lon },
       category,
       rating: 4.0,
+      score: 0.5, // Default score for Overpass data
       working_hours: item.tags?.opening_hours,
       price_segment: this.toPriceSegment(category),
       phone: item.tags?.phone,

@@ -5,6 +5,7 @@ export type PriceSegment = 'free' | 'budget' | 'mid' | 'premium';
 export interface PoiItem {
   id: string;
   name: string;
+  score: number; // Universal priority score (0.0 to 1.0)
   address: string;
   logical_id?: string;
   coordinates: {

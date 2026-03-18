@@ -72,6 +72,79 @@ export class SchedulerService {
     return this.buildPlan(uniquePois, intent);
   }
 
+  private clusterizeByCentroid(
+    pois: FilteredPoi[],
+    days: number,
+  ): Record<number, FilteredPoi[]> {
+    if (days <= 1 || pois.length <= days) {
+      return { 1: pois };
+    }
+
+    // 1. Сортируем по весу (score) или aiWeight
+    const sortedPois = [...pois].sort((a, b) => {
+      const scoreA = a.score || ((a as any).aiWeight ? (a as any).aiWeight / 100 : 0);
+      const scoreB = b.score || ((b as any).aiWeight ? (b as any).aiWeight / 100 : 0);
+      return scoreB - scoreA;
+    });
+
+    // 2. Выбираем якоря для каждого дня
+    const anchors = [sortedPois[0]];
+    const unselected = new Set(sortedPois.slice(1));
+
+    for (let i = 1; i < days; i++) {
+      let maxDist = -1;
+      let nextAnchor: FilteredPoi | null = null;
+
+      for (const poi of unselected) {
+        let minDistToAnchor = Infinity;
+        for (const anchor of anchors) {
+          const dist = this.haversineKm(
+            poi.coordinates.lat,
+            poi.coordinates.lon,
+            anchor.coordinates.lat,
+            anchor.coordinates.lon,
+          );
+          if (dist < minDistToAnchor) minDistToAnchor = dist;
+        }
+
+        if (minDistToAnchor > maxDist) {
+          maxDist = minDistToAnchor;
+          nextAnchor = poi;
+        }
+      }
+
+      if (nextAnchor) {
+        anchors.push(nextAnchor);
+        unselected.delete(nextAnchor);
+      }
+    }
+
+    // 3. Распределяем остальные точки по ближайшим якорям
+    const clusters: Record<number, FilteredPoi[]> = {};
+    for (let i = 1; i <= days; i++) clusters[i] = [];
+
+    for (const poi of pois) {
+      let minDist = Infinity;
+      let bestDay = 1;
+
+      for (let i = 0; i < anchors.length; i++) {
+        const dist = this.haversineKm(
+          poi.coordinates.lat,
+          poi.coordinates.lon,
+          anchors[i].coordinates.lat,
+          anchors[i].coordinates.lon,
+        );
+        if (dist < minDist) {
+          minDist = dist;
+          bestDay = i + 1;
+        }
+      }
+      clusters[bestDay].push(poi);
+    }
+
+    return clusters;
+  }
+
   public rebuildSingleDayPlan(
     poisForDay: FilteredPoi[],
     intent: ParsedIntent,
@@ -257,7 +330,9 @@ export class SchedulerService {
     const MIN_POINTS_PER_DAY = isSmallSet ? 4 : 3;
 
     while (points.length < poisForDay.length && currentTime < endMinutes) {
-      const candidates = availablePois.filter((p) => !usedPoiIdsInDay.has(p.id));
+      const candidates = availablePois.filter(
+        (p) => !usedPoiIdsInDay.has(p.id),
+      );
       if (candidates.length === 0) break;
 
       const lastPoint = points.length > 0 ? points[points.length - 1] : null;
@@ -544,12 +619,25 @@ export class SchedulerService {
       const currentDateStr = dateStrings[dayNumber - 1];
       const targetCity = cityAssignments.get(dayNumber);
 
-      const daysRemaining = totalDays - dayNumber + 1;
+      // --- NEW CLUSTERING LOGIC (RELAXED) ---
+      // If we only have one city and more than one day, use LOOSE geographic hints
+      // but allow full POI pool to prevent "1 point per day" problem
+      const isNewSingleCityPlan =
+        cities.length === 1 && totalDays > 1 && preAssignedMap.size === 0;
+      let availableForDay: FilteredPoi[] = [];
 
-      // Filter available POIs for this day's city
-      const availableForDay = targetCity
-        ? poisByCity.get(targetCity) || []
-        : availablePois;
+      if (isNewSingleCityPlan) {
+        // TEMP FIX: Use full POI pool instead of strict clustering
+        // to prevent single-point-per-day issue. Scheduler will handle geographic distribution.
+        availableForDay = availablePois;
+      } else {
+        availableForDay = targetCity
+          ? poisByCity.get(targetCity) || []
+          : availablePois;
+      }
+      // ----------------------------
+
+      const daysRemaining = totalDays - dayNumber + 1;
 
       // FATIGUE-AWARE BLENDING
       let pointsForThisDay =
@@ -593,10 +681,10 @@ export class SchedulerService {
             const rawMinutes =
               dist < 1.0 ? (dist / 5) * 60 : (dist / 25) * 60 + 10;
             let finalTransit = Math.round(rawMinutes / walkingSpeed);
-            
+
             // In small towns, we assume things are closer or easier to reach
             if (isSmallTown) finalTransit = Math.round(finalTransit * 0.7);
-            
+
             transitTime = Math.max(5, Math.min(90, finalTransit));
           }
         } else {
@@ -787,7 +875,7 @@ export class SchedulerService {
         }
 
         // ADVANCED SCORING v7
-        let optimizedOrder = validCandidates.sort((a, b) => {
+        const optimizedOrder = validCandidates.sort((a, b) => {
           const distA = lastPoi
             ? this.haversineKm(
                 lastPoi.coordinates.lat,

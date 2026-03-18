@@ -1,4 +1,8 @@
-import { Injectable, Logger, UnprocessableEntityException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { GeosearchService } from '../../geosearch/geosearch.service';
 import { PopularDestinationsService } from '../../geosearch/popular-destinations.service';
 
@@ -22,14 +26,21 @@ export class LocationResolverService {
 
   async resolve(query: string): Promise<ResolvedLocation | null> {
     this.logger.log(`Resolving location for query: "${query}"`);
-    
+
     let suggestions = await this.geosearch.suggest(query);
-    
+
     // Fallback 1: Try fuzzy matching/cleaning if no suggestions
     if (!suggestions || suggestions.length === 0) {
-      this.logger.warn(`No location found for query: "${query}", trying fuzzy cleanup...`);
+      this.logger.warn(
+        `No location found for query: "${query}", trying fuzzy cleanup...`,
+      );
       // Убираем предлоги и лишние слова
-      const cleanedQuery = query.replace(/(рядом с|возле|около|у|в|на|город|деревня|село|улица|поселок)\s+/i, '').trim();
+      const cleanedQuery = query
+        .replace(
+          /(рядом с|возле|около|у|в|на|город|деревня|село|улица|поселок)\s+/i,
+          '',
+        )
+        .trim();
       if (cleanedQuery !== query && cleanedQuery.length > 0) {
         suggestions = await this.geosearch.suggest(cleanedQuery);
       }
@@ -46,13 +57,21 @@ export class LocationResolverService {
     }
 
     // TRI-115: Приоритет типов (город > поселок > парк)
-    const TYPE_PRIORITY = ['city', 'town', 'village', 'hamlet', 'administrative', 'place', 'locality'];
+    const TYPE_PRIORITY = [
+      'city',
+      'town',
+      'village',
+      'hamlet',
+      'administrative',
+      'place',
+      'locality',
+    ];
     const best = [...suggestions].sort((a, b) => {
       const aType = a.type || 'unknown';
       const bType = b.type || 'unknown';
       const aIdx = TYPE_PRIORITY.indexOf(aType);
       const bIdx = TYPE_PRIORITY.indexOf(bType);
-      
+
       if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
       if (aIdx !== -1) return -1;
       if (bIdx !== -1) return 1;
@@ -61,12 +80,14 @@ export class LocationResolverService {
 
     const type = best.type || 'unknown';
     const className = best.class || 'unknown';
-    
+
     const radius = this.determineRadius(className, type);
-    const countryCode = await this.popularDestinations.getCountryCode(best.displayName);
+    const countryCode = await this.popularDestinations.getCountryCode(
+      best.displayName,
+    );
 
     this.logger.log(
-      `Resolved "${query}" to "${best.displayName}" (type: ${type}, class: ${className}) -> lat: ${best.lat}, lon: ${best.lon}, radius: ${radius}m`
+      `Resolved "${query}" to "${best.displayName}" (type: ${type}, class: ${className}) -> lat: ${best.lat}, lon: ${best.lon}, radius: ${radius}m`,
     );
 
     return {
@@ -83,7 +104,7 @@ export class LocationResolverService {
     // Города
     if (type === 'city') return 15000;
     if (type === 'town') return 10000;
-    
+
     // Деревни, поселки
     if (type === 'village') return 7000;
     if (type === 'hamlet') return 5000;
@@ -95,10 +116,22 @@ export class LocationResolverService {
     if (type === 'suburb' || type === 'city_district') return 5000;
 
     // Улицы и дороги
-    if (className === 'highway' || type === 'street' || type === 'road') return 2000;
+    if (className === 'highway' || type === 'street' || type === 'road')
+      return 2000;
 
     // Конкретные объекты (POI)
-    if (['amenity', 'tourism', 'historic', 'leisure', 'man_made', 'shop', 'office', 'craft'].includes(className)) {
+    if (
+      [
+        'amenity',
+        'tourism',
+        'historic',
+        'leisure',
+        'man_made',
+        'shop',
+        'office',
+        'craft',
+      ].includes(className)
+    ) {
       return 1500; // Increased from 1000
     }
 
@@ -108,6 +141,6 @@ export class LocationResolverService {
     }
 
     // По умолчанию для непонятных штук (unknown)
-    return 12000; 
+    return 12000;
   }
 }
