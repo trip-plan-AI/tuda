@@ -33,6 +33,7 @@ describe('AiController plan contract fields', () => {
     categories: ['museum'],
     excluded_categories: [],
     radius_km: 5,
+    country_code: null,
     start_time: '10:00',
     end_time: '20:00',
     preferences_text: 'исторические места',
@@ -233,6 +234,9 @@ describe('AiController plan contract fields', () => {
       {} as never, // mutationParser
       {} as never, // pointMutationService
       {} as never, // collaborationGateway
+      {} as never, // geocodingFallbackService
+      {} as never, // analyzer
+      {} as never, // explainer
     );
 
     return {
@@ -511,6 +515,7 @@ describe('AiController targeted mutations (phase 3)', () => {
     categories: ['museum', 'attraction'],
     excluded_categories: [],
     radius_km: 5,
+    country_code: null,
     start_time: '10:00',
     end_time: '20:00',
     preferences_text: 'спокойный темп',
@@ -673,6 +678,9 @@ describe('AiController targeted mutations (phase 3)', () => {
       {} as never, // mutationParser
       {} as never, // pointMutationService
       {} as never, // collaborationGateway
+      {} as never, // geocodingFallbackService
+      {} as never, // analyzer
+      {} as never, // explainer
     );
 
     return {

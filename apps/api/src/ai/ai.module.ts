@@ -16,14 +16,16 @@ import { IntentRouterService } from './pipeline/intent-router.service';
 import { LogicalIdFilterService } from './pipeline/logical-id-filter.service';
 import { PolicyService } from './pipeline/policy.service';
 import { VectorPrefilterService } from './pipeline/vector-prefilter.service';
-import { YandexFetchService } from './pipeline/yandex-fetch.service';
 import { DeterministicPlannerService } from './pipeline/deterministic-planner.service';
-import { YandexBatchRefinementService } from './pipeline/yandex-batch-refinement.service';
+import { LlmBatchRefinementService } from './pipeline/llm-batch-refinement.service';
 import { LogicalIdSelectorService } from './pipeline/logical-id-selector.service';
 import { MutationParserService } from './services/mutation-parser.service';
 import { PointMutationService } from './services/point-mutation.service';
 import { GeocodingFallbackService } from './services/geocoding-fallback.service';
 import { CollaborationModule } from '../collaboration/collaboration.module';
+import { AiPipelineModule } from './pipeline/ai-pipeline.module';
+
+import { LocationResolverService } from './pipeline/location-resolver.service';
 
 @Module({
   // TRI-104: AI контроллер теперь использует Trips/Points для сценариев
@@ -35,6 +37,7 @@ import { CollaborationModule } from '../collaboration/collaboration.module';
     TripsModule,
     PointsModule,
     GeosearchModule,
+    AiPipelineModule,
     forwardRef(() => CollaborationModule),
   ],
   controllers: [AiController],
@@ -42,9 +45,6 @@ import { CollaborationModule } from '../collaboration/collaboration.module';
     AiSessionsService,
     OrchestratorService,
     LlmClientService,
-    YandexFetchService,
-    KudagoClientService,
-    OverpassClientService,
     ProviderSearchService,
     PopularGeneratorService,
     SemanticFilterService,
@@ -54,21 +54,22 @@ import { CollaborationModule } from '../collaboration/collaboration.module';
     LogicalIdFilterService,
     VectorPrefilterService,
     DeterministicPlannerService,
-    YandexBatchRefinementService,
+    LlmBatchRefinementService,
     LogicalIdSelectorService,
     MutationParserService,
     PointMutationService,
     GeocodingFallbackService,
+    LocationResolverService,
   ],
   exports: [
     AiSessionsService,
     OrchestratorService,
     LlmClientService,
-    YandexFetchService,
     ProviderSearchService,
     PopularGeneratorService,
     SemanticFilterService,
     SchedulerService,
+    LocationResolverService,
   ],
 })
 export class AiModule {}
