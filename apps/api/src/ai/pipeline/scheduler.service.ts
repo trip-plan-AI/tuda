@@ -82,8 +82,10 @@ export class SchedulerService {
 
     // 1. Сортируем по весу (score) или aiWeight
     const sortedPois = [...pois].sort((a, b) => {
-      const scoreA = a.score || ((a as any).aiWeight ? (a as any).aiWeight / 100 : 0);
-      const scoreB = b.score || ((b as any).aiWeight ? (b as any).aiWeight / 100 : 0);
+      const scoreA =
+        a.score || ((a as any).aiWeight ? (a as any).aiWeight / 100 : 0);
+      const scoreB =
+        b.score || ((b as any).aiWeight ? (b as any).aiWeight / 100 : 0);
       return scoreB - scoreA;
     });
 
@@ -613,7 +615,12 @@ export class SchedulerService {
     // An anchor is the "center of gravity" for each day — determined by farthest-first selection.
     // Used in scoring as a soft penalty (not a hard filter).
     const dayAnchors = new Map<number, FilteredPoi>();
-    if (cities.length === 1 && totalDays > 1 && preAssignedMap.size === 0 && availablePois.length > 0) {
+    if (
+      cities.length === 1 &&
+      totalDays > 1 &&
+      preAssignedMap.size === 0 &&
+      availablePois.length > 0
+    ) {
       // ANCHOR QUALIFICATION: only isProtected or score > 0.9 can be anchors.
       // Prevents "Старый светофор" from dictating the day's geography.
       const qualifiedAnchors = availablePois.filter(
@@ -639,17 +646,27 @@ export class SchedulerService {
           let minDist = Infinity;
           for (const anchor of anchors) {
             const d = this.haversineKm(
-              poi.coordinates.lat, poi.coordinates.lon,
-              anchor.coordinates.lat, anchor.coordinates.lon,
+              poi.coordinates.lat,
+              poi.coordinates.lon,
+              anchor.coordinates.lat,
+              anchor.coordinates.lon,
             );
             if (d < minDist) minDist = d;
           }
-          if (minDist > maxDist) { maxDist = minDist; nextAnchor = poi; }
+          if (minDist > maxDist) {
+            maxDist = minDist;
+            nextAnchor = poi;
+          }
         }
-        if (nextAnchor) { anchors.push(nextAnchor); unselected.delete(nextAnchor); }
+        if (nextAnchor) {
+          anchors.push(nextAnchor);
+          unselected.delete(nextAnchor);
+        }
       }
       anchors.forEach((a, i) => dayAnchors.set(i + 1, a));
-      this.logger.log(`[Scheduler] Day anchors: ${anchors.map((a, i) => `Day${i+1}=${a.name}`).join(', ')}`);
+      this.logger.log(
+        `[Scheduler] Day anchors: ${anchors.map((a, i) => `Day${i + 1}=${a.name}`).join(', ')}`,
+      );
     }
 
     let lastPoiFromPrevDay: FilteredPoi | undefined;
@@ -663,6 +680,9 @@ export class SchedulerService {
       let dayCafePoints = 0;
       let lastFoodTime: number | null = null;
       let lastMealType: 'lunch' | 'dinner' | 'other' | null = null;
+      // Museum fatigue tracking
+      let dayMuseumCount = 0;
+      let nonMuseumSinceLastMuseum = 0; // сколько не-музейных точек после последнего музея
 
       const currentDateStr = dateStrings[dayNumber - 1];
       const targetCity = cityAssignments.get(dayNumber);
@@ -836,6 +856,12 @@ export class SchedulerService {
           else dayCafePoints += 1;
           lastFoodTime = arrival;
           lastMealType = mealType;
+          nonMuseumSinceLastMuseum += 1;
+        } else if (poi.category === 'museum') {
+          dayMuseumCount += 1;
+          nonMuseumSinceLastMuseum = 0;
+        } else {
+          nonMuseumSinceLastMuseum += 1;
         }
         return true;
       };
@@ -872,12 +898,19 @@ export class SchedulerService {
           dayCafePoints + dayRestaurantPoints === 0 &&
           pointsForThisDay > 3
         ) {
-          const foodCandidates = availablePois.filter((p) => !usedPoiIds.has(p.id) && this.isFoodCategory(p.category));
+          const foodCandidates = availablePois.filter(
+            (p) => !usedPoiIds.has(p.id) && this.isFoodCategory(p.category),
+          );
           if (foodCandidates.length > 0 && lastPoi) {
             const localFood = foodCandidates
               .map((p) => ({
                 poi: p,
-                dist: this.haversineKm(lastPoi.coordinates.lat, lastPoi.coordinates.lon, p.coordinates.lat, p.coordinates.lon),
+                dist: this.haversineKm(
+                  lastPoi.coordinates.lat,
+                  lastPoi.coordinates.lon,
+                  p.coordinates.lat,
+                  p.coordinates.lon,
+                ),
               }))
               .filter((f) => f.dist < 2.5) // Ищем в радиусе 2.5 км
               .sort((a, b) => (b.poi.score || 0) - (a.poi.score || 0));
@@ -885,7 +918,9 @@ export class SchedulerService {
             const bestLunch = localFood[0];
             if (bestLunch && tryAddPoint(bestLunch.poi)) {
               injectedFood = true;
-              this.logger.log(`[Scheduler] Injected Lunch: ${bestLunch.poi.name} (dist: ${bestLunch.dist.toFixed(2)}km)`);
+              this.logger.log(
+                `[Scheduler] Injected Lunch: ${bestLunch.poi.name} (dist: ${bestLunch.dist.toFixed(2)}km)`,
+              );
             }
           }
         }
@@ -898,12 +933,19 @@ export class SchedulerService {
           !hadDinner &&
           pointsForThisDay > 3
         ) {
-          const foodCandidates = availablePois.filter((p) => !usedPoiIds.has(p.id) && this.isFoodCategory(p.category));
+          const foodCandidates = availablePois.filter(
+            (p) => !usedPoiIds.has(p.id) && this.isFoodCategory(p.category),
+          );
           if (foodCandidates.length > 0 && lastPoi) {
             const localFood = foodCandidates
               .map((p) => ({
                 poi: p,
-                dist: this.haversineKm(lastPoi.coordinates.lat, lastPoi.coordinates.lon, p.coordinates.lat, p.coordinates.lon),
+                dist: this.haversineKm(
+                  lastPoi.coordinates.lat,
+                  lastPoi.coordinates.lon,
+                  p.coordinates.lat,
+                  p.coordinates.lon,
+                ),
               }))
               .filter((f) => f.dist < 3.0) // Вечером можно чуть дальше (3 км)
               .sort((a, b) => (b.poi.score || 0) - (a.poi.score || 0));
@@ -911,7 +953,9 @@ export class SchedulerService {
             const bestDinner = localFood[0];
             if (bestDinner && tryAddPoint(bestDinner.poi)) {
               injectedFood = true;
-              this.logger.log(`[Scheduler] Injected Dinner: ${bestDinner.poi.name} (dist: ${bestDinner.dist.toFixed(2)}km)`);
+              this.logger.log(
+                `[Scheduler] Injected Dinner: ${bestDinner.poi.name} (dist: ${bestDinner.dist.toFixed(2)}km)`,
+              );
             }
           }
         }
@@ -921,14 +965,26 @@ export class SchedulerService {
         const candidates = availableForDay.filter((p) => !usedPoiIds.has(p.id));
         if (candidates.length === 0) break;
 
-        const prevPoi = points.length > 1 ? points[points.length - 2].poi : undefined;
+        const prevPoi =
+          points.length > 1 ? points[points.length - 2].poi : undefined;
 
         let validCandidates = candidates.filter((poi) => {
           const cat = poi.category || '';
           const isFood = this.isFoodCategory(cat);
           const meal = this.getMealType(currentTime + 20);
 
-          // 2. Утро -> Приоритет культуре, если скоринг высокий
+          // BAR/NIGHTCLUB: только после 19:00
+          if (this.isNightVenueCategory(cat as string) && currentTime < 19 * 60) {
+            return false;
+          }
+
+          // MUSEUM FATIGUE: не более 2 музеев в день; после 2-го нужен перерыв (парк или еда)
+          if (cat === 'museum') {
+            if (dayMuseumCount >= 2) return false;
+            if (dayMuseumCount === 1 && nonMuseumSinceLastMuseum === 0) return false;
+          }
+
+          // Утро -> Приоритет культуре, если скоринг высокий
           if (currentTime < 12 * 60 && !isFood) {
             const weight = (poi as any).aiWeight || 0;
             if (cat === 'museum' && weight < 40) return false;
@@ -979,7 +1035,9 @@ export class SchedulerService {
             validCandidates = localCandidates;
           } else if (points.length >= 2) {
             // Cluster exhausted. Do not jump 30km for a new attraction. Only allow local food to finish the day.
-            validCandidates = validCandidates.filter((c) => this.isFoodCategory(c.category));
+            validCandidates = validCandidates.filter((c) =>
+              this.isFoodCategory(c.category),
+            );
           }
         }
 
@@ -1009,22 +1067,23 @@ export class SchedulerService {
           // Еда получает критический буст в обеденное время, если еще не ели
           if (
             this.isFoodCategory(a.category) &&
-            (meal === 'lunch' || (currentTime >= 13.0 * 60 && currentTime <= 15.5 * 60)) &&
+            (meal === 'lunch' ||
+              (currentTime >= 13.0 * 60 && currentTime <= 15.5 * 60)) &&
             dayCafePoints + dayRestaurantPoints === 0 &&
             pointsForThisDay > 3
           )
             weightA += 500;
           if (
             this.isFoodCategory(b.category) &&
-            (meal === 'lunch' || (currentTime >= 13.0 * 60 && currentTime <= 15.5 * 60)) &&
+            (meal === 'lunch' ||
+              (currentTime >= 13.0 * 60 && currentTime <= 15.5 * 60)) &&
             dayCafePoints + dayRestaurantPoints === 0 &&
             pointsForThisDay > 3
           )
             weightB += 500;
 
           // Ужин: буст если еда после 18:00 ещё не была
-          const hadDinner =
-            lastFoodTime !== null && lastFoodTime >= 18 * 60;
+          const hadDinner = lastFoodTime !== null && lastFoodTime >= 18 * 60;
           if (
             this.isFoodCategory(a.category) &&
             meal === 'dinner' &&
@@ -1048,12 +1107,16 @@ export class SchedulerService {
           let anchorPenaltyB = 0;
           if (dayAnchor) {
             const anchorDistA = this.haversineKm(
-              dayAnchor.coordinates.lat, dayAnchor.coordinates.lon,
-              a.coordinates.lat, a.coordinates.lon,
+              dayAnchor.coordinates.lat,
+              dayAnchor.coordinates.lon,
+              a.coordinates.lat,
+              a.coordinates.lon,
             );
             const anchorDistB = this.haversineKm(
-              dayAnchor.coordinates.lat, dayAnchor.coordinates.lon,
-              b.coordinates.lat, b.coordinates.lon,
+              dayAnchor.coordinates.lat,
+              dayAnchor.coordinates.lon,
+              b.coordinates.lat,
+              b.coordinates.lon,
             );
             anchorPenaltyA = anchorDistA > 15 ? anchorDistA * 0.5 : 0;
             anchorPenaltyB = anchorDistB > 15 ? anchorDistB * 0.5 : 0;
@@ -1195,20 +1258,26 @@ export class SchedulerService {
             if (others.length === 0) continue;
 
             const otherCentLat =
-              others.reduce((s, p) => s + p.poi.coordinates.lat, 0) / others.length;
+              others.reduce((s, p) => s + p.poi.coordinates.lat, 0) /
+              others.length;
             const otherCentLon =
-              others.reduce((s, p) => s + p.poi.coordinates.lon, 0) / others.length;
+              others.reduce((s, p) => s + p.poi.coordinates.lon, 0) /
+              others.length;
 
             const dFromOthers = this.haversineKm(
-              otherCentLat, otherCentLon,
-              pt.poi.coordinates.lat, pt.poi.coordinates.lon,
+              otherCentLat,
+              otherCentLon,
+              pt.poi.coordinates.lat,
+              pt.poi.coordinates.lon,
             );
 
             // isProtected points get a higher eject threshold (20 km vs 15 km for regular points).
             // This guards against coordinate rounding or minor data imprecision accidentally
             // flagging a legitimate central attraction (e.g. Riviera park) as an outlier.
             // Truly remote protected venues (Fisht stadium, 30 km) still exceed 20 km and get ejected.
-            const isProtected = !!(pt.poi as FilteredPoi & { isProtected?: boolean }).isProtected;
+            const isProtected = !!(
+              pt.poi as FilteredPoi & { isProtected?: boolean }
+            ).isProtected;
             const outlierThreshold = isProtected ? 20 : 15;
 
             if (dFromOthers <= outlierThreshold) continue; // not an outlier
@@ -1217,8 +1286,10 @@ export class SchedulerService {
             const othersAreCompact = others.every(
               (o) =>
                 this.haversineKm(
-                  otherCentLat, otherCentLon,
-                  o.poi.coordinates.lat, o.poi.coordinates.lon,
+                  otherCentLat,
+                  otherCentLon,
+                  o.poi.coordinates.lat,
+                  o.poi.coordinates.lon,
                 ) < 5,
             );
 
@@ -1231,14 +1302,34 @@ export class SchedulerService {
 
             // Try to pull up to 2 neighbors from global pool to justify the remote trip
             const neighbors = availablePois
-              .filter((p) => !usedPoiIds.has(p.id) && !this.isFoodCategory(p.category))
-              .sort((a, b) =>
-                this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, a.coordinates.lat, a.coordinates.lon) -
-                this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, b.coordinates.lat, b.coordinates.lon),
+              .filter(
+                (p) =>
+                  !usedPoiIds.has(p.id) && !this.isFoodCategory(p.category),
+              )
+              .sort(
+                (a, b) =>
+                  this.haversineKm(
+                    poi.coordinates.lat,
+                    poi.coordinates.lon,
+                    a.coordinates.lat,
+                    a.coordinates.lon,
+                  ) -
+                  this.haversineKm(
+                    poi.coordinates.lat,
+                    poi.coordinates.lon,
+                    b.coordinates.lat,
+                    b.coordinates.lon,
+                  ),
               )
               .slice(0, 2)
-              .filter((p) =>
-                this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, p.coordinates.lat, p.coordinates.lon) < 8,
+              .filter(
+                (p) =>
+                  this.haversineKm(
+                    poi.coordinates.lat,
+                    poi.coordinates.lon,
+                    p.coordinates.lat,
+                    p.coordinates.lon,
+                  ) < 8,
               );
 
             if (neighbors.length > 0) {
@@ -1299,6 +1390,11 @@ export class SchedulerService {
       total_budget_estimated: totalBudget,
       days,
     };
+  }
+
+  private isNightVenueCategory(cat: string | undefined): boolean {
+    const c = (cat || '').toLowerCase();
+    return ['bar', 'pub', 'night_club', 'nightclub', 'cocktail_bar'].includes(c);
   }
 
   private isFoodCategory(cat: string | undefined): boolean {
