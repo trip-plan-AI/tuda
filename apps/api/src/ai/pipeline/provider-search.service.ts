@@ -198,12 +198,28 @@ export class ProviderSearchService {
     if (kudagoRaw.length > 0 && overpassRaw.length > 0) {
       for (const kudaPoi of kudagoRaw) {
         for (const ovPoi of overpassRaw) {
-          const score = this.fuzzyMatcher.calculateMatchScore(
+          const nameScore = this.fuzzyMatcher.calculateMatchScore(
             kudaPoi.name,
             ovPoi.name,
             0,
           );
-          if (score > 0.82) {
+          if (nameScore > 0.82) {
+            // COORDINATE SANITY: if name matches but coords diverge >5 km → ghost node, not confirmed.
+            // Example: "Стадион Фишт" can appear as a ticket-office ghost in city center (KudaGo)
+            // and as the real stadium 30 km away (Overpass). Same name ≠ same place.
+            const coordDist = this.haversineKm(
+              kudaPoi.coordinates.lat,
+              kudaPoi.coordinates.lon,
+              ovPoi.coordinates.lat,
+              ovPoi.coordinates.lon,
+            );
+            if (coordDist > 5) {
+              this.logger.warn(
+                `[CrossSource] "${kudaPoi.name}" name-match but coords ${coordDist.toFixed(1)} km apart — skipping isProtected`,
+              );
+              continue;
+            }
+
             // Mark both copies; deduplicate will keep one with highest quality
             (kudaPoi as any).isProtected = true;
             (ovPoi as any).isProtected = true;
@@ -212,6 +228,25 @@ export class ProviderSearchService {
             ovPoi.score = Math.max(ovPoi.score, 0.8);
           }
         }
+      }
+    }
+
+    // LARGE VENUE SANITY: stadium/arena with typical urban street address = ghost node.
+    // Real stadiums are on stadium grounds, not pedestrian shopping streets.
+    const LARGE_VENUE_KW = ['стадион', 'арена', 'амфитеатр'];
+    for (const poi of allHardPois) {
+      if ((poi as any).isProtected) continue;
+      const nameLower = poi.name.toLowerCase();
+      const addrLower = (poi.address || '').toLowerCase();
+      const isLargeVenueName = LARGE_VENUE_KW.some((kw) => nameLower.includes(kw));
+      // Heuristic: "ул. X" or "улица X" in address but category is not sports → suspect
+      const hasStreetAddr = /^ул\.|^улица\s|\bул\.\s|\bулица\s/.test(addrLower);
+      if (isLargeVenueName && hasStreetAddr) {
+        const oldScore = poi.score;
+        poi.score = Math.min(poi.score, 0.15);
+        this.logger.warn(
+          `[LargeVenueSanity] "${poi.name}" at "${poi.address}" — stadium on street address, score capped ${oldScore.toFixed(2)} → ${poi.score.toFixed(2)}`,
+        );
       }
     }
 
