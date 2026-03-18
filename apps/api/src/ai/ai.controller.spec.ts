@@ -50,6 +50,7 @@ describe('AiController plan contract fields', () => {
       name: 'ГМИИ им. Пушкина',
       address: 'ул. Волхонка, 12, Москва',
       category: 'museum',
+      score: 0.5,
       coordinates: {
         lat: 55.747,
         lon: 37.605,
@@ -60,6 +61,7 @@ describe('AiController plan contract fields', () => {
       name: 'ГМИИ им. Пушкина',
       address: 'ул. Волхонка, 12, Москва',
       category: 'museum',
+      score: 0.5,
       coordinates: {
         lat: 55.7471,
         lon: 37.6051,
@@ -232,7 +234,10 @@ describe('AiController plan contract fields', () => {
       logicalIdSelectorService as never,
       {} as never, // mutationParser
       {} as never, // pointMutationService
-      {} as never, // collaborationGateway
+      {} as never, // eventsService
+      {} as never, // geocodingFallbackService
+      {} as never, // analyzer
+      {} as never, // explainer
     );
 
     return {
@@ -539,6 +544,7 @@ describe('AiController targeted mutations (phase 3)', () => {
     id,
     name,
     category,
+    score: 0.5,
     address: `${name}, Москва`,
     coordinates: { lat, lon },
     description: `Описание ${name}`,
@@ -672,7 +678,10 @@ describe('AiController targeted mutations (phase 3)', () => {
       logicalIdSelectorService as never,
       {} as never, // mutationParser
       {} as never, // pointMutationService
-      {} as never, // collaborationGateway
+      {} as never, // eventsService
+      {} as never, // geocodingFallbackService
+      {} as never, // analyzer
+      {} as never, // explainer
     );
 
     return {

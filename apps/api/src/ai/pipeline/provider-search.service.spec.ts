@@ -2,6 +2,27 @@ import { ProviderSearchService } from './provider-search.service';
 import type { ParsedIntent } from '../types/pipeline.types';
 import type { PoiItem } from '../types/poi.types';
 
+function makeService(
+  kudagoFetch: jest.Mock,
+  overpassFetch: jest.Mock,
+  llmClient: object = { client: { chat: { completions: { create: jest.fn() } } }, model: 'test' },
+  geosearch: object = { search: jest.fn() },
+) {
+  return new ProviderSearchService(
+    {} as never, // redis
+    { fetchByIntent: kudagoFetch } as never, // kudagoClient
+    { fetchByIntent: overpassFetch } as never, // overpassClient
+    {} as never, // osmFetchClient
+    llmClient as never, // llmClientService
+    geosearch as never, // geosearch
+    {} as never, // aiDiscovery
+    { calculateMatchScore: jest.fn().mockReturnValue(0) } as never, // fuzzyMatcher
+    {} as never, // cityAnalyzer
+    {} as never, // clusteringService
+    {} as never, // locationResolver
+  );
+}
+
 const buildPoi = (
   id: string,
   category: PoiItem['category'],
@@ -11,6 +32,7 @@ const buildPoi = (
   name: `POI ${id}`,
   address: `Address ${id}`,
   category,
+  score: 0.5,
   coordinates: { lat, lon: 37.6 },
   rating: 4.2,
 });
@@ -40,14 +62,9 @@ describe('ProviderSearchService mass collection shadow diagnostics', () => {
     const kudagoPois = [buildPoi('k-1', 'museum', 55.71)];
     const overpassPois = [buildPoi('o-1', 'park', 55.75)];
 
-    const service = new ProviderSearchService(
-      { fetchByIntent: jest.fn().mockResolvedValue(kudagoPois) } as never,
-      { fetchByIntent: jest.fn().mockResolvedValue(overpassPois) } as never,
-      {
-        client: { chat: { completions: { create: jest.fn() } } },
-        model: 'test',
-      } as never,
-      { search: jest.fn() } as never,
+    const service = makeService(
+      jest.fn().mockResolvedValue(kudagoPois),
+      jest.fn().mockResolvedValue(overpassPois),
     );
 
     const result = await service.fetchAndFilter({ ...baseIntent }, []);
@@ -99,14 +116,9 @@ describe('ProviderSearchService mass collection shadow diagnostics', () => {
     ];
     const fallbacks: string[] = [];
 
-    const service = new ProviderSearchService(
-      { fetchByIntent: jest.fn().mockResolvedValue([]) } as never,
-      { fetchByIntent: jest.fn().mockResolvedValue(overpassPois) } as never,
-      {
-        client: { chat: { completions: { create: jest.fn() } } },
-        model: 'test',
-      } as never,
-      { search: jest.fn() } as never,
+    const service = makeService(
+      jest.fn().mockResolvedValue([]),
+      jest.fn().mockResolvedValue(overpassPois),
     );
 
     const result = await service.fetchAndFilter({ ...baseIntent }, fallbacks);
@@ -138,14 +150,9 @@ describe('ProviderSearchService mass collection shadow diagnostics', () => {
       buildPoi('o-2', 'attraction', 55.79),
     ];
 
-    const service = new ProviderSearchService(
-      { fetchByIntent: jest.fn().mockResolvedValue(kudagoPois) } as never,
-      { fetchByIntent: jest.fn().mockResolvedValue(overpassPois) } as never,
-      {
-        client: { chat: { completions: { create: jest.fn() } } },
-        model: 'test',
-      } as never,
-      { search: jest.fn() } as never,
+    const service = makeService(
+      jest.fn().mockResolvedValue(kudagoPois),
+      jest.fn().mockResolvedValue(overpassPois),
     );
 
     jest
