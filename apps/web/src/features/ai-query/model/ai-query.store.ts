@@ -859,20 +859,12 @@ export const useAiQueryStore = create<AiQueryStore>()(
     const target = state.sessions[nextSessionId];
     if (!target) return;
 
-    // TRI-106: Обновляем updatedAt при переключении, чтобы чат "всплывал" в списке
-    const nextSessions = {
-      ...state.sessions,
-      [nextSessionId]: {
-        ...target,
-        updatedAt: new Date().toISOString(),
-      },
-    };
-
+    // updatedAt не трогаем при переключении — чат всплывает только при отправке сообщений
     set({
-      sessions: nextSessions,
+      sessions: state.sessions,
       activeSessionId: nextSessionId,
       isLoading: false,
-      ...syncLegacyFields(nextSessions, nextSessionId),
+      ...syncLegacyFields(state.sessions, nextSessionId),
     });
 
     // Не загружаем историю если сессия только что была очищена (justCleared флаг)
