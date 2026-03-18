@@ -586,9 +586,8 @@ export function ProfilePage() {
 
     const onTripBudgetUpdated = ({ trip_id, budget }: { trip_id: string; budget: number }) => {
       if (!trip_id) return;
-      if (currentTrip?.id && trip_id === currentTrip.id) {
-        updateCurrentTrip({ budget });
-      }
+      // Update allTrips so TripCard re-renders with the new plannedBudget.
+      // currentTrip is handled by useCollaborationSocket's handleTripBudgetUpdated.
       setAllTrips((prev) => prev.map((t) => (t.id === trip_id ? { ...t, budget } : t)));
     };
 
