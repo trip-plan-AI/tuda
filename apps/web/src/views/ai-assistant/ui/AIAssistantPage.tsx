@@ -385,8 +385,11 @@ export function AIAssistantPage() {
   };
 
   const handleDeletePoint = async (pointName: string) => {
-    const tripId = activeSession?.tripId || currentTrip?.id;
-    if (!tripId || tripId.startsWith('guest-')) return;
+    const tripId = activeSession?.tripId;
+    if (!tripId || tripId.startsWith('guest-')) {
+      toast.error('Сначала примените маршрут к поездке, затем можно удалять точки');
+      return;
+    }
     const currentPointsContext = currentTrip?.points?.map((p: any) => p.title).join(', ') || '';
     await sendMutationQuery(`удали точку ${pointName}`, tripId, currentPointsContext);
   };

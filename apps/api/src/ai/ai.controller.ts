@@ -2354,10 +2354,19 @@ ${JSON.stringify(points)}
       }
 
       // Есть точки — отправляем с обновлённым маршрутом
-      const routePlan = this.buildRoutePlanFromPoints(
-        trip?.title || 'Маршрут',
-        result.points,
-      );
+      // Берём city из последнего route_plan сессии, иначе fallback на trip.title
+      let planCity = (trip as any)?.title || 'Маршрут';
+      if (body.sessionId) {
+        const session = await this.aiSessionsService.getByIdForUser(
+          body.sessionId,
+          user.id,
+        );
+        const existingPlan = session
+          ? this.extractCurrentRoutePlan(session.messages)
+          : null;
+        if (existingPlan?.city) planCity = existingPlan.city;
+      }
+      const routePlan = this.buildRoutePlanFromPoints(planCity, result.points);
 
       if (body.sessionId) {
         await this.aiSessionsService.appendMessages(body.sessionId, [
