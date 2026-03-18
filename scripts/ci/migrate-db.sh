@@ -1,107 +1,174 @@
 #!/usr/bin/env bash
 # Надежный скрипт миграции БД для продакшена
-# Стратегия: migrate -> (если failed) push --force -> (если failed) error
-set -Eeuo pipefail
+# Стратегия: drizzle-kit migrate -> fallback на db:push --yes -> валидация схемы
+set -euo pipefail
 
 LOG_FILE="${LOG_FILE:-/tmp/db_migrate.log}"
 MAX_RETRIES="${MAX_RETRIES:-2}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 
-echo "[migrate] started at $(date -u +"%Y-%m-%dT%H:%M:%SZ")" | tee -a "$LOG_FILE"
+log() {
+  echo "[migrate] $(date -u +"%Y-%m-%dT%H:%M:%SZ") $*" | tee -a "$LOG_FILE"
+}
 
-# Функция для проверки наличия таблицы миграций
-ensure_migrations_table() {
-  echo "[migrate] ensuring __drizzle_migrations table exists..." | tee -a "$LOG_FILE"
-  
-  # Создаем таблицу миграций если не существует
-  # Drizzle ожидает именно такую структуру
-  # Примечание: "when" - зарезервированное слово, используем кавычки
-  docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc '
-    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<EOF
-CREATE TABLE IF NOT EXISTS "__drizzle_migrations" (
-  id SERIAL PRIMARY KEY,
-  hash text NOT NULL,
-  created_at bigint NOT NULL,
-  idx_serial integer NOT NULL,
-  "when" bigint NOT NULL,
-  tag text NOT NULL,
-  breakpoints boolean NOT NULL DEFAULT true
-);
-CREATE INDEX IF NOT EXISTS "__drizzle_migrations_hash_idx" ON "__drizzle_migrations" (hash);
-EOF
-  ' || {
-    echo "[migrate][warn] failed to create migrations table, will retry..." | tee -a "$LOG_FILE"
-    return 1
-  }
-  
-  echo "[migrate] migrations table ready" | tee -a "$LOG_FILE"
-  return 0
+log_error() {
+  echo "[migrate][error] $(date -u +"%Y-%m-%dT%H:%M:%SZ") $*" | tee -a "$LOG_FILE" >&2
 }
 
 # Функция для применения миграций через drizzle-kit migrate
 run_migrate() {
   local retry_count=0
-  
+
   while [ $retry_count -lt $MAX_RETRIES ]; do
     retry_count=$((retry_count + 1))
-    echo "[migrate] attempt $retry_count of $MAX_RETRIES..." | tee -a "$LOG_FILE"
-    
-    # Пробуем создать таблицу миграций
-    ensure_migrations_table || sleep 2
-    
-    # Пробуем применить миграции
-    if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T --no-deps api \
+    log "attempt $retry_count of $MAX_RETRIES..."
+
+    if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f "$COMPOSE_FILE" run --rm -T --no-deps api \
       pnpm --filter api db:migrate < /dev/null 2>&1 | tee -a "$LOG_FILE"; then
-      echo "[migrate] migrate completed successfully" | tee -a "$LOG_FILE"
+      log "migrate completed successfully"
       return 0
     fi
-    
-    echo "[migrate][warn] migrate attempt $retry_count failed" | tee -a "$LOG_FILE"
+
+    log_error "migrate attempt $retry_count failed"
     sleep 2
   done
-  
-  echo "[migrate][error] all migrate attempts failed" | tee -a "$LOG_FILE"
+
+  log_error "all migrate attempts failed"
   return 1
 }
 
-# Функция для fallback на db:push
+# Функция для fallback на db:push с флагом --yes (неинтерактивный режим)
 run_push_fallback() {
-  echo "[migrate][fallback] starting db:push --force..." | tee -a "$LOG_FILE"
-  
-  if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f docker-compose.prod.yml run --rm -T --no-deps api \
-    pnpm --filter api db:push --force < /dev/null 2>&1 | tee -a "$LOG_FILE"; then
-    echo "[migrate][fallback] push completed successfully" | tee -a "$LOG_FILE"
+  log "starting db:push --yes (non-interactive fallback)..."
+
+  if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f "$COMPOSE_FILE" run --rm -T --no-deps api \
+    pnpm --filter api db:push --yes < /dev/null 2>&1 | tee -a "$LOG_FILE"; then
+    log "push completed successfully"
     return 0
   else
-    echo "[migrate][error][fallback] push failed" | tee -a "$LOG_FILE"
+    log_error "push failed"
     return 1
   fi
 }
 
-# Основной процесс
-main() {
-  # Шаг 0: Активируем PostGIS (идемпотентно, безопасно)
-  echo "[migrate] enabling PostGIS extension..." | tee -a "$LOG_FILE"
-  docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc '
-    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;" 2>&1 || echo "[postgis] extension may already exist or not available"
-  ' | tee -a "$LOG_FILE"
-  
-  # Шаг 1: Пробуем основные миграции
-  if run_migrate; then
-    echo "[migrate] success via migrate" | tee -a "$LOG_FILE"
-    return 0
+# Пост-миграционная валидация критических колонок
+validate_schema() {
+  log "validating critical schema columns..."
+
+  # Проверяем наличие критических колонок в ai_sessions
+  local missing_columns
+  missing_columns=$(docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -t -A -c "
+      WITH required(table_name, column_name) AS (
+        VALUES
+          ('\''ai_sessions'\'', '\''id'\''),
+          ('\''ai_sessions'\'', '\''trip_id'\''),
+          ('\''ai_sessions'\'', '\''user_id'\''),
+          ('\''ai_sessions'\'', '\''messages'\''),
+          ('\''ai_sessions'\'', '\''title'\''),
+          ('\''ai_sessions'\'', '\''created_at'\''),
+          ('\''ai_sessions'\'', '\''updated_at'\'')
+      )
+      SELECT r.table_name || '\''.'\'' || r.column_name
+      FROM required r
+      LEFT JOIN information_schema.columns c
+        ON c.table_schema = '\''public'\''
+        AND c.table_name = r.table_name
+        AND c.column_name = r.column_name
+      WHERE c.column_name IS NULL
+      ORDER BY r.table_name, r.column_name;
+    "
+  ' 2>&1) || {
+    log_error "schema validation query failed"
+    return 1
+  }
+
+  if [ -n "$missing_columns" ]; then
+    log_error "schema validation failed — missing columns:"
+    echo "$missing_columns" | tee -a "$LOG_FILE"
+    return 1
   fi
+
+  log "schema validation passed — all critical columns exist"
   
-  # Шаг 2: Fallback на push
-  echo "[migrate] falling back to db:push --force..." | tee -a "$LOG_FILE"
-  
-  if run_push_fallback; then
-    echo "[migrate] success via push fallback" | tee -a "$LOG_FILE"
-    return 0
+  # Дополнительная проверка ENUM типов
+  log "validating ENUM types..."
+  local enum_check
+  enum_check=$(docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -t -A -c "
+      SELECT typname
+      FROM pg_type
+      WHERE typnamespace = '\''public'\''::regnamespace
+        AND typname IN ('\''collaborator_role'\'', '\''transport_mode'\'', '\''poi_category'\'')
+      ORDER BY typname;
+    "
+  ' 2>&1) || {
+    log_error "ENUM validation query failed"
+    return 1
+  }
+
+  local enum_count
+  enum_count=$(echo "$enum_check" | grep -c . || true)
+  if [ "$enum_count" -lt 3 ]; then
+    log_error "ENUM validation failed — expected 3 enums, found $enum_count"
+    return 1
   fi
-  
-  echo "[migrate][error] all methods failed" | tee -a "$LOG_FILE"
-  return 1
+
+  log "ENUM validation passed — found $enum_count enums"
+  return 0
 }
 
-main
-exit $?
+# Применение идемпотентных ENUM типов
+apply_enums() {
+  log "applying idempotent ENUM types..."
+  
+  local enums_sql="/app/apps/api/src/db/00-enums.sql"
+  
+  if docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc "
+    psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 -f \"$enums_sql\"
+  " 2>&1 | tee -a "$LOG_FILE"; then
+    log "ENUM types applied successfully"
+    return 0
+  else
+    log_error "failed to apply ENUM types"
+    return 1
+  fi
+}
+
+# Основная функция
+main() {
+  log "started"
+
+  # Шаг 0: Применяем ENUM типы (идемпотентно)
+  if ! apply_enums; then
+    log_error "ENUM application failed, continuing anyway..."
+  fi
+
+  # Шаг 1: Активируем PostGIS (идемпотентно)
+  log "enabling PostGIS extension..."
+  docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+  ' 2>&1 | tee -a "$LOG_FILE" || log "PostGIS extension may already exist"
+
+  # Шаг 2: Применяем миграции через drizzle-kit migrate
+  if run_migrate; then
+    log "success via migrate"
+  else
+    # Шаг 3: Fallback на db:push --yes (неинтерактивный)
+    log "falling back to db:push --yes..."
+    if ! run_push_fallback; then
+      log_error "all migration methods failed"
+      exit 1
+    fi
+  fi
+
+  # Шаг 4: Пост-миграционная валидация
+  if ! validate_schema; then
+    log_error "schema validation failed after migration"
+    exit 1
+  fi
+
+  log "all migrations completed and validated successfully"
+}
+
+main "$@"
