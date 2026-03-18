@@ -471,6 +471,10 @@ export function AIAssistantPage() {
   }, [lastPlanMessage?.routePlan, currentTrip?.id]);
 
   const displayPoints = useMemo(() => {
+    // Новая/пустая сессия — карта чистая, независимо от tripId.
+    // Без этого новый чат наследует tripId и показывает точки предыдущего маршрута.
+    if (messages.length === 0) return [];
+
     // Если есть свежий AI-план, который ещё не применён — показываем его точки на карте.
     // Это покрывает случай когда сессия уже привязана к трипу, но пришёл новый план с 16 точками.
     const hasUnappliedPlan =
@@ -491,7 +495,7 @@ export function AIAssistantPage() {
 
     // Нет привязанного маршрута — показываем черновик ИИ из истории чата
     return aiPoints;
-  }, [activeSession?.tripId, currentTrip?.points, aiPoints, lastPlanMessage, lastAppliedPlanMessageId]);
+  }, [messages.length, activeSession?.tripId, currentTrip?.points, aiPoints, lastPlanMessage, lastAppliedPlanMessageId]);
 
   const socketTripId = activeSession?.tripId || '';
   useCollaborationSocket(socketTripId);
