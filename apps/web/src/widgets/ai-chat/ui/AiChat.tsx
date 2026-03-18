@@ -144,6 +144,7 @@ export function AiChat({
 }: AiChatProps) {
   const [query, setQuery] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [aiMode, setAiMode] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const isFirstAutoScrollRef = useRef(true);
 
@@ -175,7 +176,9 @@ export function AiChat({
     }
 
     setValidationError(null);
-    onSend(trimmed);
+    // В режиме AI (только для коллабораций) добавляем префикс /ai
+    const finalQuery = hasCollaborators && aiMode ? `/ai ${trimmed}` : trimmed;
+    onSend(finalQuery);
     setQuery('');
   };
 
@@ -239,27 +242,33 @@ export function AiChat({
         {hasCollaborators && (
           <p className="mb-2 text-[11px] text-slate-400">
             <Bot className="mr-1 inline h-3 w-3" />
-            Нажми на кнопку слева, чтобы отправить запрос AI. Обычное сообщение увидят все участники чата.
+            {aiMode
+              ? 'Режим AI активен — следующее сообщение уйдёт в AI.'
+              : 'Нажми на кнопку слева, чтобы включить режим AI.'}
           </p>
         )}
 
         <div className="flex gap-2">
           {hasCollaborators && (
-            <Button
+            <button
               type="button"
-              variant="outline"
-              size="icon"
-              title="Отправить в AI"
-              onClick={() => {
-                if (!query.trim()) return;
-                void onSendToAi?.(query.trim());
-                setQuery('');
-              }}
+              title={aiMode ? 'Режим AI активен (нажми чтобы выключить)' : 'Включить режим AI'}
               disabled={isLoading}
-              className="shrink-0 border-brand-sky text-brand-sky hover:bg-brand-sky/10"
+              onClick={() => setAiMode((v) => !v)}
+              className={[
+                'relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-all duration-200',
+                'active:scale-90',
+                aiMode
+                  ? 'border-brand-sky bg-brand-sky text-white shadow-[0_0_0_3px_rgba(14,165,233,0.25)]'
+                  : 'border-brand-sky/40 text-brand-sky hover:border-brand-sky hover:bg-brand-sky/10',
+              ].join(' ')}
             >
-              <Bot className="h-4 w-4" />
-            </Button>
+              <Bot className={`h-4 w-4 transition-transform duration-200 ${aiMode ? 'scale-110' : ''}`} />
+              {/* Пульсирующее кольцо пока активно */}
+              {aiMode && (
+                <span className="absolute inset-0 rounded-lg animate-ping bg-brand-sky/30 pointer-events-none" />
+              )}
+            </button>
           )}
           <Input
             value={query}
@@ -267,7 +276,13 @@ export function AiChat({
               setQuery(e.target.value.slice(0, 1000));
               if (validationError) setValidationError(null);
             }}
-            placeholder={hasCollaborators ? 'Сообщение участникам...' : 'Например: 2 дня в Казани с бюджетом 10000'}
+            placeholder={
+              hasCollaborators
+                ? aiMode
+                  ? 'Запрос к AI...'
+                  : 'Сообщение участникам...'
+                : 'Например: 2 дня в Казани с бюджетом 10000'
+            }
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();

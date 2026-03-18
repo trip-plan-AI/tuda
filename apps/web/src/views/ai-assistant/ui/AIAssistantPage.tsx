@@ -12,7 +12,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useAiQueryStore } from '@/features/ai-query';
 import { useShallow } from 'zustand/react/shallow';
 import { useTripStore } from '@/entities/trip';
-import { useCollaborationSocket, CollaboratorsAvatarGroup, useChatSync, useCollaborateStore } from '@/features/route-collaborate';
+import { useCollaborationSocket, CollaboratorsAvatarGroup, useChatSync, useCollaborateStore, collaborateApi } from '@/features/route-collaborate';
 import { AiChat } from '@/widgets/ai-chat';
 import { Button } from '@/shared/ui/button';
 import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
@@ -176,19 +176,31 @@ export function AIAssistantPage() {
   }, [isSessionsLoading, sendQuery, switchSession, activeSession?.tripId]);
 
   const handleSend = async (query: string) => {
-    const messageId = crypto.randomUUID();
-
-    // Транслируем сообщение другим участникам комнаты, используя единый ID
-    sendChatMessage(query, messageId);
-
     // Если один участник — все сообщения идут в AI.
     // Если 2+ — только /ai префикс вызывает AI, остальное в чат коллаборантов.
     const isAiRequest = !hasCollaborators || query.startsWith('/ai');
 
     if (isAiRequest) {
       const cleanQuery = query.replace(/^\/ai\s*/, '').trim() || query;
-      await sendQuery(cleanQuery, activeSession?.tripId ?? undefined);
+      const messageId = crypto.randomUUID();
 
+      // 1. Сразу показываем сообщение пользователя локально
+      addLocalMessage({
+        id: messageId,
+        role: 'user',
+        content: cleanQuery,
+        timestamp: new Date().toISOString(),
+      });
+
+      // 2. Сразу транслируем другим участникам (до AI-запроса, чтобы порядок был правильным)
+      if (socketTripId) {
+        sendChatMessage(cleanQuery, messageId);
+      }
+
+      // 3. Запускаем AI — передаём messageId чтобы sendQuery не добавлял дубликат
+      await sendQuery(cleanQuery, activeSession?.tripId ?? undefined, messageId);
+
+      // 4. Делимся ответом AI с другими участниками
       const updatedMessages = useAiQueryStore.getState().messages;
       const lastAssistant = [...updatedMessages].reverse().find(m => m.role === 'assistant');
 
@@ -203,7 +215,9 @@ export function AIAssistantPage() {
         });
       }
     } else {
-      // Показываем собственное сообщение локально с тем же ID
+      // Обычное сообщение в чат коллаборации — показываем локально и транслируем
+      const messageId = crypto.randomUUID();
+      sendChatMessage(query, messageId);
       addLocalMessage({
         id: messageId,
         role: 'user',
@@ -434,8 +448,19 @@ export function AIAssistantPage() {
   const socketTripId = activeSession?.tripId || '';
   useCollaborationSocket(socketTripId);
   const { sendChatMessage } = useChatSync(socketTripId);
+
   const onlineUserIds = useCollaborateStore((s) => s.onlineUserIds);
-  const hasCollaborators = onlineUserIds.length > 1;
+  const collaborators = useCollaborateStore((s) => s.collaborators);
+  const setCollaborators = useCollaborateStore((s) => s.setCollaborators);
+
+  // Загружаем список участников при смене маршрута
+  useEffect(() => {
+    if (!socketTripId) return;
+    collaborateApi.getAll(socketTripId).then(setCollaborators).catch(() => {});
+  }, [socketTripId, setCollaborators]);
+
+  // Кнопка AI-режима видна если у маршрута есть хотя бы один участник (онлайн или нет)
+  const hasCollaborators = collaborators.length > 0 || onlineUserIds.length > 1;
 
   const [isAddPointMode, setIsAddPointMode] = useState(false);
 
