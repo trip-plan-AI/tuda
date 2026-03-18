@@ -61,6 +61,48 @@ run_migrate() {
   return 1
 }
 
+# Единый registry runtime-контракта БД.
+# Формат строки: table|column|sql_to_apply
+# Разрешаем только additive, идемпотентные reconciliation-операции.
+runtime_contract_registry() {
+  cat <<'EOF'
+ai_sessions|updated_at|ALTER TABLE public.ai_sessions ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now() NOT NULL;
+EOF
+}
+
+reconcile_runtime_contract() {
+  log "reconciling runtime schema contract..."
+
+  while IFS='|' read -r table_name column_name apply_sql; do
+    [ -n "$table_name" ] || continue
+
+    local column_exists
+    column_exists=$(docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc "
+      psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 -t -A -c \"
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = '$table_name'
+            AND column_name = '$column_name'
+        )::int;
+      \"
+    " 2>&1 | tr -d '[:space:]')
+
+    if [ "$column_exists" = "1" ]; then
+      log "runtime contract ok: $table_name.$column_name already exists"
+      continue
+    fi
+
+    log "runtime contract drift detected: applying additive reconciliation for $table_name.$column_name"
+    docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc "
+      psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 -c \"$apply_sql\"
+    " 2>&1 | tee -a "$LOG_FILE"
+  done < <(runtime_contract_registry)
+
+  log "runtime schema reconciliation finished"
+}
+
 # Если прод уже инициализирован (таблицы/ENUM существуют),
 # а история drizzle отсутствует или пуста, аккуратно создаем baseline.
 bootstrap_drizzle_history_if_needed() {
@@ -79,12 +121,6 @@ bootstrap_drizzle_history_if_needed() {
           to_regclass('\''public.trips'\'') IS NOT NULL
           AND to_regclass('\''public.route_points'\'') IS NOT NULL
           AND to_regclass('\''public.ai_sessions'\'') IS NOT NULL
-          AND EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema = '\''public'\''
-              AND table_name = '\''ai_sessions'\''
-              AND column_name = '\''updated_at'\''
-          )
         )::int || '\''|'\'' ||
         (EXISTS (SELECT 1 FROM pg_type WHERE typnamespace = '\''public'\''::regnamespace AND typname = '\''collaborator_role'\''))::int;
     "
@@ -200,9 +236,8 @@ PY
 validate_schema() {
   log "validating critical schema columns..."
 
-  # Проверяем только прод-критичный контракт, который реально нужен после deploy:
-  # маршруты и базовые AI-таблицы. Не валим деплой из-за старых nullable/optional
-  # колонок, если приложение и seed на них не завязаны в текущем релизе.
+  # Проверяем runtime-контракт после migrate + reconciliation.
+  # Здесь должны существовать поля, которые реально читает/пишет backend-код.
   local missing_columns
   missing_columns=$(docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -t -A -c "
@@ -219,7 +254,8 @@ validate_schema() {
           ('\''route_points'\'', '\''duration'\''),
           ('\''ai_sessions'\'', '\''id'\''),
           ('\''ai_sessions'\'', '\''messages'\''),
-          ('\''ai_sessions'\'', '\''created_at'\'')
+          ('\''ai_sessions'\'', '\''created_at'\''),
+          ('\''ai_sessions'\'', '\''updated_at'\'')
       )
       SELECT r.table_name || '\''.'\'' || r.column_name
       FROM required r
@@ -241,7 +277,7 @@ validate_schema() {
     return 1
   fi
 
-  log "schema validation passed — deploy contract is satisfied"
+  log "schema validation passed — runtime contract is satisfied"
 
   # Дополнительная проверка ENUM типов
   log "validating ENUM types..."
@@ -300,7 +336,13 @@ main() {
     exit 1
   fi
 
-  # Шаг 4: Пост-миграционная валидация
+  # Шаг 4: Runtime reconciliation для additive schema drift
+  if ! reconcile_runtime_contract; then
+    log_error "runtime schema reconciliation failed"
+    exit 1
+  fi
+
+  # Шаг 5: Пост-миграционная валидация
   if ! validate_schema; then
     log_error "schema validation failed after migration"
     exit 1
