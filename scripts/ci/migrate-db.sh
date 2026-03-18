@@ -14,6 +14,7 @@ ensure_migrations_table() {
   
   # Создаем таблицу миграций если не существует
   # Drizzle ожидает именно такую структуру
+  # Примечание: "when" - зарезервированное слово, используем кавычки
   docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc '
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<EOF
 CREATE TABLE IF NOT EXISTS "__drizzle_migrations" (
@@ -21,7 +22,7 @@ CREATE TABLE IF NOT EXISTS "__drizzle_migrations" (
   hash text NOT NULL,
   created_at bigint NOT NULL,
   idx_serial integer NOT NULL,
-  when bigint NOT NULL,
+  "when" bigint NOT NULL,
   tag text NOT NULL,
   breakpoints boolean NOT NULL DEFAULT true
 );
@@ -78,6 +79,12 @@ run_push_fallback() {
 
 # Основной процесс
 main() {
+  # Шаг 0: Активируем PostGIS (идемпотентно, безопасно)
+  echo "[migrate] enabling PostGIS extension..." | tee -a "$LOG_FILE"
+  docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc '
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;" 2>&1 || echo "[postgis] extension may already exist or not available"
+  ' | tee -a "$LOG_FILE"
+  
   # Шаг 1: Пробуем основные миграции
   if run_migrate; then
     echo "[migrate] success via migrate" | tee -a "$LOG_FILE"
