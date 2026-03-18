@@ -154,7 +154,7 @@ export class CollaborationGateway
     this.collabService.addPresence(client.id, {
       userId: client.data.userId,
       tripId: data.trip_id,
-      name: client.data.email,
+      name: client.data.name,
       color: this.collabService.getUserColor(client.data.userId),
     });
 
@@ -305,7 +305,7 @@ export class CollaborationGateway
   ) {
     client.to(`trip_${data.trip_id}`).emit('cursor:moved', {
       user_id: client.data.userId,
-      name: client.data.email,
+      name: client.data.name,
       color: this.collabService.getUserColor(client.data.userId),
       x: data.x,
       y: data.y,

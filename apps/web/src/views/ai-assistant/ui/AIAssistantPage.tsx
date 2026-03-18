@@ -175,19 +175,31 @@ export function AIAssistantPage() {
   }, [isSessionsLoading, sendQuery, switchSession, activeSession?.tripId]);
 
   const handleSend = async (query: string) => {
-    const messageId = crypto.randomUUID();
-
-    // Транслируем сообщение другим участникам комнаты, используя единый ID
-    sendChatMessage(query, messageId);
-
     // Если один участник — все сообщения идут в AI.
     // Если 2+ — только /ai префикс вызывает AI, остальное в чат коллаборантов.
     const isAiRequest = !hasCollaborators || query.startsWith('/ai');
 
     if (isAiRequest) {
       const cleanQuery = query.replace(/^\/ai\s*/, '').trim() || query;
-      await sendQuery(cleanQuery, activeSession?.tripId ?? undefined);
+      const messageId = crypto.randomUUID();
 
+      // 1. Сразу показываем сообщение пользователя локально
+      addLocalMessage({
+        id: messageId,
+        role: 'user',
+        content: cleanQuery,
+        timestamp: new Date().toISOString(),
+      });
+
+      // 2. Сразу транслируем другим участникам (до AI-запроса, чтобы порядок был правильным)
+      if (socketTripId) {
+        sendChatMessage(cleanQuery, messageId);
+      }
+
+      // 3. Запускаем AI — передаём messageId чтобы sendQuery не добавлял дубликат
+      await sendQuery(cleanQuery, activeSession?.tripId ?? undefined, messageId);
+
+      // 4. Делимся ответом AI с другими участниками
       const updatedMessages = useAiQueryStore.getState().messages;
       const lastAssistant = [...updatedMessages].reverse().find(m => m.role === 'assistant');
 
@@ -202,7 +214,9 @@ export function AIAssistantPage() {
         });
       }
     } else {
-      // Показываем собственное сообщение локально с тем же ID
+      // Обычное сообщение в чат коллаборации — показываем локально и транслируем
+      const messageId = crypto.randomUUID();
+      sendChatMessage(query, messageId);
       addLocalMessage({
         id: messageId,
         role: 'user',
