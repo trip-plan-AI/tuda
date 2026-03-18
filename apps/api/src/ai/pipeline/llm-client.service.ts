@@ -174,7 +174,7 @@ export class LlmClientService {
       throw new Error(`YandexGPT HTTP ${response.status}: ${errorText}`);
     }
 
-    const payload = (await response.json()) as any;
+    const payload = await response.json();
     const text = payload.result?.alternatives?.[0]?.message?.text ?? '';
 
     if (options.jsonMode) {
@@ -198,7 +198,10 @@ export class LlmClientService {
     let end = -1;
 
     // Determine if it's an object or an array based on which comes first/last
-    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+    if (
+      firstBrace !== -1 &&
+      (firstBracket === -1 || firstBrace < firstBracket)
+    ) {
       start = firstBrace;
       end = lastBrace;
     } else if (firstBracket !== -1) {

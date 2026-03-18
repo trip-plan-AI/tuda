@@ -234,26 +234,30 @@ export class GeosearchService {
     }
 
     // Tier 0 (DB) + Tier 2: DaData (RU) + Yandex + Nominatim WW with bbox, parallel, timeout 800ms
-    const [tier0Res, dadataRes, yandexRes, nominatimBboxRes] = await Promise.allSettled([
-      this.withTimeout(this.popularDestinations.search(normalized), 800),
-      this.dadataApiKey
-        ? this.withTimeout(this.getDaDataSuggestions(normalized), 800)
-        : Promise.resolve(null),
-      this.yandexSuggestApiKey
-        ? this.withTimeout(this.getYandexSuggestions(normalized, userLat, userLon), 800)
-        : Promise.resolve(null),
-      !isCis
-        ? this.withTimeout(
-            this.getNominatimSuggestionsWithBbox(
-              normalized,
-              bbox,
-              'ru,en',
-              false,
-            ),
-            800,
-          )
-        : Promise.resolve(null),
-    ]);
+    const [tier0Res, dadataRes, yandexRes, nominatimBboxRes] =
+      await Promise.allSettled([
+        this.withTimeout(this.popularDestinations.search(normalized), 800),
+        this.dadataApiKey
+          ? this.withTimeout(this.getDaDataSuggestions(normalized), 800)
+          : Promise.resolve(null),
+        this.yandexSuggestApiKey
+          ? this.withTimeout(
+              this.getYandexSuggestions(normalized, userLat, userLon),
+              800,
+            )
+          : Promise.resolve(null),
+        !isCis
+          ? this.withTimeout(
+              this.getNominatimSuggestionsWithBbox(
+                normalized,
+                bbox,
+                'ru,en',
+                false,
+              ),
+              800,
+            )
+          : Promise.resolve(null),
+      ]);
 
     const tier0Items =
       tier0Res.status === 'fulfilled' ? (tier0Res.value ?? []) : [];
@@ -267,7 +271,12 @@ export class GeosearchService {
         : [];
 
     // Score сначала — чтобы dedup оставлял наиболее релевантный результат в ячейке
-    const allScored = [...tier0Items, ...dadataItems, ...yandexItems, ...nominatimBboxItems]
+    const allScored = [
+      ...tier0Items,
+      ...dadataItems,
+      ...yandexItems,
+      ...nominatimBboxItems,
+    ]
       .map((item) => {
         if (
           'score' in item &&
@@ -288,8 +297,8 @@ export class GeosearchService {
     // Dedup pass 1: координаты (0.002° ≈ 200м) — highest-scored в ячейке
     const seenCoords = new Set<string>();
     const coordDeduped = allScored.filter((item) => {
-      let lat = Number((item as any).lat);
-      let lon = Number((item as any).lon);
+      let lat = Number(item.lat);
+      let lon = Number(item.lon);
       if (!lat || !lon || (Math.abs(lat) < 0.001 && Math.abs(lon) < 0.001)) {
         const match = item.uri?.match(/ll=([^&]+)/);
         if (match) {
@@ -314,14 +323,14 @@ export class GeosearchService {
     const scored = coordDeduped
       .filter((item) => {
         let coreName = item.displayName;
-        if ((item as any).isBusiness && coreName.includes('·')) {
+        if (item.isBusiness && coreName.includes('·')) {
           const parts = coreName.split('·');
           const left = parts[0].trim(); // "Джаганнат, Кафе"
           const right = parts.slice(1).join('·').trim(); // "Москва, улица Кузнецкий Мост, 11с1"
           // берём только название (до первой запятой), игнорируем тип заведения
           const name = left.split(',')[0].trim(); // "Джаганнат"
           coreName = name + ' · ' + right;
-        } else if (!(item as any).isBusiness) {
+        } else if (!item.isBusiness) {
           coreName = coreName.split(',')[0];
         }
 
@@ -428,30 +437,36 @@ export class GeosearchService {
       return this.applyProximity(parsed, userLat, userLon);
     }
 
-    const [tier0Res, dadataRes, yandexRes, nominatimWwRes] = await Promise.allSettled([
-      this.withTimeout(this.popularDestinations.search(normalized), 800),
-      this.dadataApiKey
-        ? this.withTimeout(this.getDaDataSuggestions(normalized), 800)
-        : Promise.resolve(null),
-      this.yandexSuggestApiKey
-        ? this.withTimeout(this.getYandexSuggestions(normalized), 800)
-        : Promise.resolve(null),
-      userLat && userLon
-        ? this.withTimeout(
-            this.getNominatimSuggestionsWithBias(
-              normalized,
-              userLat,
-              userLon,
-              'ru,en',
-              false,
+    const [tier0Res, dadataRes, yandexRes, nominatimWwRes] =
+      await Promise.allSettled([
+        this.withTimeout(this.popularDestinations.search(normalized), 800),
+        this.dadataApiKey
+          ? this.withTimeout(this.getDaDataSuggestions(normalized), 800)
+          : Promise.resolve(null),
+        this.yandexSuggestApiKey
+          ? this.withTimeout(this.getYandexSuggestions(normalized), 800)
+          : Promise.resolve(null),
+        userLat && userLon
+          ? this.withTimeout(
+              this.getNominatimSuggestionsWithBias(
+                normalized,
+                userLat,
+                userLon,
+                'ru,en',
+                false,
+              ),
+              800,
+            )
+          : this.withTimeout(
+              this.getNominatimSuggestions(
+                normalized,
+                undefined,
+                'ru,en',
+                false,
+              ),
+              800,
             ),
-            800,
-          )
-        : this.withTimeout(
-            this.getNominatimSuggestions(normalized, undefined, 'ru,en', false),
-            800,
-          ),
-    ]);
+      ]);
 
     const tier0Items =
       tier0Res.status === 'fulfilled' ? (tier0Res.value ?? []) : [];
@@ -487,8 +502,8 @@ export class GeosearchService {
 
     const seenCoords = new Set<string>();
     const coordDeduped = allScored.filter((item) => {
-      let lat = Number((item as any).lat);
-      let lon = Number((item as any).lon);
+      let lat = Number(item.lat);
+      let lon = Number(item.lon);
       if (!lat || !lon || (Math.abs(lat) < 0.001 && Math.abs(lon) < 0.001)) {
         const match = item.uri?.match(/ll=([^&]+)/);
         if (match) {
@@ -510,13 +525,13 @@ export class GeosearchService {
     const scored = coordDeduped
       .filter((item) => {
         let coreName = item.displayName;
-        if ((item as any).isBusiness && coreName.includes('·')) {
+        if (item.isBusiness && coreName.includes('·')) {
           const parts = coreName.split('·');
           const left = parts[0].trim();
           const right = parts.slice(1).join('·').trim();
           const name = left.split(',')[0].trim();
           coreName = name + ' · ' + right;
-        } else if (!(item as any).isBusiness) {
+        } else if (!item.isBusiness) {
           coreName = coreName.split(',')[0];
         }
 
@@ -588,7 +603,11 @@ export class GeosearchService {
       });
 
       if (filteredYandex.length > 0) {
-        await this.redis.set(cacheKey, JSON.stringify(filteredYandex), 60 * 60 * 24 * 7);
+        await this.redis.set(
+          cacheKey,
+          JSON.stringify(filteredYandex),
+          60 * 60 * 24 * 7,
+        );
       }
       return this.applyProximity(filteredYandex, userLat, userLon);
     }
@@ -727,7 +746,13 @@ export class GeosearchService {
     userLat?: number,
     userLon?: number,
   ): Promise<
-    Array<{ displayName: string; uri: string; lat: number; lon: number; source?: string }>
+    Array<{
+      displayName: string;
+      uri: string;
+      lat: number;
+      lon: number;
+      source?: string;
+    }>
   > {
     const apiKey = this.yandexSuggestApiKey;
     if (!apiKey) return [];
@@ -1284,7 +1309,14 @@ export class GeosearchService {
     return null;
   }
 
-  private async getNominatimSuggestions(q: string, userLonLat?: [number, number], acceptLanguage = 'ru', excludeAmenity = true): Promise<Array<{ displayName: string; uri: string; lat: number; lon: number }>> {
+  private async getNominatimSuggestions(
+    q: string,
+    userLonLat?: [number, number],
+    acceptLanguage = 'ru',
+    excludeAmenity = true,
+  ): Promise<
+    Array<{ displayName: string; uri: string; lat: number; lon: number }>
+  > {
     try {
       const params = new URLSearchParams({
         q,

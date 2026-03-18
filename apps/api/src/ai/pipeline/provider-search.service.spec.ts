@@ -11,11 +11,13 @@ const buildPoi = (
   name: `POI ${id}`,
   address: `Address ${id}`,
   category,
+  score: 0.5,
   coordinates: { lat, lon: 37.6 },
   rating: 4.2,
+  provider: 'overpass',
 });
 
-describe('ProviderSearchService mass collection shadow diagnostics', () => {
+describe('ProviderSearchService (Refactored)', () => {
   const baseIntent: ParsedIntent = {
     city: 'Москва',
     days: 1,
@@ -31,145 +33,71 @@ describe('ProviderSearchService mass collection shadow diagnostics', () => {
     categories: ['museum'],
     excluded_categories: [],
     radius_km: 5,
+    country_code: 'RU',
     start_time: '10:00',
     end_time: '20:00',
     preferences_text: '',
   };
 
-  it('fills diagnostics for KudaGo ok + Overpass ok', async () => {
-    const kudagoPois = [buildPoi('k-1', 'museum', 55.71)];
-    const overpassPois = [buildPoi('o-1', 'park', 55.75)];
+  const mockKudago = { fetchByIntent: jest.fn().mockResolvedValue([]) };
+  const mockOverpass = { fetchByIntent: jest.fn().mockResolvedValue([]) };
+  const mockOsmFetch = { fetchAndFilter: jest.fn().mockResolvedValue([]) };
+  const mockLlmClient = {
+    isCisRegion: jest.fn().mockReturnValue(true),
+    chat: jest.fn().mockResolvedValue(
+      JSON.stringify({
+        selected_ids: ['o-1'],
+        hidden_gems: [],
+      }),
+    ),
+  };
+  const mockGeosearch = { suggest: jest.fn().mockResolvedValue([]) };
+  const mockAiDiscovery = {};
+  const mockFuzzyMatcher = { calculateMatchScore: jest.fn().mockReturnValue(1.0) };
+  const mockCityAnalyzer = { analyze: jest.fn().mockReturnValue({ description: 'Test context' }) };
+  const mockClustering = { clusterPois: jest.fn().mockReturnValue({ clusters: [], noise: [] }) };
 
-    const service = new ProviderSearchService(
-      { fetchByIntent: jest.fn().mockResolvedValue(kudagoPois) } as never,
-      { fetchByIntent: jest.fn().mockResolvedValue(overpassPois) } as never,
-      {
-        client: { chat: { completions: { create: jest.fn() } } },
-        model: 'test',
-      } as never,
-      { search: jest.fn() } as never,
+  function makeService() {
+    return new ProviderSearchService(
+      {} as never,            // redis
+      mockKudago as any,
+      mockOverpass as any,
+      mockOsmFetch as any,
+      mockLlmClient as any,
+      mockGeosearch as any,
+      mockAiDiscovery as any,
+      mockFuzzyMatcher as any,
+      mockCityAnalyzer as any,
+      mockClustering as any,
+      {} as never,            // locationResolver
     );
+  }
 
-    const result = await service.fetchAndFilter({ ...baseIntent }, []);
+  it('successfully executes Stage 1 and Stage 2', async () => {
+    const overpassPois = [buildPoi('o-1', 'museum', 55.75)];
+    mockOverpass.fetchByIntent.mockResolvedValueOnce(overpassPois);
 
-    expect(result.pois).toHaveLength(2);
-    expect(result.shadowDiagnostics).toMatchObject({
-      provider_stats: [
-        {
-          provider: 'kudago',
-          attempted: true,
-          raw_count: 1,
-          used_count: 1,
-          failed: false,
-        },
-        {
-          provider: 'overpass',
-          attempted: true,
-          raw_count: 2,
-          used_count: 1,
-          failed: false,
-        },
-        {
-          provider: 'photon',
-          attempted: false,
-          raw_count: 0,
-          used_count: 0,
-          failed: false,
-        },
-        {
-          provider: 'llm_fill',
-          attempted: false,
-          raw_count: 0,
-          used_count: 0,
-          failed: false,
-        },
-      ],
-      totals: {
-        before_dedup: 2,
-        after_dedup: 2,
-        returned: 2,
-      },
-    });
-  });
+    const service = makeService();
+    const result = await service.fetchAndFilter({ ...baseIntent });
 
-  it('fills diagnostics for KudaGo empty + Overpass fallback', async () => {
-    const overpassPois = [
-      buildPoi('o-1', 'park', 55.75),
-      buildPoi('o-2', 'museum', 55.79),
-    ];
-    const fallbacks: string[] = [];
-
-    const service = new ProviderSearchService(
-      { fetchByIntent: jest.fn().mockResolvedValue([]) } as never,
-      { fetchByIntent: jest.fn().mockResolvedValue(overpassPois) } as never,
-      {
-        client: { chat: { completions: { create: jest.fn() } } },
-        model: 'test',
-      } as never,
-      { search: jest.fn() } as never,
-    );
-
-    const result = await service.fetchAndFilter({ ...baseIntent }, fallbacks);
-
-    expect(result.pois).toHaveLength(2);
-    expect(fallbacks).toContain('KUDAGO_UNAVAILABLE_OVERPASS_ONLY');
+    expect(result.pois).toHaveLength(1);
+    expect(result.pois[0].id).toBe('o-1');
     expect(result.shadowDiagnostics?.provider_stats).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          provider: 'kudago',
-          attempted: true,
-          raw_count: 0,
-          used_count: 0,
-        }),
-        expect.objectContaining({
-          provider: 'overpass',
-          attempted: true,
-          raw_count: 4,
-          used_count: 2,
-        }),
+        expect.objectContaining({ provider: 'overpass', raw_count: 1 }),
+        expect.objectContaining({ provider: 'discovery', attempted: true }),
       ]),
     );
   });
 
-  it('marks llm_fill as attempted when provider shortage remains', async () => {
-    const kudagoPois = [buildPoi('k-1', 'museum', 55.71)];
-    const overpassPois = [
-      buildPoi('o-1', 'park', 55.75),
-      buildPoi('o-2', 'attraction', 55.79),
-    ];
+  it('throws UnprocessableEntityException if no hard data found', async () => {
+    mockOverpass.fetchByIntent.mockResolvedValueOnce([]);
+    mockKudago.fetchByIntent.mockResolvedValueOnce([]);
 
-    const service = new ProviderSearchService(
-      { fetchByIntent: jest.fn().mockResolvedValue(kudagoPois) } as never,
-      { fetchByIntent: jest.fn().mockResolvedValue(overpassPois) } as never,
-      {
-        client: { chat: { completions: { create: jest.fn() } } },
-        model: 'test',
-      } as never,
-      { search: jest.fn() } as never,
+    const service = makeService();
+
+    await expect(service.fetchAndFilter({ ...baseIntent })).rejects.toThrow(
+      'CITY_DATA_UNAVAILABLE',
     );
-
-    jest
-      .spyOn(service as any, 'generateMissingPois')
-      .mockResolvedValue([
-        buildPoi('l-1', 'cafe', 55.81),
-        buildPoi('l-2', 'restaurant', 55.83),
-        buildPoi('l-3', 'park', 55.85),
-      ]);
-
-    const result = await service.fetchAndFilter({ ...baseIntent, days: 3 }, []);
-
-    expect(result.shadowDiagnostics?.provider_stats).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          provider: 'llm_fill',
-          attempted: true,
-          raw_count: 3,
-          used_count: 3,
-          failed: false,
-        }),
-      ]),
-    );
-    expect(result.shadowDiagnostics?.totals.before_dedup).toBe(6);
-    expect(result.pois).toHaveLength(6);
   });
 });
