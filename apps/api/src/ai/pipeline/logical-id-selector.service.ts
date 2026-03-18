@@ -27,7 +27,6 @@ export interface LogicalIdSelectorResult {
 @Injectable()
 export class LogicalIdSelectorService {
   private readonly logger = new Logger('AI_PIPELINE:LogicalIdSelector');
-  private readonly model = 'openai/gpt-4o-mini';
 
   constructor(private readonly llmClientService: LlmClientService) {}
 
@@ -50,18 +49,16 @@ export class LogicalIdSelectorService {
     }
 
     try {
-      const response =
-        await this.llmClientService.client.chat.completions.create({
-          model: this.model,
-          messages: [
-            { role: 'user', content: this.buildPrompt(input, target) },
-          ],
+      const content = await this.llmClientService.chat(
+        [{ role: 'user', content: this.buildPrompt(input, target) }],
+        {
           temperature: 0,
-        });
+          jsonMode: false, // Output is a JSON array string directly
+        },
+      );
 
-      const rawText = response.choices[0]?.message?.content ?? '[]';
       const selectedIds = this.validateModelOutput(
-        rawText,
+        content || '[]',
         input.candidates,
         target,
       );
@@ -136,22 +133,17 @@ export class LogicalIdSelectorService {
       throw new Error('NON_ARRAY_RESPONSE');
     }
 
-    if (parsed.length !== target) {
-      throw new Error(`INVALID_LENGTH:${parsed.length}`);
-    }
-
     const allowedIds = new Set(candidates.map((candidate) => candidate.id));
     const uniqueIds = new Set<string>();
     const resolvedIds: string[] = [];
 
     for (const item of parsed) {
       if (typeof item !== 'string' && typeof item !== 'number') {
-        throw new Error('NON_STRING_ID');
+        continue; // Soft fail: просто игнорируем мусор
       }
 
       const strItem = String(item);
 
-      // Support numeric index (1-based) as fallback — GPT sometimes returns row numbers
       let resolvedId = strItem;
       if (!allowedIds.has(strItem) && /^\d+$/.test(strItem)) {
         const index = Number(strItem) - 1;
@@ -160,19 +152,24 @@ export class LogicalIdSelectorService {
         }
       }
 
-      if (!allowedIds.has(resolvedId)) {
-        throw new Error(`UNKNOWN_ID:${strItem}`);
+      if (allowedIds.has(resolvedId) && !uniqueIds.has(resolvedId)) {
+        uniqueIds.add(resolvedId);
+        resolvedIds.push(resolvedId);
       }
-
-      if (uniqueIds.has(resolvedId)) {
-        throw new Error(`DUPLICATE_ID:${resolvedId}`);
-      }
-
-      uniqueIds.add(resolvedId);
-      resolvedIds.push(resolvedId);
     }
 
-    return resolvedIds;
+    // Soft Recovery: добиваем остаток лучшими кандидатами, если LLM выдал слишком мало
+    if (resolvedIds.length < target) {
+      for (const c of candidates) {
+        if (!uniqueIds.has(c.id)) {
+          resolvedIds.push(c.id);
+          uniqueIds.add(c.id);
+          if (resolvedIds.length === target) break;
+        }
+      }
+    }
+
+    return resolvedIds.slice(0, target);
   }
 
   private buildFallback(
@@ -180,14 +177,10 @@ export class LogicalIdSelectorService {
     target: number,
     reason: string,
   ): LogicalIdSelectorResult {
-    const selectedIds = candidates
-      .slice(0, target)
-      .map((candidate) => candidate.id);
-
     return {
-      selected_ids: selectedIds,
+      selected_ids: candidates.slice(0, target).map((c) => c.id),
       target,
-      selected_count: selectedIds.length,
+      selected_count: Math.min(candidates.length, target),
       fallback_reason: reason,
     };
   }

@@ -108,8 +108,6 @@ export class KudagoClientService {
       params.append('text_format', 'text');
       params.append('page_size', '100');
 
-
-
       const url = `${this.baseUrl}/places/?${params.toString()}`;
 
       // Логируем URL
@@ -189,6 +187,7 @@ export class KudagoClientService {
       id: this.makePoiId(name, address, lat, lon),
       name,
       address,
+      provider: 'kudago',
       coordinates: { lat, lon },
       category,
       // В KudaGo нет четкого рейтинга в этом эндпоинте, ставим дефолтный хороший, так как KudaGo уже фильтрует интересное

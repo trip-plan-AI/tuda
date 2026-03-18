@@ -72,16 +72,20 @@ export class GeocodingFallbackService {
       id: string;
       name: string;
       coordinates?: { lat: number; lon: number };
+      city_name?: string;
     }>,
-    city: string,
+    defaultCity: string,
   ): Promise<Map<string, { lat: number; lon: number }>> {
     const geocodedPoints = new Map<string, { lat: number; lon: number }>();
-    const cityCenter = await this.getCityCenter(city);
 
     // nameToCoords — локальный кэш для текущего запроса (чтобы не дергать Redis/API для дублей в одном списке)
     const nameToCoords = new Map<string, { lat: number; lon: number }>();
 
+    const cityCenters = new Map<string, { lat: number; lon: number } | null>();
+
     for (const point of points) {
+      const city = point.city_name || defaultCity;
+
       // 1. Пропускаем, если координаты уже есть
       if (this.isValidCoord(point.coordinates?.lat, point.coordinates?.lon)) {
         geocodedPoints.set(point.id, point.coordinates!);
@@ -94,6 +98,11 @@ export class GeocodingFallbackService {
         geocodedPoints.set(point.id, nameToCoords.get(point.name)!);
         continue;
       }
+
+      if (!cityCenters.has(city)) {
+        cityCenters.set(city, await this.getCityCenter(city));
+      }
+      const cityCenter = cityCenters.get(city) ?? null;
 
       // --- Rate Limiting: Небольшая пауза между точками для защиты от бана геокодеров ---
       await this.delay(200);

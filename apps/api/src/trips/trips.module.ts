@@ -7,11 +7,9 @@ import { InvitationsController } from './invitations.controller';
 import { InvitationsService } from './invitations.service';
 import { CollaborationModule } from '../collaboration/collaboration.module';
 import { TripImageService } from './trip-image.service';
-import { CityExtractionService } from './city-extraction.service';
-import { CityExtractionModule } from './city-extraction.module';
 
 @Module({
-  imports: [forwardRef(() => CollaborationModule), CityExtractionModule],
+  imports: [forwardRef(() => CollaborationModule)],
   controllers: [
     TripsController,
     CollaboratorsController,
@@ -22,8 +20,7 @@ import { CityExtractionModule } from './city-extraction.module';
     CollaboratorsService,
     InvitationsService,
     TripImageService,
-    CityExtractionService,
   ],
-  exports: [TripsService, TripImageService, CityExtractionService],
+  exports: [TripsService, TripImageService],
 })
 export class TripsModule {}
