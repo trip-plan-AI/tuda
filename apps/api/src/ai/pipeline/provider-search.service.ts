@@ -427,7 +427,17 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     // If result is too small, refill from enrichedPois to have a healthy pool for downstream
     if (allCandidates.length < 20 && enrichedPois.length > allCandidates.length) {
       const extra = enrichedPois
-        .filter((p) => !allCandidates.some((r) => r.id === p.id))
+        .filter(
+          (p) =>
+            !allCandidates.some(
+              (r) =>
+                r.id === p.id ||
+                this.haversineKm(
+                  r.coordinates.lat, r.coordinates.lon,
+                  p.coordinates.lat, p.coordinates.lon,
+                ) < 0.07,
+            ),
+        )
         .slice(0, 30);
       allCandidates.push(...extra);
     }
@@ -581,66 +591,97 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     return null;
   }
 
+  private readonly FOOD_CATEGORIES = new Set([
+    'restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court',
+  ]);
+
   /**
    * Stage 1.5: Smart Enrichment
-   * - Group A (generic names like "Кафе", "Пляж") → drop
-   * - Group B (uninformative short names like "Визит") → try Yandex enrich
-   *   If enrich fails and pool is large enough → drop; else keep
+   *
+   * Rules:
+   * - Food Protection: food POIs are ALWAYS enriched (regardless of pool size).
+   *   If enrichment fails — keep original. Never drop food if foodCount < 4.
+   * - Group A (pure category names like "Кафе" w/o food context): drop non-food only.
+   * - Group B (short/uninformative like "Визит"): enrich in parallel.
+   *   Threshold based on non-food pool only. Food always gets enrichment attempt.
    */
   private async applySmartEnrichment(
     pois: PoiItem[],
     city: string,
   ): Promise<PoiItem[]> {
-    const ENRICH_THRESHOLD = 12; // only enrich if pool < this
-    const shouldEnrich = pois.length < ENRICH_THRESHOLD;
+    const ENRICH_THRESHOLD = 15; // based on non-food count only
+    const currentFoodCount = pois.filter((p) => this.FOOD_CATEGORIES.has(p.category)).length;
+    const nonFoodCount = pois.length - currentFoodCount;
+    const shouldDropNonFood = nonFoodCount >= ENRICH_THRESHOLD;
 
-    const groupA: PoiItem[] = [];
-    const groupB: PoiItem[] = [];
+    const groupA: PoiItem[] = []; // generic non-food → drop
+    const groupB: PoiItem[] = []; // uninformative → enrich
     const clean: PoiItem[] = [];
 
     for (const poi of pois) {
       const lower = poi.name.toLowerCase().trim();
+      const isFood = this.FOOD_CATEGORIES.has(poi.category);
+
       if (this.GENERIC_NAMES.has(lower)) {
-        groupA.push(poi);
+        // Food with generic name: always try to enrich (keep if fails and foodCount < 4)
+        if (isFood) {
+          groupB.push(poi);
+        } else {
+          groupA.push(poi); // non-food generic → drop
+        }
       } else if (this.isUninformativeName(poi.name)) {
-        groupB.push(poi);
+        groupB.push(poi); // enrich regardless of category
       } else {
         clean.push(poi);
       }
     }
 
     this.logger.debug(
-      `[Stage 1.5] Smart Enrichment: ${clean.length} clean, ${groupA.length} generic (drop), ${groupB.length} to enrich`,
+      `[Stage 1.5] Smart Enrichment: ${clean.length} clean, ${groupA.length} generic non-food (drop), ${groupB.length} to enrich (food: ${currentFoodCount})`,
     );
 
     if (groupB.length === 0) return [...clean];
 
-    // Enrich Group B in parallel
-    const enriched: PoiItem[] = [];
-    if (shouldEnrich) {
-      const results = await Promise.all(
-        groupB.map((poi) => this.enrichPoiName(poi, city)),
+    // Always enrich food; enrich non-food only if pool is small enough
+    const toEnrich = groupB.filter(
+      (p) => this.FOOD_CATEGORIES.has(p.category) || !shouldDropNonFood,
+    );
+    const toDrop = groupB.filter(
+      (p) => !this.FOOD_CATEGORIES.has(p.category) && shouldDropNonFood,
+    );
+
+    if (toDrop.length > 0) {
+      this.logger.debug(
+        `[Stage 1.5] Non-food pool large (${nonFoodCount}), dropping ${toDrop.length}: ${toDrop.map((p) => p.name).join(', ')}`,
       );
-      for (let i = 0; i < groupB.length; i++) {
-        const poi = groupB[i];
+    }
+
+    const enriched: PoiItem[] = [];
+    if (toEnrich.length > 0) {
+      const results = await Promise.all(
+        toEnrich.map((poi) => this.enrichPoiName(poi, city)),
+      );
+      for (let i = 0; i < toEnrich.length; i++) {
+        const poi = toEnrich[i];
         const newName = results[i];
+        const isFood = this.FOOD_CATEGORIES.has(poi.category);
+
         if (newName) {
           enriched.push({ ...poi, name: newName });
-          this.logger.debug(
-            `[Stage 1.5] Enriched: "${poi.name}" → "${newName}"`,
-          );
-        } else if (clean.length < 8) {
-          // Pool is too small — keep as is
+          this.logger.debug(`[Stage 1.5] Enriched: "${poi.name}" → "${newName}"`);
+        } else if (isFood && currentFoodCount < 4) {
+          // Food protection: keep even without enrichment
           enriched.push(poi);
-        } else {
+          this.logger.debug(`[Stage 1.5] Food protected (kept as-is): "${poi.name}"`);
+        } else if (!isFood && clean.length < 8) {
+          enriched.push(poi);
+        } else if (!isFood) {
           this.logger.debug(`[Stage 1.5] Dropped uninformative: "${poi.name}"`);
+        } else {
+          // Food but foodCount >= 4 and no enrichment → keep anyway (better than nothing)
+          enriched.push(poi);
         }
       }
-    } else {
-      // Pool large — just drop Group B
-      this.logger.debug(
-        `[Stage 1.5] Pool large (${pois.length}), dropping ${groupB.length} uninformative names`,
-      );
     }
 
     return [...clean, ...enriched];
