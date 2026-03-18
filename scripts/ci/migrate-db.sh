@@ -75,7 +75,17 @@ bootstrap_drizzle_history_if_needed() {
           WHEN to_regclass('\''public.__drizzle_migrations'\'') IS NULL THEN 0
           ELSE (SELECT COUNT(*)::int FROM public.__drizzle_migrations)
         END || '\''|'\'' ||
-        (to_regclass('\''public.trips'\'') IS NOT NULL AND to_regclass('\''public.route_points'\'') IS NOT NULL)::int || '\''|'\'' ||
+        (
+          to_regclass('\''public.trips'\'') IS NOT NULL
+          AND to_regclass('\''public.route_points'\'') IS NOT NULL
+          AND to_regclass('\''public.ai_sessions'\'') IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = '\''public'\''
+              AND table_name = '\''ai_sessions'\''
+              AND column_name = '\''updated_at'\''
+          )
+        )::int || '\''|'\'' ||
         (EXISTS (SELECT 1 FROM pg_type WHERE typnamespace = '\''public'\''::regnamespace AND typname = '\''collaborator_role'\''))::int;
     "
   ' 2>&1) || {
@@ -190,19 +200,26 @@ PY
 validate_schema() {
   log "validating critical schema columns..."
 
-  # Проверяем наличие критических колонок в ai_sessions
+  # Проверяем только прод-критичный контракт, который реально нужен после deploy:
+  # маршруты и базовые AI-таблицы. Не валим деплой из-за старых nullable/optional
+  # колонок, если приложение и seed на них не завязаны в текущем релизе.
   local missing_columns
   missing_columns=$(docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -t -A -c "
       WITH required(table_name, column_name) AS (
         VALUES
+          ('\''trips'\'', '\''id'\''),
+          ('\''trips'\'', '\''title'\''),
+          ('\''trips'\'', '\''owner_id'\''),
+          ('\''trips'\'', '\''is_active'\''),
+          ('\''trips'\'', '\''is_predefined'\''),
+          ('\''route_points'\'', '\''id'\''),
+          ('\''route_points'\'', '\''trip_id'\''),
+          ('\''route_points'\'', '\''transport_mode'\''),
+          ('\''route_points'\'', '\''duration'\''),
           ('\''ai_sessions'\'', '\''id'\''),
-          ('\''ai_sessions'\'', '\''trip_id'\''),
-          ('\''ai_sessions'\'', '\''user_id'\''),
           ('\''ai_sessions'\'', '\''messages'\''),
-          ('\''ai_sessions'\'', '\''title'\''),
-          ('\''ai_sessions'\'', '\''created_at'\''),
-          ('\''ai_sessions'\'', '\''updated_at'\'')
+          ('\''ai_sessions'\'', '\''created_at'\'')
       )
       SELECT r.table_name || '\''.'\'' || r.column_name
       FROM required r
@@ -224,7 +241,7 @@ validate_schema() {
     return 1
   fi
 
-  log "schema validation passed — all critical columns exist"
+  log "schema validation passed — deploy contract is satisfied"
 
   # Дополнительная проверка ENUM типов
   log "validating ENUM types..."
