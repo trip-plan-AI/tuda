@@ -36,6 +36,13 @@
       "when": 1773718104623,
       "tag": "0008_bright_wolf_cub",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1742294400000,
+      "tag": "0009_trip_chat_messages",
+      "breakpoints": true
     }
   ]
 }
