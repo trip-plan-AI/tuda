@@ -68,6 +68,7 @@ import { CollaborationEventsService } from '../collaboration/collaboration-event
 import { GeocodingFallbackService } from './services/geocoding-fallback.service';
 import { CityAnalyzerService } from './pipeline/city-analyzer.service';
 import { LlmExplainerService } from './pipeline/llm-explainer.service';
+import { PoiCacheWarmupService } from './pipeline/poi-cache-warmup.service';
 
 @Controller('ai')
 @UseGuards(JwtAuthGuard)
@@ -126,6 +127,7 @@ export class AiController {
     private readonly geocodingFallbackService: GeocodingFallbackService,
     private readonly analyzer: CityAnalyzerService,
     private readonly explainer: LlmExplainerService,
+    private readonly cacheWarmup: PoiCacheWarmupService,
   ) {}
 
   private isLocationError(error: unknown): boolean {
@@ -819,6 +821,11 @@ ${JSON.stringify(points)}
       let totalBeforeDedup = 0;
       const allSuccessfullyGeocoded: FilteredPoi[] = [];
 
+      // Progress: Stage 1 — searching all sources
+      if (session.tripId && session.id) {
+        this.eventsService.emitAiThinking(session.tripId, session.id, 'collecting');
+      }
+
       const cityPromises = citiesToSearch.map(async (cityName) => {
         this.logger.log(`[PIPELINE] Starting city task: ${cityName}`);
         // Распределяем дни для поиска (для мульти-сити берем пропорционально)
@@ -845,6 +852,11 @@ ${JSON.stringify(points)}
           this.resolveVectorTopK(),
         );
 
+        // Progress: Stage 1.5 — diving into local data
+        if (session.tripId && session.id) {
+          this.eventsService.emitAiThinking(session.tripId, session.id, 'hidden_gems');
+        }
+
         // 3. Logical Selection
         const reserveFactor = 3;
         const baseTarget = cityDays * 4;
@@ -868,12 +880,22 @@ ${JSON.stringify(points)}
           selectedIdSet.has(poi.id),
         );
 
+        // Progress: Stage 2 — AI choosing top N
+        if (session.tripId && session.id) {
+          this.eventsService.emitAiThinking(session.tripId, session.id, 'selecting');
+        }
+
         // 4. Semantic Selection
         const citySelected = await this.semanticFilterService.select(
           logicalSelectedPool,
           cityIntent,
           fallbacks,
         );
+
+        // Progress: Stage 2.5 — validating coordinates
+        if (session.tripId && session.id) {
+          this.eventsService.emitAiThinking(session.tripId, session.id, 'geocoding');
+        }
 
         // 5. Geocoding
         const geocodedResult =
@@ -883,15 +905,16 @@ ${JSON.stringify(points)}
               name: point.name,
               coordinates: point.coordinates,
               city_name: cityName,
+              isProtected: (point as any).isProtected,
             })),
             cityName,
           );
 
         const geocodedPois: FilteredPoi[] = [];
         for (const point of citySelected) {
-          if (geocodedResult.has(point.id)) {
-            const coords = geocodedResult.get(point.id)!;
-            geocodedPois.push({
+          if (geocodedResult.coords.has(point.id)) {
+            const coords = geocodedResult.coords.get(point.id)!;
+            const geocodedPoi: FilteredPoi & { _geocodeConfirmed?: boolean } = {
               ...point,
               city_name: cityName,
               coordinates: {
@@ -899,7 +922,11 @@ ${JSON.stringify(points)}
                 lat: coords.lat,
                 lon: coords.lon,
               },
-            });
+            };
+            if (geocodedResult.geocodedIds.has(point.id)) {
+              geocodedPoi._geocodeConfirmed = true;
+            }
+            geocodedPois.push(geocodedPoi);
           }
         }
 
@@ -975,6 +1002,11 @@ ${JSON.stringify(points)}
       );
       selectedForScheduler = dedupedForRefinement;
 
+      // Progress: Stage 3 — enriching with YandexGPT scoring
+      if (session.tripId && session.id) {
+        this.eventsService.emitAiThinking(session.tripId, session.id, 'enrichment');
+      }
+
       try {
         const refinementResult =
           await this.llmBatchRefinementService.refineSelectedInBatches(
@@ -1004,6 +1036,12 @@ ${JSON.stringify(points)}
             if ((point as any).isProtected) {
               this.logger.warn(
                 `Protected point "${point.name}" has zero coords — keeping (will re-geocode)`,
+              );
+              return true;
+            }
+            if ((point as any)._geocodeConfirmed) {
+              this.logger.warn(
+                `Geocode-confirmed point "${point.name}" has zero/invalid coords — keeping`,
               );
               return true;
             }
@@ -2332,5 +2370,18 @@ ${JSON.stringify(points)}
     }
 
     return result;
+  }
+
+  /**
+   * Admin: invalidate POI pool cache for a specific city and immediately re-warm it.
+   * Use via Swagger or curl when a city's data becomes stale.
+   * Example: POST /ai/cache/flush  { "city": "Сочи" }
+   */
+  @Post('cache/flush')
+  async flushCityCache(@Body('city') city: string) {
+    if (!city || typeof city !== 'string' || !city.trim()) {
+      throw new BadRequestException('city is required');
+    }
+    return this.cacheWarmup.flushCity(city.trim());
   }
 }

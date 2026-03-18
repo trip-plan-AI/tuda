@@ -104,6 +104,8 @@ interface AiQueryStore {
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   clearChat: (keepLastPlan?: boolean) => void;
+  addLocalMessage: (message: ChatMessage) => void;
+  addChatHistory: (messages: ChatMessage[]) => void;
 }
 
 interface ChatSession {
@@ -1015,6 +1017,74 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
           ...state.sessions,
           [targetSessionId]: { ...session, title, updatedAt: new Date().toISOString() },
         },
+      };
+    });
+  },
+
+  addLocalMessage: (message) => {
+    set((state) => {
+      const activeId = state.activeSessionId;
+      if (!activeId) return state;
+      const session = state.sessions[activeId];
+      if (!session) return state;
+
+      if (session.messages.some((m) => m.id === message.id)) return state;
+
+      const nextSessions = {
+        ...state.sessions,
+        [activeId]: {
+          ...session,
+          messages: [...session.messages, message],
+          updatedAt: new Date().toISOString(),
+        },
+      };
+
+      return {
+        sessions: nextSessions,
+        ...syncLegacyFields(nextSessions, activeId),
+      };
+    });
+  },
+
+  addChatHistory: (messages) => {
+    set((state) => {
+      const activeId = state.activeSessionId;
+      if (!activeId) return state;
+      const session = state.sessions[activeId];
+      if (!session) return state;
+
+      const existingMap = new Map(session.messages.map((m) => [m.id, m]));
+      const newMessages = [...session.messages];
+
+      for (const msg of messages) {
+        if (!existingMap.has(msg.id)) {
+          newMessages.push(msg);
+          existingMap.set(msg.id, msg);
+        } else {
+          // Merge metadata like routePlan if missing locally
+          const existing = existingMap.get(msg.id)!;
+          if (msg.routePlan && !existing.routePlan) {
+            existing.routePlan = msg.routePlan;
+          }
+        }
+      }
+
+      newMessages.sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+      );
+
+      const nextSessions = {
+        ...state.sessions,
+        [activeId]: {
+          ...session,
+          messages: newMessages,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+
+      return {
+        sessions: nextSessions,
+        ...syncLegacyFields(nextSessions, activeId),
       };
     });
   },

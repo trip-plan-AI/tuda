@@ -2,9 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { Subject } from 'rxjs';
 
 export type AiThinkingStage =
-  | 'collecting'   // Stage 1: ProviderSearch
-  | 'selecting'    // Stage 2: AI Selection
-  | 'scheduling';  // Stage 3: Scheduler building days
+  | 'collecting'    // Stage 1: fetching POIs from all sources (OSM, KudaGo, Photon)
+  | 'hidden_gems'   // Stage 1.5: diving into local data, logical ID selection
+  | 'selecting'     // Stage 2: semantic AI filter — choosing top N from raw pool
+  | 'geocoding'     // Stage 2.5: validating and resolving coordinates
+  | 'enrichment'    // Stage 3: LLM batch refinement (YandexGPT scoring)
+  | 'scheduling';   // Stage 4: building day-by-day itinerary
 
 export interface CollaborationEvent {
   type: 'trip:refresh' | 'ai:update' | 'ai:thinking' | 'ai:day_ready';

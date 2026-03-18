@@ -861,45 +861,72 @@ export class SchedulerService {
       const MIN_POINTS_PER_DAY = isSmallTown ? 4 : 3;
 
       while (points.length < pointsForThisDay + 2 && currentTime < endMinutes) {
+        const lastPoint = points.length > 0 ? points[points.length - 1] : null;
+        const lastPoi = lastPoint ? (lastPoint.poi as FilteredPoi) : undefined;
+
+        // --- FOOD INJECTION (SMART LUNCH & DINNER) ---
+        // Если пришло время обеда (>= 13:00) и мы еще не ели
+        let injectedFood = false;
+        if (
+          currentTime >= 13.0 * 60 &&
+          dayCafePoints + dayRestaurantPoints === 0 &&
+          pointsForThisDay > 3
+        ) {
+          const foodCandidates = availablePois.filter((p) => !usedPoiIds.has(p.id) && this.isFoodCategory(p.category));
+          if (foodCandidates.length > 0 && lastPoi) {
+            const localFood = foodCandidates
+              .map((p) => ({
+                poi: p,
+                dist: this.haversineKm(lastPoi.coordinates.lat, lastPoi.coordinates.lon, p.coordinates.lat, p.coordinates.lon),
+              }))
+              .filter((f) => f.dist < 2.5) // Ищем в радиусе 2.5 км
+              .sort((a, b) => (b.poi.score || 0) - (a.poi.score || 0));
+
+            const bestLunch = localFood[0];
+            if (bestLunch && tryAddPoint(bestLunch.poi)) {
+              injectedFood = true;
+              this.logger.log(`[Scheduler] Injected Lunch: ${bestLunch.poi.name} (dist: ${bestLunch.dist.toFixed(2)}km)`);
+            }
+          }
+        }
+
+        // Если пришло время ужина (>= 18:30) и мы еще не ужинали
+        const hadDinner = lastFoodTime !== null && lastFoodTime >= 18 * 60;
+        if (
+          !injectedFood &&
+          currentTime >= 18.5 * 60 &&
+          !hadDinner &&
+          pointsForThisDay > 3
+        ) {
+          const foodCandidates = availablePois.filter((p) => !usedPoiIds.has(p.id) && this.isFoodCategory(p.category));
+          if (foodCandidates.length > 0 && lastPoi) {
+            const localFood = foodCandidates
+              .map((p) => ({
+                poi: p,
+                dist: this.haversineKm(lastPoi.coordinates.lat, lastPoi.coordinates.lon, p.coordinates.lat, p.coordinates.lon),
+              }))
+              .filter((f) => f.dist < 3.0) // Вечером можно чуть дальше (3 км)
+              .sort((a, b) => (b.poi.score || 0) - (a.poi.score || 0));
+
+            const bestDinner = localFood[0];
+            if (bestDinner && tryAddPoint(bestDinner.poi)) {
+              injectedFood = true;
+              this.logger.log(`[Scheduler] Injected Dinner: ${bestDinner.poi.name} (dist: ${bestDinner.dist.toFixed(2)}km)`);
+            }
+          }
+        }
+
+        if (injectedFood) continue;
+
         const candidates = availableForDay.filter((p) => !usedPoiIds.has(p.id));
         if (candidates.length === 0) break;
 
-        const lastPoint = points.length > 0 ? points[points.length - 1] : null;
-        const lastPoi = lastPoint ? (lastPoint.poi as FilteredPoi) : undefined;
-        const prevPoi =
-          points.length > 1 ? points[points.length - 2].poi : undefined;
+        const prevPoi = points.length > 1 ? points[points.length - 2].poi : undefined;
 
         let validCandidates = candidates.filter((poi) => {
           const cat = poi.category || '';
           const isFood = this.isFoodCategory(cat);
           const meal = this.getMealType(currentTime + 20);
-
-          // SMART SLOTS v3
-          // 1. Обед (12:30-14:30) -> Жёстко требуем еду, если ещё не ели
-          if (
-            currentTime >= 12.5 * 60 &&
-            currentTime <= 14.5 * 60 &&
-            dayCafePoints + dayRestaurantPoints === 0
-          ) {
-            if (!isFood) {
-              const hasFood = candidates.some((c) =>
-                this.isFoodCategory(c.category),
-              );
-              if (hasFood) return false;
-            }
-          }
-
-          // 1b. Ужин (18:30-20:30) -> Требуем ужин, если еда после 18:00 ещё не была
-          if (currentTime >= 18.5 * 60 && currentTime <= 20.5 * 60) {
-            const hadDinner =
-              lastFoodTime !== null && lastFoodTime >= 18 * 60;
-            if (!hadDinner && !isFood) {
-              const hasFood = candidates.some((c) =>
-                this.isFoodCategory(c.category),
-              );
-              if (hasFood) return false;
-            }
-          }
 
           // 2. Утро -> Приоритет культуре, если скоринг высокий
           if (currentTime < 12 * 60 && !isFood) {
@@ -934,6 +961,28 @@ export class SchedulerService {
           }
         }
 
+        // ANTI-TELEPORT CLUSTERING: Block remote points (>15km from day anchor) to prevent jumps between distant clusters
+        const currentAnchor = dayAnchors.get(dayNumber);
+        if (currentAnchor) {
+          const localCandidates = validCandidates.filter((c) => {
+            const dist = this.haversineKm(
+              currentAnchor.coordinates.lat,
+              currentAnchor.coordinates.lon,
+              c.coordinates.lat,
+              c.coordinates.lon,
+            );
+            return dist <= 15;
+          });
+
+          if (localCandidates.length > 0) {
+            // Focus entirely on the local cluster first
+            validCandidates = localCandidates;
+          } else if (points.length >= 2) {
+            // Cluster exhausted. Do not jump 30km for a new attraction. Only allow local food to finish the day.
+            validCandidates = validCandidates.filter((c) => this.isFoodCategory(c.category));
+          }
+        }
+
         // ADVANCED SCORING v7
         const optimizedOrder = validCandidates.sort((a, b) => {
           const distA = lastPoi
@@ -960,16 +1009,18 @@ export class SchedulerService {
           // Еда получает критический буст в обеденное время, если еще не ели
           if (
             this.isFoodCategory(a.category) &&
-            meal === 'lunch' &&
-            dayCafePoints + dayRestaurantPoints === 0
+            (meal === 'lunch' || (currentTime >= 13.0 * 60 && currentTime <= 15.5 * 60)) &&
+            dayCafePoints + dayRestaurantPoints === 0 &&
+            pointsForThisDay > 3
           )
-            weightA += 150;
+            weightA += 500;
           if (
             this.isFoodCategory(b.category) &&
-            meal === 'lunch' &&
-            dayCafePoints + dayRestaurantPoints === 0
+            (meal === 'lunch' || (currentTime >= 13.0 * 60 && currentTime <= 15.5 * 60)) &&
+            dayCafePoints + dayRestaurantPoints === 0 &&
+            pointsForThisDay > 3
           )
-            weightB += 150;
+            weightB += 500;
 
           // Ужин: буст если еда после 18:00 ещё не была
           const hadDinner =
@@ -1124,66 +1175,90 @@ export class SchedulerService {
         }
       }
 
-      // GEO-BALANCE: detect lone outlier points (> 20 km from day's centroid)
-      // If a non-protected outlier has no neighbors in the pool → eject it.
-      // If a protected outlier exists → pull up to 2 nearest neighbors from the global pool.
+      // GEO-BALANCE v2: leave-one-out outlier detection
+      // For each non-food point, compute centroid of ALL OTHER non-food points (leave-one-out).
+      // If that point is >15 km from the "others centroid" AND all others are compact (within 5 km
+      // of their own centroid) → confirmed lone outlier → try to pull neighbors; if none → eject.
+      // This fixes the previous bug where the outlier itself shifted the global centroid,
+      // making its own distance appear smaller than reality.
       if (points.length >= 2) {
         const nonFoodPoints = points.filter(
           (p) => !this.isFoodCategory(p.poi.category),
         );
         if (nonFoodPoints.length >= 2) {
-          // Compute centroid of non-food points
-          const centLat =
-            nonFoodPoints.reduce((s, p) => s + p.poi.coordinates.lat, 0) /
-            nonFoodPoints.length;
-          const centLon =
-            nonFoodPoints.reduce((s, p) => s + p.poi.coordinates.lon, 0) /
-            nonFoodPoints.length;
-
           for (let pi = points.length - 1; pi >= 0; pi--) {
             const pt = points[pi];
-            const d = this.haversineKm(
-              centLat, centLon,
+            if (this.isFoodCategory(pt.poi.category)) continue;
+
+            // Leave-one-out: centroid of all OTHER non-food points
+            const others = nonFoodPoints.filter((p) => p !== pt);
+            if (others.length === 0) continue;
+
+            const otherCentLat =
+              others.reduce((s, p) => s + p.poi.coordinates.lat, 0) / others.length;
+            const otherCentLon =
+              others.reduce((s, p) => s + p.poi.coordinates.lon, 0) / others.length;
+
+            const dFromOthers = this.haversineKm(
+              otherCentLat, otherCentLon,
               pt.poi.coordinates.lat, pt.poi.coordinates.lon,
             );
 
-            if (d > 20) {
-              const poi = pt.poi as FilteredPoi;
-              if ((poi as any).isProtected) {
-                // Protected outlier: pull 2 nearest neighbors from global unused pool
-                const neighbors = availablePois
-                  .filter((p) => !usedPoiIds.has(p.id) && !this.isFoodCategory(p.category))
-                  .sort((a, b) =>
-                    this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, a.coordinates.lat, a.coordinates.lon) -
-                    this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, b.coordinates.lat, b.coordinates.lon),
-                  )
-                  .slice(0, 2)
-                  .filter((p) =>
-                    this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, p.coordinates.lat, p.coordinates.lon) < 8,
-                  );
-                for (const nb of neighbors) {
-                  tryAddPoint(nb, undefined, true);
-                }
-                if (neighbors.length > 0) {
-                  this.logger.log(
-                    `[GeoBalance] Protected outlier "${poi.name}" pulled ${neighbors.length} neighbor(s)`,
-                  );
-                }
-              } else {
-                // Non-protected outlier with no neighbors → eject
-                const hasNearbyUnused = availablePois.some(
-                  (p) =>
-                    !usedPoiIds.has(p.id) &&
-                    this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, p.coordinates.lat, p.coordinates.lon) < 5,
-                );
-                if (!hasNearbyUnused) {
-                  this.logger.log(
-                    `[GeoBalance] Ejecting lone outlier "${poi.name}" (${d.toFixed(1)} km from centroid, no neighbors)`,
-                  );
-                  usedPoiIds.delete(poi.id); // return to pool for next day
-                  points.splice(pi, 1);
-                }
+            // isProtected points get a higher eject threshold (20 km vs 15 km for regular points).
+            // This guards against coordinate rounding or minor data imprecision accidentally
+            // flagging a legitimate central attraction (e.g. Riviera park) as an outlier.
+            // Truly remote protected venues (Fisht stadium, 30 km) still exceed 20 km and get ejected.
+            const isProtected = !!(pt.poi as FilteredPoi & { isProtected?: boolean }).isProtected;
+            const outlierThreshold = isProtected ? 20 : 15;
+
+            if (dFromOthers <= outlierThreshold) continue; // not an outlier
+
+            // Confirm: are the OTHER points truly compact (all within 5 km of their centroid)?
+            const othersAreCompact = others.every(
+              (o) =>
+                this.haversineKm(
+                  otherCentLat, otherCentLon,
+                  o.poi.coordinates.lat, o.poi.coordinates.lon,
+                ) < 5,
+            );
+
+            if (!othersAreCompact) continue; // mixed day, not a lone outlier situation
+
+            const poi = pt.poi as FilteredPoi;
+            this.logger.log(
+              `[GeoBalance] Lone outlier detected: "${poi.name}" ${isProtected ? '(protected)' : ''} is ${dFromOthers.toFixed(1)} km from cluster centroid (threshold: ${outlierThreshold} km)`,
+            );
+
+            // Try to pull up to 2 neighbors from global pool to justify the remote trip
+            const neighbors = availablePois
+              .filter((p) => !usedPoiIds.has(p.id) && !this.isFoodCategory(p.category))
+              .sort((a, b) =>
+                this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, a.coordinates.lat, a.coordinates.lon) -
+                this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, b.coordinates.lat, b.coordinates.lon),
+              )
+              .slice(0, 2)
+              .filter((p) =>
+                this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, p.coordinates.lat, p.coordinates.lon) < 8,
+              );
+
+            if (neighbors.length > 0) {
+              for (const nb of neighbors) {
+                tryAddPoint(nb, undefined, true);
               }
+              this.logger.log(
+                `[GeoBalance] Pulled ${neighbors.length} neighbor(s) near "${poi.name}" to form remote cluster`,
+              );
+            } else {
+              // No neighbors nearby → eject back to pool so a geographically closer day can pick it up.
+              // Note: isProtected status does NOT override eject here — the compactness check above
+              // already confirmed this is a genuine logistical outlier, not a false positive.
+              this.logger.log(
+                `[GeoBalance] Ejecting "${poi.name}" (${dFromOthers.toFixed(1)} km, no pool neighbors within 8 km) → returned to pool for a better-fit day`,
+              );
+              usedPoiIds.delete(poi.id); // return to pool — next day with closer anchor will pick it up
+              points.splice(pi, 1);
+              // Refresh nonFoodPoints reference after splice
+              nonFoodPoints.splice(nonFoodPoints.indexOf(pt), 1);
             }
           }
         }

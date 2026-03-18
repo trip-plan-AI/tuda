@@ -26,6 +26,7 @@ import { CollaborationModule } from '../collaboration/collaboration.module';
 import { AiPipelineModule } from './pipeline/ai-pipeline.module';
 
 import { LocationResolverService } from './pipeline/location-resolver.service';
+import { PoiCacheWarmupService } from './pipeline/poi-cache-warmup.service';
 
 @Module({
   // TRI-104: AI контроллер теперь использует Trips/Points для сценариев
@@ -60,6 +61,7 @@ import { LocationResolverService } from './pipeline/location-resolver.service';
     PointMutationService,
     GeocodingFallbackService,
     LocationResolverService,
+    PoiCacheWarmupService,
   ],
   exports: [
     AiSessionsService,

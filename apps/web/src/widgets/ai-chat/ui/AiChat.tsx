@@ -39,9 +39,12 @@ const DEFAULT_QUICK_ACTIONS = [
 ];
 
 const THINKING_STAGE_TEXT: Record<string, string> = {
-  collecting: 'Ищу места и достопримечательности',
-  selecting: 'Выбираю лучшие места',
-  scheduling: 'Строю расписание по дням',
+  collecting:   '🔍 Ищем лучшие места в городе...',
+  hidden_gems:  '💎 Ищем локации, о которых знают только местные...',
+  selecting:    '🧠 Нейросеть выбирает лучшие варианты из найденных...',
+  geocoding:    '📍 Проверяем координаты и строим карту...',
+  enrichment:   '✨ Уточняем детали и проверяем рейтинги...',
+  scheduling:   '📅 Составляем оптимальный график по дням...',
 };
 
 function AiResponseSkeleton({ stage }: { stage?: string | null }) {
