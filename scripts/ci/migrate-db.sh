@@ -147,12 +147,12 @@ PY
 
     docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc "
       psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 -c \"
-        INSERT INTO public.__drizzle_migrations (hash, created_at, idx_serial, \"when\", tag, breakpoints)
+        INSERT INTO public.__drizzle_migrations (hash, created_at, idx_serial, \\\"when\\\", tag, breakpoints)
         VALUES ('$hash', $when_ms, $idx, $when_ms, '$tag', $breakpoints)
         ON CONFLICT (hash) DO UPDATE
         SET created_at = EXCLUDED.created_at,
             idx_serial = EXCLUDED.idx_serial,
-            \"when\" = EXCLUDED.\"when\",
+            \\\"when\\\" = EXCLUDED.\\\"when\\\",
             tag = EXCLUDED.tag,
             breakpoints = EXCLUDED.breakpoints;
       \"
