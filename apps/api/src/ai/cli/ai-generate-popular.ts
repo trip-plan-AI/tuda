@@ -6,16 +6,24 @@ import { PopularGeneratorService } from '../pipeline/popular-generator.service';
 import { DRIZZLE } from '../../db/db.module';
 import * as schema from '../../db/schema';
 
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 async function bootstrap(): Promise<void> {
   const city = process.argv[2]?.trim();
 
   if (!city) {
-    throw new Error('Usage: pnpm ai:generate-popular <city>');
+    console.error('Usage: pnpm ai:generate-popular <city>');
+    process.exit(1);
   }
 
-  const app = await NestFactory.createApplicationContext(AppModule);
+  console.log(`Starting popular generation for ${city}...`);
 
   try {
+    const app = await NestFactory.createApplicationContext(AppModule);
+    console.log('Application context created.');
+
     const generator = app.get(PopularGeneratorService);
     const db = app.get<NodePgDatabase<typeof schema>>(DRIZZLE);
 
@@ -36,16 +44,18 @@ async function bootstrap(): Promise<void> {
             .returning({ id: schema.users.id })
         )[0].id;
 
+    console.log(`Using owner_id=${ownerId}. Generating route...`);
     const generated = await generator.generate(city);
+    console.log(`Route generated: ${generated.title}`);
 
     const createdTrip = await db
       .insert(schema.trips)
       .values({
         title: generated.title,
         description: generated.description,
-        budget: generated.budget,
+        budget: Math.round(generated.budget),
         ownerId,
-        isActive: false,
+        isActive: true,
         isPredefined: true,
       })
       .returning({ id: schema.trips.id });
@@ -67,8 +77,10 @@ async function bootstrap(): Promise<void> {
     }
 
     console.log(`Generated popular route for ${city}. trip_id=${tripId}`);
-  } finally {
     await app.close();
+  } catch (error) {
+    console.error('Fatal error in bootstrap:', error);
+    process.exit(1);
   }
 }
 

@@ -33,17 +33,30 @@ const DEFAULT_QUICK_ACTIONS = [
 ];
 
 function AiResponseSkeleton() {
-  // TRI-104: используем текущий (существующий) skeleton без изменения UX-контракта.
-  // MERGE-NOTE: не заменять на новый лоадер без согласования с UX-требованием задачи.
+  const [dots, setDots] = useState('');
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDots((prev) => (prev.length < 3 ? prev + '.' : ''));
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="flex justify-start">
       <div className="w-full max-w-[85%] rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="mb-4 flex items-center gap-1.5">
+          <span className="text-sm font-medium text-brand-indigo">
+            Подбираю лучший маршрут{dots}
+          </span>
+        </div>
+
         <div className="h-4 w-40 animate-pulse rounded bg-slate-200" />
         <div className="mt-2 h-3 w-full animate-pulse rounded bg-slate-100" />
         <div className="mt-1 h-3 w-4/5 animate-pulse rounded bg-slate-100" />
 
         <div className="mt-4 flex flex-col gap-2">
-          {Array.from({ length: 3 }).map((_, index) => (
+          {Array.from({ length: 2 }).map((_, index) => (
             <div key={index} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
               <div className="h-3 w-3/5 animate-pulse rounded bg-slate-200" />
               <div className="mt-2 h-3 w-full animate-pulse rounded bg-slate-100" />

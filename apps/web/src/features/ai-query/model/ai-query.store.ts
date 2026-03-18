@@ -14,6 +14,7 @@ interface AiSessionListItemResponse {
   id: string;
   trip_id: string | null;
   created_at: string;
+  updated_at?: string;
   title: string;
   messages_count: number;
 }
@@ -294,15 +295,23 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
 
       const remoteSessions = list.reduce<Record<string, ChatSession>>((acc, item) => {
         const id = item.id;
+        const existing = get().sessions[id];
+        const serverUpdatedAt = item.updated_at ?? item.created_at;
+
         acc[id] = {
           id,
           title: item.title || 'Новый чат',
           tripId: item.trip_id,
           sessionId: item.id,
-          messages: [],
-          lastAppliedPlanMessageId: null,
+          messages: existing?.messages ?? [],
+          lastAppliedPlanMessageId: existing?.lastAppliedPlanMessageId ?? null,
           createdAt: item.created_at,
-          updatedAt: item.created_at,
+          // TRI-106: Сохраняем более свежий updatedAt из локального стейта,
+          // чтобы чат не "прыгал" вниз при фоновом обновлении списка.
+          updatedAt:
+            existing && new Date(existing.updatedAt) > new Date(serverUpdatedAt)
+              ? existing.updatedAt
+              : serverUpdatedAt,
         };
         return acc;
       }, {});
@@ -330,11 +339,14 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         // if we have real sessions from the server (prevents chat duplication/cloning)
         const mergedSessions = { ...remoteSessions };
 
-        Object.values(localTransientSessions).forEach(localSession => {
-          // Only keep empty local drafts if we have NO remote sessions
-          // Or keep non-empty drafts (ones with messages)
-          const isCompletelyEmptyDraft = localSession.sessionId === null && localSession.messages.length === 0;
-          if (!isCompletelyEmptyDraft || Object.keys(remoteSessions).length === 0) {
+        Object.values(localTransientSessions).forEach((localSession) => {
+          // TRI-106: Сохраняем локальные черновики, если они не пустые
+          // ИЛИ если это текущая активная сессия (чтобы не прыгало при создании нового чата)
+          const isCompletelyEmptyDraft =
+            localSession.sessionId === null && localSession.messages.length === 0;
+          const isActive = localSession.id === state.activeSessionId;
+
+          if (!isCompletelyEmptyDraft || isActive || Object.keys(remoteSessions).length === 0) {
             mergedSessions[localSession.id] = localSession;
           }
         });
@@ -422,6 +434,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
         //    если в ней ожидается старый flow с ленивым созданием сессии внутри /ai/plan.
         const created = await api.post<CreateSessionResponse>('/ai/sessions', {
           trip_id: tripId && isUuid(tripId) ? tripId : undefined,
+          title: preRequestSession.title,
         });
 
         ensuredSessionId = created.session_id;
@@ -805,35 +818,9 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
   },
 
   createNewSession: (tripId = null) => {
-    let targetSessionId = '';
+    const session = createSession(tripId);
 
     set((state) => {
-      // Ищем пустой чат с названием "Новый чат"
-      const emptySession = Object.values(state.sessions).find((s) => 
-        s.messages.length === 0 && s.title === 'Новый чат'
-      );
-
-      if (emptySession) {
-        targetSessionId = emptySession.id;
-        const nextSessions = {
-          ...state.sessions,
-          [emptySession.id]: {
-            ...emptySession,
-            tripId: tripId ?? emptySession.tripId,
-            updatedAt: new Date().toISOString(),
-          },
-        };
-        return {
-          sessions: nextSessions,
-          activeSessionId: emptySession.id,
-          isLoading: false,
-          ...syncLegacyFields(nextSessions, emptySession.id),
-        };
-      }
-
-      const session = createSession(tripId);
-      targetSessionId = session.id;
-
       const nextSessions = {
         ...state.sessions,
         [session.id]: session,
@@ -847,7 +834,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       };
     });
 
-    return targetSessionId;
+    return session.id;
   },
 
   switchSession: async (nextSessionId) => {
@@ -855,10 +842,20 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     const target = state.sessions[nextSessionId];
     if (!target) return;
 
+    // TRI-106: Обновляем updatedAt при переключении, чтобы чат "всплывал" в списке
+    const nextSessions = {
+      ...state.sessions,
+      [nextSessionId]: {
+        ...target,
+        updatedAt: new Date().toISOString(),
+      },
+    };
+
     set({
+      sessions: nextSessions,
       activeSessionId: nextSessionId,
       isLoading: false,
-      ...syncLegacyFields(state.sessions, nextSessionId),
+      ...syncLegacyFields(nextSessions, nextSessionId),
     });
 
     // Не загружаем историю если сессия только что была очищена (justCleared флаг)
@@ -1004,9 +1001,11 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
 
   renameSession: async (targetSessionId, title) => {
     const target = get().sessions[targetSessionId];
-    if (!target?.sessionId) return;
+    if (!target) return;
 
-    await api.patch<{ success: boolean }>(`/ai/sessions/${target.sessionId}`, { title });
+    if (target.sessionId) {
+      await api.patch<{ success: boolean }>(`/ai/sessions/${target.sessionId}`, { title });
+    }
 
     set((state) => {
       const session = state.sessions[targetSessionId];

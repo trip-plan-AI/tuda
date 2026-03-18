@@ -191,4 +191,8 @@ export const aiSessions = pgTable('ai_sessions', {
   messages: jsonb('messages').notNull().default('[]'),
   title: text('title'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
+
+// AI Pipeline city datasets
+export * from './city-dataset.schema';

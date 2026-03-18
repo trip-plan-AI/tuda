@@ -21,21 +21,25 @@ const ALLOWED_ACTION_TYPES: IntentRouterActionType[] = [
   'ADD_DAYS',
   'APPLY_GLOBAL_FILTER',
   'NEW_ROUTE',
+  'OFF_TOPIC',
+  'SMALL_TALK',
 ];
 
 const SYSTEM_PROMPT = `You are an intent router for travel route edits.
 Analyze the user message with optional history and current route POIs.
 Return ONLY valid JSON with this exact structure:
-{ "action_type": "REMOVE_POI"|"REPLACE_POI"|"ADD_POI"|"ADD_DAYS"|"APPLY_GLOBAL_FILTER"|"NEW_ROUTE", "confidence": number, "target_poi_id": string|null }
+{ "action_type": "REMOVE_POI"|"REPLACE_POI"|"ADD_POI"|"ADD_DAYS"|"APPLY_GLOBAL_FILTER"|"NEW_ROUTE"|"OFF_TOPIC"|"SMALL_TALK", "confidence": number, "target_poi_id": string|null }
 Rules:
 - action_type must be one of allowed values.
 - confidence must be a number between 0 and 1.
 - target_poi_id must be a string ID or null.
-- Use NEW_ROUTE when user wants to create a COMPLETELY new trip or start over.
+- If the user request is not related to travel, routes, places, food, or cities, return OFF_TOPIC.
+- If the user is just greeting or chatting without requesting travel plans, return SMALL_TALK.
+- Use NEW_ROUTE when user wants to create a COMPLETELY new trip, start over, or requests a route for a city.
 - Use REMOVE_POI when user wants to delete a specific place from the CURRENT route.
 - Use ADD_POI when user wants to add a new place or category (e.g. "add a cafe", "find a museum") to the CURRENT route.
 - If the user says "Удали точку X" or "Убери X", and X is in currentRoutePois, it is ALWAYS REMOVE_POI.
-- If currentRoutePois is empty (no existing route in this session), treat the request as NEW_ROUTE.
+- If currentRoutePois is empty (no existing route in this session) and the request is travel-related, treat it as NEW_ROUTE.
 - For REMOVE_POI/REPLACE_POI, target_poi_id is the ID from currentRoutePois that best matches the user's request.
 - Be biased towards mutations (REMOVE/REPLACE/ADD_POI) if there is an existing route.`;
 
@@ -45,12 +49,44 @@ export class IntentRouterService {
 
   constructor(private readonly llmClientService: LlmClientService) {}
 
+  private getSpamScore(text: string): number {
+    let score = 0;
+    if (text.length < 3) score += 1;
+    if (/^[a-zA-Z0-9]+$/.test(text)) score += 1;
+    if (/(.)\1{5,}/.test(text)) score += 2;
+    if (/https?:\/\//.test(text)) score += 2;
+    return score;
+  }
+
+  private isTravelRelatedRuleBased(text: string): boolean {
+    const travelKeywords = [
+      'маршрут', 'поездка', 'город', 'сходить', 'достопримечательности',
+      'еда', 'ресторан', 'кафе', 'музей', 'парк', 'план', 'поехать',
+      'найти', 'удали', 'замени', 'добавь', 'завтрак', 'обед', 'ужин',
+      'тур', 'день', 'бюджет'
+    ];
+    return travelKeywords.some(kw => text.toLowerCase().includes(kw));
+  }
+
   async route(
     message: string,
     history: SessionMessage[],
     currentRoutePois?: Array<{ poi_id: string; title?: string | null }>,
   ): Promise<IntentRouterDecision> {
     const query = message.trim();
+    
+    // 1. Anti-Spam Check
+    if (this.getSpamScore(query) >= 3) {
+      this.logger.warn(`Spam detected for query: "${query}"`);
+      return {
+        action_type: 'OFF_TOPIC',
+        confidence: 1,
+        target_poi_id: null,
+        route_mode: 'full_rebuild',
+        fallback_reason: 'SPAM_BLOCKED',
+      };
+    }
+
     const llmPayload = {
       message: query,
       history: history.slice(-10),
@@ -66,15 +102,18 @@ export class IntentRouterService {
         },
       ];
 
-      const response =
-        await this.llmClientService.client.chat.completions.create({
-          model: INTENT_ROUTER_MODEL,
-          response_format: { type: 'json_object' },
-          messages,
-        });
+      const content = await this.llmClientService.chat(messages, {
+        jsonMode: true,
+      });
 
-      const content = response.choices[0]?.message?.content ?? '{}';
-      const parsed = this.parseAndValidateLlmResponse(content);
+      let parsed = this.parseAndValidateLlmResponse(content || '{}');
+
+      // 2. Rule-based + LLM Combo for OFF_TOPIC
+      const isTravelRelated = this.isTravelRelatedRuleBased(query);
+      if (!isTravelRelated && parsed.confidence < 0.7 && parsed.action_type !== 'OFF_TOPIC' && parsed.action_type !== 'SMALL_TALK') {
+        parsed.action_type = 'OFF_TOPIC';
+      }
+
       const targetPoiId = this.resolveTargetPoiId(
         query,
         parsed.action_type,
@@ -91,7 +130,7 @@ export class IntentRouterService {
         action_type: normalizedActionType,
         confidence: parsed.confidence,
         target_poi_id:
-          normalizedActionType === 'NEW_ROUTE' ? null : targetPoiId,
+          (normalizedActionType === 'NEW_ROUTE' || normalizedActionType === 'OFF_TOPIC' || normalizedActionType === 'SMALL_TALK') ? null : targetPoiId,
         route_mode:
           normalizedActionType === 'REMOVE_POI' ||
           normalizedActionType === 'REPLACE_POI' ||
