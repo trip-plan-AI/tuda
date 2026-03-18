@@ -121,7 +121,12 @@ export function useCollaborationSocket(tripId: string) {
     const handleTripBudgetUpdated = ({ trip_id: _trip_id, budget }: { trip_id: string; budget: number }) => {
       if (!checkTripId()) return;
       try {
-        useTripStore.getState().updateCurrentTrip({ budget });
+        // Patch budget directly without setting isDirty — this is an external update
+        useTripStore.setState((state) => {
+          if (!state.currentTrip) return state;
+          if (state.currentTrip.budget === budget) return state;
+          return { ...state, currentTrip: { ...state.currentTrip, budget } };
+        });
       } catch (e) {
         console.error('Failed to sync budget update from socket:', e);
       }
