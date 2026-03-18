@@ -5,14 +5,28 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { AppModule } from './app.module';
-import { AllHttpExceptionsFilter } from './http-exception.filter';
 import * as path from 'path';
+import * as fs from 'fs';
+
 const logger = new Logger('Bootstrap');
 
 async function runMigrations() {
-  // __dirname resolves to apps/api/src at runtime (ts-node) and apps/api/dist/src when compiled
-  const migrationsFolder = path.resolve(__dirname, 'db/migrations');
+  // Try src (for development) or current directory (for dist)
+  const migrationsFolder = fs.existsSync(
+    path.resolve(__dirname, 'db/migrations'),
+  )
+    ? path.resolve(__dirname, 'db/migrations')
+    : path.resolve(__dirname, '../db/migrations');
+
   logger.log(`Looking for migrations in: ${migrationsFolder}`);
+
+  const journalPath = path.join(migrationsFolder, 'meta', '_journal.json');
+  if (!fs.existsSync(journalPath)) {
+    logger.warn(
+      `No migration journal found at ${journalPath}. Skipping auto-migration. Run 'drizzle-kit generate' to create migrations.`,
+    );
+    return;
+  }
 
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   try {
@@ -34,22 +48,16 @@ async function runMigrations() {
 }
 
 async function bootstrap() {
-  // Enterprise-подход: миграции должны применяться отдельным этапом деплоя,
-  // а не во время старта API. Это делает запуск приложения детерминированным
-  // и убирает риск гонок между несколькими инстансами при старте.
-  // Для редких случаев оставляем явный opt-in через RUN_MIGRATIONS_ON_BOOT=true.
-  if (process.env.RUN_MIGRATIONS_ON_BOOT === 'true') {
-    await runMigrations();
-  } else {
-    logger.log(
-      'Skip runtime migrations (managed by deploy pipeline, use RUN_MIGRATIONS_ON_BOOT=true only for manual recovery)',
-    );
-  }
+  // В этом проекте мы используем 'drizzle-kit push' вручную или через CI,
+  // поэтому отключаем автоматические миграции при старте, чтобы избежать
+  // ошибок "relation already exists" при несовпадении журналов.
+  logger.log(
+    'Skip runtime migrations. Use "drizzle-kit push" for schema updates.',
+  );
 
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-  app.useGlobalFilters(new AllHttpExceptionsFilter());
   app.enableCors({
     origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
   });
