@@ -63,7 +63,7 @@ export function useChatSync(tripId: string) {
 
     // Load persisted chat history when joining the trip room
     const handleChatHistory = (messages: RemoteChatPayload[]) => {
-      console.log('✅ Получена история чата:', messages);
+      // console.log('✅ Получена история чата:', messages);
       if (!Array.isArray(messages) || messages.length === 0) {
         console.warn('⚠️  chat:history получил пустой или не массив:', messages);
         return;
@@ -79,7 +79,7 @@ export function useChatSync(tripId: string) {
         timestamp: data.timestamp,
       }));
 
-      console.log('📦 Добавляем историю в стейт:', mappedHistory.length, 'сообщений');
+      // console.log('📦 Добавляем историю в стейт:', mappedHistory.length, 'сообщений');
       useAiQueryStore.getState().addChatHistory(mappedHistory);
     };
 
