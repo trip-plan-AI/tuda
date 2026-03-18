@@ -22,6 +22,20 @@
       "when": 1773711823654,
       "tag": "0005_magical_omega_red",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1773704640341,
+      "tag": "0007_ai_tables_shotgun",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1773718104623,
+      "tag": "0008_bright_wolf_cub",
+      "breakpoints": true
     }
   ]
 }
