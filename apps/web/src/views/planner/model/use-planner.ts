@@ -938,7 +938,7 @@ export function usePlanner() {
     if (currentTrip && !currentTrip.id.startsWith('guest-')) {
       await tripsApi.update(currentTrip.id, { budget: newBudget });
       import('@/shared/socket/socket-client').then(({ getSocket }) => {
-        getSocket().emit('trip:budget_updated', { trip_id: currentTrip.id, budget: newBudget });
+        getSocket().emit('trip:update', { trip_id: currentTrip.id, budget: newBudget });
       });
     }
   };

@@ -43,12 +43,7 @@ export class LlmBatchRefinementService {
         return match ? { ...poi, description: match.description } : poi;
       });
 
-      return {
-        refined,
-        diagnostics: {
-          provider: isCis ? 'yandex-preferred' : 'openrouter-preferred',
-        },
-      };
+      return { refined, diagnostics: { provider: isCis ? 'yandex-preferred' : 'openrouter-preferred' } };
     } catch (error: any) {
       this.logger.error(`Refinement failed: ${error.message}`);
       return { refined: selected, diagnostics: { error: error.message } };

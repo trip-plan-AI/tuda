@@ -1,3 +1,6 @@
+
+
+
 import { NestFactory } from '@nestjs/core';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -26,7 +29,8 @@ async function resolveImagesDir(): Promise<string> {
       await fs.access(candidate);
       console.log(`✅ Images directory found: ${candidate}`);
       return candidate;
-    } catch {}
+    } catch {
+    }
   }
 
   throw new Error('Images directory not found');

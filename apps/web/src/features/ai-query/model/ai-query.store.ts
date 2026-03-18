@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import { api } from '@/shared/api';
 import { useTripStore } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point/model/route-point.types';
@@ -15,7 +14,6 @@ interface AiSessionListItemResponse {
   id: string;
   trip_id: string | null;
   created_at: string;
-  updated_at?: string;
   title: string;
   messages_count: number;
 }
@@ -88,9 +86,7 @@ interface AiQueryStore {
   sessionId: string | null;
   lastAppliedPlanMessageId: string | null;
   loadSessions: () => Promise<void>;
-  // preAddedMessageId — если передан, сообщение пользователя уже добавлено в стор с этим ID,
-  // sendQuery не создаёт его повторно (используется для синхронного показа перед AI-запросом).
-  sendQuery: (query: string, tripId?: string, preAddedMessageId?: string) => Promise<void>;
+  sendQuery: (query: string, tripId?: string) => Promise<void>;
   // TRI-104: применяет AI-план в Planner-trip и возвращает tripId для навигации/подсветки UI.
   // MERGE-NOTE: контракт используется в AIAssistantPage и MessageBubble, не менять тип без синхронных правок UI.
   applyPlanToCurrentTrip: (messageId: string) => Promise<string | null>;
@@ -107,14 +103,10 @@ interface AiQueryStore {
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   clearChat: (keepLastPlan?: boolean) => void;
-  // TRI-120: добавляет одно сообщение в активную сессию без вызова AI (сокет-транспорт).
+  // TRI-120: добавляет сообщение в активную сессию без вызова AI (для ретрансляции из сокетов).
   addLocalMessage: (message: ChatMessage) => void;
-  // TRI-120: добавляет массив сообщений истории чата (chat:history) без дубликатов.
+  // TRI-120: добавляет историю чата из WebSocket с merge существующих сообщений
   addChatHistory: (messages: ChatMessage[]) => void;
-  // Удаляет точку по имени из routePlan последнего сообщения с планом (только внутри чата, не трогает конструктор).
-  deletePointFromLatestRoutePlan: (pointName: string) => void;
-  // Очищает все точки из routePlan последнего сообщения с планом (только внутри чата, не трогает конструктор).
-  clearLatestRoutePlanPoints: () => void;
 }
 
 interface ChatSession {
@@ -151,6 +143,15 @@ function mapErrorToUserMessage(error: HttpError) {
   if (error.status === 429) return 'Слишком много запросов. Подождите немного и повторите.';
   if (error.status === 504) return 'AI сервис отвечает слишком долго. Попробуйте повторить запрос.';
   return error.message ?? 'Неизвестная ошибка. Попробуйте еще раз.';
+}
+
+// TRI-120: RACE CONDITION FIX - Merge сообщений из REST API и WebSocket
+function mergeAndSortMessages(existing: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  const map = new Map(existing.map((m) => [m.id, m]));
+  incoming.forEach((m) => map.set(m.id, m));
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+  );
 }
 
 function toRoutePoints(routePlan: ChatRoutePlan, tripId: string): RoutePoint[] {
@@ -276,9 +277,7 @@ function ensureActiveSession(state: AiQueryStore): {
   };
 }
 
-export const useAiQueryStore = create<AiQueryStore>()(
-  persist(
-    (set, get) => ({
+export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
   sessions: {},
   activeSessionId: null,
   messages: [],
@@ -308,23 +307,15 @@ export const useAiQueryStore = create<AiQueryStore>()(
 
       const remoteSessions = list.reduce<Record<string, ChatSession>>((acc, item) => {
         const id = item.id;
-        const existing = get().sessions[id];
-        const serverUpdatedAt = item.updated_at ?? item.created_at;
-
         acc[id] = {
           id,
           title: item.title || 'Новый чат',
           tripId: item.trip_id,
           sessionId: item.id,
-          messages: existing?.messages ?? [],
-          lastAppliedPlanMessageId: existing?.lastAppliedPlanMessageId ?? null,
+          messages: [],
+          lastAppliedPlanMessageId: null,
           createdAt: item.created_at,
-          // TRI-106: Сохраняем более свежий updatedAt из локального стейта,
-          // чтобы чат не "прыгал" вниз при фоновом обновлении списка.
-          updatedAt:
-            existing && new Date(existing.updatedAt) > new Date(serverUpdatedAt)
-              ? existing.updatedAt
-              : serverUpdatedAt,
+          updatedAt: item.created_at,
         };
         return acc;
       }, {});
@@ -352,14 +343,23 @@ export const useAiQueryStore = create<AiQueryStore>()(
         // if we have real sessions from the server (prevents chat duplication/cloning)
         const mergedSessions = { ...remoteSessions };
 
+        // TRI-120: Race condition fix — сохраняем уже загруженные сообщения из текущего стора.
+        // chat:history от WebSocket может прийти ДО того, как loadSessions() завершит set() —
+        // в этом случае remoteSessions создаётся с messages:[], стирая только что полученную историю.
+        // Решение: берём messages из state.sessions (текущий стор на момент set()) для каждой remote-сессии.
+        Object.keys(mergedSessions).forEach((id) => {
+          const localSess = state.sessions[id];
+          if (localSess && localSess.messages.length > 0) {
+            mergedSessions[id] = { ...mergedSessions[id]!, messages: localSess.messages };
+          }
+        });
+
         Object.values(localTransientSessions).forEach((localSession) => {
-          // TRI-106: Сохраняем локальные черновики, если они не пустые
-          // ИЛИ если это текущая активная сессия (чтобы не прыгало при создании нового чата)
+          // Only keep empty local drafts if we have NO remote sessions
+          // Or keep non-empty drafts (ones with messages)
           const isCompletelyEmptyDraft =
             localSession.sessionId === null && localSession.messages.length === 0;
-          const isActive = localSession.id === state.activeSessionId;
-
-          if (!isCompletelyEmptyDraft || isActive || Object.keys(remoteSessions).length === 0) {
+          if (!isCompletelyEmptyDraft || Object.keys(remoteSessions).length === 0) {
             mergedSessions[localSession.id] = localSession;
           }
         });
@@ -397,16 +397,14 @@ export const useAiQueryStore = create<AiQueryStore>()(
     }
   },
 
-  sendQuery: async (query, tripId, preAddedMessageId) => {
+  sendQuery: async (query, tripId) => {
     const normalized = sanitizeQuery(query);
     if (!normalized || get().isLoading) return;
 
     const ensured = ensureActiveSession(get());
     const activeId = ensured.activeSessionId;
     const currentSession = ensured.sessions[activeId] ?? createSession(tripId ?? null);
-    // Если передан preAddedMessageId — сообщение уже в сторе, используем его ID.
-    // Иначе создаём новое сообщение пользователя.
-    const requestId = preAddedMessageId ?? crypto.randomUUID();
+    const requestId = crypto.randomUUID();
     let ensuredSessionId = currentSession.sessionId;
 
     const userMessage: ChatMessage = {
@@ -416,17 +414,11 @@ export const useAiQueryStore = create<AiQueryStore>()(
       timestamp: new Date().toISOString(),
     };
 
-    // Если сообщение уже добавлено (preAddedMessageId), не дублируем его в список
-    const existingMessages = currentSession.messages;
-    const alreadyAdded = preAddedMessageId
-      ? existingMessages.some((m) => m.id === preAddedMessageId)
-      : false;
-
     const preRequestSession: ChatSession = {
       ...currentSession,
       tripId: tripId ?? currentSession.tripId,
       title: currentSession.messages.length === 0 ? normalized.slice(0, 60) : currentSession.title,
-      messages: alreadyAdded ? existingMessages : [...existingMessages, userMessage],
+      messages: [...currentSession.messages, userMessage],
       updatedAt: new Date().toISOString(),
     };
 
@@ -455,7 +447,6 @@ export const useAiQueryStore = create<AiQueryStore>()(
         //    если в ней ожидается старый flow с ленивым созданием сессии внутри /ai/plan.
         const created = await api.post<CreateSessionResponse>('/ai/sessions', {
           trip_id: tripId && isUuid(tripId) ? tripId : undefined,
-          title: preRequestSession.title,
         });
 
         ensuredSessionId = created.session_id;
@@ -817,7 +808,8 @@ export const useAiQueryStore = create<AiQueryStore>()(
           ...baseSession,
           tripId: response.trip_id,
           sessionId: response.session_id,
-          messages: mappedMessages,
+          // TRI-120: RACE CONDITION FIX - merge с существующими сообщениями вместо перезаписи
+          messages: mergeAndSortMessages(baseSession.messages, mappedMessages),
           // updatedAt обновляем только если сообщения действительно изменились
           updatedAt:
             JSON.stringify(baseSession.messages) !== JSON.stringify(mappedMessages)
@@ -839,9 +831,35 @@ export const useAiQueryStore = create<AiQueryStore>()(
   },
 
   createNewSession: (tripId = null) => {
-    const session = createSession(tripId);
+    let targetSessionId = '';
 
     set((state) => {
+      // Ищем пустой чат с названием "Новый чат"
+      const emptySession = Object.values(state.sessions).find(
+        (s) => s.messages.length === 0 && s.title === 'Новый чат',
+      );
+
+      if (emptySession) {
+        targetSessionId = emptySession.id;
+        const nextSessions = {
+          ...state.sessions,
+          [emptySession.id]: {
+            ...emptySession,
+            tripId: tripId ?? emptySession.tripId,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+        return {
+          sessions: nextSessions,
+          activeSessionId: emptySession.id,
+          isLoading: false,
+          ...syncLegacyFields(nextSessions, emptySession.id),
+        };
+      }
+
+      const session = createSession(tripId);
+      targetSessionId = session.id;
+
       const nextSessions = {
         ...state.sessions,
         [session.id]: session,
@@ -855,7 +873,7 @@ export const useAiQueryStore = create<AiQueryStore>()(
       };
     });
 
-    return session.id;
+    return targetSessionId;
   },
 
   switchSession: async (nextSessionId) => {
@@ -863,9 +881,7 @@ export const useAiQueryStore = create<AiQueryStore>()(
     const target = state.sessions[nextSessionId];
     if (!target) return;
 
-    // updatedAt не трогаем при переключении — чат всплывает только при отправке сообщений
     set({
-      sessions: state.sessions,
       activeSessionId: nextSessionId,
       isLoading: false,
       ...syncLegacyFields(state.sessions, nextSessionId),
@@ -883,7 +899,8 @@ export const useAiQueryStore = create<AiQueryStore>()(
 
           const nextSession: ChatSession = {
             ...freshTarget,
-            messages: mappedMessages,
+            // TRI-120: RACE CONDITION FIX - merge с существующими сообщениями
+            messages: mergeAndSortMessages(freshTarget.messages, mappedMessages),
           };
 
           const nextSessions = {
@@ -959,7 +976,7 @@ export const useAiQueryStore = create<AiQueryStore>()(
     // Если точек нет — чистим всё.
     const tripState = useTripStore.getState();
     // Если keepLastPlan не определен, используем старую логику
-    const hasPoints = keepLastPlan ?? ((tripState.currentTrip?.points?.length ?? 0) > 0);
+    const hasPoints = keepLastPlan ?? (tripState.currentTrip?.points?.length ?? 0) > 0;
 
     try {
       // Вызываем бэкенд для очистки сообщений
@@ -1014,11 +1031,9 @@ export const useAiQueryStore = create<AiQueryStore>()(
 
   renameSession: async (targetSessionId, title) => {
     const target = get().sessions[targetSessionId];
-    if (!target) return;
+    if (!target?.sessionId) return;
 
-    if (target.sessionId) {
-      await api.patch<{ success: boolean }>(`/ai/sessions/${target.sessionId}`, { title });
-    }
+    await api.patch<{ success: boolean }>(`/ai/sessions/${target.sessionId}`, { title });
 
     set((state) => {
       const session = state.sessions[targetSessionId];
@@ -1032,167 +1047,64 @@ export const useAiQueryStore = create<AiQueryStore>()(
     });
   },
 
-  // TRI-120: добавляет одно сообщение в активную сессию без вызова AI.
-  // Используется для отображения сообщений других участников через сокет
-  // и собственных сообщений, не требующих ответа AI.
+  // TRI-120: добавляет сообщение в активную сессию без вызова AI.
+  // Используется для отображения сообщений других участников, пришедших через сокет,
+  // и для отображения собственных сообщений, не требующих ответа AI.
   addLocalMessage: (message) => {
     set((state) => {
-      const activeId = state.activeSessionId;
-      if (!activeId) return state;
-      const session = state.sessions[activeId];
+      const { sessions, activeSessionId } = ensureActiveSession(state);
+      const session = sessions[activeSessionId];
+
+      // Если сессии нет, не добавляем сообщение
       if (!session) return state;
 
-      if (session.messages.some((m) => m.id === message.id)) return state;
+      // ЗАЩИТА ОТ ДУБЛИКАТОВ: если сообщение с таким ID уже есть, игнорируем его
+      if (session.messages.some((m) => m.id === message.id)) {
+        return state;
+      }
 
-      const nextSessions = {
-        ...state.sessions,
-        [activeId]: {
+      const updatedSessions = {
+        ...sessions,
+        [activeSessionId]: {
           ...session,
           messages: [...session.messages, message],
           updatedAt: new Date().toISOString(),
         },
       };
-
       return {
-        sessions: nextSessions,
-        ...syncLegacyFields(nextSessions, activeId),
+        sessions: updatedSessions,
+        activeSessionId,
+        ...syncLegacyFields(updatedSessions, activeSessionId),
       };
     });
   },
 
-  // TRI-120: добавляет массив сообщений истории чата (chat:history) без дубликатов.
-  addChatHistory: (messages) => {
+  // TRI-120: RACE CONDITION FIX - добавляет историю чата из WebSocket с merge
+  addChatHistory: (newMessages) => {
     set((state) => {
-      const activeId = state.activeSessionId;
-      if (!activeId) return state;
-      const session = state.sessions[activeId];
+      const { sessions, activeSessionId } = ensureActiveSession(state);
+      const session = sessions[activeSessionId];
+
       if (!session) return state;
 
-      // Не загружаем WebSocket-историю в только что созданную сессию (sessionId=null, messages=[]).
-      // Это предотвращает появление старых сообщений трипа при создании нового чата:
-      // useCollaborationSocket отправляет trip:join → сервер отвечает chat:history → addChatHistory
-      // попадает в пустую новую сессию и заполняет её старыми сообщениями.
-      if (session.sessionId === null && session.messages.length === 0) return state;
+      // Merge: existing messages take precedence over incoming history so that
+      // the owner's own locally-stored messages (clean content, no email prefix)
+      // are not overwritten by the prefixed versions coming from chat:history.
+      const combined = mergeAndSortMessages(newMessages, session.messages);
 
-      const existingMap = new Map(session.messages.map((m) => [m.id, m]));
-      const newMessages = [...session.messages];
-
-      for (const msg of messages) {
-        if (!existingMap.has(msg.id)) {
-          newMessages.push(msg);
-          existingMap.set(msg.id, msg);
-        } else {
-          // Merge metadata like routePlan if missing locally
-          const existing = existingMap.get(msg.id)!;
-          if (msg.routePlan && !existing.routePlan) {
-            existing.routePlan = msg.routePlan;
-          }
-        }
-      }
-
-      newMessages.sort(
-        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-      );
-
-      const nextSessions = {
-        ...state.sessions,
-        [activeId]: {
+      const updatedSessions = {
+        ...sessions,
+        [activeSessionId]: {
           ...session,
-          messages: newMessages,
+          messages: combined,
           updatedAt: new Date().toISOString(),
         },
       };
-
       return {
-        sessions: nextSessions,
-        ...syncLegacyFields(nextSessions, activeId),
+        sessions: updatedSessions,
+        activeSessionId,
+        ...syncLegacyFields(updatedSessions, activeSessionId),
       };
     });
   },
-
-  deletePointFromLatestRoutePlan: (pointName) => {
-    set((state) => {
-      const activeId = state.activeSessionId;
-      if (!activeId) return state;
-      const session = state.sessions[activeId];
-      if (!session) return state;
-
-      // Ищем последнее сообщение с routePlan
-      const msgIdx = [...session.messages].map((m, i) => ({ m, i })).reverse()
-        .find(({ m }) => m.routePlan)?.i;
-      if (msgIdx === undefined) return state;
-
-      const msg = session.messages[msgIdx]!;
-      if (!msg.routePlan) return state;
-
-      const updatedRoutePlan = {
-        ...msg.routePlan,
-        days: msg.routePlan.days.map((day) => ({
-          ...day,
-          points: day.points.filter((p) => p.poi?.name !== pointName),
-        })),
-      };
-
-      const updatedMessages = session.messages.map((m, i) =>
-        i === msgIdx ? { ...m, routePlan: updatedRoutePlan } : m,
-      );
-
-      const nextSessions = {
-        ...state.sessions,
-        [activeId]: { ...session, messages: updatedMessages },
-      };
-
-      return {
-        sessions: nextSessions,
-        ...syncLegacyFields(nextSessions, activeId),
-      };
-    });
-  },
-
-  clearLatestRoutePlanPoints: () => {
-    set((state) => {
-      const activeId = state.activeSessionId;
-      if (!activeId) return state;
-      const session = state.sessions[activeId];
-      if (!session) return state;
-
-      // Ищем последнее сообщение с routePlan
-      const msgIdx = [...session.messages].map((m, i) => ({ m, i })).reverse()
-        .find(({ m }) => m.routePlan)?.i;
-      if (msgIdx === undefined) return state;
-
-      const msg = session.messages[msgIdx]!;
-      if (!msg.routePlan) return state;
-
-      const updatedRoutePlan = {
-        ...msg.routePlan,
-        days: msg.routePlan.days.map((day) => ({ ...day, points: [] })),
-      };
-
-      const updatedMessages = session.messages.map((m, i) =>
-        i === msgIdx ? { ...m, routePlan: updatedRoutePlan } : m,
-      );
-
-      const nextSessions = {
-        ...state.sessions,
-        [activeId]: { ...session, messages: updatedMessages },
-      };
-
-      return {
-        sessions: nextSessions,
-        ...syncLegacyFields(nextSessions, activeId),
-      };
-    });
-  },
-    }),
-    {
-      name: 'ai-query-sessions',
-      storage: createJSONStorage(() => localStorage),
-      // Сохраняем только сессии и активную сессию — не сохраняем isLoading и т.п.
-      partialize: (state) => ({
-        sessions: state.sessions,
-        activeSessionId: state.activeSessionId,
-      }),
-    },
-  ),
-);
+}));

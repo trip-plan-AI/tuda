@@ -72,10 +72,7 @@ export class TripsService {
         .from(schema.tripCollaborators)
         .where(eq(schema.tripCollaborators.userId, userId));
 
-      collabRows = fallbackRows.map((row) => ({
-        tripId: row.tripId,
-        isActive: false,
-      }));
+      collabRows = fallbackRows.map((row) => ({ tripId: row.tripId, isActive: false }));
     }
 
     const collabIds = collabRows.map((r) => r.tripId);

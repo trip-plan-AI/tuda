@@ -244,7 +244,6 @@ export class OsmFetchService {
       coordinates: { lat, lon },
       category,
       rating: undefined,
-      score: 0.4, // Default score for Photon data
       working_hours: undefined,
       price_segment: this.toPriceSegment(category),
       phone: undefined,
@@ -304,7 +303,6 @@ export class OsmFetchService {
       coordinates: { lat, lon },
       category,
       rating: undefined,
-      score: 0.4, // Default score for Nominatim data
       working_hours: undefined,
       price_segment: this.toPriceSegment(category),
       phone: undefined,
