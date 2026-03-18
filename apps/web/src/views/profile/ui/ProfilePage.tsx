@@ -409,18 +409,26 @@ export function ProfilePage() {
     };
   }, [selectedTripId, activeTab, allTrips]);
 
-  // Join all trip sockets for real-time card updates
+  // Join all trip sockets for real-time card updates.
+  // Re-joins on socket reconnect so budget/point events keep arriving
+  // even after a brief network disconnect.
   useEffect(() => {
     const socket = getSocket();
     const joinedIds = allTrips.map((t) => t.id).filter(Boolean);
 
-    joinedIds.forEach((id) => {
-      if (id !== activeRoute?.id) {
-        socket.emit('join:trip', { trip_id: id });
-      }
-    });
+    const joinAll = () => {
+      joinedIds.forEach((id) => {
+        if (id !== activeRoute?.id) {
+          socket.emit('join:trip', { trip_id: id });
+        }
+      });
+    };
+
+    joinAll();
+    socket.on('connect', joinAll);
 
     return () => {
+      socket.off('connect', joinAll);
       joinedIds.forEach((id) => {
         if (id !== activeRoute?.id) {
           socket.emit('leave:trip', { trip_id: id });
@@ -576,12 +584,38 @@ export function ProfilePage() {
       setAllTrips((prev) => prev.map((t) => (t.id === trip_id ? { ...t, ...patch } : t)));
     };
 
+    const onTripBudgetUpdated = ({ trip_id, budget }: { trip_id: string; budget: number }) => {
+      if (!trip_id) return;
+      if (currentTrip?.id && trip_id === currentTrip.id) {
+        updateCurrentTrip({ budget });
+      }
+      setAllTrips((prev) => prev.map((t) => (t.id === trip_id ? { ...t, budget } : t)));
+    };
+
+    // trip:refresh — reload the full trip (points + budget) from API.
+    // Triggered by AI flow or after bulk operations; ensures profile stays in sync.
+    const onTripRefresh = ({ trip_id }: { trip_id: string }) => {
+      if (!trip_id) return;
+      Promise.all([tripsApi.getOne(trip_id), pointsApi.getAll(trip_id)])
+        .then(([trip, points]) => {
+          if (!trip) return;
+          setAllTrips((prev) =>
+            prev.map((t) =>
+              t.id === trip_id ? { ...trip, points: points ?? t.points } : t,
+            ),
+          );
+        })
+        .catch(console.error);
+    };
+
     socket.on('point:reorder', onPointReorder);
     socket.on('point:updated', onPointUpdate);
     socket.on('point:moved', onPointMoved);
     socket.on('point:added', onPointAdd);
     socket.on('point:deleted', onPointDelete);
     socket.on('trip:update', onTripUpdate);
+    socket.on('trip:budget_updated', onTripBudgetUpdated);
+    socket.on('trip:refresh', onTripRefresh);
 
     return () => {
       socket.off('point:reorder', onPointReorder);
@@ -590,6 +624,8 @@ export function ProfilePage() {
       socket.off('point:added', onPointAdd);
       socket.off('point:deleted', onPointDelete);
       socket.off('trip:update', onTripUpdate);
+      socket.off('trip:budget_updated', onTripBudgetUpdated);
+      socket.off('trip:refresh', onTripRefresh);
     };
   }, [currentTrip?.id, setPoints, updateCurrentTrip, addPoint, removePoint]);
 

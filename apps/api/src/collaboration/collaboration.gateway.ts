@@ -279,6 +279,18 @@ export class CollaborationGateway
     client.to(`trip_${trip_id}`).emit('trip:update', { trip_id, ...patch });
   }
 
+  @SubscribeMessage('trip:budget_updated')
+  async handleTripBudgetUpdated(
+    @ConnectedSocket() client: TypedSocket,
+    @MessageBody() data: { trip_id: string; budget: number },
+  ) {
+    await this.checkAccess(client.data.userId, data.trip_id);
+    // DB already saved via HTTP PATCH — broadcast budget update to all other room members
+    client
+      .to(`trip_${data.trip_id}`)
+      .emit('trip:budget_updated', { trip_id: data.trip_id, budget: data.budget });
+  }
+
   emitTripUpdate(tripId: string, patch: Record<string, unknown> = {}) {
     if (!this.server) return;
     this.server
