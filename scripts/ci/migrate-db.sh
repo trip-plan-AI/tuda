@@ -62,77 +62,145 @@ run_migrate() {
 }
 
 # Если прод уже инициализирован (таблицы/ENUM существуют),
-# но таблица истории миграций отсутствует, аккуратно создаем baseline.
+# а история drizzle отсутствует или пуста, аккуратно создаем baseline.
 bootstrap_drizzle_history_if_needed() {
   log "checking drizzle migrations baseline..."
 
-  local need_baseline
-  need_baseline=$(docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
+  local baseline_state
+  baseline_state=$(docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -t -A -c "
-      SELECT CASE
-        WHEN to_regclass('\''public.__drizzle_migrations'\'') IS NULL
-         AND to_regclass('\''public.trips'\'') IS NOT NULL
-         AND to_regclass('\''public.route_points'\'') IS NOT NULL
-         AND to_regclass('\''public.trip_chat_messages'\'') IS NOT NULL
-         AND to_regclass('\''public.ai_cities'\'') IS NOT NULL
-         AND to_regclass('\''public.ai_clusters'\'') IS NOT NULL
-         AND to_regclass('\''public.ai_pois'\'') IS NOT NULL
-         AND EXISTS (
-           SELECT 1
-           FROM information_schema.columns
-           WHERE table_schema = '\''public'\''
-             AND table_name = '\''trips'\''
-             AND column_name = '\''distance_km'\''
-         )
-         AND EXISTS (
-           SELECT 1
-           FROM information_schema.columns
-           WHERE table_schema = '\''public'\''
-             AND table_name = '\''route_points'\''
-             AND column_name = '\''duration'\''
-         )
-         AND EXISTS (SELECT 1 FROM pg_type WHERE typname = '\''collaborator_role'\'')
-        THEN '\''yes'\''
-        ELSE '\''no'\''
-      END;
+      SELECT
+        (to_regclass('\''public.__drizzle_migrations'\'') IS NOT NULL)::int || '\''|'\'' ||
+        CASE
+          WHEN to_regclass('\''public.__drizzle_migrations'\'') IS NULL THEN 0
+          ELSE (SELECT COUNT(*)::int FROM public.__drizzle_migrations)
+        END || '\''|'\'' ||
+        (
+          to_regclass('\''public.trips'\'') IS NOT NULL
+          AND to_regclass('\''public.route_points'\'') IS NOT NULL
+          AND to_regclass('\''public.trip_chat_messages'\'') IS NOT NULL
+          AND to_regclass('\''public.ai_cities'\'') IS NOT NULL
+          AND to_regclass('\''public.ai_clusters'\'') IS NOT NULL
+          AND to_regclass('\''public.ai_pois'\'') IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = '\''public'\''
+              AND table_name = '\''trips'\''
+              AND column_name = '\''distance_km'\''
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = '\''public'\''
+              AND table_name = '\''route_points'\''
+              AND column_name = '\''duration'\''
+          )
+          AND EXISTS (SELECT 1 FROM pg_type WHERE typname = '\''collaborator_role'\'')
+        )::int;
     "
   ' 2>&1) || {
     log_error "failed to detect drizzle baseline state"
     return 1
   }
 
-  need_baseline="$(echo "$need_baseline" | tr -d '[:space:]')"
+  baseline_state="$(echo "$baseline_state" | tr -d '[:space:]')"
 
-  if [ "$need_baseline" != "yes" ]; then
+  local table_exists rows_count schema_ready
+  IFS='|' read -r table_exists rows_count schema_ready <<< "$baseline_state"
+
+  log "baseline state: table_exists=$table_exists rows_count=$rows_count schema_ready=$schema_ready"
+
+  if [ "$schema_ready" != "1" ]; then
+    log "schema is not in initialized state, baseline bootstrap is not required"
+    return 0
+  fi
+
+  if [ "$rows_count" != "0" ]; then
     log "drizzle baseline is not required"
     return 0
   fi
 
-  log "drizzle migrations table is missing on initialized schema, bootstrapping baseline..."
+  log "drizzle history is empty on initialized schema, bootstrapping baseline from journal..."
 
-  docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
-    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "
-      CREATE TABLE IF NOT EXISTS public.__drizzle_migrations (
-        id serial PRIMARY KEY,
-        hash text NOT NULL UNIQUE,
-        created_at bigint NOT NULL
-      );
-    "
-  ' 2>&1 | tee -a "$LOG_FILE"
+  if [ "$table_exists" != "1" ]; then
+    docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
+      psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "
+        CREATE TABLE IF NOT EXISTS public.__drizzle_migrations (
+          id serial PRIMARY KEY,
+          hash text NOT NULL UNIQUE,
+          created_at bigint NOT NULL,
+          idx_serial integer,
+          \"when\" bigint,
+          tag text,
+          breakpoints boolean
+        );
+      "
+    ' 2>&1 | tee -a "$LOG_FILE"
+  fi
 
-  local file hash created_at
-  for file in ./apps/api/src/db/migrations/*.sql; do
+  local journal_file="./apps/api/src/db/migrations/meta/_journal.json"
+  if [ ! -f "$journal_file" ]; then
+    log_error "journal not found: $journal_file"
+    return 1
+  fi
+
+  local expected_count
+  expected_count=$(python3 - <<'PY'
+import json
+with open('./apps/api/src/db/migrations/meta/_journal.json', 'r', encoding='utf-8') as f:
+    data = json.load(f)
+print(len(data.get('entries', [])))
+PY
+)
+
+  local line idx when_ms tag breakpoints file hash
+  while IFS=$'\t' read -r idx when_ms tag breakpoints; do
+    file="./apps/api/src/db/migrations/${tag}.sql"
+    if [ ! -f "$file" ]; then
+      log_error "migration file from journal not found: $file"
+      return 1
+    fi
+
     hash=$(sha256sum "$file" | awk '{print $1}')
-    created_at=$(date +%s%3N)
 
     docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc "
       psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 -c \"
-        INSERT INTO public.__drizzle_migrations (hash, created_at)
-        VALUES ('$hash', $created_at)
-        ON CONFLICT (hash) DO NOTHING;
+        INSERT INTO public.__drizzle_migrations (hash, created_at, idx_serial, \"when\", tag, breakpoints)
+        VALUES ('$hash', $when_ms, $idx, $when_ms, '$tag', $breakpoints)
+        ON CONFLICT (hash) DO UPDATE
+        SET created_at = EXCLUDED.created_at,
+            idx_serial = EXCLUDED.idx_serial,
+            \"when\" = EXCLUDED.\"when\",
+            tag = EXCLUDED.tag,
+            breakpoints = EXCLUDED.breakpoints;
       \"
     " 2>&1 | tee -a "$LOG_FILE"
-  done
+  done < <(python3 - <<'PY'
+import json
+with open('./apps/api/src/db/migrations/meta/_journal.json', 'r', encoding='utf-8') as f:
+    data = json.load(f)
+for e in data.get('entries', []):
+    idx = int(e.get('idx', 0))
+    when_ms = int(e.get('when', 0))
+    tag = str(e.get('tag', '')).strip()
+    breakpoints = 'true' if bool(e.get('breakpoints', False)) else 'false'
+    print(f"{idx}\t{when_ms}\t{tag}\t{breakpoints}")
+PY
+)
+
+  local actual_count
+  actual_count=$(docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -t -A -c "
+      SELECT COUNT(*)::int FROM public.__drizzle_migrations
+      WHERE tag IS NOT NULL;
+    "
+  ' 2>&1 | tr -d '[:space:]')
+
+  if [ "$actual_count" -lt "$expected_count" ]; then
+    log_error "baseline bootstrap is incomplete: expected_entries=$expected_count actual_tagged_rows=$actual_count"
+    return 1
+  fi
 
   log "drizzle baseline bootstrap finished"
 }

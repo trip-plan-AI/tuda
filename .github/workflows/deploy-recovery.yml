@@ -94,6 +94,11 @@ jobs:
           test -f ./apps/api/src/db/migrations/meta/_journal.json
           ls ./apps/api/src/db/migrations/*.sql >/dev/null
 
+          echo "[recovery][debug] drizzle history state before migrate"
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -x -c "SELECT to_regclass('\''public.__drizzle_migrations'\'') AS drizzle_table;"'
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -x -c "SELECT COUNT(*) AS rows_count FROM public.__drizzle_migrations;"' || true
+          docker compose -f docker-compose.prod.yml exec --interactive=false -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT id, idx_serial, tag, breakpoints, created_at, \"when\" FROM public.__drizzle_migrations ORDER BY idx_serial NULLS LAST, id DESC LIMIT 20;"' || true
+
           chmod +x ./scripts/ci/migrate-db.sh
           ./scripts/ci/migrate-db.sh
 
