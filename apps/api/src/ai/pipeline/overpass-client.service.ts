@@ -29,6 +29,9 @@ interface OverpassElement {
     'diet:vegan'?: string;
     'dog:welcomed'?: string;
     wikidata?: string;
+    heritage?: string;          // heritage=1/2/3/yes → protected cultural site
+    'heritage:operator'?: string;
+    protection_title?: string;  // e.g. "Объект культурного наследия"
     [key: string]: string | undefined;
   };
 }
@@ -236,6 +239,25 @@ export class OverpassClientService {
     const description =
       descriptionParts.length > 0 ? descriptionParts.join('. ') : undefined;
 
+    // TAG WISDOM: score boost based on OSM significance signals
+    const tags = item.tags ?? {};
+    let tagScore = 0.5; // default
+    let isProtected = false;
+
+    // Heritage tag → confirmed cultural significance, hard protect
+    if (tags.heritage || tags.protection_title || tags['heritage:operator']) {
+      tagScore += 0.4;
+      isProtected = true;
+    }
+    // Wikidata link → global notability confirmed
+    if (tags.wikidata) tagScore += 0.1;
+    // tourism=attraction or tourism=museum → explicit tourist marker
+    if (tags.tourism === 'attraction' || tags.tourism === 'museum') tagScore += 0.2;
+    // Large city park
+    if (tags.leisure === 'park') tagScore += 0.1;
+
+    tagScore = Math.min(tagScore, 1.0);
+
     return {
       id: this.makePoiId(name, address, lat, lon),
       name,
@@ -244,13 +266,14 @@ export class OverpassClientService {
       coordinates: { lat, lon },
       category,
       rating: 4.0,
-      score: 0.5, // Default score for Overpass data
-      working_hours: item.tags?.opening_hours,
+      score: tagScore,
+      isProtected: isProtected || undefined,
+      working_hours: tags.opening_hours,
       price_segment: this.toPriceSegment(category),
-      phone: item.tags?.phone,
-      website: item.tags?.website,
+      phone: tags.phone,
+      website: tags.website,
       description,
-      wikidata: item.tags?.wikidata,
+      wikidata: tags.wikidata,
     };
   }
 

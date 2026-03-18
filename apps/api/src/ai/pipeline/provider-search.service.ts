@@ -170,6 +170,29 @@ export class ProviderSearchService {
     stats.kudago.attempted = isCis;
     stats.osm_fetch.attempted = !isCis;
 
+    // CROSS-SOURCE PROTECTION: points confirmed by both KudaGo and Overpass → isProtected
+    // KudaGo is curated (no "traffic lights"), Overpass is raw OSM.
+    // If the same place appears in both — it's a proven MustVisit.
+    if (kudagoRaw.length > 0 && overpassRaw.length > 0) {
+      for (const kudaPoi of kudagoRaw) {
+        for (const ovPoi of overpassRaw) {
+          const score = this.fuzzyMatcher.calculateMatchScore(
+            kudaPoi.name,
+            ovPoi.name,
+            0,
+          );
+          if (score > 0.82) {
+            // Mark both copies; deduplicate will keep one with highest quality
+            (kudaPoi as any).isProtected = true;
+            (ovPoi as any).isProtected = true;
+            // Boost scores to float to top of AI selector list
+            kudaPoi.score = Math.max(kudaPoi.score, 0.8);
+            ovPoi.score = Math.max(ovPoi.score, 0.8);
+          }
+        }
+      }
+    }
+
     // Filter by geographic awareness using resolved center or fallback geosearch
     const center = searchLocation || (await this.geosearch.suggest(city))?.[0];
 
@@ -182,8 +205,11 @@ export class ProviderSearchService {
           p.coordinates.lat,
           p.coordinates.lon,
         );
-        // Use resolved radius + buffer (2km) to avoid hard cutoffs, or default 15km
-        const limitKm = (searchRadius + 2000) / 1000;
+        // Protected points get 2× radius — they may be farther from city center
+        // (e.g. Дача Сталина, Парк Ривьера) but are proven landmarks
+        const limitKm = (p as any).isProtected
+          ? (searchRadius + 2000) / 1000 * 2
+          : (searchRadius + 2000) / 1000;
         if (d > limitKm) return false;
       }
       return true;
