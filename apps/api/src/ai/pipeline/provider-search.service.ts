@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import type {
   MassCollectionShadowMeta,
   MassCollectionShadowProviderStat,
@@ -7,19 +11,39 @@ import type {
 import type { PoiItem } from '../types/poi.types';
 import { KudagoClientService } from './kudago-client.service';
 import { OverpassClientService } from './overpass-client.service';
+import { OsmFetchService } from './osm-fetch.service';
 import { LlmClientService } from './llm-client.service';
 import { GeosearchService } from '../../geosearch/geosearch.service';
+import { AiDiscoveryService } from './ai-discovery.service';
+import { FuzzyMatcherService } from './fuzzy-matcher.service';
+import { CityAnalyzerService } from './city-analyzer.service';
+import { ClusteringService } from './clustering.service';
+import { LocationResolverService } from './location-resolver.service';
 import { randomUUID } from 'crypto';
+
+interface GeosearchResult {
+  lat: number;
+  lon: number;
+  displayName: string;
+  type?: string;
+  class?: string;
+}
 
 @Injectable()
 export class ProviderSearchService {
-  private readonly logger = new Logger(ProviderSearchService.name);
+  private readonly logger = new Logger('AI_PIPELINE:ProviderSearch');
 
   constructor(
     private readonly kudagoClient: KudagoClientService,
     private readonly overpassClient: OverpassClientService,
+    private readonly osmFetchClient: OsmFetchService,
     private readonly llmClientService: LlmClientService,
     private readonly geosearch: GeosearchService,
+    private readonly aiDiscovery: AiDiscoveryService,
+    private readonly fuzzyMatcher: FuzzyMatcherService,
+    private readonly cityAnalyzer: CityAnalyzerService,
+    private readonly clusteringService: ClusteringService,
+    private readonly locationResolver: LocationResolverService,
   ) {}
 
   private normalizeCityName(rawCity: string): string {
@@ -28,56 +52,47 @@ export class ProviderSearchService {
       .trim()
       .replace(/[^a-zа-яё0-9]/g, ' ');
 
+    const tokens = city.split(/\s+/).filter(Boolean);
+
     if (
       ['спб', 'питер', 'ленинград', 'petersburg', 'spb'].some((s) =>
-        city.includes(s),
+        tokens.includes(s),
       )
-    ) {
+    )
       return 'Санкт-Петербург';
-    }
-    if (['мск', 'москва', 'moscow'].some((s) => city.includes(s))) {
+    if (['мск', 'москва', 'moscow'].some((s) => tokens.includes(s)))
       return 'Москва';
-    }
     if (
       ['екб', 'екатеринбург', 'свердловск', 'yekaterinburg'].some((s) =>
-        city.includes(s),
+        tokens.includes(s),
       )
-    ) {
+    )
       return 'Екатеринбург';
-    }
     if (
       ['нск', 'новосиб', 'новосибирск', 'novosibirsk'].some((s) =>
-        city.includes(s),
+        tokens.includes(s),
       )
-    ) {
+    )
       return 'Новосибирск';
-    }
     if (
       ['нн', 'нижний', 'nizhny novgorod', 'novgorod'].some((s) =>
-        city.includes(s),
+        tokens.includes(s),
       ) &&
-      !city.includes('великий')
-    ) {
+      !tokens.includes('великий')
+    )
       return 'Нижний Новгород';
-    }
-    if (['крд', 'краснодар', 'krasnodar'].some((s) => city.includes(s))) {
+    if (['крд', 'краснодар', 'krasnodar'].some((s) => tokens.includes(s)))
       return 'Краснодар';
-    }
-    if (['казань', 'kazan'].some((s) => city.includes(s))) {
-      return 'Казань';
-    }
-    if (['сочи', 'sochi'].some((s) => city.includes(s))) {
-      return 'Сочи';
-    }
-
+    if (['казань', 'kazan'].some((s) => tokens.includes(s))) return 'Казань';
+    if (['сочи', 'sochi'].some((s) => tokens.includes(s))) return 'Сочи';
     return rawCity;
   }
 
   private buildEmptyProviderStat(
-    provider: MassCollectionShadowProviderStat['provider'],
+    provider: string,
   ): MassCollectionShadowProviderStat {
     return {
-      provider,
+      provider: provider as any,
       attempted: false,
       raw_count: 0,
       used_count: 0,
@@ -87,250 +102,378 @@ export class ProviderSearchService {
 
   async fetchAndFilter(
     intent: ParsedIntent,
-    fallbacks: string[] = [],
+    _fallbacks: string[] = [],
   ): Promise<{
     pois: PoiItem[];
     shadowDiagnostics?: MassCollectionShadowMeta;
   }> {
-    // TRI-115: Нормализация названия города для стабильной работы провайдеров
-    const originalCity = intent.city;
-    intent.city = this.normalizeCityName(intent.city);
+    const city = this.normalizeCityName(intent.city || 'Москва');
 
-    if (originalCity !== intent.city) {
-      this.logger.log(
-        `[ProviderSearch] City normalized: "${originalCity}" -> "${intent.city}"`,
-      );
-    }
-
-    this.logger.log(
-      `[ProviderSearch] Started for city: "${intent.city}", categories: [${intent.categories.join(', ')}]`,
-    );
-
-    let pois: PoiItem[] = [];
-    const providerStats: Record<
-      MassCollectionShadowProviderStat['provider'],
-      MassCollectionShadowProviderStat
-    > = {
+    const stats = {
       kudago: this.buildEmptyProviderStat('kudago'),
       overpass: this.buildEmptyProviderStat('overpass'),
-      llm_fill: this.buildEmptyProviderStat('llm_fill'),
-      photon: this.buildEmptyProviderStat('photon'),
+      osm_fetch: this.buildEmptyProviderStat('osm_fetch'),
+      discovery: this.buildEmptyProviderStat('discovery'),
     };
 
-    // 1) Сначала обращаемся к приоритетному источнику (KudaGo)
-    this.logger.log(`[ProviderSearch] Requesting KudaGo API...`);
-    providerStats.kudago.attempted = true;
-    let kudagoRaw: PoiItem[] = [];
-    const tKudaGo = Date.now();
-    try {
-      kudagoRaw = await this.kudagoClient.fetchByIntent(intent);
-      providerStats.kudago.raw_count = kudagoRaw.length;
-      providerStats.kudago.used_count = kudagoRaw.length;
-    } catch (error: unknown) {
-      providerStats.kudago.failed = true;
-      providerStats.kudago.fail_reason =
-        error instanceof Error ? error.message : String(error);
-      throw error;
-    }
+    // --- STAGE 0: Location Resolution ---
+    const resolvedLocation = await this.locationResolver.resolve(city);
+    const searchRadius = resolvedLocation?.radius ?? 15000;
+    const searchLocation = resolvedLocation
+      ? {
+          lat: resolvedLocation.lat,
+          lon: resolvedLocation.lon,
+          radius: searchRadius,
+        }
+      : undefined;
+
     this.logger.log(
-      `[ProviderSearch] KudaGo returned ${kudagoRaw.length} points in ${Date.now() - tKudaGo}ms.`,
+      `[Stage 0] Location resolved: ${resolvedLocation?.displayName ?? 'None'}, radius: ${searchRadius}m`,
     );
 
-    if (kudagoRaw.length === 0) {
-      this.logger.warn(
-        `[ProviderSearch] KudaGo returned 0 points. Using fallback: KUDAGO_UNAVAILABLE_OVERPASS_ONLY`,
-      );
-      fallbacks.push('KUDAGO_UNAVAILABLE_OVERPASS_ONLY');
-    }
+    // --- STAGE 1: Hard Data Collection ---
+    const locationStr = searchLocation ? `(${searchLocation.lat.toFixed(4)}, ${searchLocation.lon.toFixed(4)})` : '(no coords)';
+    this.logger.log(`[Stage 1] Collecting hard data for city: ${city} ${locationStr}...`);
 
-    // 2) Если точек мало (< 15), добираем через Overpass
-    let overpassRaw: PoiItem[] = [];
-    if (kudagoRaw.length < 15) {
-      this.logger.log(
-        `[ProviderSearch] KudaGo POIs < 15. Calling Overpass API for supplement...`,
-      );
-      providerStats.overpass.attempted = true;
-      const tOverpass = Date.now();
-      try {
-        overpassRaw = await this.overpassClient.fetchByIntent(intent);
-        providerStats.overpass.raw_count += overpassRaw.length;
-      } catch (error: unknown) {
-        providerStats.overpass.failed = true;
-        providerStats.overpass.fail_reason =
-          error instanceof Error ? error.message : String(error);
-        throw error;
+    let allHardPois: PoiItem[] = [];
+    const isCis = this.llmClientService.isCisRegion(intent.country_code, city);
+
+    const [overpassRaw, kudagoRaw, osmRaw] = await Promise.all([
+      this.overpassClient
+        .fetchByIntent(intent, searchLocation)
+        .catch((err: any) => {
+          this.logger.error(`Overpass failed for ${city}: ${err.message}`);
+          return [] as PoiItem[];
+        }),
+      isCis
+        ? this.kudagoClient
+            .fetchByIntent(intent)
+            .catch(() => [] as PoiItem[])
+        : Promise.resolve([] as PoiItem[]),
+      !isCis
+        ? this.osmFetchClient
+            .fetchAndFilter(intent)
+            .catch(() => [] as PoiItem[])
+        : Promise.resolve([] as PoiItem[]),
+    ]);
+
+    stats.overpass.raw_count = overpassRaw.length;
+    stats.kudago.raw_count = kudagoRaw.length;
+    stats.osm_fetch.raw_count = osmRaw.length;
+    allHardPois = [...overpassRaw, ...kudagoRaw, ...osmRaw];
+
+    stats.overpass.attempted = true;
+    stats.kudago.attempted = isCis;
+    stats.osm_fetch.attempted = !isCis;
+
+    // Filter by geographic awareness using resolved center or fallback geosearch
+    const center =
+      searchLocation || (await this.geosearch.suggest(city))?.[0];
+
+    const hardPois = this.deduplicate(allHardPois).filter((p) => {
+      if (this.isToxicPoi(p.name)) return false;
+      if (center) {
+        const d = this.haversineKm(
+          center.lat,
+          center.lon,
+          p.coordinates.lat,
+          p.coordinates.lon,
+        );
+        // Use resolved radius + buffer (2km) to avoid hard cutoffs, or default 15km
+        const limitKm = (searchRadius + 2000) / 1000;
+        if (d > limitKm) return false;
       }
-      this.logger.log(
-        `[ProviderSearch] Overpass returned ${overpassRaw.length} points in ${Date.now() - tOverpass}ms.`,
+      return true;
+    });
+
+    this.logger.log(`[Stage 1] Collected ${hardPois.length} hard points.`);
+
+    // --- STAGE 2: AI Selection (Selector Mode) ---
+    this.logger.log(`[Stage 2] AI Selection (Selector Mode)...`);
+
+    // Dynamic City Context based on actual data (or default if no data)
+    let cityContext = `Индустриальный город, важна промышленная мощь, набережные и местный колорит.`;
+    if (hardPois.length > 0) {
+      const cityProfile = this.cityAnalyzer.analyze(
+        hardPois.map((p) => ({ tags: { tourism: p.category, ...p } })),
       );
+      cityContext = cityProfile.description;
     }
 
-    // 3) TRI-108-6: If food focus detected, supplement with Photon + AI
-    const hasFoodFocus = intent.categories.some(
-      (cat) =>
-        /cafe|кафе|restaurant|ресторан|bar|бар|food|еда|coffee|кофе/i.test(cat),
+    // Pre-clustering for geographic awareness
+    const clusterResult = this.clusteringService.clusterPois(hardPois, 1.0);
+    const poiToClusterId = new Map<string, number>();
+    clusterResult.clusters.forEach((c) => {
+      c.poiIds.forEach((pid) => poiToClusterId.set(pid, c.id));
+    });
+
+    const formatPoiForLlm = (p: PoiItem) => {
+      const cid = poiToClusterId.get(p.id);
+      const clusterTag = cid !== undefined ? `[Clstr:${cid}] ` : '';
+      return `${p.id}: ${clusterTag}${p.name}`;
+    };
+
+    // 1. Prepare clusters for LLM with IDs
+    const cultureList = hardPois
+      .filter((p) =>
+        [
+          'museum',
+          'arts_centre',
+          'theatre',
+          'historic',
+          'memorial',
+          'monument',
+          'gallery',
+          'castle',
+          'fortress',
+        ].includes(p.category),
+      )
+      .slice(0, 40);
+    const natureList = hardPois
+      .filter((p) =>
+        [
+          'park',
+          'garden',
+          'nature_reserve',
+          'viewpoint',
+          'beach',
+          'water',
+        ].includes(p.category),
+      )
+      .slice(0, 20);
+    const foodList = hardPois
+      .filter((p) =>
+        ['restaurant', 'cafe', 'bar', 'pub', 'fast_food'].includes(p.category),
+      )
+      .slice(0, 30);
+
+    const systemPrompt = `### ROLE
+Ты — экспертный travel-аналитик и гид-сомелье мирового уровня. Твоя задача — отобрать лучшие точки интереса (POI) для города.
+
+### TASK
+1. ОПРЕДЕЛИ 3 главных архетипа этого города (напр.: 'Индустриальный гигант', 'Портовый узел', 'Университетский центр', 'Купеческий городок'). 
+2. ВЫБЕРИ из предоставленного списка (с ID) те объекты, которые являются "лицом" этих архетипов.
+3. ПРОВЕРЬ ГЕОГРАФИЮ: Игнорируй объекты, которые явно находятся в других регионах или странах, даже если названия похожи.
+4. ВЫЯВИ "Hidden Gems": Если ты знаешь уникальный объект, которого нет в списке, добавь его.
+
+### SELECTION CRITERIA (Strict Rules)
+1. ПРИНЦИП "АНТИ-ТИПОВОЙ": 
+   - Игнорируй типовые советские мемориалы (ВОВ, локальные катастрофы, обелиски, танки на постаментах), если они не являются объектами ЮНЕСКО или шедеврами мирового значения.
+   - Игнорируй рядовые памятники политическим деятелям (Ленин, Киров) и мемориальные доски.
+   - Обычные парки и скверы без уникальной "фишки" (например, аттракционов 19 века или уникальной флоры) — в бан.
+
+2. ПРИОРИТЕТ "УНИКАЛЬНЫЕ МАРКЕРЫ":
+   - Инженерная эстетика (ГЭС, шлюзы, мосты, маяки).
+   - Архитектурная идентичность (модерн, брутализм, деревянное зодчество).
+   - Объекты, создающие "дух места" (Genius Loci).
+
+3. БАЛАНС КАТЕГОРИЙ (60/20/20):
+   - Культура/Технологии (ГЭС, Музеи, Усадьбы).
+   - Природа/Набережные/Виды.
+   - Уникальный гастро-опыт (с историей).
+
+### OUTPUT
+Верни СТРОГО JSON. Для каждого выбранного объекта укажи, к какому АРХЕТИПУ он относится.`;
+
+    const isSmallCity = hardPois.length < 10;
+    const hiddenGemsTarget = isSmallCity ? '10-15' : '3-5';
+
+    const selectionPrompt = `Город: ${city}
+Контекст: ${cityContext}
+
+ВЫБЕРИ ИЗ СПИСКА (ID: Название):
+
+КУЛЬТУРА:
+${cultureList.length > 0 ? cultureList.map((p) => formatPoiForLlm(p)).join('\n') : 'Список пуст'}
+
+ПРИРОДА:
+${natureList.length > 0 ? natureList.map((p) => formatPoiForLlm(p)).join('\n') : 'Список пуст'}
+
+ЕДА:
+${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'Список пуст'}
+
+ЗАДАЧА:
+1. Выбери до 15 лучших объектов из списка.
+2. Обязательно предложи ${hiddenGemsTarget} лучших мест ("Hidden Gems"), которых НЕТ в списке.
+
+Верни JSON:
+{
+  "selected": [{"id": "ID объекта", "archetype": "соответствующий архетип"}],
+  "hidden_gems": [{"name": "название", "reason": "почему это Must-see", "archetype": "архетип"}]
+}`;
+
+    let selectedIds: string[] = [];
+    let hiddenHypotheses: any[] = [];
+
+    try {
+      const content = await this.llmClientService.chat(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: selectionPrompt },
+        ],
+        {
+          temperature: 0.2,
+          jsonMode: true,
+          isCis,
+        },
+      );
+
+      const parsed = JSON.parse(content || '{}');
+      selectedIds = (parsed.selected || []).map((s: any) => s.id);
+      hiddenHypotheses = parsed.hidden_gems || [];
+
+      if (selectedIds.length === 0 && hardPois.length > 0) {
+        this.logger.warn(`[Stage 2] LLM Selection returned 0 IDs. Falling back to top 15 from hardPois.`);
+        selectedIds = [...cultureList, ...natureList, ...foodList]
+          .slice(0, 15)
+          .map((p) => p.id);
+      }
+
+      stats.discovery.attempted = true;
+      stats.discovery.raw_count = hiddenHypotheses.length;
+    } catch (e: any) {
+      this.logger.error(`[Stage 2] LLM Selection failed: ${e.message}`);
+      selectedIds = [...cultureList, ...natureList, ...foodList]
+        .slice(0, 15)
+        .map((p) => p.id);
+    }
+
+    // Safety Filter: оставляем только те ID, которые реально были в источнике
+    const validIdSet = new Set(hardPois.map((p) => p.id));
+    const verifiedIds = selectedIds.filter((id) => validIdSet.has(id));
+
+    const curatedPois = hardPois.filter((p) => verifiedIds.includes(p.id));
+    this.logger.log(
+      `[Stage 2] Curated ${curatedPois.length} points from Ground Truth.`,
     );
 
-    let photonRaw: PoiItem[] = [];
-    let aiGeneratedFood: PoiItem[] = [];
+    // --- STAGE 3: Hidden Gems & Geocoding ---
+    this.logger.log(
+      `[Stage 3] Processing ${hiddenHypotheses.length} Hidden Gems...`,
+    );
 
-    if (hasFoodFocus) {
-      this.logger.log(
-        `[ProviderSearch] TRI-108-6: Food focus detected. Attempting Photon + AI supplements for ${intent.city}...`,
-      );
+    let cityBbox = '';
+    const citySuggestions = await this.geosearch.suggest(city); // Bbox якорим за город
+    if (citySuggestions && citySuggestions.length > 0) {
+      const firstSuggestion = citySuggestions[0] as GeosearchResult;
+      const { lat, lon } = firstSuggestion;
+      const delta = 0.1; // ~10-12km
+      cityBbox = `${lon - delta},${lat - delta},${lon + delta},${lat + delta}`;
+    }
 
-      // Try Photon first (real data from OSM)
-      providerStats.photon = this.buildEmptyProviderStat('photon');
-      providerStats.photon.attempted = true;
-      const tPhoton = Date.now();
-      try {
-        photonRaw = await this.searchPhotonForFood(intent.city);
-        providerStats.photon.raw_count = photonRaw.length;
-        providerStats.photon.used_count = photonRaw.length;
-        if (photonRaw.length > 0) {
-          this.logger.log(
-            `[ProviderSearch] ✅ Photon returned ${photonRaw.length} food venues in ${Date.now() - tPhoton}ms.`,
-          );
-          fallbacks.push('PHOTON_FOOD_SEARCH_SUPPLEMENT');
-        }
-      } catch (error: unknown) {
-        providerStats.photon.failed = true;
-        providerStats.photon.fail_reason =
-          error instanceof Error ? error.message : String(error);
-        this.logger.warn(
-          `[ProviderSearch] ⚠️ Photon search failed after ${Date.now() - tPhoton}ms: ${providerStats.photon.fail_reason}`,
+    const verifiedHiddenPois: PoiItem[] = [];
+    if (cityBbox && hiddenHypotheses.length > 0) {
+      for (const hypo of hiddenHypotheses) {
+        if (
+          !hypo.name ||
+          [city].some((c) =>
+            this.isAnotherCityName(hypo.name as string, c),
+          ) ||
+          this.isToxicPoi(hypo.name as string)
+        )
+          continue;
+
+        // Check if already in curated to avoid duplicates
+        if (
+          curatedPois.some(
+            (p) =>
+              this.fuzzyMatcher.calculateMatchScore(
+                hypo.name as string,
+                p.name,
+                0,
+              ) > 0.85,
+          )
+        )
+          continue;
+
+        const geoRes = await this.geosearch.suggestWithBbox(
+          hypo.name as string,
+          cityBbox,
         );
-      }
+        if (geoRes && geoRes.length > 0) {
+          const best = geoRes[0] as GeosearchResult;
+          if (this.isExcludedType(best)) continue;
 
-      // If Photon returned < 2 food POIs, use AI as fallback
-      const allFoodPois = [...kudagoRaw, ...overpassRaw, ...photonRaw];
-      const allFood = allFoodPois.filter(
-        (p) => p.category === 'restaurant' || p.category === 'cafe',
-      ).length;
-
-      if (allFood < 2) {
-        this.logger.log(
-          `[ProviderSearch] 🤖 TRI-108-6 AI FALLBACK TRIGGERED: Only ${allFood} food POIs. Intent: "${intent.preferences_text}"`,
-        );
-        const tAiFood = Date.now();
-        try {
-          aiGeneratedFood = await this.generateFoodVenuesWithAI(intent);
           this.logger.log(
-            `[ProviderSearch] ✨ AI generated ${aiGeneratedFood.length} food venues in ${Date.now() - tAiFood}ms.`,
+            `[Stage 3] Hidden Gem "${String(hypo.name)}" -> Verified via Geocoding`,
           );
-
-          if (aiGeneratedFood.length > 0) {
-            fallbacks.push('AI_GENERATED_FOOD_RECOMMENDATIONS');
-          }
-        } catch (error: unknown) {
-          this.logger.warn(
-            `[ProviderSearch] ⚠️ AI generation failed after ${Date.now() - tAiFood}ms: ${error instanceof Error ? error.message : String(error)}`,
-          );
+          verifiedHiddenPois.push({
+            id: `geo-${randomUUID().slice(0, 8)}`,
+            name: hypo.name as string,
+            address: best.displayName,
+            coordinates: { lat: best.lat, lon: best.lon },
+            category: 'attraction',
+            provider: 'geosearch_verified',
+            rating: 4.8,
+            description: hypo.reason as string,
+            price_segment: 'mid',
+          });
         }
       }
     }
 
-     const filterFn = (p: PoiItem) => {
-       const lat = p.coordinates?.lat;
-       const lon = p.coordinates?.lon;
-       const isValid =
-         lat !== undefined &&
-         lon !== undefined &&
-         Number.isFinite(lat) &&
-         Number.isFinite(lon) &&
-         (Math.abs(lat) > 0.001 || Math.abs(lon) > 0.001) &&
-         !(lat === 0 && lon === 0);
+    stats.discovery.used_count = verifiedHiddenPois.length;
 
-       return isValid;
-     };
+    // --- STAGE 4: Synthesis & Final Quota ---
+    const allCandidates = this.deduplicate([
+      ...verifiedHiddenPois,
+      ...curatedPois,
+    ]);
 
-    pois = [
-      ...kudagoRaw.filter(filterFn),
-      ...overpassRaw.filter(filterFn),
-      ...photonRaw.filter(filterFn),
-      ...aiGeneratedFood.filter(filterFn),
+    // If result is too small, refill from hardPois to have a healthy pool for downstream
+    if (allCandidates.length < 20 && hardPois.length > allCandidates.length) {
+      const extra = hardPois
+        .filter((p) => !allCandidates.some((r) => r.id === p.id))
+        .slice(0, 30);
+      allCandidates.push(...extra);
+    }
+
+    // Quota: 50 non-food + 50 food
+    const foodCategories = [
+      'restaurant',
+      'cafe',
+      'bar',
+      'pub',
+      'fast_food',
+      'food_court',
     ];
+    const foodPois = allCandidates
+      .filter((p) => foodCategories.includes(p.category))
+      .slice(0, 50);
+    const nonFoodPois = allCandidates
+      .filter((p) => !foodCategories.includes(p.category))
+      .slice(0, 50);
 
-    // Если после объединения все еще мало POI, пробуем расширить радиус поиска Overpass
-    if (pois.length < 3) {
-      this.logger.warn(
-        `[ProviderSearch] Still low on POIs (${pois.length}). Retrying Overpass with radius * 1.3...`,
+    const resultPois = [...nonFoodPois, ...foodPois];
+
+    // CRITICAL: Hard stop check only at the end
+    if (resultPois.length === 0) {
+      this.logger.error(
+        `[Pipeline] Critical failure: No points found even after synthesis for ${intent.city}`,
       );
-      providerStats.overpass.attempted = true;
-      const tRetry = Date.now();
-      let retryOverpass: PoiItem[] = [];
-      try {
-        retryOverpass = await this.overpassClient.fetchByIntent({
-          ...intent,
-          radius_km: intent.radius_km * 1.3,
-        });
-        providerStats.overpass.raw_count += retryOverpass.length;
-      } catch (error: unknown) {
-        providerStats.overpass.failed = true;
-        providerStats.overpass.fail_reason =
-          error instanceof Error ? error.message : String(error);
-        throw error;
-      }
-      pois = [...kudagoRaw, ...retryOverpass];
-      overpassRaw = retryOverpass;
-      this.logger.log(
-        `[ProviderSearch] After Overpass retry (${Date.now() - tRetry}ms), total raw points: ${pois.length}`,
-      );
+      throw new UnprocessableEntityException({
+        code: 'CITY_DATA_UNAVAILABLE',
+        message: `Данные для города ${intent.city} временно недоступны.`,
+      });
     }
 
-    providerStats.overpass.used_count = overpassRaw.length;
-
-    const minRequired = intent.days * 2;
-
-    // 4) Если точек всё ещё не хватает (меньше days * 2), генерируем недостающие через LLM
-    if (pois.length < minRequired) {
-      this.logger.warn(
-        `[ProviderSearch] Only ${pois.length} points found, but ${minRequired} needed for ${intent.days} days. Requesting LLM to generate missing points...`,
-      );
-      const missingCount = minRequired - pois.length;
-      providerStats.llm_fill.attempted = true;
-      const tLlmFill = Date.now();
-      try {
-        const generatedPois = await this.generateMissingPois(
-          intent.city,
-          missingCount,
-          pois,
-        );
-        pois = [...pois, ...generatedPois];
-        providerStats.llm_fill.raw_count = generatedPois.length;
-        providerStats.llm_fill.used_count = generatedPois.length;
-        fallbacks.push('LLM_GENERATED_MISSING_POIS');
-        this.logger.log(
-          `[ProviderSearch] Successfully generated ${generatedPois.length} missing points in ${Date.now() - tLlmFill}ms. Total now: ${pois.length}`,
-        );
-      } catch (error: any) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        this.logger.error(
-          `[ProviderSearch] Failed to generate missing points via LLM after ${Date.now() - tLlmFill}ms: ${errorMessage}`,
-        );
-        providerStats.llm_fill.failed = true;
-        providerStats.llm_fill.fail_reason = errorMessage;
-        fallbacks.push('LLM_POI_GENERATION_FAILED');
-      }
-    }
-
-    const deduped = this.deduplicate(pois.filter(filterFn));
-    const result = deduped.slice(0, 100);
+    this.logger.log(
+      `[Stage 4] Pipeline finished. Total points: ${resultPois.length} (Food: ${foodPois.length}, Non-Food: ${nonFoodPois.length})`,
+    );
 
     return {
-      pois: result,
+      pois: resultPois,
       shadowDiagnostics: {
         provider_stats: [
-          providerStats.kudago,
-          providerStats.overpass,
-          providerStats.photon,
-          providerStats.llm_fill,
+          stats.kudago,
+          stats.overpass,
+          stats.osm_fetch,
+          stats.discovery,
         ],
         totals: {
-          before_dedup: pois.length,
-          after_dedup: deduped.length,
-          returned: result.length,
+          before_dedup: hardPois.length + verifiedHiddenPois.length,
+          after_dedup: allCandidates.length,
+          returned: resultPois.length,
         },
       },
     };
@@ -346,14 +489,19 @@ export class ProviderSearchService {
             candidate.coordinates.lon,
             poi.coordinates.lat,
             poi.coordinates.lon,
-          ) < 0.05,
+          ) < 0.07, // 70m
       );
       if (duplicateIndex === -1) {
         result.push(poi);
         continue;
       }
       const existing = result[duplicateIndex];
-      if ((poi.rating ?? 0) > (existing.rating ?? 0)) {
+      // Prefer higher quality sources
+      if (
+        poi.provider === 'overpass' ||
+        poi.provider === 'geosearch_verified' ||
+        (poi.rating ?? 0) > (existing.rating ?? 0)
+      ) {
         result[duplicateIndex] = poi;
       }
     }
@@ -366,7 +514,7 @@ export class ProviderSearchService {
     lat2: number,
     lon2: number,
   ): number {
-    const toRad = (value: number) => (value * Math.PI) / 180;
+    const toRad = (v: number) => (v * Math.PI) / 180;
     const dLat = toRad(lat2 - lat1);
     const dLon = toRad(lon2 - lon1);
     const a =
@@ -375,129 +523,92 @@ export class ProviderSearchService {
     return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
-  private async generateMissingPois(
-    city: string,
-    count: number,
-    existingPois: PoiItem[],
-  ): Promise<PoiItem[]> {
-    const existingNames = existingPois.map((p) => p.name).join(', ');
-    const prompt = `Пользователь ищет интересные места в городе "${city}".
-Мы нашли только эти места: ${existingNames || 'ничего'}.
-Нам нужно еще ${count} реальных интересных мест.
-Верни JSON: { "points": [ { "name": "Название", "category": "attraction", "rating": 4.5, "address": "Адрес" } ] }`;
-
-    const response = await this.llmClientService.client.chat.completions.create(
-      {
-        model: this.llmClientService.model,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: 'Ты эксперт по туризму. Возвращай только JSON.' },
-          { role: 'user', content: prompt },
-        ],
-      },
-    );
-
-    const content = response.choices[0]?.message?.content ?? '{}';
-    const parsed = JSON.parse(content) as { points?: any[] };
-    const results: PoiItem[] = [];
-
-    for (const p of (parsed.points || []).slice(0, count)) {
-      try {
-        const query = `${p.name}, ${city}`;
-        const suggestions = await this.geosearch.suggest(query);
-         if (suggestions && suggestions.length > 0) {
-           const best = suggestions[0];
-           results.push({
-             id: `llm-${randomUUID()}`,
-             name: p.name,
-             address: best.address || p.address || city,
-             category: p.category || 'attraction',
-             coordinates: { lat: best.lat, lon: best.lon },
-             price_segment: 'mid',
-             rating: p.rating ?? 4.0,
-           });
-         }
-      } catch (err) {}
-    }
-    return results;
+  private isToxicPoi(name: string): boolean {
+    const TOXIC = [
+      'ликвидаторам',
+      'чернобыль',
+      'афганцам',
+      'погибшим',
+      'жертвам',
+      'участникам',
+      'обелиск славы',
+      'вечный огонь',
+    ];
+    const lower = name.toLowerCase();
+    return TOXIC.some((kw) => lower.includes(kw));
   }
 
-  private async searchPhotonForFood(city: string): Promise<PoiItem[]> {
-    const results: PoiItem[] = [];
-    const isCyrillicCity = /[а-яА-ЯёЁ]/.test(city);
-    const searchLang = isCyrillicCity ? 'ru' : 'en';
-    const queries = isCyrillicCity ? [`кафе ${city}`, `ресторан ${city}`] : [`restaurant ${city}`, `cafe ${city}`];
+  private isAnotherCityName(name: string, currentCity: string): boolean {
+    const n = name.toLowerCase().trim();
+    const c = currentCity.toLowerCase().trim();
+    if (n === c) return true;
 
-    for (const query of queries) {
-      try {
-        const url = new URL('https://photon.komoot.io/api/');
-        url.searchParams.set('q', query);
-        url.searchParams.set('limit', '10');
-        url.searchParams.set('lang', searchLang);
-        const response = await fetch(url.toString(), {
-          headers: { 'User-Agent': 'TravelPlanner/1.0 (AI pipeline)' },
-        });
-        if (!response.ok) continue;
-        const data = (await response.json()) as any;
-        for (const feature of (data.features || [])) {
-          const props = feature.properties || {};
-          const coords = feature.geometry?.coordinates;
-          if (!coords || coords.length < 2) continue;
-          results.push({
-            id: `photon-${props.osm_id || randomUUID()}`,
-            name: props.name || 'Unnamed',
-            address: props.address || city,
-            category: 'restaurant',
-            coordinates: { lat: coords[1], lon: coords[0] },
-            price_segment: 'mid',
-            rating: 4.2,
-          });
-        }
-      } catch (error) {}
-    }
-    return results;
+    const commonCities = [
+      'москва',
+      'санкт-петербург',
+      'мурманск',
+      'казань',
+      'сочи',
+      'париж',
+      'лондон',
+      'берлин',
+      'вена',
+      'рим',
+      'moscow',
+      'london',
+      'paris',
+      'berlin',
+      'rome',
+      'vienna',
+    ];
+
+    return commonCities.includes(n) && n !== c;
   }
 
-  private async generateFoodVenuesWithAI(
-    intent: ParsedIntent,
-  ): Promise<PoiItem[]> {
-    const prompt = `Generate 5 realistic restaurant recommendations in ${intent.city} based on preferences: ${intent.preferences_text}. Return JSON: { "restaurants": [ { "name": "Name", "cuisine": "Type", "price_segment": "mid", "rating": 4.2 } ] }`;
+  private isExcludedType(best: GeosearchResult): boolean {
+    const dn = best.displayName.toLowerCase();
+    const type = (best.type || '').toLowerCase();
+    const cls = (best.class || '').toLowerCase();
 
-    try {
-      const response = await this.llmClientService.client.chat.completions.create(
-        {
-          model: this.llmClientService.model,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: 'You are a local food expert. Return JSON.' },
-            { role: 'user', content: prompt },
-          ],
-        },
-      );
+    const excludedKeywords = [
+      'город',
+      'г.',
+      'city',
+      'town',
+      'поселок',
+      'деревня',
+      'село',
+      'область',
+      'район',
+      'край',
+      'республика',
+      'village',
+      'settlement',
+      'district',
+      'region',
+      'state',
+      'province',
+      'municipality',
+    ];
 
-      const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}') as { restaurants?: any[] };
-      const results: PoiItem[] = [];
-       for (const r of (parsed.restaurants || [])) {
-         try {
-           const suggestions = await this.geosearch.suggest(`${r.name}, ${intent.city}`);
-           if (suggestions && suggestions.length > 0) {
-             const best = suggestions[0];
-             results.push({
-               id: `ai-food-${randomUUID().slice(0, 8)}`,
-               name: r.name,
-               address: best.address || intent.city,
-               category: 'restaurant',
-               coordinates: { lat: best.lat, lon: best.lon },
-               price_segment: 'mid',
-               rating: r.rating || 4.2,
-               ai_generated: true,
-             });
-           }
-         } catch (error) {}
-       }
-      return results;
-    } catch (error) {
-      throw error;
-    }
+    const excludedTypes = [
+      'city',
+      'town',
+      'village',
+      'hamlet',
+      'suburb',
+      'district',
+      'administrative',
+      'locality',
+    ];
+    if (excludedTypes.includes(type) || excludedTypes.includes(cls))
+      return true;
+
+    return excludedKeywords.some((kw) => {
+      if (dn === kw) return true;
+      if (dn.startsWith(kw + ',')) return true;
+      if (dn.startsWith(kw + ' ')) return true;
+      return false;
+    });
   }
 }
