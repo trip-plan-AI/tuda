@@ -365,12 +365,23 @@ export function AIAssistantPage() {
 
   const handleDeleteAllPoints = async () => {
     const tripId = activeSession?.tripId || currentTrip?.id;
-    if (!tripId || tripId.startsWith('guest-')) return;
-    
-    // Удаляем точки только из локального состояния (на карте)
+    const points = currentTrip?.points ?? [];
+    if (points.length === 0) return;
+
+    // Оптимистично очищаем локальный стейт
     useTripStore.getState().setPoints([]);
-    
-    toast.success('Все точки удалены с карты');
+
+    // Для реальных трипов — удаляем с бэкенда и рассылаем по сокету
+    if (tripId && !tripId.startsWith('guest-')) {
+      await Promise.all(
+        points.map(async (p: any) => {
+          await pointsApi.remove(tripId, p.id);
+          getSocket().emit('point:delete', { trip_id: tripId, point_id: p.id });
+        }),
+      );
+    }
+
+    toast.success('Все точки удалены');
   };
 
   const handleDeletePoint = async (pointName: string) => {
