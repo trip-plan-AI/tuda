@@ -998,6 +998,15 @@ ${JSON.stringify(points)}
             !(point.coordinates.lat === 0 && point.coordinates.lon === 0);
 
           if (!isValid) {
+            // High-score points (>= 0.7) survive even with missing geocoding
+            // They'll appear in plan — coordinates will be resolved later or
+            // shown without map pin rather than silently dropped
+            if ((point.score ?? 0) >= 0.7) {
+              this.logger.warn(
+                `High-score point "${point.name}" (score=${point.score}) has zero coords — keeping`,
+              );
+              return true;
+            }
             droppedPoiNames.push(point.name);
           }
           return isValid;

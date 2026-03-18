@@ -496,7 +496,9 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
         )
         .slice(0, 30);
 
-      extra = await this.applySmartEnrichment(extra, city);
+      // No enrichment for extra/fallback points — they are low-priority filler.
+      // Enrichment runs only on curated (AI-selected) points in Stage 2.5.
+      // This avoids 16+ Yandex calls for points the scheduler likely won't use.
       allCandidates.push(
         ...extra.map((p) => ({ ...p, score: p.score ?? 0.3 })),
       );
