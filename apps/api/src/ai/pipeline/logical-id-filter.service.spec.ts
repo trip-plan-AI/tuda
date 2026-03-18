@@ -7,6 +7,7 @@ describe('LogicalIdFilterService', () => {
     name: 'Третьяковская галерея',
     address: 'Лаврушинский пер., 10, Москва',
     category: 'museum',
+    score: 0.5,
     coordinates: {
       lat: 55.741,
       lon: 37.62,

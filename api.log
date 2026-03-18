@@ -1,0 +1,95 @@
+
+> api@0.0.1 start:dev /home/dmitriy/projects/trip/travel-planner/apps/api
+> nest start --watch
+
+[2J[3J[H[[90m3:30:44 AM[0m] Starting compilation in watch mode...
+
+[[90m3:30:50 AM[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[Bootstrap] [39m[32mLooking for migrations in: /home/dmitriy/projects/trip/travel-planner/apps/api/dist/src/db/migrations[39m
+[33m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [33m   WARN[39m [38;5;3m[Bootstrap] [39m[33mNo migration journal found at /home/dmitriy/projects/trip/travel-planner/apps/api/dist/src/db/migrations/meta/_journal.json. Skipping auto-migration. Run 'drizzle-kit generate' to create migrations.[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m[38;5;3m +101ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[LlmClientService] [39m[32mLLM client initialized: provider=openrouter model=openai/gpt-4o-mini[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[LlmClientService] [39m[32mLLM client initialized: provider=openrouter model=openai/gpt-4o-mini[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mRedisModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPassportModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +4ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mGeosearchModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCollaborationModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mUsersModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mOptimizationModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mTripsModule dependencies initialized[39m[38;5;3m +3ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAiPipelineModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPointsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAiModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "join:trip" message[39m[38;5;3m +13ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "leave:trip" message[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:add" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:move" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:delete" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:update" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "point:reorder" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "trip:update" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mCollaborationGateway subscribed to the "cursor:move" message[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/auth}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/register, POST} route[39m[38;5;3m +4ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/login, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mTripsController {/api/trips}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/predefined, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:id, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:id, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCollaboratorsController {/api/trips/:tripId/collaborators}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/collaborators, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/collaborators, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/collaborators/:userId, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mInvitationsController {/api}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/invitations, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/invitations/:id/accept, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/invitations/:id, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mPointsController {/api/trips/:tripId/points}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points/reorder, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points/:id, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:tripId/points/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mGeosearchController {/api/geosearch}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/geosearch/suggest, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/geosearch/reverse, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/geosearch/route, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mUsersController {/api/users}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/search, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/me, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/me, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAiController {/api/ai}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id/clear, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/plan, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/plan/stream, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/:id/apply, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/sessions/from-trip/:tripId, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/test/compare-providers, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/test/strategy/llm-only, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/test/strategy/provider-only, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/test/strategy/hybrid, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/mutations/parse, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/ai/mutations/:tripId/apply, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mPipelineController {/api/pipeline}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/pipeline/ingest, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/pipeline/ingest/popular, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/pipeline/route, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mOptimizationController {/api/trips}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/trips/:id/optimize, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:51 AM [32m    LOG[39m [38;5;3m[RedisService] [39m[32mRedis connected[39m
+[32m[Nest] 19622  - [39m03/17/2026, 3:30:52 AM [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +569ms[39m

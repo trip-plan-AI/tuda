@@ -6,12 +6,13 @@
 // Если убрать этот код: пользователь будет "молча" терять старый маршрут в Planner при открытии нового из чата.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChatRoutePlanDay } from '@/shared/types/ai-chat';
 import { useRouter } from 'next/navigation';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useAiQueryStore } from '@/features/ai-query';
 import { useShallow } from 'zustand/react/shallow';
 import { useTripStore } from '@/entities/trip';
-import { useCollaborationSocket, CollaboratorsAvatarGroup, useChatSync, useCollaborateStore } from '@/features/route-collaborate';
+import { useCollaborationSocket, CollaboratorsAvatarGroup, useChatSync, useCollaborateStore, collaborateApi } from '@/features/route-collaborate';
 import { AiChat } from '@/widgets/ai-chat';
 import { Button } from '@/shared/ui/button';
 import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
@@ -69,6 +70,8 @@ export function AIAssistantPage() {
     openOrCreateSessionFromTrip,
     clearChat,
     addLocalMessage,
+    deletePointFromLatestRoutePlan,
+    clearLatestRoutePlanPoints,
   } = useAiQueryStore(
     useShallow((state) => ({
       sessions: state.sessions,
@@ -88,6 +91,8 @@ export function AIAssistantPage() {
       openOrCreateSessionFromTrip: state.openOrCreateSessionFromTrip,
       clearChat: state.clearChat,
       addLocalMessage: state.addLocalMessage,
+      deletePointFromLatestRoutePlan: state.deletePointFromLatestRoutePlan,
+      clearLatestRoutePlanPoints: state.clearLatestRoutePlanPoints,
     })),
   );
   const currentTrip = useTripStore((state) => state.currentTrip);
@@ -97,6 +102,17 @@ export function AIAssistantPage() {
   useEffect(() => {
     void loadSessions();
   }, [loadSessions]);
+
+  // При смене активной сессии загружаем её трип, чтобы карта показывала правильные точки
+  useEffect(() => {
+    const tripId = activeSession?.tripId;
+    if (!tripId || tripId.startsWith('guest-')) return;
+    if (useTripStore.getState().currentTrip?.id === tripId) return;
+
+    tripsApi.getOne(tripId).then((trip) => {
+      useTripStore.getState().setCurrentTrip(trip);
+    }).catch(() => {});
+  }, [activeSession?.tripId]);
 
   const sessionsList = useMemo(
     () =>
@@ -175,19 +191,31 @@ export function AIAssistantPage() {
   }, [isSessionsLoading, sendQuery, switchSession, activeSession?.tripId]);
 
   const handleSend = async (query: string) => {
-    const messageId = crypto.randomUUID();
-
-    // Транслируем сообщение другим участникам комнаты, используя единый ID
-    sendChatMessage(query, messageId);
-
     // Если один участник — все сообщения идут в AI.
     // Если 2+ — только /ai префикс вызывает AI, остальное в чат коллаборантов.
     const isAiRequest = !hasCollaborators || query.startsWith('/ai');
 
     if (isAiRequest) {
       const cleanQuery = query.replace(/^\/ai\s*/, '').trim() || query;
-      await sendQuery(cleanQuery, activeSession?.tripId ?? undefined);
+      const messageId = crypto.randomUUID();
 
+      // 1. Сразу показываем сообщение пользователя локально
+      addLocalMessage({
+        id: messageId,
+        role: 'user',
+        content: cleanQuery,
+        timestamp: new Date().toISOString(),
+      });
+
+      // 2. Сразу транслируем другим участникам (до AI-запроса, чтобы порядок был правильным)
+      if (socketTripId) {
+        sendChatMessage(cleanQuery, messageId);
+      }
+
+      // 3. Запускаем AI — передаём messageId чтобы sendQuery не добавлял дубликат
+      await sendQuery(cleanQuery, activeSession?.tripId ?? undefined, messageId);
+
+      // 4. Делимся ответом AI с другими участниками
       const updatedMessages = useAiQueryStore.getState().messages;
       const lastAssistant = [...updatedMessages].reverse().find(m => m.role === 'assistant');
 
@@ -202,7 +230,9 @@ export function AIAssistantPage() {
         });
       }
     } else {
-      // Показываем собственное сообщение локально с тем же ID
+      // Обычное сообщение в чат коллаборации — показываем локально и транслируем
+      const messageId = crypto.randomUUID();
+      sendChatMessage(query, messageId);
       addLocalMessage({
         id: messageId,
         role: 'user',
@@ -350,19 +380,52 @@ export function AIAssistantPage() {
 
   const handleDeleteAllPoints = async () => {
     const tripId = activeSession?.tripId || currentTrip?.id;
-    if (!tripId || tripId.startsWith('guest-')) return;
-    
-    // Удаляем точки только из локального состояния (на карте)
-    useTripStore.getState().setPoints([]);
-    
-    toast.success('Все точки удалены с карты');
+    const points = currentTrip?.points ?? [];
+    const hasAiPoints = aiPoints.length > 0;
+
+    if (points.length === 0 && !hasAiPoints) return;
+
+    // Очищаем routePlan в чате (это обновит aiPoints → displayPoints → карта)
+    clearLatestRoutePlanPoints();
+
+    if (points.length > 0) {
+      // Оптимистично очищаем локальный стейт
+      useTripStore.getState().setPoints([]);
+
+      // Для реальных трипов — удаляем с бэкенда и рассылаем по сокету
+      if (tripId && !tripId.startsWith('guest-')) {
+        await Promise.all(
+          points.map(async (p: any) => {
+            await pointsApi.remove(tripId, p.id);
+            getSocket().emit('point:delete', { trip_id: tripId, point_id: p.id });
+          }),
+        );
+      }
+    }
+
+    toast.success('Все точки удалены');
   };
 
   const handleDeletePoint = async (pointName: string) => {
-    const tripId = activeSession?.tripId || currentTrip?.id;
-    if (!tripId || tripId.startsWith('guest-')) return;
-    const currentPointsContext = currentTrip?.points?.map((p: any) => p.title).join(', ') || '';
-    await sendMutationQuery(`удали точку ${pointName}`, tripId, currentPointsContext);
+    // Удаляем из routePlan в чате — aiPoints пересчитаются → displayPoints → карта обновится
+    deletePointFromLatestRoutePlan(pointName);
+
+    // Если план уже применён к трипу — удаляем и оттуда
+    const tripId = activeSession?.tripId;
+    if (tripId && !tripId.startsWith('guest-')) {
+      const point = currentTrip?.points?.find((p: any) => p.title === pointName);
+      if (point) {
+        useTripStore.getState().setPoints(
+          (currentTrip?.points ?? []).filter((p: any) => p.id !== point.id),
+        );
+        try {
+          await pointsApi.remove(tripId, point.id);
+          getSocket().emit('point:delete', { trip_id: tripId, point_id: point.id });
+        } catch (e) {
+          console.error('Failed to delete point from trip:', e);
+        }
+      }
+    }
   };
 
   const plannerRouteTitle = currentTrip?.title?.trim() || 'без названия';
@@ -408,7 +471,18 @@ export function AIAssistantPage() {
   }, [lastPlanMessage?.routePlan, currentTrip?.id]);
 
   const displayPoints = useMemo(() => {
-    // Если сессия привязана к маршруту — всегда показываем актуальное состояние из сокет-стейта.
+    // Если есть свежий AI-план, который ещё не применён — показываем его точки на карте.
+    // Это покрывает случай когда сессия уже привязана к трипу, но пришёл новый план с 16 точками.
+    const hasUnappliedPlan =
+      lastPlanMessage?.routePlan &&
+      lastPlanMessage.id !== lastAppliedPlanMessageId &&
+      aiPoints.length > 0;
+
+    if (hasUnappliedPlan) {
+      return aiPoints;
+    }
+
+    // Если сессия привязана к маршруту — показываем актуальное состояние из сокет-стейта.
     // Это гарантирует, что изменения от других участников (через useCollaborationSocket)
     // немедленно отражаются на карте.
     if (activeSession?.tripId) {
@@ -417,15 +491,67 @@ export function AIAssistantPage() {
 
     // Нет привязанного маршрута — показываем черновик ИИ из истории чата
     return aiPoints;
-  }, [activeSession?.tripId, currentTrip?.points, aiPoints]);
+  }, [activeSession?.tripId, currentTrip?.points, aiPoints, lastPlanMessage, lastAppliedPlanMessageId]);
 
   const socketTripId = activeSession?.tripId || '';
   useCollaborationSocket(socketTripId);
   const { sendChatMessage } = useChatSync(socketTripId);
+
   const onlineUserIds = useCollaborateStore((s) => s.onlineUserIds);
-  const hasCollaborators = onlineUserIds.length > 1;
+  const collaborators = useCollaborateStore((s) => s.collaborators);
+  const setCollaborators = useCollaborateStore((s) => s.setCollaborators);
+
+  // Загружаем список участников при смене маршрута
+  useEffect(() => {
+    if (!socketTripId) return;
+    collaborateApi.getAll(socketTripId).then(setCollaborators).catch(() => {});
+  }, [socketTripId, setCollaborators]);
+
+  // Кнопка AI-режима видна если у маршрута есть хотя бы один участник (онлайн или нет)
+  const hasCollaborators = collaborators.length > 0 || onlineUserIds.length > 1;
 
   const [isAddPointMode, setIsAddPointMode] = useState(false);
+
+  // Progressive streaming state: populated by ai:thinking / ai:day_ready socket events
+  const [thinkingStage, setThinkingStage] = useState<string | null>(null);
+  const [streamingDays, setStreamingDays] = useState<ChatRoutePlanDay[]>([]);
+  const prevIsLoadingRef = useRef(false);
+
+  // Clear streaming state when the HTTP request completes
+  useEffect(() => {
+    if (prevIsLoadingRef.current && !isLoading) {
+      setThinkingStage(null);
+      setStreamingDays([]);
+    }
+    prevIsLoadingRef.current = isLoading;
+  }, [isLoading]);
+
+  // Subscribe to AI streaming socket events
+  useEffect(() => {
+    if (!socketTripId || socketTripId.startsWith('guest-')) return;
+
+    const socket = getSocket();
+
+    const handleThinking = (data: { trip_id: string; session_id: string; stage: string }) => {
+      setThinkingStage(data.stage);
+    };
+
+    const handleDayReady = (data: { trip_id: string; session_id: string; day: ChatRoutePlanDay }) => {
+      setStreamingDays((prev) => {
+        if (prev.some((d) => d.day_number === data.day.day_number)) return prev;
+        return [...prev, data.day];
+      });
+      setThinkingStage(null);
+    };
+
+    socket.on('ai:thinking', handleThinking);
+    socket.on('ai:day_ready', handleDayReady);
+
+    return () => {
+      socket.off('ai:thinking', handleThinking);
+      socket.off('ai:day_ready', handleDayReady);
+    };
+  }, [socketTripId]);
 
   const handleAddPointFromMap = useCallback(
     async (coords: { lat: number; lon: number }) => {
@@ -613,10 +739,12 @@ export function AIAssistantPage() {
             appliedTripId={activeSession?.tripId ?? null}
             hasCollaborators={hasCollaborators}
             onSendToAi={(query) => sendQuery(query, activeSession?.tripId ?? undefined)}
+            thinkingStage={thinkingStage}
+            streamingDays={streamingDays}
           />
 
           <div className="mt-3 flex flex-wrap justify-end gap-3">
-            {currentTrip?.points && currentTrip.points.length > 0 && (
+            {displayPoints.length > 0 && (
               <Button type="button" variant="outline" size="lg" onClick={handleDeleteAllPoints}>
                 Удалить все точки 🗑️
               </Button>
