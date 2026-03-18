@@ -11,9 +11,14 @@ import type {
   SessionMessage,
 } from '../types/pipeline.types';
 import { LlmClientService } from './llm-client.service';
+import { PopularDestinationsService } from '../../geosearch/popular-destinations.service';
 
 interface PartialIntent {
   city?: unknown;
+  cities?: unknown;
+  route_type?: unknown;
+  city_from?: unknown;
+  city_to?: unknown;
   days?: unknown;
   budget_total?: unknown;
   budget_per_day?: unknown;
@@ -27,12 +32,20 @@ interface PartialIntent {
   end_time?: unknown;
   preferences_text?: unknown;
 }
-
 const SYSTEM_PROMPT = `You are a travel planning assistant. Parse the user's request into JSON.
+// RULES:
+// 1. If the user asks for a route in ONE location (city, village, street, or specific place), use route_type: "single_city" and set "city" to that location name.
+// 2. We support ANY location: cities, small villages, specific streets, or even POIs (e.g. "near Eiffel Tower").
+// 3. If the user asks for a route across multiple locations, ALWAYS provide an array of ALL locations in "cities" and set route_type: "single_city".
 Return ONLY valid JSON with this structure:
 {
-  "city": string,
+  "route_type": "single_city",
+  "city": string, // This is your 'location_query'. Can be city, village, street, POI, or vague area.
+  "cities": string[], // If multiple locations are requested, put them all here.
+  "city_from": string,
+  "city_to": string,
   "days": number,
+...
   "budget_total": number | null,
   "budget_per_day": number | null,
   "party_type": "solo" | "couple" | "family" | "group",
@@ -60,7 +73,10 @@ const ALL_CATEGORIES: PoiCategory[] = [
 export class OrchestratorService {
   private readonly logger = new Logger('AI_PIPELINE:Orchestrator');
 
-  constructor(private readonly llmClientService: LlmClientService) {}
+  constructor(
+    private readonly llmClientService: LlmClientService,
+    private readonly popularDestinationsService: PopularDestinationsService,
+  ) {}
 
   async parseIntent(
     query: string,
@@ -101,9 +117,14 @@ export class OrchestratorService {
     const parsed = await this.callWithTimeout(messages, 30_000);
     const duration = Date.now() - t0;
 
-    const intent = this.normalizeIntent(parsed);
+    const city = typeof parsed.city === 'string' ? parsed.city.trim() : '';
+    const countryCode = city
+      ? await this.popularDestinationsService.getCountryCode(city)
+      : null;
+
+    const intent = this.normalizeIntent(parsed, countryCode);
     this.logger.log(
-      `Intent parsed in ${duration}ms. City: "${intent.city}", budget: ${intent.budget_total}`,
+      `Intent parsed in ${duration}ms. City: "${intent.city}", Country: ${intent.country_code}, budget: ${intent.budget_total}`,
     );
 
     if (!intent.city) {
@@ -179,15 +200,11 @@ export class OrchestratorService {
           ]
         : messages;
 
-      const response =
-        await this.llmClientService.client.chat.completions.create({
-          model: this.llmClientService.model,
-          messages: retryMessages,
-          response_format: { type: 'json_object' },
-        });
+      const content = await this.llmClientService.chat(retryMessages, {
+        jsonMode: true,
+      });
 
-      const content = response.choices[0]?.message?.content ?? '{}';
-      return JSON.parse(content) as PartialIntent;
+      return JSON.parse(content || '{}') as PartialIntent;
     } catch (e: unknown) {
       const isAbort = e instanceof Error && e.name === 'AbortError';
       const message = isAbort
@@ -209,7 +226,10 @@ export class OrchestratorService {
     }
   }
 
-  private normalizeIntent(parsed: PartialIntent): ParsedIntent {
+  private normalizeIntent(
+    parsed: PartialIntent,
+    countryCode: string | null,
+  ): ParsedIntent {
     const categories = this.normalizeCategories(parsed.categories);
     const excluded = this.normalizeCategories(parsed.excluded_categories);
     const days = this.toPositiveInt(parsed.days, 1);
@@ -229,8 +249,35 @@ export class OrchestratorService {
     const minCafes = this.extractMinCafes(preferencesText);
     const maxPoi = this.extractMaxPoi(preferencesText);
 
+    const cityFrom = this.toTrimmedString(parsed.city_from);
+    const cityTo = this.toTrimmedString(parsed.city_to);
+    const city = this.toTrimmedString(parsed.city);
+
+    let cities: string[] = [];
+    if (Array.isArray(parsed.cities)) {
+      cities = parsed.cities
+        .map((c) => this.toTrimmedString(c))
+        .filter((c) => c.length > 0);
+    }
+
+    // Fallback: if cities is empty but from/to are present
+    if (cities.length === 0) {
+      if (cityFrom && cityTo && cityFrom !== cityTo) {
+        cities = [cityFrom, cityTo];
+      } else if (cityFrom || city) {
+        cities = [cityFrom || city];
+      }
+    }
+
+    const routeType = 'single_city'; // multi-city temporarily removed/commented out
+
     return {
-      city: this.toTrimmedString(parsed.city),
+      city: cities[0] || cityFrom || city,
+      cities,
+      route_type: routeType,
+      city_from: cityFrom || city,
+      city_to: cityTo,
+      country_code: countryCode,
       days,
       budget_total: budgetTotal,
       budget_per_day: budgetPerDay,

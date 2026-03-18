@@ -18,6 +18,7 @@ interface AiSessionEntity {
   userId: string;
   messages: SessionMessage[];
   createdAt: Date;
+  updatedAt: Date;
 }
 
 @Injectable()
@@ -182,7 +183,7 @@ export class AiSessionsService {
     if (session.tripId !== trip.id) {
       await this.db
         .update(schema.aiSessions)
-        .set({ tripId: trip.id })
+        .set({ tripId: trip.id, updatedAt: new Date() })
         .where(eq(schema.aiSessions.id, session.id));
     }
 
@@ -211,7 +212,12 @@ export class AiSessionsService {
 
     const [created] = await this.db
       .insert(schema.aiSessions)
-      .values({ userId, tripId, messages: [] })
+      .values({
+        userId,
+        tripId,
+        messages: [],
+        updatedAt: new Date(),
+      })
       .returning();
 
     return {
@@ -243,7 +249,7 @@ export class AiSessionsService {
       if (derivedTitle !== 'Новый чат') {
         await this.db
           .update(schema.aiSessions)
-          .set({ title: derivedTitle })
+          .set({ title: derivedTitle, updatedAt: new Date() })
           .where(eq(schema.aiSessions.id, sessionId));
       }
     }
@@ -268,6 +274,7 @@ export class AiSessionsService {
         id: row.id,
         trip_id: row.tripId,
         created_at: row.createdAt,
+        updated_at: row.createdAt, // TRI-STABILITY: Используем createdAt чтобы избежать прыжков на фронте
         title: row.title ?? routeDerivedTitle,
         messages_count: messages.length,
       };
@@ -293,6 +300,7 @@ export class AiSessionsService {
       userId: row.userId,
       messages: this.normalizeMessages(row.messages),
       createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     };
   }
 
@@ -311,9 +319,20 @@ export class AiSessionsService {
   }
 
   async renameSession(sessionId: string, userId: string, title: string) {
+    const current = await this.db.query.aiSessions.findFirst({
+      where: and(
+        eq(schema.aiSessions.id, sessionId),
+        eq(schema.aiSessions.userId, userId),
+      ),
+    });
+
+    if (current?.title === title) {
+      return true;
+    }
+
     const result = await this.db
       .update(schema.aiSessions)
-      .set({ title })
+      .set({ title, updatedAt: new Date() })
       .where(
         and(
           eq(schema.aiSessions.id, sessionId),
@@ -329,8 +348,9 @@ export class AiSessionsService {
     tripId?: string;
     userId: string;
     sessionId?: string;
+    title?: string;
   }) {
-    const { tripId, userId, sessionId } = params;
+    const { tripId, userId, sessionId, title } = params;
 
     // TRI-106 / MERGE-GUARD
     // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
@@ -347,7 +367,13 @@ export class AiSessionsService {
 
     const [created] = await this.db
       .insert(schema.aiSessions)
-      .values({ userId, tripId: tripId ?? null, messages: [] })
+      .values({
+        userId,
+        tripId: tripId ?? null,
+        messages: [],
+        title,
+        updatedAt: new Date(),
+      })
       .returning();
 
     return {
@@ -359,10 +385,32 @@ export class AiSessionsService {
     };
   }
 
-  async saveMessages(sessionId: string, messages: SessionMessage[]) {
+  async saveMessages(
+    sessionId: string,
+    messages: SessionMessage[],
+    updateTimestamp = true,
+  ) {
+    if (!updateTimestamp) {
+      await this.db
+        .update(schema.aiSessions)
+        .set({ messages })
+        .where(eq(schema.aiSessions.id, sessionId));
+      return;
+    }
+
+    // TRI-STABILITY: Сравниваем сообщения перед сохранением
+    const current = await this.db.query.aiSessions.findFirst({
+      where: eq(schema.aiSessions.id, sessionId),
+      columns: { messages: true },
+    });
+
+    const isSame =
+      JSON.stringify(current?.messages) === JSON.stringify(messages);
+    if (isSame) return;
+
     await this.db
       .update(schema.aiSessions)
-      .set({ messages })
+      .set({ messages, updatedAt: new Date() })
       .where(eq(schema.aiSessions.id, sessionId));
   }
 

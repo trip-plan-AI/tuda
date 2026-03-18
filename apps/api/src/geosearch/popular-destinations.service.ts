@@ -103,4 +103,33 @@ export class PopularDestinationsService implements OnModuleInit {
       type: dest.type, // to differentiate on frontend if needed
     }));
   }
+
+  public async getCountryCode(city: string): Promise<string | null> {
+    const normalized = city.trim().toLowerCase();
+    if (normalized.length < 2) return null;
+
+    if (this.cache.length === 0) {
+      await this.loadCache();
+    }
+
+    const matches = this.cache
+      .map((dest) => {
+        const nameScore = fuzzySubstringMatch(normalized, dest.nameRu);
+        const aliasScore = dest.aliases
+          ? fuzzySubstringMatch(normalized, dest.aliases)
+          : 0;
+
+        return {
+          countryCode: dest.countryCode,
+          matchScore: Math.max(nameScore, aliasScore),
+        };
+      })
+      .filter((d) => d.matchScore > 80); // We want high confidence
+
+    if (matches.length === 0) return null;
+
+    // Return the country code of the best match
+    matches.sort((a, b) => b.matchScore - a.matchScore);
+    return matches[0].countryCode;
+  }
 }

@@ -22,6 +22,27 @@
       "when": 1773711823654,
       "tag": "0005_magical_omega_red",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1773704640341,
+      "tag": "0004_little_shotgun",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1773718104623,
+      "tag": "0005_bright_wolf_cub",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1773768242361,
+      "tag": "0006_cooing_screwball",
+      "breakpoints": true
     }
   ]
 }
