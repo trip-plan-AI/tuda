@@ -35,7 +35,9 @@ export class SemanticFilterService {
     try {
       return JSON.parse(clean) as T;
     } catch (error) {
-      this.logger.error(`[safeParseJson] Error parsing JSON: ${error}. Raw content: ${content.substring(0, 100)}...`);
+      this.logger.error(
+        `[safeParseJson] Error parsing JSON: ${error}. Raw content: ${content.substring(0, 100)}...`,
+      );
       return {} as T;
     }
   }

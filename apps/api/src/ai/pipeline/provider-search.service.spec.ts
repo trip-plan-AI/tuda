@@ -11,6 +11,7 @@ const buildPoi = (
   name: `POI ${id}`,
   address: `Address ${id}`,
   category,
+  score: 0.5,
   coordinates: { lat, lon: 37.6 },
   rating: 4.2,
   provider: 'overpass',
@@ -56,11 +57,9 @@ describe('ProviderSearchService (Refactored)', () => {
   const mockCityAnalyzer = { analyze: jest.fn().mockReturnValue({ description: 'Test context' }) };
   const mockClustering = { clusterPois: jest.fn().mockReturnValue({ clusters: [], noise: [] }) };
 
-  it('successfully executes Stage 1 and Stage 2', async () => {
-    const overpassPois = [buildPoi('o-1', 'museum', 55.75)];
-    mockOverpass.fetchByIntent.mockResolvedValueOnce(overpassPois);
-
-    const service = new ProviderSearchService(
+  function makeService() {
+    return new ProviderSearchService(
+      {} as never,            // redis
       mockKudago as any,
       mockOverpass as any,
       mockOsmFetch as any,
@@ -70,8 +69,15 @@ describe('ProviderSearchService (Refactored)', () => {
       mockFuzzyMatcher as any,
       mockCityAnalyzer as any,
       mockClustering as any,
+      {} as never,            // locationResolver
     );
+  }
 
+  it('successfully executes Stage 1 and Stage 2', async () => {
+    const overpassPois = [buildPoi('o-1', 'museum', 55.75)];
+    mockOverpass.fetchByIntent.mockResolvedValueOnce(overpassPois);
+
+    const service = makeService();
     const result = await service.fetchAndFilter({ ...baseIntent });
 
     expect(result.pois).toHaveLength(1);
@@ -88,17 +94,7 @@ describe('ProviderSearchService (Refactored)', () => {
     mockOverpass.fetchByIntent.mockResolvedValueOnce([]);
     mockKudago.fetchByIntent.mockResolvedValueOnce([]);
 
-    const service = new ProviderSearchService(
-      mockKudago as any,
-      mockOverpass as any,
-      mockOsmFetch as any,
-      mockLlmClient as any,
-      mockGeosearch as any,
-      mockAiDiscovery as any,
-      mockFuzzyMatcher as any,
-      mockCityAnalyzer as any,
-      mockClustering as any,
-    );
+    const service = makeService();
 
     await expect(service.fetchAndFilter({ ...baseIntent })).rejects.toThrow(
       'CITY_DATA_UNAVAILABLE',
