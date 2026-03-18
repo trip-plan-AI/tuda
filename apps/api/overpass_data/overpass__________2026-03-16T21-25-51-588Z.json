@@ -1,0 +1,4136 @@
+[
+  {
+    "type": "node",
+    "id": 457811630,
+    "lat": 52.0319458,
+    "lon": 47.7738279,
+    "tags": {
+      "addr:postcode": "413800",
+      "contact:instagram": "gostinicasalut",
+      "contact:vk": "gostinitsasalut",
+      "internet_access": "wlan",
+      "level": "1",
+      "name": "Салют",
+      "name:en": "Салют",
+      "name:ru": "Салют",
+      "opening_hours": "24/7",
+      "phone": "+78453440315",
+      "tourism": "hotel",
+      "website": "https://gostinitsa-salut.ru/"
+    }
+  },
+  {
+    "type": "node",
+    "id": 634527576,
+    "lat": 52.0189243,
+    "lon": 47.8181516,
+    "tags": {
+      "name": "Балаково",
+      "tourism": "hotel",
+      "url": "http://balakovo.otel.su/;http://hotelbalakovo.ru/"
+    }
+  },
+  {
+    "type": "node",
+    "id": 802004384,
+    "lat": 52.0474448,
+    "lon": 47.7844623,
+    "tags": {
+      "amenity": "restaurant",
+      "cuisine": "kebab"
+    }
+  },
+  {
+    "type": "node",
+    "id": 921209853,
+    "lat": 52.0215222,
+    "lon": 47.8386399,
+    "tags": {
+      "amenity": "restaurant",
+      "name": "Новый город"
+    }
+  },
+  {
+    "type": "node",
+    "id": 937505167,
+    "lat": 52.0314705,
+    "lon": 47.7918473,
+    "tags": {
+      "amenity": "cafe",
+      "name": "Upelsin"
+    }
+  },
+  {
+    "type": "node",
+    "id": 1282121973,
+    "lat": 52.0239713,
+    "lon": 47.8257704,
+    "tags": {
+      "historic": "memorial",
+      "name": "Ликвидаторам аварий"
+    }
+  },
+  {
+    "type": "node",
+    "id": 1282122183,
+    "lat": 52.0265317,
+    "lon": 47.8222734,
+    "tags": {
+      "historic": "memorial",
+      "name": "Погибшим афганцам"
+    }
+  },
+  {
+    "type": "node",
+    "id": 1287622344,
+    "lat": 52.0189373,
+    "lon": 47.8341556,
+    "tags": {
+      "addr:housenumber": "36/2",
+      "addr:street": "проспект Героев",
+      "amenity": "restaurant",
+      "name": "Ва-Банкъ"
+    }
+  },
+  {
+    "type": "node",
+    "id": 1287836613,
+    "lat": 52.0054737,
+    "lon": 47.7918064,
+    "tags": {
+      "amenity": "cafe",
+      "name": "Арго"
+    }
+  },
+  {
+    "type": "node",
+    "id": 1287836625,
+    "lat": 52.0053417,
+    "lon": 47.8287823,
+    "tags": {
+      "amenity": "restaurant",
+      "name": "Plaza"
+    }
+  },
+  {
+    "type": "node",
+    "id": 1287836638,
+    "lat": 52.0106831,
+    "lon": 47.8153973,
+    "tags": {
+      "amenity": "restaurant",
+      "name": "Печки-лавочки"
+    }
+  },
+  {
+    "type": "node",
+    "id": 1287836644,
+    "lat": 52.0382092,
+    "lon": 47.7838019,
+    "tags": {
+      "addr:housenumber": "27",
+      "addr:street": "улица Ленина",
+      "amenity": "cafe",
+      "name": "Дача босса",
+      "opening_hours": "Mo-Su 11:00-00:00",
+      "phone": "+7 (927) 229-05-60"
+    }
+  },
+  {
+    "type": "node",
+    "id": 1289532739,
+    "lat": 52.0191515,
+    "lon": 47.8187359,
+    "tags": {
+      "amenity": "restaurant",
+      "name": "Балаково",
+      "website": "https://hotelbalakovo.ru/"
+    }
+  },
+  {
+    "type": "node",
+    "id": 1299752644,
+    "lat": 52.0311389,
+    "lon": 47.7740533,
+    "tags": {
+      "historic": "memorial",
+      "name": "Обелиск Славы"
+    }
+  },
+  {
+    "type": "node",
+    "id": 1300436980,
+    "lat": 52.0658748,
+    "lon": 47.748234,
+    "tags": {
+      "direction": "100",
+      "tourism": "viewpoint"
+    }
+  },
+  {
+    "type": "node",
+    "id": 1334165585,
+    "lat": 52.0357987,
+    "lon": 47.7724841,
+    "tags": {
+      "amenity": "restaurant",
+      "name": "Кон Коронель"
+    }
+  },
+  {
+    "type": "node",
+    "id": 1346733568,
+    "lat": 52.0687663,
+    "lon": 47.7068397,
+    "tags": {
+      "amenity": "cafe",
+      "name": "Дерби"
+    }
+  },
+  {
+    "type": "node",
+    "id": 1684411107,
+    "lat": 52.0320642,
+    "lon": 47.7816501,
+    "tags": {
+      "addr:housenumber": "60",
+      "addr:street": "улица Ленина",
+      "alt_name": "Трэвэлерс кофе",
+      "amenity": "cafe",
+      "brand": "Traveler's Coffee",
+      "brand:wikidata": "Q4051716",
+      "cuisine": "coffee_shop",
+      "int_name": "Traveler's Coffee",
+      "internet_access": "wlan",
+      "internet_access:fee": "no",
+      "name": "Traveler's Coffee",
+      "opening_hours": "Mo-Su 09:00-22:00",
+      "outdoor_seating": "no",
+      "takeaway": "yes",
+      "website": "https://www.travelerscoffee.ru"
+    }
+  },
+  {
+    "type": "node",
+    "id": 2869772414,
+    "lat": 51.9744522,
+    "lon": 47.7810424,
+    "tags": {
+      "historic": "memorial"
+    }
+  },
+  {
+    "type": "node",
+    "id": 2870098603,
+    "lat": 51.9702995,
+    "lon": 47.8136541,
+    "tags": {
+      "historic": "memorial"
+    }
+  },
+  {
+    "type": "node",
+    "id": 2943007600,
+    "lat": 52.020327,
+    "lon": 47.8312079,
+    "tags": {
+      "amenity": "restaurant",
+      "name": "Traveler's Coffee"
+    }
+  },
+  {
+    "type": "node",
+    "id": 3025595515,
+    "lat": 52.0452267,
+    "lon": 47.7863084,
+    "tags": {
+      "name": "Берег",
+      "opening_hours": "24/7",
+      "phone": "+7 (8453) 44-12-35",
+      "tourism": "hotel",
+      "website": "https://bereg-balakovo.ru/"
+    }
+  },
+  {
+    "type": "node",
+    "id": 3037217484,
+    "lat": 52.0645332,
+    "lon": 47.6679794,
+    "tags": {
+      "addr:housenumber": "5",
+      "addr:street": "Заречная улица",
+      "name": "Туристическая база отдыха \"Волжские вечера\"",
+      "opening_hours": "Mo-Su 09:00-21:00",
+      "phone": "+7 927 1260522",
+      "tourism": "chalet"
+    }
+  },
+  {
+    "type": "node",
+    "id": 3208815706,
+    "lat": 51.9935647,
+    "lon": 47.7388729,
+    "tags": {
+      "historic": "memorial"
+    }
+  },
+  {
+    "type": "node",
+    "id": 3264147476,
+    "lat": 52.0343004,
+    "lon": 47.7847445,
+    "tags": {
+      "tourism": "theme_park"
+    }
+  },
+  {
+    "type": "node",
+    "id": 3273554676,
+    "lat": 52.0302497,
+    "lon": 47.7831423,
+    "tags": {
+      "amenity": "restaurant",
+      "contact:ok": "https://ok.ru/tokiobala",
+      "contact:vk": "https://vk.com/tokio_blk",
+      "name": "Tokio",
+      "opening_hours": "Mo-Su 11:00-00:00",
+      "phone": "+7 937 2596999"
+    }
+  },
+  {
+    "type": "node",
+    "id": 3273613791,
+    "lat": 52.0105572,
+    "lon": 47.7976792,
+    "tags": {
+      "amenity": "restaurant",
+      "cuisine": "italian",
+      "name": "Tabasco"
+    }
+  },
+  {
+    "type": "node",
+    "id": 3768770578,
+    "lat": 52.0280031,
+    "lon": 47.7822346,
+    "tags": {
+      "amenity": "cafe",
+      "cuisine": "waffle"
+    }
+  },
+  {
+    "type": "node",
+    "id": 3768770599,
+    "lat": 52.0317999,
+    "lon": 47.782313,
+    "tags": {
+      "historic": "memorial",
+      "name": "Участникам пяти комсомольских ударных строек"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4200461189,
+    "lat": 52.0082822,
+    "lon": 47.8153831,
+    "tags": {
+      "addr:housenumber": "123",
+      "addr:street": "улица Дружбы",
+      "amenity": "place_of_worship",
+      "name": "Церковь Христиан Адвентистов Седьмого Дня ",
+      "religion": "christian"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4241303104,
+    "lat": 52.0449505,
+    "lon": 47.7751092,
+    "tags": {
+      "description": "Трактор \"Карлик\" конструкции Я.В. Мамина",
+      "historic": "memorial"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4241741757,
+    "lat": 52.0407381,
+    "lon": 47.7835821,
+    "tags": {
+      "historic": "memorial"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4241746624,
+    "lat": 52.0449689,
+    "lon": 47.7750958,
+    "tags": {
+      "board_type": "history",
+      "information": "board",
+      "tourism": "information"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4488704012,
+    "lat": 52.0207066,
+    "lon": 47.8333484,
+    "tags": {
+      "amenity": "cafe",
+      "name": "Koomar Hookah-Bar"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4491181790,
+    "lat": 52.0966321,
+    "lon": 47.7294152,
+    "tags": {
+      "amenity": "cafe"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4496531340,
+    "lat": 52.0251532,
+    "lon": 47.8190083,
+    "tags": {
+      "addr:housenumber": "51",
+      "addr:street": "набережная Леонова",
+      "amenity": "cafe",
+      "name": "Встреча"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4501372153,
+    "lat": 52.0148509,
+    "lon": 47.8190642,
+    "tags": {
+      "addr:housenumber": "55А",
+      "addr:street": "улица 30 лет Победы",
+      "amenity": "cafe",
+      "name": "Хан Атлас"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4504504132,
+    "lat": 51.993911,
+    "lon": 47.8157928,
+    "tags": {
+      "leisure": "trampoline_park",
+      "name": "Gravity Hall"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4521469189,
+    "lat": 52.0218877,
+    "lon": 47.782505,
+    "tags": {
+      "amenity": "cafe",
+      "name": "Caffelice"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4533353479,
+    "lat": 52.035949,
+    "lon": 47.7831273,
+    "tags": {
+      "amenity": "cafe",
+      "cuisine": "pizza",
+      "name": "Mama Mia"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4547956356,
+    "lat": 52.0051523,
+    "lon": 47.8044473,
+    "tags": {
+      "amenity": "cafe",
+      "name": "Весна"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4547993823,
+    "lat": 52.0048492,
+    "lon": 47.8028111,
+    "tags": {
+      "name": "Универмаг на Минской",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4585227953,
+    "lat": 52.0313906,
+    "lon": 47.7701425,
+    "tags": {
+      "name": "Отель на \"Линёво\"",
+      "opening_hours": "24/7",
+      "phone": "+7 (927) 122-02-00",
+      "stars": "3",
+      "tourism": "hotel"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4589721556,
+    "lat": 52.0320485,
+    "lon": 47.783459,
+    "tags": {
+      "amenity": "restaurant",
+      "name": "Старый замок",
+      "opening_hours": "Mo-Su 12:00-22:00",
+      "outdoor_seating": "no"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4590677846,
+    "lat": 52.0308208,
+    "lon": 47.78098,
+    "tags": {
+      "name": "Белый аист",
+      "opening_hours": "Mo-Fr 10:00-19:00, Sa,Su 10:00-18:00",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4592135589,
+    "lat": 52.0296165,
+    "lon": 47.78236,
+    "tags": {
+      "amenity": "cafe",
+      "cuisine": "asian",
+      "name": "Аньён",
+      "name:en": "Annyeong",
+      "name:ko": "안녕",
+      "name:ru": "Аньён",
+      "phone": "+79271248939"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4819025851,
+    "lat": 51.9984879,
+    "lon": 47.7585502,
+    "tags": {
+      "amenity": "place_of_worship",
+      "building": "chapel",
+      "religion": "christian"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4826363521,
+    "lat": 51.9278647,
+    "lon": 47.8172117,
+    "tags": {
+      "tourism": "hotel"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4857683626,
+    "lat": 52.0191634,
+    "lon": 47.7825876,
+    "tags": {
+      "historic": "memorial",
+      "name": "Е. Лебедеву",
+      "official_name": "Евгению Лебедеву"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4918158361,
+    "lat": 52.0184207,
+    "lon": 47.8203472,
+    "tags": {
+      "information": "board",
+      "tourism": "information"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4941734063,
+    "lat": 52.095563,
+    "lon": 47.9770911,
+    "tags": {
+      "amenity": "place_of_worship",
+      "building": "chapel",
+      "denomination": "russian_orthodox",
+      "religion": "christian"
+    }
+  },
+  {
+    "type": "node",
+    "id": 4941869323,
+    "lat": 52.0618416,
+    "lon": 47.9067434,
+    "tags": {
+      "amenity": "cafe"
+    }
+  },
+  {
+    "type": "node",
+    "id": 5047536522,
+    "lat": 52.0213006,
+    "lon": 47.8310102,
+    "tags": {
+      "amenity": "cafe",
+      "cuisine": "sushi;pizza",
+      "name": "Венеция",
+      "name:ru": "Венеция"
+    }
+  },
+  {
+    "type": "node",
+    "id": 5157298960,
+    "lat": 52.0318394,
+    "lon": 47.7416159,
+    "tags": {
+      "internet_access": "wlan",
+      "name": "Атмосфера",
+      "tourism": "chalet"
+    }
+  },
+  {
+    "type": "node",
+    "id": 5157298977,
+    "lat": 52.0314937,
+    "lon": 47.7411103,
+    "tags": {
+      "amenity": "restaurant",
+      "name": "Атмосфера"
+    }
+  },
+  {
+    "type": "node",
+    "id": 5363132936,
+    "lat": 52.0337453,
+    "lon": 47.7832022,
+    "tags": {
+      "historic": "memorial",
+      "memorial": "stele"
+    }
+  },
+  {
+    "type": "node",
+    "id": 5521101321,
+    "lat": 52.0177954,
+    "lon": 47.7504002,
+    "tags": {
+      "addr:postcode": "413800",
+      "amenity": "cafe",
+      "name": "Мамайка"
+    }
+  },
+  {
+    "type": "node",
+    "id": 6202022923,
+    "lat": 52.0232424,
+    "lon": 47.8420152,
+    "tags": {
+      "amenity": "cafe",
+      "cuisine": "regional",
+      "internet_access": "no",
+      "name": "Шаурма",
+      "outdoor_seating": "yes",
+      "takeaway": "only"
+    }
+  },
+  {
+    "type": "node",
+    "id": 6441796085,
+    "lat": 52.0965878,
+    "lon": 47.7299225,
+    "tags": {
+      "tourism": "motel"
+    }
+  },
+  {
+    "type": "node",
+    "id": 6557175984,
+    "lat": 52.0321274,
+    "lon": 47.8298529,
+    "tags": {
+      "name": "Центральный цветник",
+      "tourism": "artwork"
+    }
+  },
+  {
+    "type": "node",
+    "id": 6685070914,
+    "lat": 52.0308895,
+    "lon": 47.7741444,
+    "tags": {
+      "historic": "memorial"
+    }
+  },
+  {
+    "type": "node",
+    "id": 8835598319,
+    "lat": 51.9300377,
+    "lon": 47.8158325,
+    "tags": {
+      "amenity": "cafe",
+      "name:en": "Balpetrol"
+    }
+  },
+  {
+    "type": "node",
+    "id": 9972532448,
+    "lat": 52.0598317,
+    "lon": 47.9382422,
+    "tags": {
+      "information": "stele",
+      "name": "Балаковская АЭС",
+      "tourism": "information"
+    }
+  },
+  {
+    "type": "node",
+    "id": 10026285765,
+    "lat": 52.042573,
+    "lon": 47.7746071,
+    "tags": {
+      "name": "Сова",
+      "phone": "+7-906-3061919",
+      "tourism": "hotel"
+    }
+  },
+  {
+    "type": "node",
+    "id": 10926463805,
+    "lat": 52.0321688,
+    "lon": 47.773919,
+    "tags": {
+      "addr:housenumber": "105",
+      "addr:street": "улица Чапаева",
+      "amenity": "cafe",
+      "contact:vk": "ochag_blk",
+      "cuisine": "grill",
+      "level": "1",
+      "name": "Очаг",
+      "opening_hours": "Mo-Su 10:00-00:00",
+      "phone": "+79270581050"
+    }
+  },
+  {
+    "type": "node",
+    "id": 10989717332,
+    "lat": 52.060197,
+    "lon": 47.7280369,
+    "tags": {
+      "board_type": "welcome_sign",
+      "direction": "310",
+      "information": "board",
+      "name": "Балаково",
+      "tourism": "information"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11127343446,
+    "lat": 52.0120191,
+    "lon": 47.78891,
+    "tags": {
+      "artwork_type": "mosaic",
+      "tourism": "artwork"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11761629155,
+    "lat": 52.0110375,
+    "lon": 47.7917182,
+    "tags": {
+      "amenity": "cafe",
+      "name": "Дрова"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11765605883,
+    "lat": 52.062477,
+    "lon": 47.7233321,
+    "tags": {
+      "amenity": "cafe",
+      "name": "Снежинка"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11770916197,
+    "lat": 52.0194396,
+    "lon": 47.8193267,
+    "tags": {
+      "amenity": "cafe",
+      "name": "Корона шашлычная",
+      "phone": "+7 (8453) 35-35-75"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11773005331,
+    "lat": 52.0308887,
+    "lon": 47.7833259,
+    "tags": {
+      "name": "Альянс С",
+      "opening_hours": "Mo-Su 08:00-19:00",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11775714051,
+    "lat": 52.0366015,
+    "lon": 47.8168572,
+    "tags": {
+      "information": "stele",
+      "name": "Балаково",
+      "tourism": "information"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11782450396,
+    "lat": 52.0376778,
+    "lon": 47.7841227,
+    "tags": {
+      "name": "Островок",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11782478369,
+    "lat": 52.0376575,
+    "lon": 47.7844193,
+    "tags": {
+      "amenity": "cafe",
+      "name": "Чайхана"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11793315313,
+    "lat": 52.0159818,
+    "lon": 47.8238637,
+    "tags": {
+      "addr:housenumber": "31А",
+      "addr:street": "улица 30 лет Победы",
+      "amenity": "restaurant",
+      "name": "Империя",
+      "source:addr": "ЕГРН"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11806944269,
+    "lat": 52.0308748,
+    "lon": 47.79006,
+    "tags": {
+      "amenity": "cafe",
+      "name": "Кофеманоff",
+      "name:ru": "Кофеманофф",
+      "opening_hours": "Mo-Su 10:00-21:00"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11806951069,
+    "lat": 52.0317203,
+    "lon": 47.790259,
+    "tags": {
+      "internet_access": "wlan",
+      "phone": "+7 (987) 814-98-99",
+      "tourism": "apartment"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11821888369,
+    "lat": 52.0363003,
+    "lon": 47.794293,
+    "tags": {
+      "phone": "+7 (927) 147-58-76",
+      "tourism": "apartment"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11823995914,
+    "lat": 52.02199,
+    "lon": 47.7877974,
+    "tags": {
+      "name": "Арбат",
+      "name:en": "Arbat",
+      "opening_hours": "Mo-Su 08:30-22:00",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11824786069,
+    "lat": 52.0191903,
+    "lon": 47.7852186,
+    "tags": {
+      "phone": "+7 987 8149899",
+      "tourism": "apartment"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11826858169,
+    "lat": 52.0456507,
+    "lon": 47.7904625,
+    "tags": {
+      "amenity": "restaurant",
+      "name": "Grill"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11826858769,
+    "lat": 52.0448689,
+    "lon": 47.7901479,
+    "tags": {
+      "amenity": "restaurant",
+      "name": "Мурманск",
+      "name:en": "Murmansk"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11826899170,
+    "lat": 52.0453765,
+    "lon": 47.7861359,
+    "tags": {
+      "amenity": "restaurant",
+      "name": "Берег"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11826949169,
+    "lat": 52.039932,
+    "lon": 47.7845619,
+    "tags": {
+      "name": "Усадьба Мальцева",
+      "tourism": "attraction"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11830458228,
+    "lat": 52.0541614,
+    "lon": 47.7527375,
+    "tags": {
+      "information": "stele",
+      "name": "РусГидро",
+      "tourism": "information"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11831419470,
+    "lat": 52.0271082,
+    "lon": 47.8231539,
+    "tags": {
+      "addr:housenumber": "55",
+      "addr:street": "набережная Леонова",
+      "amenity": "cafe",
+      "name": "Туман"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11843267272,
+    "lat": 51.9242531,
+    "lon": 47.8154407,
+    "tags": {
+      "historic": "memorial"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11853943062,
+    "lat": 52.009693,
+    "lon": 47.7967531,
+    "tags": {
+      "contact:website": "https://www.booking.com/hotel/ru/kvartira-okolo-trts-quot-oranzh-quot.html",
+      "tourism": "apartment"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11853974874,
+    "lat": 51.9996362,
+    "lon": 47.7979354,
+    "tags": {
+      "contact:website": "https://www.booking.com/hotel/ru/apartment-vokzalnaya-18a.html",
+      "tourism": "apartment"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11853989108,
+    "lat": 52.0126596,
+    "lon": 47.7916373,
+    "tags": {
+      "contact:website": "https://www.booking.com/hotel/ru/apartamenty-minskaia-d2-uiutno64.html",
+      "tourism": "apartment"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11853997345,
+    "lat": 52.0193957,
+    "lon": 47.8446144,
+    "tags": {
+      "contact:website": "https://www.booking.com/hotel/ru/apartamenty-saratovskoe-shosse-d77.html",
+      "tourism": "apartment"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11939225190,
+    "lat": 52.0722718,
+    "lon": 47.7356175,
+    "tags": {
+      "information": "stele",
+      "name": "Синяя птица",
+      "tourism": "information"
+    }
+  },
+  {
+    "type": "node",
+    "id": 11939310978,
+    "lat": 52.0107827,
+    "lon": 47.7819597,
+    "tags": {
+      "amenity": "cafe",
+      "cuisine": "sushi",
+      "name": "Суши Ё"
+    }
+  },
+  {
+    "type": "node",
+    "id": 12027885969,
+    "lat": 52.0386753,
+    "lon": 47.7808104,
+    "tags": {
+      "amenity": "cafe",
+      "cuisine": "italian;italian_pizza;japanese",
+      "name": "Campania",
+      "opening_hours": "Mo-Su 09:00-21:00",
+      "phone": "+7 (937) 269-66-99"
+    }
+  },
+  {
+    "type": "node",
+    "id": 12031540492,
+    "lat": 52.0041383,
+    "lon": 47.9045457,
+    "tags": {
+      "historic": "memorial",
+      "memorial": "war_memorial"
+    }
+  },
+  {
+    "type": "node",
+    "id": 12984422301,
+    "lat": 51.9120655,
+    "lon": 47.9217307,
+    "tags": {
+      "name": "Белая гора",
+      "tourism": "attraction"
+    }
+  },
+  {
+    "type": "node",
+    "id": 13017151101,
+    "lat": 52.0440719,
+    "lon": 47.7692538,
+    "tags": {
+      "addr:housenumber": "10",
+      "addr:street": "Заовражная улица",
+      "name": "Музей Саратовской ГЭС",
+      "tourism": "museum"
+    }
+  },
+  {
+    "type": "node",
+    "id": 13018542003,
+    "lat": 52.0342407,
+    "lon": 47.7707373,
+    "tags": {
+      "name": "Бюст комдива В.И. Чапаева",
+      "tourism": "attraction"
+    }
+  },
+  {
+    "type": "node",
+    "id": 13018577501,
+    "lat": 52.0439423,
+    "lon": 47.7693526,
+    "tags": {
+      "name": "Саратовская ГЭС",
+      "tourism": "attraction"
+    }
+  },
+  {
+    "type": "node",
+    "id": 13018587401,
+    "lat": 52.0441161,
+    "lon": 47.7728899,
+    "tags": {
+      "addr:housenumber": "9",
+      "addr:street": "Заовражная улица",
+      "name": "Бюст А. Н. Радищева",
+      "tourism": "attraction"
+    }
+  },
+  {
+    "type": "node",
+    "id": 13018608601,
+    "lat": 52.0298087,
+    "lon": 47.7480432,
+    "tags": {
+      "name": "ГАИ автомобиль-памятник",
+      "tourism": "attraction"
+    }
+  },
+  {
+    "type": "node",
+    "id": 13018624301,
+    "lat": 52.043595,
+    "lon": 47.7800042,
+    "tags": {
+      "addr:housenumber": "41",
+      "addr:street": "Коммунистическая улица",
+      "name": "Дом Судакова",
+      "tourism": "attraction"
+    }
+  },
+  {
+    "type": "node",
+    "id": 13018662101,
+    "lat": 52.0449505,
+    "lon": 47.7751109,
+    "tags": {
+      "addr:housenumber": "9",
+      "addr:street": "Коммунистическая улица",
+      "name": "Памятник трактору «Карлик»",
+      "tourism": "attraction"
+    }
+  },
+  {
+    "type": "node",
+    "id": 13018673001,
+    "lat": 52.0451582,
+    "lon": 47.7748817,
+    "tags": {
+      "addr:housenumber": "9",
+      "addr:street": "Коммунистическая улица",
+      "name": "Особняк Я.В. Мамина",
+      "tourism": "attraction"
+    }
+  },
+  {
+    "type": "node",
+    "id": 13018766101,
+    "lat": 52.0407381,
+    "lon": 47.7794219,
+    "tags": {
+      "addr:housenumber": "60",
+      "addr:street": "Советская улица",
+      "name": "Усадьба Залогина",
+      "tourism": "attraction"
+    }
+  },
+  {
+    "type": "node",
+    "id": 13018774101,
+    "lat": 52.0383827,
+    "lon": 47.778753,
+    "tags": {
+      "addr:housenumber": "26",
+      "addr:street": "улица Чернышевского",
+      "name": "Торговый дом А.А.Шмидт и Сынъ (братьев Махунцевых)",
+      "tourism": "attraction"
+    }
+  },
+  {
+    "type": "way",
+    "id": 51711164,
+    "center": {
+      "lat": 52.0347944,
+      "lon": 47.7829733
+    },
+    "nodes": [
+      660029179,
+      660029180,
+      660029181,
+      4932982430,
+      660029182,
+      660029179
+    ],
+    "tags": {
+      "addr:housenumber": "125",
+      "addr:street": "Октябрьская улица",
+      "building": "retail",
+      "building:cladding": "mdf",
+      "building:levels": "3",
+      "name": "Сити",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "way",
+    "id": 51711254,
+    "center": {
+      "lat": 52.0280309,
+      "lon": 47.8357136
+    },
+    "nodes": [
+      660030093,
+      660030094,
+      660030098,
+      660030095,
+      660030096,
+      660030097,
+      660030093
+    ],
+    "tags": {
+      "addr:housenumber": "57А",
+      "addr:street": "Трнавская улица",
+      "building": "retail",
+      "building:cladding": "brick",
+      "building:levels": "2",
+      "name": "Энергетик",
+      "shop": "mall"
+    }
+  },
+  {
+    "type": "way",
+    "id": 51711264,
+    "center": {
+      "lat": 52.0089724,
+      "lon": 47.8882705
+    },
+    "nodes": [
+      660030244,
+      660030245,
+      660030247,
+      660030246,
+      660030244
+    ],
+    "tags": {
+      "amenity": "cafe",
+      "building": "commercial",
+      "cuisine": "regional",
+      "name": "Подсосенки",
+      "outdoor_seating": "yes",
+      "takeaway": "yes"
+    }
+  },
+  {
+    "type": "way",
+    "id": 52484155,
+    "center": {
+      "lat": 52.0185075,
+      "lon": 47.782979
+    },
+    "nodes": [
+      667164189,
+      667164194,
+      1285057525,
+      1285057520,
+      1285057534,
+      1285057532,
+      667164197,
+      667164200,
+      667164189
+    ],
+    "tags": {
+      "amenity": "theatre",
+      "building": "yes",
+      "email": "bal-tuz@mail.ru",
+      "name": "Балаковский театр юного зрителя им. Е. А. Лебедева",
+      "official_name": "МАУК \"Театр Юного Зрителя\"",
+      "opening_hours": "Mo-Fr 08:00-17:00; Sa-Su 09:00-18:00",
+      "operator": "МАУК «Балаковский ТЮЗ»",
+      "phone": "+7 845 344-59-43",
+      "ref:mkrf_theaters": "40185"
+    }
+  },
+  {
+    "type": "way",
+    "id": 57948408,
+    "center": {
+      "lat": 52.0181179,
+      "lon": 47.8171609
+    },
+    "nodes": [
+      719082560,
+      3379184746,
+      3379184747,
+      719081455,
+      719081848,
+      3379184748,
+      3379184751,
+      3379184752,
+      3379184756,
+      3379184759,
+      719083070,
+      719083152,
+      3379184763,
+      719082560
+    ],
+    "tags": {
+      "addr:housenumber": "1А",
+      "addr:street": "Трнавская улица",
+      "amenity": "cinema",
+      "building": "yes",
+      "building:cladding": "brick",
+      "name": "Мир"
+    }
+  },
+  {
+    "type": "way",
+    "id": 75354677,
+    "center": {
+      "lat": 52.0193261,
+      "lon": 47.8194476
+    },
+    "nodes": [
+      889531177,
+      889531087,
+      3379185206,
+      3379185209,
+      889530789,
+      3379185198,
+      3379185200,
+      3379184792,
+      3379184790,
+      889530916,
+      3379184791,
+      3379185193,
+      3379185196,
+      3379185199,
+      889531177
+    ],
+    "tags": {
+      "addr:housenumber": "3",
+      "addr:street": "Трнавская улица",
+      "building": "yes",
+      "building:levels": "2",
+      "name": "Русь",
+      "official_name": "Торговый центр \"Русь\"",
+      "shop": "department_store",
+      "source:addr": "ЕГРН"
+    }
+  },
+  {
+    "type": "way",
+    "id": 75356691,
+    "center": {
+      "lat": 52.0343113,
+      "lon": 47.7708246
+    },
+    "nodes": [
+      889562928,
+      889562952,
+      889562996,
+      889563010,
+      889562928
+    ],
+    "tags": {
+      "building": "yes",
+      "historic": "building",
+      "name": "дом-музей В.И. Чапаева",
+      "opening_hours": "Mo-Sa 08:00-16:00",
+      "tourism": "museum"
+    }
+  },
+  {
+    "type": "way",
+    "id": 75583327,
+    "center": {
+      "lat": 52.0187237,
+      "lon": 47.8350504
+    },
+    "nodes": [
+      3379368937,
+      3379368939,
+      3379368938,
+      3379368942,
+      3379368943,
+      3379368948,
+      3379368945,
+      3379368852,
+      3379368950,
+      3379368854,
+      3379368857,
+      3379368859,
+      3379368856,
+      892435047,
+      892435783,
+      892435644,
+      3379368835,
+      3379368833,
+      3379368837,
+      3379368836,
+      3379368840,
+      3379368841,
+      3379368844,
+      3379368845,
+      3379368849,
+      3379368848,
+      3379368931,
+      3379368932,
+      892434886,
+      3379368934,
+      3379368937
+    ],
+    "tags": {
+      "addr:housenumber": "36А",
+      "addr:street": "проспект Героев",
+      "building": "yes",
+      "building:levels": "1",
+      "comment": "Бывший ТЦ \"Данко\"",
+      "name": "Айсберг",
+      "shop": "mall"
+    }
+  },
+  {
+    "type": "way",
+    "id": 79568721,
+    "center": {
+      "lat": 52.0042809,
+      "lon": 47.8034767
+    },
+    "nodes": [
+      928539467,
+      928539697,
+      928539724,
+      928539828,
+      928539467
+    ],
+    "tags": {
+      "amenity": "cinema",
+      "building": "yes",
+      "building:levels": "2",
+      "name": "Россия",
+      "website": "http://kt-russia.ru/"
+    }
+  },
+  {
+    "type": "way",
+    "id": 111784011,
+    "center": {
+      "lat": 52.0145378,
+      "lon": 47.8247942
+    },
+    "nodes": [
+      1272757908,
+      3379183750,
+      3379183744,
+      1272757909,
+      1272757911,
+      3379183731,
+      3379183730,
+      3379183574,
+      3379183576,
+      1272757913,
+      3379183903,
+      3379184010,
+      3379184003,
+      1272757908
+    ],
+    "tags": {
+      "addr:housenumber": "63",
+      "addr:street": "улица 30 лет Победы",
+      "building": "retail",
+      "shop": "mall",
+      "source:addr": "ЕГРН"
+    }
+  },
+  {
+    "type": "way",
+    "id": 111787084,
+    "center": {
+      "lat": 52.022838,
+      "lon": 47.8297395
+    },
+    "nodes": [
+      1272834176,
+      1281545170,
+      1281545174,
+      3365871396,
+      1281545169,
+      1281545173,
+      3365624176,
+      3365871397,
+      1272834175,
+      3365624175,
+      1272834179,
+      4241293682,
+      8777319888,
+      8777319887,
+      1272834181,
+      1272834176
+    ],
+    "tags": {
+      "addr:housenumber": "24А",
+      "addr:street": "Трнавская улица",
+      "building": "retail",
+      "building:levels": "3",
+      "name": "Грин Хаус",
+      "shop": "mall",
+      "source:addr": "ЕГРН"
+    }
+  },
+  {
+    "type": "way",
+    "id": 111801512,
+    "center": {
+      "lat": 52.0204657,
+      "lon": 47.8213364
+    },
+    "nodes": [
+      1272946876,
+      1272946865,
+      1272946849,
+      1272946842,
+      4876406318,
+      4876406822,
+      4876406821,
+      4876406320,
+      4876406319,
+      1272946828,
+      4876406823,
+      4876406824,
+      4876406826,
+      4876406827,
+      4876406828,
+      4876406825,
+      4876406831,
+      4876406830,
+      4876406829,
+      1272946832,
+      1272946876
+    ],
+    "tags": {
+      "addr:housenumber": "20А",
+      "addr:street": "улица 30 лет Победы",
+      "building": "yes",
+      "shop": "mall"
+    }
+  },
+  {
+    "type": "way",
+    "id": 112896805,
+    "center": {
+      "lat": 52.0163027,
+      "lon": 47.8260651
+    },
+    "nodes": [
+      1282121942,
+      4886073126,
+      4886073129,
+      4886073128,
+      4886073127,
+      1282121927,
+      1282122064,
+      2975521129,
+      1282122174,
+      1282121942
+    ],
+    "tags": {
+      "addr:housenumber": "58А",
+      "addr:street": "Степная улица",
+      "building": "yes",
+      "name": "Романтика",
+      "shop": "department_store",
+      "source:addr": "ЕГРН"
+    }
+  },
+  {
+    "type": "way",
+    "id": 112896823,
+    "center": {
+      "lat": 52.0139245,
+      "lon": 47.8192314
+    },
+    "nodes": [
+      1282122195,
+      1282122161,
+      1282122159,
+      1282121958,
+      1282122143,
+      2967191725,
+      2967191727,
+      2967191728,
+      1282122195
+    ],
+    "tags": {
+      "leisure": "park"
+    }
+  },
+  {
+    "type": "way",
+    "id": 112896833,
+    "center": {
+      "lat": 52.0221263,
+      "lon": 47.8281432
+    },
+    "nodes": [
+      3365869892,
+      1282121891,
+      3365871394,
+      5378244366,
+      5378244355,
+      5378244363,
+      5378244361,
+      5378244360,
+      5378244358,
+      5378244357,
+      5378244359,
+      5378244362,
+      5378244364,
+      5378244354,
+      5378244365,
+      5378244367,
+      5378244356,
+      1282122076,
+      3365869888,
+      3365869889,
+      3365869891,
+      3365869890,
+      1282122085,
+      1282121964,
+      3365871393,
+      3365871395,
+      3365869892
+    ],
+    "tags": {
+      "amenity": "place_of_worship",
+      "building": "church",
+      "denomination": "orthodox",
+      "name": "Рождественская церковь",
+      "religion": "christian"
+    }
+  },
+  {
+    "type": "way",
+    "id": 112896841,
+    "center": {
+      "lat": 52.018714,
+      "lon": 47.83288
+    },
+    "nodes": [
+      1282121909,
+      4917753552,
+      4917753553,
+      1282122135,
+      1282122192,
+      1282121921,
+      1282121945,
+      4917753550,
+      4917753549,
+      1282122146,
+      1282121938,
+      1282121983,
+      1282122005,
+      1282122191,
+      5130879566,
+      5130879565,
+      5130879564,
+      5130879567,
+      5130879569,
+      5130879568,
+      1282121909
+    ],
+    "tags": {
+      "addr:housenumber": "34",
+      "addr:street": "проспект Героев",
+      "building": "yes",
+      "name": "ТЦ \"Меркурий\"",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "way",
+    "id": 112896844,
+    "center": {
+      "lat": 52.0202205,
+      "lon": 47.8253118
+    },
+    "nodes": [
+      1282121995,
+      2935211469,
+      2935211467,
+      2935211298,
+      2935211280,
+      1282122017,
+      2935211915,
+      1282122043,
+      1282121897,
+      2935211905,
+      2935211934,
+      2935211936,
+      1282121995
+    ],
+    "tags": {
+      "addr:city": "Балаково",
+      "addr:postcode": "413864",
+      "addr:street": "проезд Энергетиков, 1А",
+      "landcover": "asphalt",
+      "leisure": "park",
+      "loc_name": "Поле дураков",
+      "name": "Парк центральный",
+      "opening_hours": "24/7"
+    }
+  },
+  {
+    "type": "way",
+    "id": 112896845,
+    "center": {
+      "lat": 52.0206202,
+      "lon": 47.8328355
+    },
+    "nodes": [
+      1282122117,
+      1282122116,
+      1282122168,
+      1282121936,
+      1282122117
+    ],
+    "tags": {
+      "leisure": "park"
+    }
+  },
+  {
+    "type": "way",
+    "id": 113559144,
+    "center": {
+      "lat": 52.0225304,
+      "lon": 47.8426951
+    },
+    "nodes": [
+      1287622335,
+      4514432688,
+      4855221413,
+      1287622216,
+      4089644574,
+      4089644572,
+      1287622238,
+      1287622305,
+      1287622346,
+      1287622215,
+      1287622263,
+      1287622288,
+      1287622202,
+      1287622352,
+      1287622335
+    ],
+    "tags": {
+      "addr:housenumber": "94/1",
+      "addr:street": "Степная улица",
+      "building": "retail",
+      "building:cladding": "brick",
+      "building:levels": "2",
+      "name": "ТЦ \"Арион\"",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "way",
+    "id": 113559145,
+    "center": {
+      "lat": 52.0216104,
+      "lon": 47.8387544
+    },
+    "nodes": [
+      1287622319,
+      1287622325,
+      1287622377,
+      1287622292,
+      1287622295,
+      1287622303,
+      1287622227,
+      1287622319
+    ],
+    "tags": {
+      "addr:housenumber": "23/1",
+      "addr:street": "Степная улица",
+      "building": "retail",
+      "building:cladding": "brick",
+      "building:levels": "2",
+      "shop": "mall",
+      "source:addr": "ЕГРН"
+    }
+  },
+  {
+    "type": "way",
+    "id": 113559153,
+    "center": {
+      "lat": 52.0190243,
+      "lon": 47.8343563
+    },
+    "nodes": [
+      1287622220,
+      1287622225,
+      1287622351,
+      1287622195,
+      1287622317,
+      1287622193,
+      1287622220
+    ],
+    "tags": {
+      "addr:housenumber": "36/2",
+      "addr:street": "проспект Героев",
+      "building": "retail",
+      "building:levels": "3",
+      "name": "Айсберг",
+      "shop": "mall"
+    }
+  },
+  {
+    "type": "way",
+    "id": 113577495,
+    "center": {
+      "lat": 52.0104858,
+      "lon": 47.797357
+    },
+    "nodes": [
+      1287836654,
+      5602196811,
+      5602196809,
+      5602196808,
+      5602196807,
+      5602196810,
+      5602196812,
+      1287836607,
+      3273613801,
+      5602196806,
+      1287836619,
+      3273613805,
+      1287836628,
+      1287836612,
+      1287836660,
+      1287836642,
+      1287836618,
+      1287836617,
+      1287836643,
+      5602196820,
+      3273613799,
+      1287836654
+    ],
+    "tags": {
+      "addr:housenumber": "100",
+      "addr:housenumber2": "46",
+      "addr:street": "Волжская улица",
+      "addr:street2": "Минская улица",
+      "building": "retail",
+      "building:levels": "3",
+      "name": "Оранж",
+      "shop": "mall",
+      "source:addr": "ЕГРН"
+    }
+  },
+  {
+    "type": "way",
+    "id": 113577497,
+    "center": {
+      "lat": 52.031611,
+      "lon": 47.7919478
+    },
+    "nodes": [
+      1287836645,
+      1287836658,
+      1287836641,
+      1287836616,
+      1287836631,
+      1287836621,
+      3128073400,
+      3128073397,
+      3128073398,
+      3128073399,
+      1287836645
+    ],
+    "tags": {
+      "addr:housenumber": "24",
+      "addr:street": "улица Факел Социализма",
+      "building": "retail",
+      "building:cladding": "mdf",
+      "building:levels": "1",
+      "name": "Проспект",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "way",
+    "id": 113684503,
+    "center": {
+      "lat": 52.0191846,
+      "lon": 47.8347306
+    },
+    "nodes": [
+      1288838279,
+      1288838243,
+      1288838231,
+      1288838221,
+      1288838279
+    ],
+    "tags": {
+      "addr:housenumber": "25/1",
+      "addr:street": "проспект Героев",
+      "building": "retail",
+      "building:levels": "2",
+      "shop": "mall"
+    }
+  },
+  {
+    "type": "way",
+    "id": 114106226,
+    "center": {
+      "lat": 52.0203072,
+      "lon": 47.8309243
+    },
+    "nodes": [
+      1293128307,
+      2943007579,
+      2943007580,
+      2943007583,
+      2943007598,
+      2943007581,
+      1293128392,
+      1293128208,
+      1293128173,
+      2943007600,
+      1293128311,
+      2935211557,
+      2935211556,
+      2935211548,
+      2935211553,
+      1293128415,
+      1293128317,
+      2935211551,
+      2935211550,
+      1293128299,
+      2935211552,
+      2935211555,
+      1293128307
+    ],
+    "tags": {
+      "addr:housenumber": "26",
+      "addr:street": "проспект Героев",
+      "building": "retail",
+      "building:levels": "1",
+      "shop": "mall"
+    }
+  },
+  {
+    "type": "way",
+    "id": 114378734,
+    "center": {
+      "lat": 52.0307432,
+      "lon": 47.8355459
+    },
+    "nodes": [
+      1295757382,
+      1295757335,
+      1295757367,
+      1295757352,
+      1295757382
+    ],
+    "tags": {
+      "addr:housenumber": "77/1",
+      "addr:street": "Трнавская улица",
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Династия"
+    }
+  },
+  {
+    "type": "way",
+    "id": 114446385,
+    "center": {
+      "lat": 52.0262774,
+      "lon": 47.8316642
+    },
+    "nodes": [
+      1296450100,
+      1296450305,
+      1296450356,
+      1296450361,
+      1296450282,
+      1296450203,
+      1296450100
+    ],
+    "tags": {
+      "addr:housenumber": "18",
+      "addr:street": "бульвар Роз",
+      "building": "retail",
+      "building:levels": "2",
+      "shop": "mall"
+    }
+  },
+  {
+    "type": "way",
+    "id": 114821331,
+    "center": {
+      "lat": 52.0124299,
+      "lon": 47.7882735
+    },
+    "nodes": [
+      1299752719,
+      1299752650,
+      1299752656,
+      1299752663,
+      1299752661,
+      1299752637,
+      1299752719
+    ],
+    "tags": {
+      "addr:housenumber": "3/1",
+      "addr:street": "набережная Леонова",
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Аквамарин",
+      "opening_hours": "12:00-24:00"
+    }
+  },
+  {
+    "type": "way",
+    "id": 114884050,
+    "center": {
+      "lat": 52.0652738,
+      "lon": 47.7474075
+    },
+    "nodes": [
+      1300201527,
+      1300201524,
+      1300201522,
+      1300201525,
+      1300201527
+    ],
+    "tags": {
+      "amenity": "restaurant",
+      "building": "yes",
+      "name": "Эдельвейс"
+    }
+  },
+  {
+    "type": "way",
+    "id": 118564763,
+    "center": {
+      "lat": 52.0319465,
+      "lon": 47.7735684
+    },
+    "nodes": [
+      1333315240,
+      4533716134,
+      1333315244,
+      1333315251,
+      3381684044,
+      3381684048,
+      4548377338,
+      4548377341,
+      4548377340,
+      4548377339,
+      3381684047,
+      3381684043,
+      1333315242,
+      1333315248,
+      1333315246,
+      1333315247,
+      4533716135,
+      1333315243,
+      1333315250,
+      1333315240
+    ],
+    "tags": {
+      "addr:housenumber": "107А",
+      "addr:street": "улица Чапаева",
+      "building": "yes",
+      "name": "Салют",
+      "shop": "mall"
+    }
+  },
+  {
+    "type": "way",
+    "id": 118610232,
+    "center": {
+      "lat": 52.0316181,
+      "lon": 47.7769864
+    },
+    "nodes": [
+      1333709265,
+      1333709250,
+      1333709267,
+      3768741963,
+      3381682372,
+      3381682371,
+      1333709249,
+      1333709265
+    ],
+    "tags": {
+      "addr:housenumber": "6А/1",
+      "addr:street": "улица Факел Социализма",
+      "building": "retail",
+      "building:cladding": "mdf",
+      "building:levels": "2",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "way",
+    "id": 118705760,
+    "center": {
+      "lat": 52.0248911,
+      "lon": 47.8301051
+    },
+    "nodes": [
+      1334477942,
+      1334477932,
+      1334477958,
+      1334477965,
+      1334477959,
+      1334477960,
+      1334477929,
+      1334477952,
+      1334477942
+    ],
+    "tags": {
+      "addr:housenumber": "27/1",
+      "addr:street": "Трнавская улица",
+      "building": "retail",
+      "building:levels": "1",
+      "shop": "mall",
+      "source:addr": "ЕГРН"
+    }
+  },
+  {
+    "type": "way",
+    "id": 119023141,
+    "center": {
+      "lat": 52.0149164,
+      "lon": 47.8191099
+    },
+    "nodes": [
+      1338059256,
+      3417424436,
+      3417424438,
+      1338059255,
+      3417424437,
+      3417424435,
+      3379184028,
+      3379184023,
+      1338059226,
+      1338059225,
+      1338059256
+    ],
+    "tags": {
+      "addr:housenumber": "55А",
+      "addr:street": "улица 30 лет Победы",
+      "building": "retail",
+      "shop": "mall"
+    }
+  },
+  {
+    "type": "way",
+    "id": 119658415,
+    "center": {
+      "lat": 52.0446838,
+      "lon": 47.7872532
+    },
+    "nodes": [
+      1343649729,
+      1343649720,
+      1343649730,
+      1343649721,
+      1343649722,
+      1343649728,
+      1343649724,
+      1343649725,
+      1343649723,
+      2984591586,
+      2984591584,
+      1343649726,
+      1343649718,
+      1343649719,
+      1343649727,
+      1343649729
+    ],
+    "tags": {
+      "addr:housenumber": "1",
+      "addr:street": "Набережная улица",
+      "amenity": "place_of_worship",
+      "building": "church",
+      "denomination": "russian_orthodox",
+      "name": "Храм Троицы Живоначальной",
+      "ref:sobory.ru": "07133",
+      "religion": "christian",
+      "tourism": "attraction"
+    }
+  },
+  {
+    "type": "way",
+    "id": 121243152,
+    "center": {
+      "lat": 52.0239162,
+      "lon": 47.8277636
+    },
+    "nodes": [
+      1357835636,
+      3379706423,
+      3379706425,
+      1282122066,
+      3379706418,
+      3379706417,
+      1282122082,
+      8777319890,
+      1357835641,
+      1282121955,
+      3379703688,
+      3379703683,
+      3379706420,
+      3379706421,
+      1282122115,
+      3379706416,
+      3379706415,
+      8777319889,
+      1357835650,
+      1357835639,
+      1357835647,
+      1357835652,
+      1357835636
+    ],
+    "tags": {
+      "building": "retail",
+      "building:levels": "1",
+      "shop": "mall"
+    }
+  },
+  {
+    "type": "way",
+    "id": 138407518,
+    "center": {
+      "lat": 52.0263193,
+      "lon": 47.8326189
+    },
+    "nodes": [
+      1517660336,
+      1517660339,
+      1517660338,
+      1517660337,
+      1517660336
+    ],
+    "tags": {
+      "addr:housenumber": "39",
+      "addr:street": "Трнавская улица",
+      "building": "retail",
+      "building:cladding": "brick",
+      "building:levels": "2",
+      "name": "Бульвар",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "way",
+    "id": 209512187,
+    "center": {
+      "lat": 52.0221153,
+      "lon": 47.7838622
+    },
+    "nodes": [
+      2197191099,
+      2197191097,
+      2197190979,
+      2197191147,
+      2197191180,
+      2197190969,
+      2197191099
+    ],
+    "tags": {
+      "addr:street": "улица Академика Жук",
+      "amenity": "cafe",
+      "building": "yes",
+      "building:levels": "1",
+      "name": "Юмми",
+      "opening_hours": "Mo-Su 07:00-20:00",
+      "phone": "+7 (937) 227-77-09"
+    }
+  },
+  {
+    "type": "way",
+    "id": 272580685,
+    "center": {
+      "lat": 51.9445718,
+      "lon": 47.8027444
+    },
+    "nodes": [
+      2775247482,
+      2775247484,
+      2775247485,
+      2775247487,
+      2775247488,
+      2775247489,
+      2775247491,
+      2775247492,
+      2775247482
+    ],
+    "tags": {
+      "addr:housenumber": "50",
+      "addr:street": "Советская улица",
+      "building": "yes",
+      "name": "Балаковский",
+      "tourism": "hotel"
+    }
+  },
+  {
+    "type": "way",
+    "id": 282070529,
+    "center": {
+      "lat": 52.0427335,
+      "lon": 47.7853274
+    },
+    "nodes": [
+      2860138802,
+      2860138803,
+      2860138804,
+      3158542569,
+      3158542568,
+      2860138805,
+      2860138802
+    ],
+    "tags": {
+      "addr:housenumber": "75",
+      "addr:street": "Коммунистическая улица",
+      "building": "manor",
+      "historic": "manor",
+      "name": "Усадьба Паисия Мальцева",
+      "phone": "+7 (8453) 44-04-00",
+      "tourism": "museum"
+    }
+  },
+  {
+    "type": "way",
+    "id": 282070530,
+    "center": {
+      "lat": 52.0430245,
+      "lon": 47.7852309
+    },
+    "nodes": [
+      2860138805,
+      2860138806
+    ],
+    "tags": {
+      "barrier": "wall",
+      "tourism": "attraction"
+    }
+  },
+  {
+    "type": "way",
+    "id": 282070532,
+    "center": {
+      "lat": 52.0439973,
+      "lon": 47.7731571
+    },
+    "nodes": [
+      2860138813,
+      2860138814,
+      2860138815,
+      2860138816,
+      2860138817,
+      2860138818,
+      2860138819,
+      2860138820,
+      2860138821,
+      2860138822,
+      2860138813
+    ],
+    "tags": {
+      "addr:city": "Балаково",
+      "addr:housenumber": "9",
+      "addr:street": "Заовражная улица",
+      "building": "yes",
+      "name": "Балаковская художественная галерея",
+      "opening_hours": "Tu 10:00-16:00; We-Su 10:00-17:00",
+      "phone": "+7 8453 440375",
+      "tourism": "gallery"
+    }
+  },
+  {
+    "type": "way",
+    "id": 282212324,
+    "center": {
+      "lat": 52.0099108,
+      "lon": 47.7788178
+    },
+    "nodes": [
+      2861598481,
+      2861598482,
+      2861598483,
+      2861598484,
+      2861598485,
+      2861599134,
+      6768719773,
+      2861598481
+    ],
+    "tags": {
+      "amenity": "place_of_worship",
+      "barrier": "fence",
+      "fence_type": "metal",
+      "religion": "muslim"
+    }
+  },
+  {
+    "type": "way",
+    "id": 283557166,
+    "center": {
+      "lat": 52.0070071,
+      "lon": 47.8259627
+    },
+    "nodes": [
+      2874070917,
+      2874070895,
+      2874070879,
+      2874070912,
+      2874070917
+    ],
+    "tags": {
+      "addr:housenumber": "52/3",
+      "addr:street": "Саратовское шоссе",
+      "building": "retail",
+      "name": "Генезис",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "way",
+    "id": 283562312,
+    "center": {
+      "lat": 52.0066458,
+      "lon": 47.8228596
+    },
+    "nodes": [
+      2874106871,
+      2874106877,
+      2874106876,
+      2874106874,
+      2874106872,
+      2874106863,
+      2874106867,
+      2874106864,
+      2874106871
+    ],
+    "tags": {
+      "addr:city": "Балаково",
+      "addr:housenumber": "39/2",
+      "addr:street": "Саратовское шоссе",
+      "amenity": "restaurant",
+      "building": "yes",
+      "name": "Patrick`s Pub"
+    }
+  },
+  {
+    "type": "way",
+    "id": 285028287,
+    "center": {
+      "lat": 52.0207085,
+      "lon": 47.780157
+    },
+    "nodes": [
+      2935550542,
+      3381478560,
+      2935550544,
+      3381479199,
+      3381479200,
+      3382449422,
+      3382449414,
+      3382449411,
+      3382449406,
+      3381478550,
+      2935550538,
+      2935550537,
+      2935550542
+    ],
+    "tags": {
+      "leisure": "park"
+    }
+  },
+  {
+    "type": "way",
+    "id": 285033526,
+    "center": {
+      "lat": 52.0215707,
+      "lon": 47.776056
+    },
+    "nodes": [
+      2887267110,
+      2887267111,
+      2887267112,
+      2887267113,
+      2887267114,
+      4150966957,
+      4150966956,
+      2887267115,
+      2887267110
+    ],
+    "tags": {
+      "addr:housenumber": "12",
+      "addr:street": "улица Академика Жук",
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Арабика"
+    }
+  },
+  {
+    "type": "way",
+    "id": 285033533,
+    "center": {
+      "lat": 52.0212829,
+      "lon": 47.7753181
+    },
+    "nodes": [
+      2945788138,
+      2945788137,
+      2887267154,
+      2887267155,
+      2945788138
+    ],
+    "tags": {
+      "addr:housenumber": "10А",
+      "addr:street": "улица Академика Жук",
+      "amenity": "restaurant",
+      "building": "yes",
+      "building:cladding": "brick",
+      "building:levels": "2",
+      "name": "Александрия"
+    }
+  },
+  {
+    "type": "way",
+    "id": 285042292,
+    "center": {
+      "lat": 52.0179331,
+      "lon": 47.7772753
+    },
+    "nodes": [
+      2887355153,
+      3381141999,
+      3381142002,
+      3381142001,
+      3381141998,
+      3381141996,
+      3381141997,
+      2887355149,
+      2887355150,
+      2887355151,
+      2887355152,
+      2887355153
+    ],
+    "tags": {
+      "leisure": "park"
+    }
+  },
+  {
+    "type": "way",
+    "id": 289988620,
+    "center": {
+      "lat": 52.0219022,
+      "lon": 47.8276294
+    },
+    "nodes": [
+      2935211931,
+      2935211928,
+      2935211920,
+      5378244373,
+      5378244374,
+      5378244377,
+      5378244375,
+      5378244376,
+      5378244378,
+      5378244379,
+      5378244380,
+      5378244369,
+      5378244368,
+      2935211921,
+      5378244370,
+      2935211931
+    ],
+    "tags": {
+      "amenity": "place_of_worship",
+      "building": "yes",
+      "religion": "christian"
+    }
+  },
+  {
+    "type": "way",
+    "id": 289988651,
+    "center": {
+      "lat": 52.0189353,
+      "lon": 47.8393431
+    },
+    "nodes": [
+      2935211432,
+      2935211447,
+      2935211428,
+      2935211417,
+      2935211432
+    ],
+    "tags": {
+      "addr:housenumber": "69/8",
+      "addr:street": "Саратовское шоссе",
+      "amenity": "restaurant",
+      "building": "retail",
+      "name": "Замок"
+    }
+  },
+  {
+    "type": "way",
+    "id": 290793418,
+    "center": {
+      "lat": 52.0185824,
+      "lon": 47.8308088
+    },
+    "nodes": [
+      2935211401,
+      2935211402,
+      2935211297,
+      2935211292,
+      2935211296,
+      2935211401
+    ],
+    "tags": {
+      "addr:housenumber": "17ИЦТП",
+      "addr:street": "Степная улица",
+      "building": "retail",
+      "building:levels": "2",
+      "shop": "mall",
+      "source:addr": "ЕГРН"
+    }
+  },
+  {
+    "type": "way",
+    "id": 292120531,
+    "center": {
+      "lat": 52.0262811,
+      "lon": 47.7822929
+    },
+    "nodes": [
+      2956468908,
+      2956468909,
+      2956468901,
+      2956468900,
+      2956468908
+    ],
+    "tags": {
+      "addr:housenumber": "100/1",
+      "addr:street": "улица Ленина",
+      "building": "retail",
+      "building:levels": "2",
+      "name": "Илона",
+      "opening_hours": "Mo-Fr 09:00-14:00, 15:00-18:00; Sa 10:00-16:00",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "way",
+    "id": 292120583,
+    "center": {
+      "lat": 52.0219515,
+      "lon": 47.7962389
+    },
+    "nodes": [
+      2956468535,
+      2956467330,
+      2956468540,
+      2956468542,
+      2956468535
+    ],
+    "tags": {
+      "amenity": "place_of_worship",
+      "building": "yes",
+      "denomination": "orthodox",
+      "name": "Храм святителя Луки",
+      "religion": "christian"
+    }
+  },
+  {
+    "type": "way",
+    "id": 294837478,
+    "center": {
+      "lat": 52.0335321,
+      "lon": 47.7838694
+    },
+    "nodes": [
+      2984583803,
+      2984583804,
+      2984583815,
+      2984583832,
+      2984583831,
+      2984591533,
+      2984591543,
+      2984591544,
+      2984591547,
+      2984591557,
+      2984591558,
+      2984591559,
+      2984591555,
+      2984591554,
+      2984591549,
+      4800958883,
+      4800958884,
+      4800958885,
+      4800958882,
+      2984591551,
+      2984591546,
+      2984591545,
+      2984591535,
+      2984583829,
+      2984583814,
+      2984583809,
+      2984583803
+    ],
+    "tags": {
+      "leisure": "park",
+      "name": "ГПКиО"
+    }
+  },
+  {
+    "type": "way",
+    "id": 301399160,
+    "center": {
+      "lat": 52.0389387,
+      "lon": 47.7811069
+    },
+    "nodes": [
+      3054466572,
+      3054466579,
+      3054466578,
+      3054466575,
+      3054466573,
+      3054466565,
+      3054466568,
+      3054466564,
+      4944099446,
+      4944099447,
+      4944099448,
+      3054466566,
+      3054466570,
+      3054466571,
+      3054466574,
+      3054466572
+    ],
+    "tags": {
+      "addr:housenumber": "50",
+      "addr:street": "Пролетарская улица",
+      "building": "yes",
+      "name": "Старград",
+      "opening_hours": "Mo-Su 08:00-19:00",
+      "phone": "+7 (937) 801-62-52",
+      "shop": "mall",
+      "website": "http://trc-stargrad.ru/"
+    }
+  },
+  {
+    "type": "way",
+    "id": 301399168,
+    "center": {
+      "lat": 52.0263959,
+      "lon": 47.7774055
+    },
+    "nodes": [
+      3054466317,
+      3054466316,
+      6768713444,
+      3054466314,
+      3054466315,
+      3054466317
+    ],
+    "tags": {
+      "amenity": "cafe",
+      "building": "yes",
+      "building:cladding": "brick",
+      "building:levels": "2"
+    }
+  },
+  {
+    "type": "way",
+    "id": 309309659,
+    "center": {
+      "lat": 52.0156029,
+      "lon": 47.7854185
+    },
+    "nodes": [
+      3146460873,
+      3146460865,
+      3146460885,
+      3146460883,
+      3146460840,
+      3146460870,
+      3146460878,
+      3146460882,
+      3146460888,
+      3146460891,
+      3146460894,
+      3146460897,
+      3146460898,
+      3146460890,
+      3146460880,
+      3146460873
+    ],
+    "tags": {
+      "leisure": "park"
+    }
+  },
+  {
+    "type": "way",
+    "id": 309309660,
+    "center": {
+      "lat": 52.0152507,
+      "lon": 47.7794249
+    },
+    "nodes": [
+      3146460850,
+      3146460837,
+      3146460863,
+      3146460871,
+      3146460850
+    ],
+    "tags": {
+      "leisure": "park"
+    }
+  },
+  {
+    "type": "way",
+    "id": 309309661,
+    "center": {
+      "lat": 52.0149468,
+      "lon": 47.7760849
+    },
+    "nodes": [
+      3146460827,
+      3146460835,
+      3146460847,
+      3146460833,
+      3146460827
+    ],
+    "tags": {
+      "leisure": "park"
+    }
+  },
+  {
+    "type": "way",
+    "id": 310280190,
+    "center": {
+      "lat": 52.0374961,
+      "lon": 47.7836379
+    },
+    "nodes": [
+      3156951039,
+      3156951036,
+      3156951032,
+      3156951035,
+      3156951056,
+      3156951050,
+      3156951039
+    ],
+    "tags": {
+      "addr:housenumber": "29",
+      "addr:street": "улица Ленина",
+      "building": "retail",
+      "building:levels": "2",
+      "name": "Кобзарь",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "way",
+    "id": 310433463,
+    "center": {
+      "lat": 52.0420607,
+      "lon": 47.7869118
+    },
+    "nodes": [
+      3158542506,
+      3158542505,
+      3158542487,
+      3158542488,
+      3158542493,
+      3158542506
+    ],
+    "tags": {
+      "addr:housenumber": "66",
+      "addr:street": "Коммунистическая улица",
+      "building": "yes",
+      "historic": "manor"
+    }
+  },
+  {
+    "type": "way",
+    "id": 312322418,
+    "center": {
+      "lat": 52.0413617,
+      "lon": 47.7919862
+    },
+    "nodes": [
+      3181727535,
+      3181727556,
+      3181727553,
+      3181727532,
+      3181727535
+    ],
+    "tags": {
+      "building": "yes",
+      "contact:ok": "m.ok.ru/group/56631229350034",
+      "contact:vk": "museum_balakovo",
+      "fee": "yes",
+      "name": "Музей истории Балаково",
+      "opening_hours": "Tu-Su 10:00-16:00",
+      "phone": "+7 (8453) 44-36-65",
+      "tourism": "museum",
+      "website": "http://www.comk.ru/filials/balakovo_ist"
+    }
+  },
+  {
+    "type": "way",
+    "id": 313687854,
+    "center": {
+      "lat": 52.040033,
+      "lon": 47.7711698
+    },
+    "nodes": [
+      3197044234,
+      4557704217,
+      4557704216,
+      3197044215,
+      3197044185,
+      3197044197,
+      3197044234
+    ],
+    "tags": {
+      "addr:housenumber": "52",
+      "addr:street": "Топоринская улица",
+      "building": "yes",
+      "name": "Элион",
+      "tourism": "hotel"
+    }
+  },
+  {
+    "type": "way",
+    "id": 314039937,
+    "center": {
+      "lat": 52.011297,
+      "lon": 47.7977037
+    },
+    "nodes": [
+      3200748374,
+      3200748376,
+      3200748371,
+      3200748368,
+      3200748374
+    ],
+    "tags": {
+      "addr:housenumber": "94",
+      "addr:street": "Волжская улица",
+      "building": "yes",
+      "building:levels": "2",
+      "name": "Лимон",
+      "shop": "mall",
+      "source:addr": "ЕГРН"
+    }
+  },
+  {
+    "type": "way",
+    "id": 320718953,
+    "center": {
+      "lat": 52.0291215,
+      "lon": 47.7823677
+    },
+    "nodes": [
+      2857959709,
+      3273554700,
+      3273554699,
+      3273554698,
+      2857959709
+    ],
+    "tags": {
+      "building": "commercial",
+      "building:levels": "1",
+      "name": "Рубин",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "way",
+    "id": 325436081,
+    "center": {
+      "lat": 52.0055082,
+      "lon": 47.804856
+    },
+    "nodes": [
+      3320945909,
+      3320945924,
+      3320945934,
+      3320945927,
+      3320945909
+    ],
+    "tags": {
+      "addr:housenumber": "69/1",
+      "addr:street": "Каховская улица",
+      "amenity": "place_of_worship",
+      "building": "yes",
+      "name": "Церковь Спасение",
+      "religion": "christian"
+    }
+  },
+  {
+    "type": "way",
+    "id": 329822410,
+    "center": {
+      "lat": 51.9944333,
+      "lon": 47.8048716
+    },
+    "nodes": [
+      3367689955,
+      3367689935,
+      3367689922,
+      3367689940,
+      3367689955
+    ],
+    "tags": {
+      "building": "yes",
+      "name": "Бегемот",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "way",
+    "id": 330900276,
+    "center": {
+      "lat": 52.0192967,
+      "lon": 47.8377136
+    },
+    "nodes": [
+      3379368869,
+      3379368882,
+      3379368876,
+      3379368866,
+      3379368869
+    ],
+    "tags": {
+      "addr:housenumber": "56",
+      "addr:street": "Степная улица",
+      "amenity": "restaurant",
+      "building": "yes",
+      "name": "Гости"
+    }
+  },
+  {
+    "type": "way",
+    "id": 330935691,
+    "center": {
+      "lat": 52.0270593,
+      "lon": 47.836574
+    },
+    "nodes": [
+      3379706439,
+      3379706440,
+      7795991131,
+      7795991129,
+      7795991128,
+      7795991127,
+      7795991130,
+      3379706442,
+      3379706441,
+      3379706439
+    ],
+    "tags": {
+      "addr:housenumber": "46",
+      "addr:street": "Трнавская улица",
+      "building": "yes",
+      "building:cladding": "mdf",
+      "building:levels": "2",
+      "name": "Экватор",
+      "shop": "mall"
+    }
+  },
+  {
+    "type": "way",
+    "id": 331113512,
+    "center": {
+      "lat": 52.0318458,
+      "lon": 47.7720516
+    },
+    "nodes": [
+      1343636118,
+      3381682380,
+      3381682381,
+      3381682383,
+      3381682385,
+      3381682388,
+      3381684195,
+      3381684032,
+      3381684033,
+      3381684034,
+      1343636121,
+      1343636122,
+      3381684035,
+      3381682384,
+      1343636125,
+      1343636118
+    ],
+    "tags": {
+      "building": "retail",
+      "building:levels": "2",
+      "name": "Рим",
+      "roof:levels": "1",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "way",
+    "id": 331113521,
+    "center": {
+      "lat": 52.0322598,
+      "lon": 47.7720351
+    },
+    "nodes": [
+      3381684144,
+      5722773900,
+      5722773901,
+      3381684145,
+      3381684140,
+      3381684139,
+      5722773898,
+      5722773895,
+      5722773897,
+      5722773896,
+      5722773899,
+      3381684144
+    ],
+    "tags": {
+      "addr:housenumber": "107/1",
+      "addr:street": "улица Чапаева",
+      "amenity": "restaurant",
+      "building": "yes",
+      "name": "Beerlin"
+    }
+  },
+  {
+    "type": "way",
+    "id": 335717932,
+    "center": {
+      "lat": 52.0002276,
+      "lon": 47.7626233
+    },
+    "nodes": [
+      3428283788,
+      3428283790,
+      3428283796,
+      4889804651,
+      4889804652,
+      4889804653,
+      4889804656,
+      4889804654,
+      4889804655,
+      3428283792,
+      3428283788
+    ],
+    "tags": {
+      "addr:housenumber": "6/1",
+      "addr:street": "Ивановское шоссе",
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Арарат"
+    }
+  },
+  {
+    "type": "way",
+    "id": 359003789,
+    "center": {
+      "lat": 51.9448268,
+      "lon": 47.8059255
+    },
+    "nodes": [
+      3638244381,
+      3638244382,
+      3638244383,
+      3638244386,
+      3638244381
+    ],
+    "tags": {
+      "amenity": "cafe",
+      "building": "yes"
+    }
+  },
+  {
+    "type": "way",
+    "id": 372675206,
+    "center": {
+      "lat": 52.0351328,
+      "lon": 47.7612994
+    },
+    "nodes": [
+      3762259767,
+      3762259770,
+      3762259769,
+      3762259765,
+      3762259767
+    ],
+    "tags": {
+      "addr:housenumber": "26/1",
+      "addr:street": "Заовражная улица",
+      "building": "yes",
+      "internet_access": "wlan",
+      "name": "Радуга",
+      "opening_hours": "24/7",
+      "phone": "+7 (927) 054-22-01",
+      "tourism": "hotel",
+      "website": "http://hotel-64.ru/"
+    }
+  },
+  {
+    "type": "way",
+    "id": 372969509,
+    "center": {
+      "lat": 52.0311402,
+      "lon": 47.7739423
+    },
+    "nodes": [
+      3765169246,
+      3765169247,
+      3768770583,
+      3765169240,
+      3765169239,
+      3768770584,
+      3765169246
+    ],
+    "tags": {
+      "historic": "memorial",
+      "name": "Обелиск Славы"
+    }
+  },
+  {
+    "type": "way",
+    "id": 406915341,
+    "center": {
+      "lat": 52.0210484,
+      "lon": 47.8381174
+    },
+    "nodes": [
+      4089549840,
+      4089549843,
+      4089549841,
+      4089549839,
+      4089549840
+    ],
+    "tags": {
+      "addr:housenumber": "21",
+      "addr:street": "Степная улица",
+      "building": "retail",
+      "building:levels": "2",
+      "name": "Муравей",
+      "opening_hours": "Mo-Fr 09:00-18:00; Sa 09:00-17:00; Su 09:00-15:00",
+      "shop": "department_store",
+      "website": "http://muravei64.balv.ru/"
+    }
+  },
+  {
+    "type": "way",
+    "id": 410015765,
+    "center": {
+      "lat": 51.9445441,
+      "lon": 47.8034764
+    },
+    "nodes": [
+      4118753564,
+      4118753565,
+      4118753566,
+      4118753567,
+      4118753564
+    ],
+    "tags": {
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Вереск"
+    }
+  },
+  {
+    "type": "way",
+    "id": 418498074,
+    "center": {
+      "lat": 51.9945151,
+      "lon": 47.74678
+    },
+    "nodes": [
+      4189019395,
+      4189019405,
+      4189019390,
+      4189018888,
+      4189019395
+    ],
+    "tags": {
+      "addr:housenumber": "2Б",
+      "addr:street": "улица Гагарина",
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Гурман"
+    }
+  },
+  {
+    "type": "way",
+    "id": 427988512,
+    "center": {
+      "lat": 52.0318277,
+      "lon": 47.8260276
+    },
+    "nodes": [
+      4271451259,
+      4271451261,
+      5837862631,
+      4271451258,
+      4271451257,
+      4271451259
+    ],
+    "tags": {
+      "addr:housenumber": "54/2",
+      "addr:street": "набережная Леонова",
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Ковчег"
+    }
+  },
+  {
+    "type": "way",
+    "id": 427988516,
+    "center": {
+      "lat": 52.026902,
+      "lon": 47.8154722
+    },
+    "nodes": [
+      4271451161,
+      4271451167,
+      4271451159,
+      4271451154,
+      4271451161
+    ],
+    "tags": {
+      "amenity": "cafe",
+      "building": "yes"
+    }
+  },
+  {
+    "type": "way",
+    "id": 448896195,
+    "center": {
+      "lat": 52.0224495,
+      "lon": 47.8322253
+    },
+    "nodes": [
+      4458681743,
+      4458681744,
+      4458681745,
+      4458681746,
+      4458681747,
+      4458681748,
+      4458681743
+    ],
+    "tags": {
+      "addr:housenumber": "34/5",
+      "addr:street": "Трнавская улица",
+      "building": "retail",
+      "name": "Час пик",
+      "shop": "department_store",
+      "source:addr": "ЕГРН"
+    }
+  },
+  {
+    "type": "way",
+    "id": 449246485,
+    "center": {
+      "lat": 52.0262721,
+      "lon": 47.8352655
+    },
+    "nodes": [
+      4462173564,
+      4462173565,
+      4462173566,
+      4462173567,
+      4462173564
+    ],
+    "tags": {
+      "addr:housenumber": "36/8",
+      "addr:street": "Трнавская улица",
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Фьюжн"
+    }
+  },
+  {
+    "type": "way",
+    "id": 449247082,
+    "center": {
+      "lat": 52.0221688,
+      "lon": 47.8326141
+    },
+    "nodes": [
+      4462181648,
+      4462181649,
+      4462181650,
+      4462181651,
+      4462181652,
+      4462181653,
+      4462181648
+    ],
+    "tags": {
+      "addr:housenumber": "34/14",
+      "addr:street": "Трнавская улица",
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Л'Этаж"
+    }
+  },
+  {
+    "type": "way",
+    "id": 449266551,
+    "center": {
+      "lat": 52.0236503,
+      "lon": 47.8434986
+    },
+    "nodes": [
+      4462382546,
+      4462382547,
+      4462382548,
+      4462382549,
+      4462382546
+    ],
+    "tags": {
+      "addr:housenumber": "49А",
+      "addr:street": "Степная улица",
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Днестр"
+    }
+  },
+  {
+    "type": "way",
+    "id": 449266552,
+    "center": {
+      "lat": 52.0235364,
+      "lon": 47.8427196
+    },
+    "nodes": [
+      4906495777,
+      4514434391,
+      4462382551,
+      4462382552,
+      4906495778,
+      4906495777
+    ],
+    "tags": {
+      "amenity": "place_of_worship",
+      "building": "yes",
+      "name": "Православный приход",
+      "religion": "christian"
+    }
+  },
+  {
+    "type": "way",
+    "id": 449304559,
+    "center": {
+      "lat": 52.0217069,
+      "lon": 47.8398919
+    },
+    "nodes": [
+      4462780560,
+      4462780561,
+      4462780562,
+      4462780563,
+      4462780560
+    ],
+    "tags": {
+      "addr:housenumber": "21/1",
+      "addr:street": "Степная улица",
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Пиратъ"
+    }
+  },
+  {
+    "type": "way",
+    "id": 449746532,
+    "center": {
+      "lat": 52.0191026,
+      "lon": 47.832887
+    },
+    "nodes": [
+      4466827501,
+      4466827502,
+      4466827503,
+      4466827504,
+      4466827505,
+      4466827506,
+      4466827501
+    ],
+    "tags": {
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Döner kebab"
+    }
+  },
+  {
+    "type": "way",
+    "id": 451102896,
+    "center": {
+      "lat": 52.030511,
+      "lon": 47.7480132
+    },
+    "nodes": [
+      4479677810,
+      4479677811,
+      4576740258,
+      4576740259,
+      4576740260,
+      4576740262,
+      4576740263,
+      4576740264,
+      4576740265,
+      7800893388,
+      4576740261,
+      7800893387,
+      7800893386,
+      7800893385,
+      4479677812,
+      4479677813,
+      4479677814,
+      7800889482,
+      7800889483,
+      7800889484,
+      7800889481,
+      4479677815,
+      4479677810
+    ],
+    "tags": {
+      "addr:housenumber": "6",
+      "addr:street": "Дорожная улица",
+      "building": "yes",
+      "check_date": "2023-08-18",
+      "internet_access": "wlan",
+      "internet_access:fee": "customers",
+      "name": "Арагви",
+      "opening_hours": "24/7",
+      "payment:cards": "no",
+      "payment:credit_cards": "no",
+      "payment:debit_cards": "no",
+      "phone": "+7 (8453) 49-04-42",
+      "tourism": "hotel",
+      "website": "http://aragvi64.ru/",
+      "wheelchair": "no"
+    }
+  },
+  {
+    "type": "way",
+    "id": 454064758,
+    "center": {
+      "lat": 51.9909039,
+      "lon": 47.8064734
+    },
+    "nodes": [
+      4506985958,
+      4506985959,
+      4506985960,
+      4506985961,
+      4506985962,
+      4506985963,
+      4506985958
+    ],
+    "tags": {
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Старый вокзал"
+    }
+  },
+  {
+    "type": "way",
+    "id": 454302241,
+    "center": {
+      "lat": 52.0141735,
+      "lon": 47.7871886
+    },
+    "nodes": [
+      4508720963,
+      4508720964,
+      4508720965,
+      4508720966,
+      4508720967,
+      4508720968,
+      4508720969,
+      4508720970,
+      4508720963
+    ],
+    "tags": {
+      "addr:housenumber": "16/1",
+      "addr:street": "улица Менделеева",
+      "amenity": "cafe",
+      "building": "yes",
+      "check_date": "2023-08-19",
+      "internet_access": "no",
+      "name": "Наполеон",
+      "opening_hours": "Mo-Th,Su 10:00-23:00; Fr-Sa 10:00-01:00",
+      "payment:cards": "yes",
+      "payment:contactless": "yes",
+      "payment:credit_cards": "yes",
+      "payment:debit_cards": "yes",
+      "payment:mastercard": "yes",
+      "payment:mastercard_contactless": "yes",
+      "payment:mir": "yes",
+      "payment:nfc": "yes",
+      "payment:visa": "yes",
+      "payment:visa_contactless": "yes",
+      "payment:visa_debit": "yes",
+      "wheelchair": "no"
+    }
+  },
+  {
+    "type": "way",
+    "id": 454925768,
+    "center": {
+      "lat": 52.0400353,
+      "lon": 47.7837897
+    },
+    "nodes": [
+      4514088687,
+      4514088688,
+      4514088989,
+      4514088990,
+      4514088687
+    ],
+    "tags": {
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Винтаж"
+    }
+  },
+  {
+    "type": "way",
+    "id": 457179883,
+    "center": {
+      "lat": 52.0373058,
+      "lon": 47.7837138
+    },
+    "nodes": [
+      4533597942,
+      4533597943,
+      4533597944,
+      4533597945,
+      4533597946,
+      4533597947,
+      4533597942
+    ],
+    "tags": {
+      "addr:housenumber": "33",
+      "addr:street": "улица Ленина",
+      "building": "retail",
+      "name": "Грандстрой",
+      "shop": "department_store"
+    }
+  },
+  {
+    "type": "way",
+    "id": 458134578,
+    "center": {
+      "lat": 52.0050061,
+      "lon": 47.8037261
+    },
+    "nodes": [
+      4541794383,
+      4541794384,
+      4541794385,
+      4541794386,
+      4541794383
+    ],
+    "tags": {
+      "amenity": "place_of_worship",
+      "building": "chapel",
+      "name": "Православный приход во имя святых бессребреников Космы и Дамиана",
+      "religion": "christian"
+    }
+  },
+  {
+    "type": "way",
+    "id": 464131837,
+    "center": {
+      "lat": 52.0384433,
+      "lon": 47.7832409
+    },
+    "nodes": [
+      4592832176,
+      4592832177,
+      4592832178,
+      4592832179,
+      4592832176
+    ],
+    "tags": {
+      "amenity": "cafe",
+      "building": "yes",
+      "name": "Sheikh"
+    }
+  },
+  {
+    "type": "way",
+    "id": 483855174,
+    "center": {
+      "lat": 51.9945242,
+      "lon": 47.7430922
+    },
+    "nodes": [
+      4766020763,
+      4766020764,
+      4766020765,
+      4766020766,
+      4766020763
+    ],
+    "tags": {
+      "amenity": "cafe",
+      "building": "yes"
+    }
+  },
+  {
+    "type": "way",
+    "id": 486753832,
+    "center": {
+      "lat": 52.0006599,
+      "lon": 47.7982106
+    },
+    "nodes": [
+      4793154537,
+      4793154539,
+      4793154538,
+      4793154541,
+      4793154540,
+      4793154536,
+      4793154542,
+      4793154543,
+      4793154537
+    ],
+    "tags": {
+      "amenity": "place_of_worship",
+      "building": "construction",
+      "denomination": "old_believers",
+      "religion": "christian"
+    }
+  },
+  {
+    "type": "way",
+    "id": 497440178,
+    "center": {
+      "lat": 52.0566184,
+      "lon": 47.909976
+    },
+    "nodes": [
+      4889953796,
+      4889953797,
+      4889953798,
+      4889953799,
+      4889953796
+    ],
+    "tags": {
+      "amenity": "place_of_worship",
+      "building": "yes",
+      "religion": "christian"
+    }
+  },
+  {
+    "type": "way",
+    "id": 498825754,
+    "center": {
+      "lat": 52.0075697,
+      "lon": 47.8225939
+    },
+    "nodes": [
+      4901591261,
+      4901591262,
+      4901591263,
+      4901591264,
+      4901591261
+    ],
+    "tags": {
+      "amenity": "place_of_worship",
+      "building": "yes",
+      "religion": "christian"
+    }
+  },
+  {
+    "type": "way",
+    "id": 518592032,
+    "center": {
+      "lat": 52.0474756,
+      "lon": 47.7843706
+    },
+    "nodes": [
+      5058409447,
+      5058409448,
+      5058409449,
+      5058409450,
+      5058409451,
+      5058409452,
+      5058409453,
+      5058409454,
+      5058409455,
+      5058409456,
+      5058409447
+    ],
+    "tags": {
+      "amenity": "cafe",
+      "building": "yes",
+      "cuisine": "shish-kebab",
+      "name": "На Балаковке"
+    }
+  },
+  {
+    "type": "way",
+    "id": 555937785,
+    "center": {
+      "lat": 52.0318782,
+      "lon": 47.7841061
+    },
+    "nodes": [
+      5363106290,
+      5363106289,
+      5363106288,
+      5363106287,
+      5363106286,
+      5363106285,
+      5363106284,
+      5363106283,
+      5363106282,
+      5363106281,
+      5363106280,
+      5363106279,
+      5363106290
+    ],
+    "tags": {
+      "tourism": "theme_park"
+    }
+  },
+  {
+    "type": "way",
+    "id": 555937789,
+    "center": {
+      "lat": 52.0326405,
+      "lon": 47.7827838
+    },
+    "nodes": [
+      5363132935,
+      5363132934,
+      5363132933,
+      5363132932,
+      5363132931,
+      5363132930,
+      5363132929,
+      5363132928,
+      5363132927,
+      5363132926,
+      5363132925,
+      5363132924,
+      5363132923,
+      5363132922,
+      5363132921,
+      5363106320,
+      5363106319,
+      5363106318,
+      5363106317,
+      5363106316,
+      5363106315,
+      5363106314,
+      5363106313,
+      5363106312,
+      5363106311,
+      5363106310,
+      5363106309,
+      5363106308,
+      5363106307,
+      5363106306,
+      5363106305,
+      5363132935
+    ],
+    "tags": {
+      "leisure": "park"
+    }
+  },
+  {
+    "type": "way",
+    "id": 607623704,
+    "center": {
+      "lat": 52.0119439,
+      "lon": 47.7900794
+    },
+    "nodes": [
+      5758096470,
+      5758096469,
+      5758096468,
+      5758096467,
+      5758096466,
+      5758096465,
+      5758096464,
+      5758096470
+    ],
+    "tags": {
+      "tourism": "theme_park"
+    }
+  },
+  {
+    "type": "way",
+    "id": 687322594,
+    "center": {
+      "lat": 52.0180913,
+      "lon": 47.7830072
+    },
+    "nodes": [
+      6442549592,
+      6442549593,
+      6442549594,
+      6442549595,
+      6442549596,
+      6442549597,
+      6442549592
+    ],
+    "tags": {
+      "leisure": "park"
+    }
+  },
+  {
+    "type": "way",
+    "id": 689314027,
+    "center": {
+      "lat": 52.0311439,
+      "lon": 47.7783662
+    },
+    "nodes": [
+      3675110600,
+      6466457466,
+      1335391727,
+      3675110597,
+      3675110600
+    ],
+    "tags": {
+      "addr:street": "улица Факел Социализма",
+      "leisure": "park",
+      "name": "Аллея Славы"
+    }
+  },
+  {
+    "type": "way",
+    "id": 698211551,
+    "center": {
+      "lat": 52.0429815,
+      "lon": 47.7979191
+    },
+    "nodes": [
+      6557175950,
+      6557175951,
+      6557175952,
+      6557175953,
+      6557175950
+    ],
+    "tags": {
+      "historic": "memorial",
+      "inscription": "Здесь похоронены активные участники становления советской власти в Балаково:\nЧапаев Григорий\nГригорьев Михаил\nМиронов Иван\nЛаврентьев Иван\nРодичев Петр и др.",
+      "material": "bronze",
+      "memorial": "war_memorial",
+      "name": "Участникам становления Советской власти"
+    }
+  },
+  {
+    "type": "way",
+    "id": 698211553,
+    "center": {
+      "lat": 52.0323582,
+      "lon": 47.8304766
+    },
+    "nodes": [
+      8363736867,
+      889451458,
+      6557175955,
+      660781337,
+      6557184750,
+      8363736865,
+      8363736866,
+      8363736867
+    ],
+    "tags": {
+      "addr:city": "Балаково",
+      "addr:postcode": "413800",
+      "addr:street": "набережная Леонова",
+      "dog": "leashed",
+      "leisure": "park",
+      "name": "Светящийся парк",
+      "opening_hours": "24/7",
+      "operator": "Балаковская АЭС"
+    }
+  },
+  {
+    "type": "way",
+    "id": 698213085,
+    "center": {
+      "lat": 52.0338137,
+      "lon": 47.7839599
+    },
+    "nodes": [
+      6557171120,
+      6557171121,
+      6557171122,
+      6557171123,
+      6557171120
+    ],
+    "tags": {
+      "addr:city": "Балаково",
+      "amenity": "theatre",
+      "building": "roof",
+      "lit": "yes",
+      "name": "Парковая эстрада",
+      "theatre:type": "amphi"
+    }
+  },
+  {
+    "type": "way",
+    "id": 703020911,
+    "center": {
+      "lat": 51.9242709,
+      "lon": 47.8157227
+    },
+    "nodes": [
+      6602177622,
+      6602177621,
+      6602177620,
+      6602177619,
+      6602177618,
+      6602177622
+    ],
+    "tags": {
+      "leisure": "park"
+    }
+  },
+  {
+    "type": "way",
+    "id": 704905451,
+    "center": {
+      "lat": 52.0370848,
+      "lon": 47.8178482
+    },
+    "nodes": [
+      6620505859,
+      6620505860,
+      6620505861,
+      6620505862,
+      6620505863,
+      6620505864,
+      6620505859
+    ],
+    "tags": {
+      "leisure": "park",
+      "name": "Парк у Новой пристани"
+    }
+  },
+  {
+    "type": "way",
+    "id": 813105416,
+    "center": {
+      "lat": 52.0179416,
+      "lon": 47.8192838
+    },
+    "nodes": [
+      7595004786,
+      7595004785,
+      1293128200,
+      7594987784,
+      7595004786
+    ],
+    "tags": {
+      "historic": "memorial",
+      "name": "В. И. Ленину"
+    }
+  },
+  {
+    "type": "way",
+    "id": 937111524,
+    "center": {
+      "lat": 52.0244886,
+      "lon": 47.8398806
+    },
+    "nodes": [
+      8683035399,
+      8683035400,
+      8683035401,
+      8683035402,
+      8683035399
+    ],
+    "tags": {
+      "addr:city": "Балаково",
+      "addr:housenumber": "6",
+      "addr:street": "Медицинский проезд",
+      "building": "yes",
+      "name": "Чайка",
+      "shop": "mall"
+    }
+  },
+  {
+    "type": "way",
+    "id": 1273633602,
+    "center": {
+      "lat": 52.0451369,
+      "lon": 47.7893821
+    },
+    "nodes": [
+      11827297431,
+      11827297427,
+      11827297426,
+      11827297425,
+      11827297430,
+      11827297423,
+      11827297424,
+      11827297429,
+      11827331080,
+      11827297431
+    ],
+    "tags": {
+      "leisure": "park"
+    }
+  },
+  {
+    "type": "relation",
+    "id": 15978830,
+    "center": {
+      "lat": 52.0099098,
+      "lon": 47.7876905
+    },
+    "members": [
+      {
+        "type": "way",
+        "ref": 51711044,
+        "role": "outer"
+      }
+    ],
+    "tags": {
+      "leisure": "park",
+      "name": "Парк аттракционов",
+      "type": "multipolygon"
+    }
+  }
+]

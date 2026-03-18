@@ -3,29 +3,21 @@ import { LlmClientService } from './llm-client.service';
 
 describe('IntentRouterService', () => {
   const createService = (llmContent: string | Error) => {
-    const create = jest.fn();
+    const chat = jest.fn();
 
     if (llmContent instanceof Error) {
-      create.mockRejectedValue(llmContent);
+      chat.mockRejectedValue(llmContent);
     } else {
-      create.mockResolvedValue({
-        choices: [{ message: { content: llmContent } }],
-      });
+      chat.mockResolvedValue(llmContent);
     }
 
     const llmClientService = {
-      client: {
-        chat: {
-          completions: {
-            create,
-          },
-        },
-      },
+      chat,
     } as unknown as LlmClientService;
 
     const service = new IntentRouterService(llmClientService);
 
-    return { service, create };
+    return { service, chat };
   };
 
   it('routes through LLM and keeps targeted_mutation for confident REMOVE_POI', async () => {
