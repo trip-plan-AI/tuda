@@ -90,7 +90,7 @@ services:
         condition: service_healthy
 
   db:
-    image: postgres:17-alpine
+    image: postgis/postgis:17-3.5-alpine
     container_name: travel-planner-db
     restart: unless-stopped
     environment:
@@ -135,7 +135,7 @@ services:
     container_name: travel-planner-redis
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
       timeout: 5s
       retries: 5
