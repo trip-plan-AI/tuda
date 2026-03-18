@@ -46,6 +46,7 @@ type Modal = 'login' | 'register' | null;
 type SearchMode = 'ai' | 'manual';
 
 interface ManualForm {
+  city: string;
   from: string;
   to: string;
   dateFrom: string;
@@ -92,7 +93,7 @@ function filterUniqueSuggestions(results: any[]): GeoSuggestion[] {
       }
     }
 
-    if (coordsKey) {
+    if (coordsKey && coordsKey !== '0.00000,0.00000') {
       if (seenCoords.has(coordsKey)) continue;
       seenCoords.add(coordsKey);
     }
@@ -153,6 +154,7 @@ export function LandingPage() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [isDesktop, setIsDesktop] = useState(false);
   const [manualForm, setManualForm] = useState<ManualForm>({
+    city: '',
     from: '',
     to: '',
     dateFrom: '',
@@ -161,13 +163,17 @@ export function LandingPage() {
   });
   const [dateFromOpen, setDateFromOpen] = useState(false);
   const [dateToOpen, setDateToOpen] = useState(false);
+  const [citySuggestions, setCitySuggestions] = useState<GeoSuggestion[]>([]);
   const [fromSuggestions, setFromSuggestions] = useState<GeoSuggestion[]>([]);
   const [toSuggestions, setToSuggestions] = useState<GeoSuggestion[]>([]);
+  const [cityDropdownOpen, setCityDropdownOpen] = useState(false);
   const [fromDropdownOpen, setFromDropdownOpen] = useState(false);
   const [toDropdownOpen, setToDropdownOpen] = useState(false);
+  const [isSearchingCity, setIsSearchingCity] = useState(false);
   const [isSearchingFrom, setIsSearchingFrom] = useState(false);
   const [isSearchingTo, setIsSearchingTo] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const debounceCityRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceFromRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceToRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createNewSession = useAiQueryStore((state) => state.createNewSession);
@@ -318,7 +324,7 @@ export function LandingPage() {
 
   const doManualSearch = async () => {
     // Manual mode
-    const title = manualForm.to || 'Мой маршрут';
+    const title = manualForm.city || manualForm.to || 'Мой маршрут';
     const budget = parseInt(manualForm.budget.replace(/\D/g, ''), 10) || 0;
 
     clearPlanner();
@@ -646,6 +652,95 @@ export function LandingPage() {
                   <div className="bg-white rounded-[2.2rem] md:rounded-[3.5rem] p-4 md:p-8 transition-none text-left">
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Город */}
+                        <div className="space-y-2 relative">
+                          <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
+                            Город
+                          </label>
+                          <Popover
+                            open={cityDropdownOpen && citySuggestions.length > 0}
+                            onOpenChange={(open) => setCityDropdownOpen(open)}
+                          >
+                            <PopoverTrigger asChild>
+                              <div className="relative">
+                                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors">
+                                  {isSearchingCity ? (
+                                    <div className="w-4 h-4 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <MapPin size={16} className="text-slate-400" />
+                                  )}
+                                </div>
+                                <input
+                                  type="text"
+                                  placeholder="Москва"
+                                  value={manualForm.city}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    setManualForm((p) => ({ ...p, city: value }));
+                                    if (value.length > 2) {
+                                      setIsSearchingCity(true);
+                                      setCityDropdownOpen(true);
+                                    } else {
+                                      setIsSearchingCity(false);
+                                      setCitySuggestions([]);
+                                      setCityDropdownOpen(false);
+                                    }
+                                    if (debounceCityRef.current)
+                                      clearTimeout(debounceCityRef.current);
+                                    debounceCityRef.current = setTimeout(() => {
+                                      void getSuggestions(
+                                        value,
+                                        setCitySuggestions,
+                                        setIsSearchingCity,
+                                      );
+                                    }, 700);
+                                  }}
+                                  onFocus={() => manualForm.city && setCityDropdownOpen(true)}
+                                  className="w-full pl-12 px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
+                                />
+                              </div>
+                            </PopoverTrigger>
+
+                            <PopoverContent
+                              align="start"
+                              sideOffset={4}
+                              onOpenAutoFocus={(e) => e.preventDefault()}
+                              onCloseAutoFocus={(e) => e.preventDefault()}
+                              className="w-[var(--radix-popover-trigger-width)] p-0 bg-white rounded-2xl shadow-lg border border-slate-200 z-50 max-h-48 overflow-y-auto"
+                            >
+                              {citySuggestions.map((suggestion, idx) => (
+                                <button
+                                  key={idx}
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    setManualForm((p) => ({ ...p, city: suggestion.displayName }));
+                                    setCityDropdownOpen(false);
+                                    setCitySuggestions([]);
+                                  }}
+                                  className="w-full text-left px-4 py-3 hover:bg-slate-100 border-b border-slate-100 last:border-0 text-sm font-medium text-slate-700 transition-none"
+                                >
+                                  {suggestion.displayName}
+                                </button>
+                              ))}
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                        {/* Бюджет */}
+                        <div className="space-y-2 relative">
+                          <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
+                            Бюджет
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="100 000 ₽"
+                            value={manualForm.budget}
+                            onChange={(e) => setManualForm((p) => ({ ...p, budget: e.target.value }))}
+                            className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Откуда */}
                         <div className="space-y-2 relative">
                           <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
@@ -666,7 +761,7 @@ export function LandingPage() {
                                 </div>
                                 <input
                                   type="text"
-                                  placeholder="Москва"
+                                  placeholder="Москва: Кремль"
                                   value={manualForm.from}
                                   onChange={(e) => {
                                     const value = e.target.value;
@@ -739,7 +834,7 @@ export function LandingPage() {
                                 </div>
                                 <input
                                   type="text"
-                                  placeholder="Алтай"
+                                  placeholder="Москва: Сокольники"
                                   value={manualForm.to}
                                   onChange={(e) => {
                                     const value = e.target.value;
@@ -793,11 +888,11 @@ export function LandingPage() {
                         </div>
                       </div>
 
-                      <div className="space-y-2">
-                        <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
-                          Даты
-                        </label>
-                        <div className="flex flex-col md:flex-row md:items-center gap-2">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
+                            Дата начала
+                          </label>
                           <Popover open={dateFromOpen} onOpenChange={setDateFromOpen}>
                             <PopoverTrigger asChild>
                               <button className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none text-left flex items-center gap-2 focus:ring-2 focus:ring-brand-blue/20">
@@ -836,11 +931,12 @@ export function LandingPage() {
                               />
                             </PopoverContent>
                           </Popover>
+                        </div>
 
-                          <span className="text-slate-400 font-bold shrink-0 text-lg hidden md:block">
-                            —
-                          </span>
-
+                        <div className="space-y-2">
+                          <label className="text-sm md:text-base font-black text-slate-700 uppercase ml-3">
+                            Дата окончания
+                          </label>
                           <Popover open={dateToOpen} onOpenChange={setDateToOpen}>
                             <PopoverTrigger asChild>
                               <button className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none text-left flex items-center gap-2 focus:ring-2 focus:ring-brand-blue/20">
@@ -881,19 +977,6 @@ export function LandingPage() {
                             </PopoverContent>
                           </Popover>
                         </div>
-                      </div>
-
-                      <div className="space-y-2 flex flex-col items-center">
-                        <label className="text-sm md:text-base font-black text-slate-700 uppercase">
-                          Бюджет
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="100 000 ₽"
-                          value={manualForm.budget}
-                          onChange={(e) => setManualForm((p) => ({ ...p, budget: e.target.value }))}
-                          className="w-full max-w-md px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20 text-center"
-                        />
                       </div>
                     </div>
                     <Button
