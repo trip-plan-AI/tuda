@@ -188,20 +188,24 @@ export class ProviderSearchService {
 
     this.logger.log(`[Stage 1] Collected ${hardPois.length} hard points.`);
 
+    // --- STAGE 1.5: Smart Enrichment ---
+    const enrichedPois = await this.applySmartEnrichment(hardPois, city);
+    this.logger.log(`[Stage 1.5] After enrichment: ${enrichedPois.length} points (was ${hardPois.length})`);
+
     // --- STAGE 2: AI Selection (Selector Mode) ---
     this.logger.log(`[Stage 2] AI Selection (Selector Mode)...`);
 
     // Dynamic City Context based on actual data (or default if no data)
     let cityContext = `Индустриальный город, важна промышленная мощь, набережные и местный колорит.`;
-    if (hardPois.length > 0) {
+    if (enrichedPois.length > 0) {
       const cityProfile = this.cityAnalyzer.analyze(
-        hardPois.map((p) => ({ tags: { tourism: p.category, ...p } })),
+        enrichedPois.map((p) => ({ tags: { tourism: p.category, ...p } })),
       );
       cityContext = cityProfile.description;
     }
 
     // Pre-clustering for geographic awareness
-    const clusterResult = this.clusteringService.clusterPois(hardPois, 1.0);
+    const clusterResult = this.clusteringService.clusterPois(enrichedPois, 1.0);
     const poiToClusterId = new Map<string, number>();
     clusterResult.clusters.forEach((c) => {
       c.poiIds.forEach((pid) => poiToClusterId.set(pid, c.id));
@@ -214,7 +218,7 @@ export class ProviderSearchService {
     };
 
     // 1. Prepare clusters for LLM with IDs
-    const cultureList = hardPois
+    const cultureList = enrichedPois
       .filter((p) =>
         [
           'museum',
@@ -229,7 +233,7 @@ export class ProviderSearchService {
         ].includes(p.category),
       )
       .slice(0, 40);
-    const natureList = hardPois
+    const natureList = enrichedPois
       .filter((p) =>
         [
           'park',
@@ -241,7 +245,7 @@ export class ProviderSearchService {
         ].includes(p.category),
       )
       .slice(0, 20);
-    const foodList = hardPois
+    const foodList = enrichedPois
       .filter((p) =>
         ['restaurant', 'cafe', 'bar', 'pub', 'fast_food'].includes(p.category),
       )
@@ -275,7 +279,7 @@ export class ProviderSearchService {
 ### OUTPUT
 Верни СТРОГО JSON. Для каждого выбранного объекта укажи, к какому АРХЕТИПУ он относится.`;
 
-    const isSmallCity = hardPois.length < 10;
+    const isSmallCity = enrichedPois.length < 10;
     const hiddenGemsTarget = isSmallCity ? '10-15' : '3-5';
 
     const selectionPrompt = `Город: ${city}
@@ -322,8 +326,8 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
       selectedIds = (parsed.selected || []).map((s: any) => s.id);
       hiddenHypotheses = parsed.hidden_gems || [];
 
-      if (selectedIds.length === 0 && hardPois.length > 0) {
-        this.logger.warn(`[Stage 2] LLM Selection returned 0 IDs. Falling back to top 15 from hardPois.`);
+      if (selectedIds.length === 0 && enrichedPois.length > 0) {
+        this.logger.warn(`[Stage 2] LLM Selection returned 0 IDs. Falling back to top 15 from enrichedPois.`);
         selectedIds = [...cultureList, ...natureList, ...foodList]
           .slice(0, 15)
           .map((p) => p.id);
@@ -339,10 +343,10 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     }
 
     // Safety Filter: оставляем только те ID, которые реально были в источнике
-    const validIdSet = new Set(hardPois.map((p) => p.id));
+    const validIdSet = new Set(enrichedPois.map((p) => p.id));
     const verifiedIds = selectedIds.filter((id) => validIdSet.has(id));
 
-    const curatedPois = hardPois.filter((p) => verifiedIds.includes(p.id));
+    const curatedPois = enrichedPois.filter((p) => verifiedIds.includes(p.id));
     this.logger.log(
       `[Stage 2] Curated ${curatedPois.length} points from Ground Truth.`,
     );
@@ -420,9 +424,9 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
       ...curatedPois,
     ]);
 
-    // If result is too small, refill from hardPois to have a healthy pool for downstream
-    if (allCandidates.length < 20 && hardPois.length > allCandidates.length) {
-      const extra = hardPois
+    // If result is too small, refill from enrichedPois to have a healthy pool for downstream
+    if (allCandidates.length < 20 && enrichedPois.length > allCandidates.length) {
+      const extra = enrichedPois
         .filter((p) => !allCandidates.some((r) => r.id === p.id))
         .slice(0, 30);
       allCandidates.push(...extra);
@@ -471,7 +475,7 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
           stats.discovery,
         ],
         totals: {
-          before_dedup: hardPois.length + verifiedHiddenPois.length,
+          before_dedup: enrichedPois.length + verifiedHiddenPois.length,
           after_dedup: allCandidates.length,
           returned: resultPois.length,
         },
@@ -521,6 +525,125 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
       Math.sin(dLat / 2) ** 2 +
       Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
     return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  // --- Smart Enrichment (Stage 1.5) ---
+  // Group A: pure category words → drop immediately
+  private readonly GENERIC_NAMES = new Set([
+    'кафе', 'ресторан', 'бар', 'паб', 'столовая', 'буфет', 'закусочная',
+    'пиццерия', 'суши', 'шаурма', 'фастфуд', 'магазин', 'супермаркет',
+    'аптека', 'банк', 'банкомат', 'отель', 'гостиница', 'хостел', 'мотель',
+    'парковка', 'заправка', 'автомойка', 'прачечная', 'химчистка',
+    'салон', 'парикмахерская', 'пляж', 'парк', 'сквер', 'стадион',
+    'спортзал', 'фитнес', 'кинотеатр', 'клуб', 'бар', 'кальянная',
+  ]);
+
+  // Group B: short (≤6) or single-word brands that look uninformative
+  private isUninformativeName(name: string): boolean {
+    const n = name.trim();
+    if (n.length <= 6) return true;
+    // Single word that doesn't look like a proper place name
+    if (!n.includes(' ') && !/[A-ZА-ЯЁ]{2,}/.test(n) && n.length <= 10) return true;
+    return false;
+  }
+
+  /**
+   * Попытка обогатить POI через Yandex suggest по координатам + названию.
+   * Возвращает enriched name или null.
+   */
+  private async enrichPoiName(
+    poi: PoiItem,
+    city: string,
+  ): Promise<string | null> {
+    try {
+      const results = await this.geosearch.suggestWithBias(
+        `${poi.name} ${city}`,
+        poi.coordinates.lat,
+        poi.coordinates.lon,
+      );
+      if (!results || results.length === 0) return null;
+
+      const best = results[0] as { displayName?: string; title?: string };
+      const fullName: string =
+        (best.title as string) || (best.displayName as string) || '';
+
+      // Only use if the enriched name is actually better (longer and contains original)
+      if (
+        fullName &&
+        fullName.length > poi.name.length + 3 &&
+        fullName.toLowerCase().includes(poi.name.toLowerCase())
+      ) {
+        return fullName.split(',')[0].trim(); // take first part before comma
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  /**
+   * Stage 1.5: Smart Enrichment
+   * - Group A (generic names like "Кафе", "Пляж") → drop
+   * - Group B (uninformative short names like "Визит") → try Yandex enrich
+   *   If enrich fails and pool is large enough → drop; else keep
+   */
+  private async applySmartEnrichment(
+    pois: PoiItem[],
+    city: string,
+  ): Promise<PoiItem[]> {
+    const ENRICH_THRESHOLD = 12; // only enrich if pool < this
+    const shouldEnrich = pois.length < ENRICH_THRESHOLD;
+
+    const groupA: PoiItem[] = [];
+    const groupB: PoiItem[] = [];
+    const clean: PoiItem[] = [];
+
+    for (const poi of pois) {
+      const lower = poi.name.toLowerCase().trim();
+      if (this.GENERIC_NAMES.has(lower)) {
+        groupA.push(poi);
+      } else if (this.isUninformativeName(poi.name)) {
+        groupB.push(poi);
+      } else {
+        clean.push(poi);
+      }
+    }
+
+    this.logger.debug(
+      `[Stage 1.5] Smart Enrichment: ${clean.length} clean, ${groupA.length} generic (drop), ${groupB.length} to enrich`,
+    );
+
+    if (groupB.length === 0) return [...clean];
+
+    // Enrich Group B in parallel
+    const enriched: PoiItem[] = [];
+    if (shouldEnrich) {
+      const results = await Promise.all(
+        groupB.map((poi) => this.enrichPoiName(poi, city)),
+      );
+      for (let i = 0; i < groupB.length; i++) {
+        const poi = groupB[i];
+        const newName = results[i];
+        if (newName) {
+          enriched.push({ ...poi, name: newName });
+          this.logger.debug(
+            `[Stage 1.5] Enriched: "${poi.name}" → "${newName}"`,
+          );
+        } else if (clean.length < 8) {
+          // Pool is too small — keep as is
+          enriched.push(poi);
+        } else {
+          this.logger.debug(`[Stage 1.5] Dropped uninformative: "${poi.name}"`);
+        }
+      }
+    } else {
+      // Pool large — just drop Group B
+      this.logger.debug(
+        `[Stage 1.5] Pool large (${pois.length}), dropping ${groupB.length} uninformative names`,
+      );
+    }
+
+    return [...clean, ...enriched];
   }
 
   private isToxicPoi(name: string): boolean {
