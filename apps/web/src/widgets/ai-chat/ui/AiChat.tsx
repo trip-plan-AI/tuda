@@ -5,7 +5,7 @@ import { Send, Bot } from 'lucide-react';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { MessageBubble } from './MessageBubble';
-import type { ChatMessage } from '@/shared/types/ai-chat';
+import type { ChatMessage, ChatRoutePlanDay } from '@/shared/types/ai-chat';
 
 interface AiChatProps {
   chatKey?: string;
@@ -25,6 +25,10 @@ interface AiChatProps {
   onDeletePoint?: (pointName: string) => Promise<void>;
   hasCollaborators?: boolean;
   onSendToAi?: (query: string) => void | Promise<void>;
+  /** Progressive streaming: thinking stage label ('collecting' | 'selecting' | 'scheduling') */
+  thinkingStage?: string | null;
+  /** Progressive streaming: days received so far via ai:day_ready */
+  streamingDays?: ChatRoutePlanDay[];
 }
 
 const DEFAULT_QUICK_ACTIONS = [
@@ -34,7 +38,13 @@ const DEFAULT_QUICK_ACTIONS = [
   'Смени город',
 ];
 
-function AiResponseSkeleton() {
+const THINKING_STAGE_TEXT: Record<string, string> = {
+  collecting: 'Ищу места и достопримечательности',
+  selecting: 'Выбираю лучшие места',
+  scheduling: 'Строю расписание по дням',
+};
+
+function AiResponseSkeleton({ stage }: { stage?: string | null }) {
   const [dots, setDots] = useState('');
 
   useEffect(() => {
@@ -44,12 +54,14 @@ function AiResponseSkeleton() {
     return () => clearInterval(interval);
   }, []);
 
+  const labelText = (stage && THINKING_STAGE_TEXT[stage]) ?? 'Подбираю лучший маршрут';
+
   return (
     <div className="flex justify-start">
       <div className="w-full max-w-[85%] rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
         <div className="mb-4 flex items-center gap-1.5">
           <span className="text-sm font-medium text-brand-indigo">
-            Подбираю лучший маршрут{dots}
+            {labelText}{dots}
           </span>
         </div>
 
@@ -70,6 +82,36 @@ function AiResponseSkeleton() {
   );
 }
 
+function StreamingDayPreview({ days }: { days: ChatRoutePlanDay[] }) {
+  return (
+    <div className="flex justify-start">
+      <div className="w-full max-w-[85%] rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center gap-1.5">
+          <span className="text-sm font-medium text-brand-indigo">Маршрут формируется...</span>
+        </div>
+        <div className="flex flex-col gap-2">
+          {days.map((day) => (
+            <div key={day.day_number} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+              <p className="text-xs font-semibold text-slate-700">
+                День {day.day_number}
+                {day.date ? ` · ${day.date}` : ''}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500 line-clamp-2">
+                {day.points
+                  .slice(0, 5)
+                  .map((pt) => pt.poi.name)
+                  .join(' · ')}
+                {day.points.length > 5 ? ` +${day.points.length - 5}` : ''}
+              </p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 h-3 w-24 animate-pulse rounded bg-slate-100" />
+      </div>
+    </div>
+  );
+}
+
 export function AiChat({
   chatKey,
   messages,
@@ -85,6 +127,8 @@ export function AiChat({
   onDeletePoint,
   hasCollaborators = false,
   onSendToAi,
+  thinkingStage = null,
+  streamingDays = [],
 }: AiChatProps) {
   const [query, setQuery] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -102,7 +146,7 @@ export function AiChat({
     }
 
     container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
-  }, [messages.length, isLoading]);
+  }, [messages.length, isLoading, streamingDays.length]);
 
   useEffect(() => {
     setQuery('');
@@ -155,7 +199,12 @@ export function AiChat({
               />
             ))}
 
-            {isLoading && <AiResponseSkeleton />}
+            {isLoading && streamingDays.length > 0 && (
+              <StreamingDayPreview days={streamingDays} />
+            )}
+            {isLoading && streamingDays.length === 0 && (
+              <AiResponseSkeleton stage={thinkingStage} />
+            )}
           </div>
         )}
       </div>

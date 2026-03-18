@@ -67,6 +67,18 @@ export class CollaborationGateway
           trip_id: event.tripId,
           session_id: event.payload?.session_id,
         });
+      } else if (event.type === 'ai:thinking') {
+        this.server.to(`trip_${event.tripId}`).emit('ai:thinking', {
+          trip_id: event.tripId,
+          session_id: event.payload?.session_id,
+          stage: event.payload?.stage,
+        });
+      } else if (event.type === 'ai:day_ready') {
+        this.server.to(`trip_${event.tripId}`).emit('ai:day_ready', {
+          trip_id: event.tripId,
+          session_id: event.payload?.session_id,
+          day: event.payload?.day,
+        });
       }
     });
   }

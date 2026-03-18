@@ -6,6 +6,7 @@
 // Если убрать этот код: пользователь будет "молча" терять старый маршрут в Planner при открытии нового из чата.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChatRoutePlanDay } from '@/shared/types/ai-chat';
 import { useRouter } from 'next/navigation';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useAiQueryStore } from '@/features/ai-query';
@@ -427,6 +428,47 @@ export function AIAssistantPage() {
 
   const [isAddPointMode, setIsAddPointMode] = useState(false);
 
+  // Progressive streaming state: populated by ai:thinking / ai:day_ready socket events
+  const [thinkingStage, setThinkingStage] = useState<string | null>(null);
+  const [streamingDays, setStreamingDays] = useState<ChatRoutePlanDay[]>([]);
+  const prevIsLoadingRef = useRef(false);
+
+  // Clear streaming state when the HTTP request completes
+  useEffect(() => {
+    if (prevIsLoadingRef.current && !isLoading) {
+      setThinkingStage(null);
+      setStreamingDays([]);
+    }
+    prevIsLoadingRef.current = isLoading;
+  }, [isLoading]);
+
+  // Subscribe to AI streaming socket events
+  useEffect(() => {
+    if (!socketTripId || socketTripId.startsWith('guest-')) return;
+
+    const socket = getSocket();
+
+    const handleThinking = (data: { trip_id: string; session_id: string; stage: string }) => {
+      setThinkingStage(data.stage);
+    };
+
+    const handleDayReady = (data: { trip_id: string; session_id: string; day: ChatRoutePlanDay }) => {
+      setStreamingDays((prev) => {
+        if (prev.some((d) => d.day_number === data.day.day_number)) return prev;
+        return [...prev, data.day];
+      });
+      setThinkingStage(null);
+    };
+
+    socket.on('ai:thinking', handleThinking);
+    socket.on('ai:day_ready', handleDayReady);
+
+    return () => {
+      socket.off('ai:thinking', handleThinking);
+      socket.off('ai:day_ready', handleDayReady);
+    };
+  }, [socketTripId]);
+
   const handleAddPointFromMap = useCallback(
     async (coords: { lat: number; lon: number }) => {
       const tripId = activeSession?.tripId;
@@ -613,6 +655,8 @@ export function AIAssistantPage() {
             appliedTripId={activeSession?.tripId ?? null}
             hasCollaborators={hasCollaborators}
             onSendToAi={(query) => sendQuery(query, activeSession?.tripId ?? undefined)}
+            thinkingStage={thinkingStage}
+            streamingDays={streamingDays}
           />
 
           <div className="mt-3 flex flex-wrap justify-end gap-3">

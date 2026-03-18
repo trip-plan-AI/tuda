@@ -485,6 +485,7 @@ export class SchedulerService {
   buildPlan(
     pois: FilteredPoi[],
     intent: ParsedIntent & { city_from?: string; city_to?: string },
+    onDayReady?: (day: PlanDay) => void,
   ): RoutePlan {
     this.logger.log(
       `Building plan v7 (Contextual Wisdom) for ${intent.days} days...`,
@@ -1192,14 +1193,16 @@ export class SchedulerService {
         lastPoiFromPrevDay = points[points.length - 1].poi as FilteredPoi;
       }
 
-      days.push({
+      const builtDay: PlanDay = {
         day_number: dayNumber,
         date: currentDateStr,
         day_budget_estimated: dayCost,
         day_start_time: intent.start_time,
         day_end_time: intent.end_time,
         points,
-      });
+      };
+      days.push(builtDay);
+      onDayReady?.(builtDay);
     }
 
     // Если маршрут мульти-городской, склеиваем название

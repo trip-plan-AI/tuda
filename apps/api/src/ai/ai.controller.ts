@@ -1069,7 +1069,16 @@ ${JSON.stringify(points)}
       intentRouterDecision.action_type === 'NEW_ROUTE' || !existingRoutePlan;
 
     if (isNewRouteRequested) {
-      routePlan = this.schedulerService.buildPlan(selectedForScheduler, intent);
+      if (session.tripId && session.id) {
+        this.eventsService.emitAiThinking(session.tripId, session.id, 'scheduling');
+      }
+      routePlan = this.schedulerService.buildPlan(
+        selectedForScheduler,
+        intent,
+        session.tripId && session.id
+          ? (day) => this.eventsService.emitAiDayReady(session.tripId!, session.id, day)
+          : undefined,
+      );
 
       // TRI-115: Storytelling - анализируем город и генерируем объяснение
       try {
