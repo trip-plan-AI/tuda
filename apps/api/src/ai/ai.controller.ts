@@ -34,7 +34,7 @@ import { PolicyService } from './pipeline/policy.service';
 import { LogicalIdFilterService } from './pipeline/logical-id-filter.service';
 import { VectorPrefilterService } from './pipeline/vector-prefilter.service';
 import { DeterministicPlannerService } from './pipeline/deterministic-planner.service';
-import { YandexBatchRefinementService } from './pipeline/yandex-batch-refinement.service';
+import { LlmBatchRefinementService } from './pipeline/llm-batch-refinement.service';
 import { LogicalIdSelectorService } from './pipeline/logical-id-selector.service';
 import type { SessionMessage } from './types/pipeline.types';
 import type { RoutePlan, PlanDay } from './types/pipeline.types';
@@ -66,6 +66,8 @@ import { PointMutationService } from './services/point-mutation.service';
 import { PointMutation } from './types/mutations';
 import { CollaborationEventsService } from '../collaboration/collaboration-events.service';
 import { GeocodingFallbackService } from './services/geocoding-fallback.service';
+import { CityAnalyzerService } from './pipeline/city-analyzer.service';
+import { LlmExplainerService } from './pipeline/llm-explainer.service';
 
 @Controller('ai')
 @UseGuards(JwtAuthGuard)
@@ -116,22 +118,17 @@ export class AiController {
     private readonly logicalIdFilterService: LogicalIdFilterService,
     private readonly vectorPrefilterService: VectorPrefilterService,
     private readonly deterministicPlannerService: DeterministicPlannerService,
-    private readonly yandexBatchRefinementService: YandexBatchRefinementService,
+    private readonly llmBatchRefinementService: LlmBatchRefinementService,
     private readonly logicalIdSelectorService: LogicalIdSelectorService,
     private readonly mutationParser: MutationParserService,
     private readonly pointMutationService: PointMutationService,
     private readonly eventsService: CollaborationEventsService,
     private readonly geocodingFallbackService: GeocodingFallbackService,
+    private readonly analyzer: CityAnalyzerService,
+    private readonly explainer: LlmExplainerService,
   ) {}
 
-  private isNeedCityError(error: unknown): boolean {
-    // TRI-106 / MERGE-GUARD
-    // 1) Ветка: fix/TRI-106-ai-session-isolation-need-city
-    // 2) Потребность: отделить доменную ошибку NEED_CITY от остальных 422, чтобы
-    //    сохранять контекст сессии и отдавать клиенту предсказуемый payload.
-    // 3) Если убрать: контроллер не перехватит NEED_CITY из orchestrator, сессия не сохранит
-    //    clarify-диалог, а UI потеряет continuity между сообщениями.
-    // 4) В этом блоке ранее не было веточного комментария; прямого конфликта со старым комментарием нет.
+  private isLocationError(error: unknown): boolean {
     if (!(error instanceof UnprocessableEntityException)) return false;
 
     const response = error.getResponse();
@@ -141,7 +138,8 @@ export class AiController {
       !!response &&
       typeof response === 'object' &&
       'code' in response &&
-      (response as { code?: unknown }).code === 'NEED_CITY'
+      ((response as { code?: unknown }).code === 'NEED_CITY' ||
+        (response as { code?: unknown }).code === 'LOCATION_NOT_FOUND')
     );
   }
 
@@ -363,8 +361,11 @@ export class AiController {
 
     for (const item of items) {
       // Use a normalized version of the name and city for comparison to be more robust
-      const normalizedName = item.name.toLowerCase().replace(/\s+/g, ' ').trim();
-      
+      const normalizedName = item.name
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+
       if (!seenNames.has(normalizedName)) {
         seenNames.add(normalizedName);
         uniqueItems.push(item);
@@ -576,7 +577,7 @@ ${JSON.stringify(points)}
 
   @Post('sessions')
   async createSession(
-    @Body() dto: { trip_id?: string },
+    @Body() dto: { trip_id?: string; title?: string },
     @CurrentUser() user: { id: string },
   ) {
     // TRI-106 / MERGE-GUARD
@@ -589,6 +590,7 @@ ${JSON.stringify(points)}
       tripId: dto.trip_id,
       userId: user.id,
       sessionId: undefined,
+      title: dto.title,
     });
 
     return {
@@ -609,6 +611,19 @@ ${JSON.stringify(points)}
       sessionId: dto.session_id,
     });
     const history = session.messages;
+
+    // Guard Layer: Deduplication
+    const lastUserMessage = [...history].reverse().find((m) => m.role === 'user');
+    if (lastUserMessage && lastUserMessage.content.trim() === dto.user_query.trim()) {
+      this.logger.warn(`Duplicate message detected for session ${session.id}: "${dto.user_query}"`);
+      // Optionally, we could just return the last plan. Here we throw to avoid re-running the heavy pipeline.
+      throw new UnprocessableEntityException({
+        code: 'DUPLICATE_MESSAGE',
+        message: 'Похоже, вы только что отправили этот же запрос.',
+        session_id: session.id,
+      });
+    }
+
     const llmContext = history.slice(-10);
     const orchestratorStart = Date.now();
     const existingRoutePlan = this.extractCurrentRoutePlan(history);
@@ -633,24 +648,28 @@ ${JSON.stringify(points)}
       `Intent router decision: ${JSON.stringify(intentRouterDecision)}`,
     );
 
-    let intent: ParsedIntent;
-    try {
-      intent = await this.orchestratorService.parseIntent(
-        dto.user_query,
-        llmContext,
-      );
-    } catch (error) {
-      // TRI-106 / MERGE-GUARD
-      if (!this.isNeedCityError(error)) {
-        throw error;
-      }
+    // Guard Layer: Anti-Spam
+    if (intentRouterDecision.fallback_reason === 'SPAM_BLOCKED') {
+      throw new UnprocessableEntityException({
+        code: 'SPAM_BLOCKED',
+        message: 'Сообщение заблокировано системой безопасности.',
+        session_id: session.id,
+      });
+    }
 
+    // Guard Layer: Off-topic / Small talk
+    if (
+      intentRouterDecision.action_type === 'OFF_TOPIC' ||
+      intentRouterDecision.action_type === 'SMALL_TALK'
+    ) {
+      const fallbackMsg = 'Я помогаю с планированием маршрутов и поездок. Можешь уточнить, в каком городе ты хочешь маршрут или какие места найти? 🙂';
+      
       const clarificationMessages: SessionMessage[] = [
         ...history,
         { role: 'user' as const, content: dto.user_query },
         {
           role: 'assistant' as const,
-          content: this.needCityMessage,
+          content: fallbackMsg,
         },
       ];
 
@@ -664,8 +683,47 @@ ${JSON.stringify(points)}
       }
 
       throw new UnprocessableEntityException({
-        code: 'NEED_CITY',
-        message: this.needCityMessage,
+        code: 'OFF_TOPIC',
+        message: fallbackMsg,
+        session_id: session.id,
+      });
+    }
+
+    let intent: ParsedIntent;
+    try {
+      intent = await this.orchestratorService.parseIntent(
+        dto.user_query,
+        llmContext,
+      );
+    } catch (error) {
+      if (!this.isLocationError(error)) {
+        throw error;
+      }
+
+      const errorResponse = (error as UnprocessableEntityException).getResponse() as any;
+      const clarificationMsg = errorResponse.message || this.needCityMessage;
+
+      const clarificationMessages: SessionMessage[] = [
+        ...history,
+        { role: 'user' as const, content: dto.user_query },
+        {
+          role: 'assistant' as const,
+          content: clarificationMsg,
+        },
+      ];
+
+      await this.aiSessionsService.saveMessages(
+        session.id,
+        clarificationMessages,
+      );
+
+      if (session.tripId) {
+        this.eventsService.emitTripRefresh(session.tripId);
+      }
+
+      throw new UnprocessableEntityException({
+        code: errorResponse.code || 'NEED_CITY',
+        message: clarificationMsg,
         session_id: session.id,
       });
     }
@@ -675,6 +733,36 @@ ${JSON.stringify(points)}
       throw new UnprocessableEntityException({
         code: 'NEED_CITY',
         message: this.needCityMessage,
+      });
+    }
+
+    const hasMultipleCitiesInArray = intent.cities && intent.cities.length > 1;
+    const hasDifferentFromAndTo = intent.city_from && intent.city_to && intent.city_from !== intent.city_to;
+
+    if (hasMultipleCitiesInArray || hasDifferentFromAndTo) {
+      const multiCityMessage = 'Я могу построить маршрут по местам в рамках одного города. Пожалуйста, укажите его название.';
+      const clarificationMessages: SessionMessage[] = [
+        ...history,
+        { role: 'user' as const, content: dto.user_query },
+        {
+          role: 'assistant' as const,
+          content: multiCityMessage,
+        },
+      ];
+
+      await this.aiSessionsService.saveMessages(
+        session.id,
+        clarificationMessages,
+      );
+
+      if (session.tripId) {
+        this.eventsService.emitTripRefresh(session.tripId);
+      }
+
+      throw new UnprocessableEntityException({
+        code: 'MULTI_CITY_NOT_SUPPORTED',
+        message: multiCityMessage,
+        session_id: session.id,
       });
     }
 
@@ -705,113 +793,176 @@ ${JSON.stringify(points)}
       policySnapshot.user_persona_summary ?? dto.user_query;
 
     if (!skipSearch) {
-      const providerResult = await this.providerSearchService.fetchAndFilter(
-        intent,
-        fallbacks,
-      );
-      rawPoi = providerResult.pois;
-      massCollectionShadowMeta = providerResult.shadowDiagnostics ?? {
-        provider_stats: [],
+      /*
+      const citiesToSearch =
+        intent.cities && intent.cities.length > 0
+          ? intent.cities
+          : intent.city_to
+            ? [intent.city_from || intent.city, intent.city_to]
+            : [intent.city];
+      */
+      const citiesToSearch = [intent.city];
+
+      const allStats: any[] = [];
+      let totalBeforeDedup = 0;
+      const allSuccessfullyGeocoded: FilteredPoi[] = [];
+
+      const cityPromises = citiesToSearch.map(async (cityName) => {
+        this.logger.log(`[PIPELINE] Starting city task: ${cityName}`);
+        // Распределяем дни для поиска (для мульти-сити берем пропорционально)
+        // const cityDays = Math.ceil(intent.days / citiesToSearch.length);
+        const cityDays = intent.days;
+        const cityIntent = { ...intent, city: cityName, days: cityDays };
+
+        // 1. Provider Search
+        const providerResult = await this.providerSearchService.fetchAndFilter(
+          cityIntent,
+          fallbacks,
+        );
+        const cityRawPois = providerResult.pois.map((p) => ({
+          ...p,
+          city_name: cityName,
+        }));
+
+        // 2. Vector Prefilter (Shadow)
+        const personaSummary =
+          policySnapshot.user_persona_summary ?? dto.user_query;
+        await this.vectorPrefilterService.runShadowPrefilter(
+          personaSummary,
+          cityRawPois,
+          this.resolveVectorTopK(),
+        );
+
+        // 3. Logical Selection
+        const reserveFactor = 3;
+        const baseTarget = cityDays * 4;
+        const logicalTarget = Math.min(
+          Math.max(baseTarget * reserveFactor, 15),
+          cityRawPois.length,
+        );
+
+        const logicalSelectorResult =
+          await this.logicalIdSelectorService.selectIds({
+            candidates: cityRawPois.map((poi) => ({
+              id: poi.id,
+              name: poi.name,
+              category: poi.category,
+            })),
+            required_capacity: logicalTarget,
+            food_policy: policySnapshot.food_policy,
+          });
+        const selectedIdSet = new Set(logicalSelectorResult.selected_ids);
+        const logicalSelectedPool = cityRawPois.filter((poi) =>
+          selectedIdSet.has(poi.id),
+        );
+
+        // 4. Semantic Selection
+        const citySelected = await this.semanticFilterService.select(
+          logicalSelectedPool,
+          cityIntent,
+          fallbacks,
+        );
+
+        // 5. Geocoding
+        const geocodedResult =
+          await this.geocodingFallbackService.geocodePointsWithFallback(
+            citySelected.map((point) => ({
+              id: point.id,
+              name: point.name,
+              coordinates: point.coordinates,
+              city_name: cityName,
+            })),
+            cityName,
+          );
+
+        const geocodedPois: FilteredPoi[] = [];
+        for (const point of citySelected) {
+          if (geocodedResult.has(point.id)) {
+            const coords = geocodedResult.get(point.id)!;
+            geocodedPois.push({
+              ...point,
+              city_name: cityName,
+              coordinates: {
+                ...point.coordinates,
+                lat: coords.lat,
+                lon: coords.lon,
+              },
+            });
+          }
+        }
+
+        return {
+          cityName,
+          rawPois: cityRawPois,
+          geocodedPois,
+          stats: providerResult.shadowDiagnostics,
+        };
+      });
+
+      let cityResults;
+      try {
+        cityResults = await Promise.all(cityPromises);
+      } catch (error) {
+        if (!this.isLocationError(error)) {
+          throw error;
+        }
+
+        const errorResponse = (error as UnprocessableEntityException).getResponse() as any;
+        const clarificationMsg = errorResponse.message || this.needCityMessage;
+
+        const clarificationMessages: SessionMessage[] = [
+          ...history,
+          { role: 'user' as const, content: dto.user_query },
+          {
+            role: 'assistant' as const,
+            content: clarificationMsg,
+          },
+        ];
+
+        await this.aiSessionsService.saveMessages(
+          session.id,
+          clarificationMessages,
+        );
+
+        if (session.tripId) {
+          this.eventsService.emitTripRefresh(session.tripId);
+        }
+
+        throw new UnprocessableEntityException({
+          code: errorResponse.code || 'NEED_CITY',
+          message: clarificationMsg,
+          session_id: session.id,
+        });
+      }
+
+      for (const res of cityResults) {
+        rawPoi.push(...res.rawPois);
+        allSuccessfullyGeocoded.push(...res.geocodedPois);
+        if (res.stats) {
+          allStats.push(...res.stats.provider_stats);
+          totalBeforeDedup += res.stats.totals.before_dedup;
+        }
+      }
+
+      massCollectionShadowMeta = {
+        provider_stats: allStats,
         totals: {
-          before_dedup: rawPoi.length,
+          before_dedup: totalBeforeDedup,
           after_dedup: rawPoi.length,
           returned: rawPoi.length,
         },
       };
       providerDuration = Date.now() - providerStart;
 
-      const personaSummary =
-        policySnapshot.user_persona_summary ?? dto.user_query;
-      vectorPrefilterShadowMeta =
-        await this.vectorPrefilterService.runShadowPrefilter(
-          personaSummary,
-          rawPoi,
-          this.resolveVectorTopK(),
-        );
-
-      // RESERVE POOL: We need more candidates to have a backup in case geocoding fails
-      const reserveFactor = 3;
-      const baseTarget = intent.days * 4;
-      const logicalTarget = Math.min(Math.max(baseTarget * reserveFactor, 20), rawPoi.length);
-
-      logicalSelectorResult = await this.logicalIdSelectorService.selectIds({
-        candidates: rawPoi.map((poi) => ({
-          id: poi.id,
-          name: poi.name,
-          category: poi.category,
-        })),
-        required_capacity: logicalTarget,
-        food_policy: policySnapshot.food_policy,
-      });
-      const selectedIdSet = new Set(logicalSelectorResult.selected_ids);
-      logicalSelectedPool = rawPoi.filter((poi) => selectedIdSet.has(poi.id));
-
-      const enrichedWithLogicalIds =
-        this.logicalIdFilterService.attachLogicalIds(rawPoi, intent.city);
-      const duplicateGroups =
-        this.logicalIdFilterService.analyzeDuplicatesByLogicalId(
-          enrichedWithLogicalIds,
-        );
-
-      logicalIdShadowMeta = {
-        total_candidates: enrichedWithLogicalIds.length,
-        duplicates_groups: duplicateGroups.length,
-        duplicates_total: duplicateGroups.reduce(
-          (sum, group) => sum + group.count,
-          0,
-        ),
-      };
-
       const semanticStart = Date.now();
-      selected = await this.semanticFilterService.select(
-        logicalSelectedPool,
-        intent,
-        fallbacks,
-      );
-
-      this.logger.log(
-        `Ranked POIs from AI: ${selected.length}. Starting batch geocoding with Reserve Pool...`,
-      );
-
-      // --- RESERVE POOL / BUCKET FILLING LOGIC ---
-      // Мы геокодируем ВСЕ отобранные AI точки, чтобы иметь максимальный резерв для планировщика
-      // и компенсировать возможные потери при уточнении (Yandex Refinement) или валидации.
-      const geocodedResult = await this.geocodingFallbackService.geocodePointsWithFallback(
-        selected.map((point) => ({
-          id: point.id,
-          name: point.name,
-          coordinates: point.coordinates,
-        })),
-        intent.city,
-      );
-
-      const successfullyGeocoded: FilteredPoi[] = [];
-      for (const point of selected) {
-        if (geocodedResult.has(point.id)) {
-          const coords = geocodedResult.get(point.id)!;
-          successfullyGeocoded.push({
-            ...point,
-            coordinates: {
-              ...point.coordinates,
-              lat: coords.lat,
-              lon: coords.lon,
-            },
-          });
-        }
-      }
-
-      this.logger.log(
-        `[GEOCODING] Successfully geocoded ${successfullyGeocoded.length}/${selected.length} points.`,
-      );
-
-      yandexPersonaSummary =
-        policySnapshot.user_persona_summary ?? dto.user_query;
-      selectedForScheduler = successfullyGeocoded;
+      // Dedup before refinement to avoid 3x same POI in batches
+      const dedupedForRefinement = this.removeDuplicatePoi(allSuccessfullyGeocoded);
+      selectedForScheduler = dedupedForRefinement;
 
       try {
         const refinementResult =
-          await this.yandexBatchRefinementService.refineSelectedInBatches(
-            successfullyGeocoded,
+          await this.llmBatchRefinementService.refineSelectedInBatches(
+            dedupedForRefinement,
             yandexPersonaSummary,
             { intent },
           );
@@ -878,6 +1029,8 @@ ${JSON.stringify(points)}
       days: RoutePlan['days'],
     ): RoutePlan => ({
       city,
+      cities: intent.cities,
+      route_type: intent.route_type,
       days,
       total_budget_estimated: days.reduce(
         (sum, day) => sum + (day.day_budget_estimated ?? 0),
@@ -892,6 +1045,21 @@ ${JSON.stringify(points)}
 
     if (isNewRouteRequested) {
       routePlan = this.schedulerService.buildPlan(selectedForScheduler, intent);
+
+      // TRI-115: Storytelling - анализируем город и генерируем объяснение
+      try {
+        const cityProfile = this.analyzer.analyze(rawPoi);
+        const storytelling = await this.explainer.explainRoute(
+          intent.cities && intent.cities.length > 1
+            ? intent.cities.join(' - ')
+            : intent.city,
+          routePlan.days,
+          cityProfile,
+        );
+        (mutationMeta as any).storytelling = storytelling;
+      } catch (err) {
+        this.logger.warn(`Storytelling failed: ${err}`);
+      }
     } else {
       // Сохраняем старые точки для всех остальных типов действий (ADD_POI, REPLACE_POI, APPLY_GLOBAL_FILTER и т.д.)
       const oldPois = existingRoutePlan.days.flatMap((d) =>
@@ -1034,7 +1202,7 @@ ${JSON.stringify(points)}
               break;
             }
 
-            const rebuiltDays = existingRoutePlan!.days.map((day) => {
+            const rebuiltDays = existingRoutePlan.days.map((day) => {
               // Удаляем точку и пересчитываем времена оставшихся (без пересортировки)
               const filteredPoints = day.points.filter(
                 (point) => point.poi_id !== targetPoiId,
@@ -1073,7 +1241,7 @@ ${JSON.stringify(points)}
             });
 
             routePlan = buildRoutePlanFromDays(
-              existingRoutePlan!.city,
+              existingRoutePlan.city,
               rebuiltDays,
             );
             mutationMeta.mutation_applied = true;
@@ -1203,7 +1371,7 @@ ${JSON.stringify(points)}
             }
 
             const replacement =
-              await this.yandexBatchRefinementService.chooseReplacementAlternative(
+              await this.llmBatchRefinementService.chooseReplacementAlternative(
                 nearestSameCategory,
                 yandexPersonaSummary,
                 {
@@ -1315,21 +1483,40 @@ ${JSON.stringify(points)}
       });
     }
 
-    const droppedPoiNames = (mutationMeta as any).dropped_poi_names as string[] | undefined;
-    const isSpecificMutation = intentRouterDecision.action_type === 'ADD_POI' || intentRouterDecision.action_type === 'REPLACE_POI';
+    const droppedPoiNames = (mutationMeta as any).dropped_poi_names as
+      | string[]
+      | undefined;
+    const isSpecificMutation =
+      intentRouterDecision.action_type === 'ADD_POI' ||
+      intentRouterDecision.action_type === 'REPLACE_POI';
 
     if (isSpecificMutation && droppedPoiNames && droppedPoiNames.length > 0) {
       const warningText = `⚠️ К сожалению, мне не удалось найти точные координаты для: ${droppedPoiNames.join(', ')}. Эти точки не были добавлены.`;
-      
+
       assistantMessages.push({
         role: 'assistant' as const,
         content: warningText,
       });
     }
 
+    const statsSummary = massCollectionShadowMeta?.provider_stats
+      .filter((s) => s.attempted)
+      .map((s) => `${s.provider}: ${s.raw_count}`)
+      .join(', ');
+
+    const totalPointsGenerated = routePlan.days.flatMap((d) => d.points).length;
+    let warningPrefix = '';
+    if (totalPointsGenerated > 0 && totalPointsGenerated < intent.days * 2 && isNewRouteRequested) {
+      warningPrefix = `⚠️ В городе ${intent.city} мало известных мест, нашел только ${totalPointsGenerated}. Маршрут может быть короче.\n\n`;
+    }
+
+    const assistantContent = statsSummary
+      ? `${warningPrefix}Маршрут готов (Источники: ${statsSummary})`
+      : `${warningPrefix}Маршрут готов`;
+
     assistantMessages.push({
       role: 'assistant' as const,
-      content: 'Маршрут готов',
+      content: assistantContent,
       route_plan: routePlan,
     });
 
@@ -1341,9 +1528,12 @@ ${JSON.stringify(points)}
       `Final plan for ${intent.city}: ${routePlan.days.flatMap((d) => d.points).length} points.`,
     );
     routePlan.days.forEach((d) => {
+      this.logger.log(
+        `  === День ${d.day_number} (${d.date || 'без даты'}) ===`,
+      );
       d.points.forEach((p) => {
         this.logger.log(
-          `  [POINT] ${p.poi.name}: ${p.poi.coordinates?.lat}, ${p.poi.coordinates?.lon}`,
+          `    [POINT] ${p.poi.name}: ${p.poi.coordinates?.lat}, ${p.poi.coordinates?.lon}`,
         );
       });
     });
@@ -1841,9 +2031,10 @@ ${JSON.stringify(points)}
     // Step 2: If provider returned too few POI, supplement with LLM
     if (pois.length < 10) {
       const t1 = Date.now();
-      const llmPois = await this.semanticFilterService.selectWithOpenRouter(
+      const llmPois = await this.semanticFilterService.select(
         pois,
         intent,
+        fallbacks,
       );
       const llmDuration = Date.now() - t1;
       pois = llmPois;

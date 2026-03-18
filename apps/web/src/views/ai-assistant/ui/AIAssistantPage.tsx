@@ -11,7 +11,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useAiQueryStore } from '@/features/ai-query';
 import { useShallow } from 'zustand/react/shallow';
 import { useTripStore } from '@/entities/trip';
-import { useCollaborationSocket, CollaboratorsAvatarGroup, useChatSync } from '@/features/route-collaborate';
+import { useCollaborationSocket, CollaboratorsAvatarGroup, useChatSync, useCollaborateStore } from '@/features/route-collaborate';
 import { AiChat } from '@/widgets/ai-chat';
 import { Button } from '@/shared/ui/button';
 import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
@@ -22,7 +22,7 @@ import { pointsApi } from '@/entities/route-point';
 import { clearConfig, setConfig } from '@/features/persistent-map';
 import { getSocket } from '@/shared/socket/socket-client';
 
-const AI_QUICK_ACTIONS = ['Сделать дешевле', 'Добавить больше музеев', 'Убрать пешие прогулки'];
+const AI_QUICK_ACTIONS = ['Сделать дешевле', 'Добавить больше музеев'];
 
 export function AIAssistantPage() {
   const router = useRouter();
@@ -180,7 +180,9 @@ export function AIAssistantPage() {
     // Транслируем сообщение другим участникам комнаты, используя единый ID
     sendChatMessage(query, messageId);
 
-    const isAiRequest = query.startsWith('/ai');
+    // Если один участник — все сообщения идут в AI.
+    // Если 2+ — только /ai префикс вызывает AI, остальное в чат коллаборантов.
+    const isAiRequest = !hasCollaborators || query.startsWith('/ai');
 
     if (isAiRequest) {
       const cleanQuery = query.replace(/^\/ai\s*/, '').trim() || query;
@@ -420,6 +422,8 @@ export function AIAssistantPage() {
   const socketTripId = activeSession?.tripId || '';
   useCollaborationSocket(socketTripId);
   const { sendChatMessage } = useChatSync(socketTripId);
+  const onlineUserIds = useCollaborateStore((s) => s.onlineUserIds);
+  const hasCollaborators = onlineUserIds.length > 1;
 
   const [isAddPointMode, setIsAddPointMode] = useState(false);
 
@@ -480,12 +484,12 @@ export function AIAssistantPage() {
     <div className="min-h-full w-full">
       <div className="mx-auto flex w-full max-w-6xl gap-4 px-4 py-6 md:px-6 md:py-10">
         <aside className="hidden w-72 flex-col rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:flex sticky top-20 self-start max-h-[calc(100vh-100px)]">
-          {activeSession?.tripId && (
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-brand-indigo">Кто в маршруте</h3>
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-brand-indigo">Кто в маршруте</h3>
+            {activeSession?.tripId && (
               <CollaboratorsAvatarGroup tripId={activeSession.tripId} />
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-sm font-bold text-brand-indigo">Чаты маршрутов</h3>
@@ -607,6 +611,8 @@ export function AIAssistantPage() {
             quickActions={AI_QUICK_ACTIONS}
             hasLinkedTrip={Boolean(activeSession?.tripId)}
             appliedTripId={activeSession?.tripId ?? null}
+            hasCollaborators={hasCollaborators}
+            onSendToAi={(query) => sendQuery(query, activeSession?.tripId ?? undefined)}
           />
 
           <div className="mt-3 flex flex-wrap justify-end gap-3">

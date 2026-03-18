@@ -25,104 +25,19 @@ export class SemanticFilterService {
 
   constructor(private readonly llmClientService: LlmClientService) {}
 
-  async compareProviders(
-    pois: PoiItem[],
-    intent: ParsedIntent,
-  ): Promise<{
-    yandex: { pois: FilteredPoi[]; error?: string; duration_ms: number };
-    openrouter: { pois: FilteredPoi[]; error?: string; duration_ms: number };
-  }> {
-    const [yandexResult, openrouterResult] = await Promise.allSettled([
-      (async () => {
-        const t0 = Date.now();
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 30000);
-        try {
-          const apiKey = process.env.YANDEX_GPT_API_KEY;
-          const folderId = process.env.YANDEX_FOLDER_ID;
-          if (!apiKey || !folderId) throw new Error('Missing YandexGPT env');
-
-          const prompt = this.buildPrompt(pois, intent);
-          const response = await fetch(
-            'https://llm.api.cloud.yandex.net/foundationModels/v1/completion',
-            {
-              method: 'POST',
-              headers: {
-                Authorization: `Api-Key ${apiKey}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                modelUri: `gpt://${folderId}/yandexgpt-lite`,
-                completionOptions: {
-                  stream: false,
-                  temperature: 0.2,
-                  maxTokens: 2000,
-                },
-                messages: [{ role: 'user', text: prompt }],
-              }),
-              signal: controller.signal,
-            },
-          );
-          if (!response.ok)
-            throw new Error(`YandexGPT HTTP ${response.status}`);
-
-          const payload = (await response.json()) as {
-            result?: { alternatives?: Array<{ message?: { text?: string } }> };
-          };
-          const rawText =
-            payload.result?.alternatives?.[0]?.message?.text ?? '{}';
-          const jsonText = rawText.replace(/```json\n?|\n?```/g, '');
-          const parsed = JSON.parse(jsonText) as ExtendedFilteredPoiResponse;
-
-          const selectedRaw = Array.isArray(parsed.selected)
-            ? parsed.selected
-            : Array.isArray(parsed.rankedPois)
-              ? parsed.rankedPois
-              : [];
-
-          const selected = selectedRaw
-            .map((item) => {
-              const original = this.resolvePoiByModelId(pois, item.id);
-              if (!original) return null;
-              return {
-                ...original,
-                description: item.description || item.reason || '',
-              };
-            })
-            .filter((item): item is FilteredPoi => item !== null);
-
-          return { pois: selected, duration_ms: Date.now() - t0 };
-        } catch (e) {
-          if (e instanceof Error && e.name === 'AbortError') {
-            throw new Error('YandexGPT request timed out');
-          }
-          throw e;
-        } finally {
-          clearTimeout(timer);
-        }
-      })(),
-      (async () => {
-        const t0 = Date.now();
-        const result = await this.selectWithOpenRouter(pois, intent);
-        return { pois: result, duration_ms: Date.now() - t0 };
-      })(),
-    ]);
-
-    const toResult = (
-      r: PromiseSettledResult<{ pois: FilteredPoi[]; duration_ms: number }>,
-    ) =>
-      r.status === 'fulfilled'
-        ? r.value
-        : {
-            pois: [],
-            error: String((r as PromiseRejectedResult).reason),
-            duration_ms: 0,
-          };
-
-    return {
-      yandex: toResult(yandexResult),
-      openrouter: toResult(openrouterResult),
-    };
+  private safeParseJson<T>(content: string | null): T {
+    if (!content) return {} as T;
+    let clean = content.trim();
+    // Убираем возможную разметку markdown
+    clean = clean.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    // Убираем висящие запятые (trailing commas), которые GPT-4o-mini часто оставляет
+    clean = clean.replace(/,\s*([\]}])/g, '$1');
+    try {
+      return JSON.parse(clean) as T;
+    } catch (error) {
+      this.logger.error(`[safeParseJson] Error parsing JSON: ${error}. Raw content: ${content.substring(0, 100)}...`);
+      return {} as T;
+    }
   }
 
   async select(
@@ -130,149 +45,89 @@ export class SemanticFilterService {
     intent: ParsedIntent,
     fallbacks: string[],
   ): Promise<FilteredPoi[]> {
-    this.logger.log(
-      `Starting semantic filter for ${pois.length} points (Reserve Pool mode)...`,
+    if (pois.length === 0) {
+      return this.generatePoiFromScratch(intent);
+    }
+
+    const isCis = this.llmClientService.isCisRegion(
+      intent.country_code,
+      intent.city,
     );
-    const prompt = this.buildPrompt(pois, intent);
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30000);
+    const messages: ChatCompletionMessageParam[] = [
+      {
+        role: 'system',
+        content:
+          'Ты — эксперт по планированию путешествий. Твоя задача — отобрать и отранжировать лучшие места для туриста. Верни ответ СТРОГО в формате JSON. Не используй лишних слов, пояснений и разметки markdown вне JSON. СТРОГО соблюдай синтаксис JSON: никаких лишних запятых перед закрывающими скобками.',
+      },
+      {
+        role: 'user',
+        content: this.buildPrompt(pois, intent),
+      },
+    ];
 
-    const t0 = Date.now();
     try {
-      this.logger.log(`Calling YandexGPT API for ranked selection...`);
-      const apiKey = process.env.YANDEX_GPT_API_KEY;
-      const folderId = process.env.YANDEX_FOLDER_ID;
+      const content = await this.llmClientService.chat(messages, {
+        jsonMode: true,
+        isCis,
+        maxTokens: 3000,
+      });
 
-      if (!apiKey || !folderId) {
-        throw new Error('Missing YandexGPT env');
-      }
-
-      const response = await fetch(
-        'https://llm.api.cloud.yandex.net/foundationModels/v1/completion',
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Api-Key ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            modelUri: `gpt://${folderId}/yandexgpt-lite`,
-            completionOptions: {
-              stream: false,
-              temperature: 0.2,
-              maxTokens: 3000,
-            },
-            messages: [{ role: 'user', text: prompt }],
-          }),
-          signal: controller.signal,
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error(`YandexGPT HTTP ${response.status}`);
-      }
-
-      const payload = (await response.json()) as {
-        result?: { alternatives?: Array<{ message?: { text?: string } }> };
-      };
-
-      const rawText = payload.result?.alternatives?.[0]?.message?.text ?? '{}';
-      const jsonText = rawText.replace(/```json\n?|\n?```/g, '');
-      const parsed = JSON.parse(jsonText) as ExtendedFilteredPoiResponse;
-
+      const parsed = this.safeParseJson<ExtendedFilteredPoiResponse>(content);
       const selectedRaw = Array.isArray(parsed.selected)
         ? parsed.selected
         : Array.isArray(parsed.rankedPois)
           ? parsed.rankedPois
           : [];
 
-      const selected = selectedRaw
+      return selectedRaw
         .map((item) => {
           const original = this.resolvePoiByModelId(pois, item.id);
           if (!original) return null;
-
           return {
             ...original,
-            description: item.description || item.reason || '',
+            description:
+              item.description || item.reason || original.description || '',
           };
         })
         .filter((item): item is FilteredPoi => item !== null);
-
-      const duration = Date.now() - t0;
-      this.logger.log(
-        `Mapped ${selected.length} ranked points for geocoding pipeline in ${duration}ms.`,
-      );
-      return selected;
-    } catch (yandexError: any) {
-      const duration = Date.now() - t0;
-      const message =
-        yandexError instanceof Error && yandexError.name === 'AbortError'
-          ? 'YandexGPT request timed out'
-          : yandexError.message;
-      this.logger.warn(
-        `YandexGPT failed after ${duration}ms: ${message}. Falling back to OpenRouter...`,
-      );
-      try {
-        const tOr = Date.now();
-        const result = await this.selectWithOpenRouter(pois, intent);
-        this.logger.log(`OpenRouter fallback completed in ${Date.now() - tOr}ms.`);
-        return result;
-      } catch (openRouterError: any) {
-        this.logger.error(
-          `OpenRouter fallback also failed. Skipping semantic filter.`,
-        );
-        fallbacks.push('SEMANTIC_FILTER_FAILED');
-        return pois
-          .slice(0, 15)
-          .map((poi) => ({ ...poi, description: poi.name }));
-      }
-    } finally {
-      clearTimeout(timer);
+    } catch (error: any) {
+      this.logger.error(`Semantic filter failed: ${error.message}`);
+      fallbacks.push('SEMANTIC_FILTER_FAILED');
+      return pois
+        .slice(0, 15)
+        .map((poi) => ({ ...poi, description: poi.description || poi.name }));
     }
   }
 
   async generatePoiFromScratch(intent: ParsedIntent): Promise<FilteredPoi[]> {
     const target = intent.poi_count_requested ?? Math.min(intent.days * 6, 20);
-    const maxTarget = Math.min(intent.max_poi ?? 20, 20);
-    const actualTarget = Math.min(target, maxTarget);
+    const citiesRaw = [
+      (intent as any).city_from,
+      intent.city,
+      (intent as any).city_to,
+    ].filter(Boolean);
+    const uniqueCities = Array.from(new Set(citiesRaw)).join(' - ');
+    const prompt = `Ты рекомендуешь туристические места по маршруту ${uniqueCities}. Предпочтения: ${intent.preferences_text}. Нужно мест: ${target}. Верни JSON: {"selected": [{"id": "unique_id", "name": "Название", "category": "attraction", "rating": 4.5, "description": "Описание"}]}`;
 
-    const prompt = `Ты рекомендуешь туристические места в городе ${intent.city}.
-Предпочтения: ${intent.preferences_text}
-Нужно мест: ${actualTarget}
+    const isCis = this.llmClientService.isCisRegion(
+      intent.country_code,
+      intent.city,
+    );
 
-Верни ТОЛЬКО JSON:
-{
-  "selected": [
-    {"id": "unique_id", "name": "Название места", "category": "attraction", "rating": 4.5, "description": "Описание"},
-    ...
-  ]
-}`;
-
-    const messages: ChatCompletionMessageParam[] = [
-      {
-        role: 'system',
-        content: 'Ты рекомендуешь реальные места для туристов. Верни JSON.',
-      },
-      { role: 'user', content: prompt },
-    ];
-
-    const t0 = Date.now();
     try {
-      const response =
-        await this.llmClientService.client.chat.completions.create({
-          model: this.llmClientService.model,
-          messages,
+      const content = await this.llmClientService.chat(
+        [{ role: 'user', content: prompt }],
+        {
           temperature: 0.3,
-          max_tokens: 2000,
-        });
+          isCis,
+          jsonMode: true,
+        },
+      );
 
-      const rawText = response.choices[0]?.message?.content ?? '{}';
-      const jsonText = rawText.replace(/```json\n?|\n?```/g, '');
-      const parsed = JSON.parse(jsonText) as LlmGeneratedPoiResponse;
-      const selectedRaw = Array.isArray(parsed.selected) ? parsed.selected : [];
+      const parsed = this.safeParseJson<LlmGeneratedPoiResponse>(content);
 
-      const result = selectedRaw
+      return (parsed.selected || [])
         .map(
           (item) =>
             ({
@@ -288,28 +143,59 @@ export class SemanticFilterService {
             }) as FilteredPoi,
         )
         .slice(0, target);
-
-      this.logger.log(`Generated ${result.length} POIs from scratch in ${Date.now() - t0}ms.`);
-      return result;
     } catch (error) {
-      this.logger.error(`[generatePoiFromScratch] Error after ${Date.now() - t0}ms: ${error}`);
+      this.logger.error(`[generatePoiFromScratch] Error: ${error}`);
       return [];
     }
   }
 
-  async selectWithOpenRouter(
+  async compareProviders(
     pois: PoiItem[],
     intent: ParsedIntent,
-  ): Promise<FilteredPoi[]> {
-    if (pois.length === 0) {
-      return this.generatePoiFromScratch(intent);
-    }
+  ): Promise<{
+    yandex: { pois: FilteredPoi[]; error?: string; duration_ms: number };
+    openrouter: { pois: FilteredPoi[]; error?: string; duration_ms: number };
+  }> {
+    const [yandexResult, openrouterResult] = await Promise.allSettled([
+      (async () => {
+        const t0 = Date.now();
+        const res = await this.selectWithProvider(pois, intent, 'yandex');
+        return { pois: res, duration_ms: Date.now() - t0 };
+      })(),
+      (async () => {
+        const t0 = Date.now();
+        const res = await this.selectWithProvider(pois, intent, 'openrouter');
+        return { pois: res, duration_ms: Date.now() - t0 };
+      })(),
+    ]);
 
+    const toResult = (
+      r: PromiseSettledResult<{ pois: FilteredPoi[]; duration_ms: number }>,
+    ) =>
+      r.status === 'fulfilled'
+        ? r.value
+        : {
+            pois: [],
+            error: String(r.reason),
+            duration_ms: 0,
+          };
+
+    return {
+      yandex: toResult(yandexResult),
+      openrouter: toResult(openrouterResult),
+    };
+  }
+
+  private async selectWithProvider(
+    pois: PoiItem[],
+    intent: ParsedIntent,
+    provider: 'openrouter' | 'yandex',
+  ): Promise<FilteredPoi[]> {
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
         content:
-          'Ты — эксперт-планировщик. Твоя задача — отобрать и отранжировать лучшие места для туриста.',
+          'Ты — эксперт по планированию путешествий. Твоя задача — отобрать и отранжировать лучшие места для туриста. Верни ответ СТРОГО в формате JSON. Не используй лишних слов, пояснений и разметки markdown вне JSON. СТРОГО соблюдай синтаксис JSON: никаких лишних запятых перед закрывающими скобками.',
       },
       {
         role: 'user',
@@ -317,57 +203,49 @@ export class SemanticFilterService {
       },
     ];
 
-    const t0 = Date.now();
-    const response = await this.llmClientService.client.chat.completions.create(
-      {
-        model: this.llmClientService.model,
-        messages,
-        response_format: { type: 'json_object' },
-      },
-    );
+    const content = await this.llmClientService.chat(messages, {
+      jsonMode: true,
+      provider,
+      maxTokens: 3000,
+    });
 
-    const rawText = response.choices[0]?.message?.content ?? '{}';
-    const parsed = JSON.parse(rawText) as ExtendedFilteredPoiResponse;
+    const parsed = this.safeParseJson<ExtendedFilteredPoiResponse>(content);
     const selectedRaw = Array.isArray(parsed.selected)
       ? parsed.selected
       : Array.isArray(parsed.rankedPois)
         ? parsed.rankedPois
         : [];
 
-    const result = selectedRaw
+    return selectedRaw
       .map((item) => {
         const original = this.resolvePoiByModelId(pois, item.id);
         if (!original) return null;
         return {
           ...original,
-          description: item.description || item.reason || '',
+          description:
+            item.description || item.reason || original.description || '',
         };
       })
       .filter((item): item is FilteredPoi => item !== null);
-
-    this.logger.log(`OpenRouter selection for ${pois.length} pois took ${Date.now() - t0}ms.`);
-    return result;
   }
 
   private buildPrompt(pois: PoiItem[], intent: ParsedIntent): string {
-    const targetPerDay = 4;
     const days = intent.days || 1;
-    // Формула: (Дни * 4) + 8 резерв
-    const targetCount = days * targetPerDay + 8;
-    
-    const preferences = intent.preferences_text;
-    const city = intent.city;
+    const targetCount = days * 4 + 8;
 
-    return `Ты — эксперт по туризму. Твоя задача — выбрать лучшие места из предложенного списка для поездки в город ${city}.
+    const citiesRaw = [
+      (intent as any).city_from,
+      intent.city,
+      (intent as any).city_to,
+    ].filter(Boolean);
+    const uniqueCities = Array.from(new Set(citiesRaw)).join(' - ');
 
+    return `Ты — эксперт по туризму. Твоя задача — выбрать лучшие места из предложенного списка по маршруту ${uniqueCities}.
 ПРАВИЛА RESERVE POOL:
-1. Выбери ровно ${targetCount} лучших мест (если их столько есть в списке, иначе выбери все доступные).
-2. Первые ${days * targetPerDay} мест должны быть твоим идеальным выбором.
-3. Остальные места — это РЕЗЕРВНЫЙ ПУЛ на случай, если основные места окажутся недоступны (например, закрыты или не прошли валидацию).
-4. Отранжируй их от самого важного (rank 1) до менее важных.
-
-УЧИТЫВАЙ ПРЕДПОЧТЕНИЯ: "${preferences}"
-ДНЕЙ: ${days}
+1. Выбери ровно ${targetCount} лучших мест.
+2. Первые ${days * 4} мест — идеальный выбор. Остальные — резерв.
+3. Отранжируй от самого важного (rank 1).
+УЧИТЫВАЙ ПРЕДПОЧТЕНИЯ: "${intent.preferences_text}"
 БЮДЖЕТ: ${intent.budget_total || 'не указан'}
 
 СПИСОК МЕСТ (ID: Название):
@@ -376,8 +254,7 @@ ${pois.map((p, i) => `${i + 1}: ${p.name} (${p.category}, рейтинг ${p.rat
 ВЕРНИ ТОЛЬКО JSON:
 {
   "rankedPois": [
-    { "id": "номер_из_списка", "rank": 1, "reason": "Краткое (10-15 слов) живое описание фишки этого места. Без клише 'хороший рейтинг'." }
-    ...
+    { "id": "номер_из_списка", "rank": 1, "reason": "Краткое описание фишки места." }
   ]
 }`;
   }
@@ -388,9 +265,8 @@ ${pois.map((p, i) => `${i + 1}: ${p.name} (${p.category}, рейтинг ${p.rat
   ): PoiItem | undefined {
     const id = String(rawId).trim();
     const index = parseInt(id, 10);
-    if (!isNaN(index) && index >= 1 && index <= pois.length) {
+    if (!isNaN(index) && index >= 1 && index <= pois.length)
       return pois[index - 1];
-    }
     return pois.find((p) => p.id === id);
   }
 }

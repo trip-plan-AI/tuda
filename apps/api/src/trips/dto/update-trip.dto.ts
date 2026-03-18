@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsBoolean, IsNumber, Min } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsBoolean, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class UpdateTripDto {
@@ -29,8 +29,5 @@ export class UpdateTripDto {
   isActive?: boolean;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
   distanceKm?: number;
 }

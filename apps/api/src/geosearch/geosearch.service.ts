@@ -4,15 +4,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents */
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { RedisService } from '../redis/redis.service';
 import { PopularDestinationsService } from './popular-destinations.service';
-
-interface YandexSuggestion {
-  title?: { text: string };
-  subtitle?: { text: string };
-  geometry?: { point: { lon: number; lat: number } };
-}
 
 interface NominatimItem {
   display_name: string;
@@ -127,16 +121,12 @@ export class GeosearchService {
     Record<RouteProvider, number[]>
   > = {};
 
-  private get yandexApiKey() {
-    return (
-      process.env.YANDEX_SUGGEST_KEY ??
-      process.env.YANDEX_MAPS_API_KEY ??
-      process.env.NEXT_PUBLIC_YANDEX_GEOSUGGEST_KEY
-    );
-  }
-
   private get dadataApiKey() {
     return process.env.DADATA_API_KEY;
+  }
+
+  private get yandexSuggestApiKey() {
+    return process.env.YANDEX_GEOSUGGEST_API_KEY;
   }
 
   async suggest(query: string, userLat?: number, userLon?: number) {
@@ -153,7 +143,49 @@ export class GeosearchService {
     userLat?: number,
     userLon?: number,
   ) {
-    return this.suggestInternalWithBbox(query, bbox, userLat, userLon);
+    const results = await this.suggestInternalWithBbox(
+      query,
+      bbox,
+      userLat,
+      userLon,
+    );
+
+    // TRI-115: Hard validation after geocoding
+    const [minLon, minLat, maxLon, maxLat] = bbox.split(',').map(Number);
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLon = (minLon + maxLon) / 2;
+
+    return results.filter((item) => {
+      const isInside =
+        item.lat >= minLat - 0.05 &&
+        item.lat <= maxLat + 0.05 &&
+        item.lon >= minLon - 0.05 &&
+        item.lon <= maxLon + 0.05;
+
+      if (!isInside) return false;
+
+      // Distance sanity check: max 50km from center (to avoid jumping to other cities in same region)
+      const d = this.distInKm(item.lat, item.lon, centerLat, centerLon);
+      return d < 50;
+    });
+  }
+
+  private distInKm(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   private async suggestInternalWithBbox(
@@ -164,6 +196,8 @@ export class GeosearchService {
   ) {
     const normalized = query.trim();
     if (normalized.length < 2) return [];
+
+    const isCis = /[а-яА-ЯёЁ]/.test(normalized);
 
     // Tier 1: Redis cache (TTL 7 дней)
     const cacheKey = `geo:suggest:bbox:${normalized.toLowerCase()}:${bbox}`;
@@ -199,29 +233,41 @@ export class GeosearchService {
       return this.applyProximity(parsed, userLat, userLon);
     }
 
-    // Tier 0 (DB) + Tier 2: DaData (RU) + Nominatim WW with bbox, parallel, timeout 800ms
-    const [tier0Res, dadataRes, nominatimBboxRes] = await Promise.allSettled([
+    // Tier 0 (DB) + Tier 2: DaData (RU) + Yandex + Nominatim WW with bbox, parallel, timeout 800ms
+    const [tier0Res, dadataRes, yandexRes, nominatimBboxRes] = await Promise.allSettled([
       this.withTimeout(this.popularDestinations.search(normalized), 800),
       this.dadataApiKey
         ? this.withTimeout(this.getDaDataSuggestions(normalized), 800)
         : Promise.resolve(null),
-      this.withTimeout(
-        this.getNominatimSuggestionsWithBbox(normalized, bbox, 'ru,en', false),
-        800,
-      ),
+      this.yandexSuggestApiKey
+        ? this.withTimeout(this.getYandexSuggestions(normalized, userLat, userLon), 800)
+        : Promise.resolve(null),
+      !isCis
+        ? this.withTimeout(
+            this.getNominatimSuggestionsWithBbox(
+              normalized,
+              bbox,
+              'ru,en',
+              false,
+            ),
+            800,
+          )
+        : Promise.resolve(null),
     ]);
 
     const tier0Items =
       tier0Res.status === 'fulfilled' ? (tier0Res.value ?? []) : [];
     const dadataItems =
       dadataRes.status === 'fulfilled' ? (dadataRes.value ?? []) : [];
+    const yandexItems =
+      yandexRes.status === 'fulfilled' ? (yandexRes.value ?? []) : [];
     const nominatimBboxItems =
       nominatimBboxRes.status === 'fulfilled'
         ? (nominatimBboxRes.value ?? [])
         : [];
 
     // Score сначала — чтобы dedup оставлял наиболее релевантный результат в ячейке
-    const allScored = [...tier0Items, ...dadataItems, ...nominatimBboxItems]
+    const allScored = [...tier0Items, ...dadataItems, ...yandexItems, ...nominatimBboxItems]
       .map((item) => {
         if (
           'score' in item &&
@@ -232,34 +278,57 @@ export class GeosearchService {
         }
         return {
           ...item,
-          score: this.scoreResult(item.displayName, normalized),
+          score:
+            this.scoreResult(item.displayName, normalized) +
+            ((item as any).source === 'yandex' ? 10 : 0),
         };
       })
       .sort((a, b) => b.score - a.score);
 
-    // Dedup pass 1: координаты (0.02° ≈ 2км) — highest-scored в ячейке
+    // Dedup pass 1: координаты (0.002° ≈ 200м) — highest-scored в ячейке
     const seenCoords = new Set<string>();
     const coordDeduped = allScored.filter((item) => {
-      const match = item.uri?.match(/ll=([^&]+)/);
-      if (!match) return true;
-      const [lon, lat] = decodeURIComponent(match[1]).split(',').map(Number);
+      let lat = Number((item as any).lat);
+      let lon = Number((item as any).lon);
+      if (!lat || !lon || (Math.abs(lat) < 0.001 && Math.abs(lon) < 0.001)) {
+        const match = item.uri?.match(/ll=([^&]+)/);
+        if (match) {
+          const coords = decodeURIComponent(match[1]).split(',').map(Number);
+          lon = coords[0];
+          lat = coords[1];
+        }
+      }
       if (isNaN(lon) || isNaN(lat)) return true;
-      const key = `${Math.round(lon * 50)},${Math.round(lat * 50)}`;
+      if (Math.abs(lon) < 0.001 && Math.abs(lat) < 0.001) return true;
+      // Используем множитель 500 для ячейки ~200м, чтобы не удалять разные объекты рядом
+      const key = `${Math.round(lon * 500)},${Math.round(lat * 500)}`;
       if (seenCoords.has(key)) return false;
       seenCoords.add(key);
       return true;
     });
 
     // Dedup pass 2: имя
+    // Для бизнесов ключ = название (без типа — "Кафе"/"Магазин") + адрес
+    // Яндекс использует · (U+00B7), не • (U+2022)
     const seenName = new Set<string>();
     const scored = coordDeduped
       .filter((item) => {
-        const firstName = yo(
-          item.displayName.split(',')[0].trim().toLowerCase(),
-        );
-        if (!firstName) return true;
-        if (seenName.has(firstName)) return false;
-        seenName.add(firstName);
+        let coreName = item.displayName;
+        if ((item as any).isBusiness && coreName.includes('·')) {
+          const parts = coreName.split('·');
+          const left = parts[0].trim(); // "Джаганнат, Кафе"
+          const right = parts.slice(1).join('·').trim(); // "Москва, улица Кузнецкий Мост, 11с1"
+          // берём только название (до первой запятой), игнорируем тип заведения
+          const name = left.split(',')[0].trim(); // "Джаганнат"
+          coreName = name + ' · ' + right;
+        } else if (!(item as any).isBusiness) {
+          coreName = coreName.split(',')[0];
+        }
+
+        const nameKey = yo(coreName.trim().toLowerCase());
+        if (!nameKey) return true;
+        if (seenName.has(nameKey)) return false;
+        seenName.add(nameKey);
         return true;
       })
       .slice(0, 10);
@@ -285,8 +354,16 @@ export class GeosearchService {
       }
     }
 
-    // Tier 3: Photon → Yandex
-    const photonResults = await this.getPhotonSuggestions(normalized);
+    if (isCis) {
+      return this.applyProximity((scored as any) ?? [], userLat, userLon);
+    }
+
+    // Tier 3: Photon
+    const photonResults = await this.getPhotonSuggestions(
+      normalized,
+      undefined,
+      bbox,
+    );
     if (photonResults && photonResults.length > 0) {
       const filteredPhoton = photonResults.filter((item) => {
         const match = item.uri?.match(/ll=([^&]+)/);
@@ -308,28 +385,7 @@ export class GeosearchService {
       }
     }
 
-    const yandexResults = await this.getYandexSuggestions(normalized);
-    if (yandexResults && yandexResults.length > 0) {
-      const filteredYandex = yandexResults.filter((item) => {
-        const match = item.uri?.match(/ll=([^&]+)/);
-        if (match) {
-          const raw = decodeURIComponent(match[1]);
-          const [lon, lat] = raw.split(',').map(Number);
-          if (lat === 0 && lon === 0) return false;
-        }
-        return true;
-      });
-
-      if (filteredYandex.length > 0) {
-        await this.redis.set(
-          cacheKey,
-          JSON.stringify(filteredYandex),
-          60 * 60 * 24 * 7,
-        );
-      }
-      return this.applyProximity(filteredYandex, userLat, userLon);
-    }
-    return this.applyProximity(yandexResults ?? [], userLat, userLon);
+    return this.applyProximity(photonResults ?? [], userLat, userLon);
   }
 
   private async suggestInternal(
@@ -372,10 +428,13 @@ export class GeosearchService {
       return this.applyProximity(parsed, userLat, userLon);
     }
 
-    const [tier0Res, dadataRes, nominatimWwRes] = await Promise.allSettled([
+    const [tier0Res, dadataRes, yandexRes, nominatimWwRes] = await Promise.allSettled([
       this.withTimeout(this.popularDestinations.search(normalized), 800),
       this.dadataApiKey
         ? this.withTimeout(this.getDaDataSuggestions(normalized), 800)
+        : Promise.resolve(null),
+      this.yandexSuggestApiKey
+        ? this.withTimeout(this.getYandexSuggestions(normalized), 800)
         : Promise.resolve(null),
       userLat && userLon
         ? this.withTimeout(
@@ -398,10 +457,17 @@ export class GeosearchService {
       tier0Res.status === 'fulfilled' ? (tier0Res.value ?? []) : [];
     const dadataItems =
       dadataRes.status === 'fulfilled' ? (dadataRes.value ?? []) : [];
+    const yandexItems =
+      yandexRes.status === 'fulfilled' ? (yandexRes.value ?? []) : [];
     const nominatimWwItems =
       nominatimWwRes.status === 'fulfilled' ? (nominatimWwRes.value ?? []) : [];
 
-    const allScored = [...tier0Items, ...dadataItems, ...nominatimWwItems]
+    const allScored = [
+      ...tier0Items,
+      ...dadataItems,
+      ...yandexItems,
+      ...nominatimWwItems,
+    ]
       .map((item) => {
         if (
           'score' in item &&
@@ -412,18 +478,29 @@ export class GeosearchService {
         }
         return {
           ...item,
-          score: this.scoreResult(item.displayName, normalized),
+          score:
+            this.scoreResult(item.displayName, normalized) +
+            ((item as any).source === 'yandex' ? 10 : 0),
         };
       })
       .sort((a, b) => b.score - a.score);
 
     const seenCoords = new Set<string>();
     const coordDeduped = allScored.filter((item) => {
-      const match = item.uri?.match(/ll=([^&]+)/);
-      if (!match) return true;
-      const [lon, lat] = decodeURIComponent(match[1]).split(',').map(Number);
+      let lat = Number((item as any).lat);
+      let lon = Number((item as any).lon);
+      if (!lat || !lon || (Math.abs(lat) < 0.001 && Math.abs(lon) < 0.001)) {
+        const match = item.uri?.match(/ll=([^&]+)/);
+        if (match) {
+          const coords = decodeURIComponent(match[1]).split(',').map(Number);
+          lon = coords[0];
+          lat = coords[1];
+        }
+      }
       if (isNaN(lon) || isNaN(lat)) return true;
-      const key = `${Math.round(lon * 50)},${Math.round(lat * 50)}`;
+      if (Math.abs(lon) < 0.001 && Math.abs(lat) < 0.001) return true;
+      // Используем множитель 500 для ячейки ~200м
+      const key = `${Math.round(lon * 500)},${Math.round(lat * 500)}`;
       if (seenCoords.has(key)) return false;
       seenCoords.add(key);
       return true;
@@ -432,12 +509,21 @@ export class GeosearchService {
     const seenName = new Set<string>();
     const scored = coordDeduped
       .filter((item) => {
-        const firstName = yo(
-          item.displayName.split(',')[0].trim().toLowerCase(),
-        );
-        if (!firstName) return true;
-        if (seenName.has(firstName)) return false;
-        seenName.add(firstName);
+        let coreName = item.displayName;
+        if ((item as any).isBusiness && coreName.includes('·')) {
+          const parts = coreName.split('·');
+          const left = parts[0].trim();
+          const right = parts.slice(1).join('·').trim();
+          const name = left.split(',')[0].trim();
+          coreName = name + ' · ' + right;
+        } else if (!(item as any).isBusiness) {
+          coreName = coreName.split(',')[0];
+        }
+
+        const nameKey = yo(coreName.trim().toLowerCase());
+        if (!nameKey) return true;
+        if (seenName.has(nameKey)) return false;
+        seenName.add(nameKey);
         return true;
       })
       .slice(0, 10);
@@ -502,11 +588,7 @@ export class GeosearchService {
       });
 
       if (filteredYandex.length > 0) {
-        await this.redis.set(
-          cacheKey,
-          JSON.stringify(filteredYandex),
-          60 * 60 * 24 * 7,
-        );
+        await this.redis.set(cacheKey, JSON.stringify(filteredYandex), 60 * 60 * 24 * 7);
       }
       return this.applyProximity(filteredYandex, userLat, userLon);
     }
@@ -632,7 +714,93 @@ export class GeosearchService {
           uri: `ymapsbm1://geo?ll=${item.lon},${item.lat}&z=12`,
           lat: Number(item.lat),
           lon: Number(item.lon),
+          class: item.class,
+          type: item.type,
         }));
+    } catch {
+      return [];
+    }
+  }
+
+  private async getYandexSuggestions(
+    q: string,
+    userLat?: number,
+    userLon?: number,
+  ): Promise<
+    Array<{ displayName: string; uri: string; lat: number; lon: number; source?: string }>
+  > {
+    const apiKey = this.yandexSuggestApiKey;
+    if (!apiKey) return [];
+
+    try {
+      const url = new URL('https://suggest-maps.yandex.ru/v1/suggest');
+      url.searchParams.set('apikey', apiKey);
+      url.searchParams.set('text', q);
+      url.searchParams.set('lang', 'ru_RU');
+      url.searchParams.set('results', '10');
+      url.searchParams.set('types', 'biz,geo');
+      url.searchParams.set('attrs', 'uri');
+      if (userLat !== undefined && userLon !== undefined) {
+        url.searchParams.set('ll', `${userLon},${userLat}`);
+        url.searchParams.set('spn', '1,1');
+      }
+
+      const res = await fetch(url.toString());
+      if (!res.ok) return [];
+
+      const data = await res.json();
+      const items = data?.results || data?.suggestions || [];
+
+      if (!Array.isArray(items)) return [];
+
+      console.log(`[YandexSuggest] Query: "${q}", Count: ${items.length}`);
+
+      // Дедупликация по названию + типу (без адреса: координаты, город, улица и т.д.)
+      const seenPlaces = new Set<string>();
+
+      return items
+        .map((item: any) => {
+          const title = item?.title?.text || item?.value || '';
+          const subtitle = item?.subtitle?.text || '';
+          const displayName = subtitle ? `${title}, ${subtitle}` : title;
+          const tags = item?.tags || [];
+          const isBusiness = tags.includes('business');
+
+          let lat = 0;
+          let lon = 0;
+
+          if (item?.geometry?.point) {
+            lat = Number(item.geometry.point.lat);
+            lon = Number(item.geometry.point.lon);
+          } else if (item?.uri) {
+            const match = item.uri.match(/[?&]ll=([^&]+)/);
+            if (match) {
+              const [lonStr, latStr] = decodeURIComponent(match[1]).split(',');
+              lat = Number(latStr);
+              lon = Number(lonStr);
+            }
+          }
+
+          return {
+            displayName,
+            title, // Храним title для дедупликации
+            uri: item?.uri || `ymapsbm1://geo?ll=${lon},${lat}&z=12`,
+            lat,
+            lon,
+            source: 'yandex',
+            isBusiness,
+          };
+        })
+        .filter((item) => {
+          // Для бизнесов uri=ymapsbm1://org?oid=... не содержит координат — не фильтруем
+          const isOrgUri = item.uri?.startsWith('ymapsbm1://org');
+          if (!isOrgUri && item.lat === 0 && item.lon === 0) return false;
+
+          // Дедупликация по title — "Джаганнат" одинаковый для всех филиалов
+          if (seenPlaces.has(item.title)) return false;
+          seenPlaces.add(item.title);
+          return true;
+        });
     } catch {
       return [];
     }
@@ -701,6 +869,7 @@ export class GeosearchService {
   private async getPhotonSuggestions(
     q: string,
     lonLat?: [number, number],
+    bbox?: string,
   ): Promise<
     Array<{ displayName: string; uri: string; lat: number; lon: number }>
   > {
@@ -709,6 +878,9 @@ export class GeosearchService {
       if (lonLat) {
         params.append('lon', String(lonLat[0]));
         params.append('lat', String(lonLat[1]));
+      }
+      if (bbox) {
+        params.append('bbox', bbox);
       }
       const res = await fetch(`https://photon.komoot.io/api/?${params}`, {
         headers: { 'User-Agent': 'TravelPlanner/1.0' },
@@ -973,7 +1145,9 @@ export class GeosearchService {
             return data;
           }
         }
-      } catch {}
+      } catch {
+        // ignore
+      }
     }
 
     const points = this.parseCoords(coords);
@@ -1110,48 +1284,7 @@ export class GeosearchService {
     return null;
   }
 
-  private async getYandexSuggestions(
-    q: string,
-  ): Promise<
-    Array<{ displayName: string; uri: string; lat: number; lon: number }>
-  > {
-    if (!this.yandexApiKey) return [];
-    try {
-      const res = await fetch('https://suggest-maps.yandex.ru/v1/suggest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: q,
-          ll: '55.7558,37.6173',
-          spn: '10,10',
-          limit: 10,
-          types: ['biz', 'geo'],
-          apikey: this.yandexApiKey,
-        }),
-      });
-      if (!res.ok) return [];
-      const data = await res.json();
-      return (data.results || [])
-        .filter((item: any) => item.geometry?.point)
-        .map((item: any) => ({
-          displayName: item.title.text,
-          uri: `ymapsbm1://geo?ll=${item.geometry.point.lon},${item.geometry.point.lat}&z=12`,
-          lat: item.geometry.point.lat,
-          lon: item.geometry.point.lon,
-        }));
-    } catch {
-      return [];
-    }
-  }
-
-  private async getNominatimSuggestions(
-    q: string,
-    userLonLat?: [number, number],
-    acceptLanguage = 'ru',
-    excludeAmenity = true,
-  ): Promise<
-    Array<{ displayName: string; uri: string; lat: number; lon: number }>
-  > {
+  private async getNominatimSuggestions(q: string, userLonLat?: [number, number], acceptLanguage = 'ru', excludeAmenity = true): Promise<Array<{ displayName: string; uri: string; lat: number; lon: number }>> {
     try {
       const params = new URLSearchParams({
         q,
@@ -1189,6 +1322,8 @@ export class GeosearchService {
           uri: `ymapsbm1://geo?ll=${item.lon},${item.lat}&z=12`,
           lat: Number(item.lat),
           lon: Number(item.lon),
+          class: item.class,
+          type: item.type,
         }));
     } catch {
       return [];

@@ -8,282 +8,576 @@ import type {
 import type { FilteredPoi } from '../types/poi.types';
 
 // TRI-108-2: Realistic visit durations (in minutes)
-// Museums/Galleries need 2-3 hours, not 1.5
 const VISIT_DURATION: Record<string, number> = {
-  museum: 150, // 2.5 hours (was 90)
-  gallery: 120, // 2 hours
-  park: 90, // 1.5 hours (was 60)
-  monument: 45, // 45 min quick visit
-  restaurant: 75, // 1.25 hours with drinks (was 60)
-  cafe: 45, // 45 min coffee + snack (was 30)
-  attraction: 90, // 1.5 hours (was 60)
-  shopping: 60, // 1 hour (was 45)
-  entertainment: 120, // 2 hours
-  viewpoint: 30, // Quick photo stop
-  theater: 180, // 3 hours (show + breaks)
-  market: 60, // 1 hour browsing
+  museum: 150,
+  gallery: 120,
+  park: 90,
+  monument: 45,
+  restaurant: 75,
+  cafe: 45,
+  attraction: 90,
+  shopping: 60,
+  entertainment: 120,
+  viewpoint: 30,
+  theater: 180,
+  market: 60,
 };
 
-// TRI-108-2: Transit times between locations (in minutes)
-// Realistic for city navigation, not optimistic
-const TRANSIT_DURATION_BY_DISTANCE: Record<string, number> = {
-  same_location: 5, // Within same POI area
-  same_district: 15, // Within same neighborhood
-  adjacent_district: 30, // Next to current area
-  across_city: 50, // Metro/taxi across city
-  far_distance: 80, // Long distance travel
-};
-
-const DEFAULT_TRANSIT_DURATION_MIN = 30; // Conservative default (was 25)
+const DEFAULT_TRANSIT_DURATION_MIN = 30;
 const RESTAURANT_MIN_GAP_MIN = 4 * 60;
-const CAFE_AFTER_MEAL_MIN = 60;
-const TIME_SHIFT_ON_FOOD_CONFLICT_MIN = 30;
 
 @Injectable()
 export class SchedulerService {
   private readonly logger = new Logger('AI_PIPELINE:Scheduler');
 
-  rebuildSingleDayPlan(
-    pois: FilteredPoi[],
-    intent: ParsedIntent,
-    dayTemplate: Pick<PlanDay, 'day_number' | 'date'>,
-  ): PlanDay {
-    const singleDayBudget =
-      intent.budget_per_day ??
-      (intent.budget_total !== null
-        ? Math.max(0, Math.round(intent.budget_total))
-        : null);
-
-    const singleDayIntent: ParsedIntent = {
-      ...intent,
-      days: 1,
-      budget_total: singleDayBudget,
-      budget_per_day: singleDayBudget,
-    };
-
-    const rebuilt = this.buildPlan(pois, singleDayIntent);
-    const rebuiltDay = rebuilt.days[0] ?? {
-      day_number: dayTemplate.day_number,
-      date: dayTemplate.date,
-      day_budget_estimated: 0,
-      day_start_time: intent.start_time,
-      day_end_time: intent.end_time,
-      points: [],
-    };
-
-    return {
-      ...rebuiltDay,
-      day_number: dayTemplate.day_number,
-      date: dayTemplate.date,
-    };
+  private calculateAngle(
+    p1: { lat: number; lon: number },
+    p2: { lat: number; lon: number },
+    p3: { lat: number; lon: number },
+  ): number {
+    const v1 = { x: p1.lat - p2.lat, y: p1.lon - p2.lon };
+    const v2 = { x: p3.lat - p2.lat, y: p3.lon - p2.lon };
+    const dot = v1.x * v2.x + v1.y * v2.y;
+    const mag1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
+    const mag2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
+    if (mag1 === 0 || mag2 === 0) return 0;
+    const angle = Math.acos(Math.min(1, Math.max(-1, dot / (mag1 * mag2))));
+    return (angle * 180) / Math.PI;
   }
 
-  injectPoints(
+  public injectPoints(
     existingPlan: RoutePlan,
-    newPois: FilteredPoi[],
+    pointsToAdd: FilteredPoi[],
     intent: ParsedIntent,
   ): RoutePlan {
     this.logger.log(
-      `Injecting ${newPois.length} new POIs into existing plan for ${existingPlan.city}...`,
+      `Injecting ${pointsToAdd.length} new points into existing plan.`,
+    );
+    const existingPois = existingPlan.days.flatMap((day) =>
+      day.points.map((p) => p.poi as FilteredPoi),
     );
 
-    // TRI-115: Deep copy and filter out invalid points from history/existing plan
-    const days: PlanDay[] = existingPlan.days.map((day) => ({
-      ...day,
-      points: day.points
-        .filter((p) => {
-          const lat = p.poi?.coordinates?.lat;
-          const lon = p.poi?.coordinates?.lon;
-          return (
-            lat !== undefined &&
-            lon !== undefined &&
-            Number.isFinite(lat) &&
-            Number.isFinite(lon) &&
-            (Math.abs(lat) > 0.001 || Math.abs(lon) > 0.001) &&
-            !(lat === 0 && lon === 0) // Explicitly exclude (0,0) coordinates
-          );
-        })
-        .map((p) => ({ ...p })),
-    }));
+    const combinedPois = [...existingPois, ...pointsToAdd];
 
-    const endMinutes = this.timeToMinutes(intent.end_time || '21:00');
-    const dayBudget =
-      intent.budget_per_day ??
-      (intent.budget_total ? Math.round(intent.budget_total / intent.days) : 0);
-
-    for (const poi of newPois) {
-      // Avoid duplicate names
-      const isDuplicate = days.some((d) =>
-        d.points.some(
-          (p) =>
-            p.poi.name.toLowerCase().trim() === poi.name.toLowerCase().trim(),
-        ),
-      );
-      if (isDuplicate) continue;
-
-      let bestDayIndex = -1;
-      let minDistance = Infinity;
-
-      // Find the best day/position (currently just appending to best day)
-      for (let i = 0; i < days.length; i += 1) {
-        const day = days[i];
-        const lastPoint = day.points[day.points.length - 1];
-
-        if (lastPoint) {
-          const dist = this.haversineKm(
-            lastPoint.poi.coordinates.lat,
-            lastPoint.poi.coordinates.lon,
-            poi.coordinates.lat,
-            poi.coordinates.lon,
-          );
-
-          // Check if it fits temporally
-          const currentTime = this.timeToMinutes(lastPoint.departure_time);
-          const transit = Math.max(15, Math.round((dist / 25) * 60 + 10));
-          const arrival = currentTime + transit;
-          const duration = VISIT_DURATION[poi.category] || 60;
-
-          if (arrival + duration <= endMinutes + 30) {
-            if (dist < minDistance) {
-              minDistance = dist;
-              bestDayIndex = i;
-            }
-          }
-        } else if (bestDayIndex === -1) {
-          bestDayIndex = i;
-        }
+    const seen = new Set<string>();
+    const uniquePois = combinedPois.filter((p) => {
+      if (!p || !p.id) return false;
+      if (seen.has(p.id)) {
+        return false;
       }
+      seen.add(p.id);
+      return true;
+    });
 
-      if (bestDayIndex !== -1) {
-        const day = days[bestDayIndex];
-        const lastPoint = day.points[day.points.length - 1];
-        const currentTime = lastPoint
-          ? this.timeToMinutes(lastPoint.departure_time)
-          : this.timeToMinutes(day.day_start_time);
-
-        const dist = lastPoint
-          ? this.haversineKm(
-              lastPoint.poi.coordinates.lat,
-              lastPoint.poi.coordinates.lon,
-              poi.coordinates.lat,
-              poi.coordinates.lon,
-            )
-          : 0;
-
-        const transit = lastPoint
-          ? Math.max(15, Math.round((dist / 25) * 60 + 10))
-          : 0;
-        const arrival = currentTime + transit;
-        const duration = VISIT_DURATION[poi.category] || 60;
-        const departure = arrival + duration;
-
-        const cost = this.estimatePointCost(poi, dayBudget);
-
-        const lat = poi.coordinates?.lat;
-        const lon = poi.coordinates?.lon;
-        const isCoordValid =
-          lat !== undefined &&
-          lon !== undefined &&
-          Number.isFinite(lat) &&
-          Number.isFinite(lon) &&
-          (Math.abs(lat) > 0.001 || Math.abs(lon) > 0.001) &&
-          !(lat === 0 && lon === 0); // Explicitly exclude (0,0) coordinates
-
-        if (!isCoordValid) {
-          this.logger.error(
-            `[Inject] Skipping point "${poi.name}" due to invalid coordinates: (${lat}, ${lon})`,
-          );
-          continue;
-        }
-
-        day.points.push({
-          poi_id: poi.id,
-          poi,
-          order: day.points.length + 1,
-          arrival_time: this.minutesToTime(arrival),
-          departure_time: this.minutesToTime(departure),
-          visit_duration_min: duration,
-          travel_from_prev_min: transit || undefined,
-          estimated_cost: cost,
-        });
-        day.day_budget_estimated += cost;
-
-        this.logger.log(
-          `  [Inject] Added ${poi.name} to Day ${day.day_number}`,
-        );
-      } else {
-        this.logger.warn(`  [Inject] Could not fit ${poi.name} into any day`);
-      }
-    }
-
-    const totalBudget = days.reduce((s, d) => s + d.day_budget_estimated, 0);
-    return { ...existingPlan, days, total_budget_estimated: totalBudget };
+    return this.buildPlan(uniquePois, intent);
   }
 
-  buildPlan(pois: FilteredPoi[], intent: ParsedIntent): RoutePlan {
+  public rebuildSingleDayPlan(
+    poisForDay: FilteredPoi[],
+    intent: ParsedIntent,
+    dayInfo: { day_number: number; date: string },
+  ): PlanDay {
     this.logger.log(
-      `Starting to build route plan for ${intent.days} days with ${pois.length} selected POIs...`,
+      `Rebuilding plan for day ${dayInfo.day_number} with ${poisForDay.length} points...`,
     );
+
+    // --- Copy setup from buildPlan ---
     const startMinutes = this.timeToMinutes(intent.start_time);
     const endMinutes = this.timeToMinutes(intent.end_time);
     const dayBudget =
       intent.budget_per_day ??
-      (intent.budget_total
-        ? Math.max(0, Math.round(intent.budget_total / intent.days))
-        : 0);
+      (intent.budget_total ? Math.round(intent.budget_total / intent.days) : 0);
     const preferences = intent.preferences_text.toLowerCase();
-    const skipFoodByUser =
-      preferences.includes('без еды') ||
-      preferences.includes('не нужно есть') ||
-      preferences.includes('без питания') ||
-      preferences.includes('без кафе') ||
-      preferences.includes('без ресторанов');
+    const isRelaxMode =
+      preferences.includes('расслабленно') ||
+      preferences.includes('неспешно') ||
+      preferences.includes('отдых');
+    const lovesCoffee =
+      preferences.includes('кофе') || preferences.includes('кофейн');
+    const lovesNature =
+      preferences.includes('природ') ||
+      preferences.includes('парк') ||
+      preferences.includes('лес');
+    const dislikesMuseums =
+      preferences.includes('без музеев') ||
+      preferences.includes('не люблю музеи');
 
-    // Минимальная целевая ёмкость маршрута
-    const targetPoiCount = intent.days * 2;
+    const userProfile = intent.user_profile;
+    const walkingSpeed = userProfile?.behavior?.walkingSpeed || 1.0;
+    const stayMultipliers = userProfile?.behavior?.stayMultiplier || {};
+    const categoryAffinity = userProfile?.categoryAffinity || {};
+    const diversityPressure = 1.0; // High diversity for rebuild
+    const isSmallSet = poisForDay.length < 15;
+
+    // --- Day-specific state ---
+    const points: PlanDayPoint[] = [];
+    let currentTime = startMinutes;
+    let energyLevel = 100;
+    let dayCost = 0;
+    let dayRestaurantPoints = 0;
+    let dayCafePoints = 0;
+    let lastFoodTime: number | null = null;
+    let lastMealType: 'lunch' | 'dinner' | 'other' | null = null;
+
+    const tryAddPoint = (
+      poi: FilteredPoi,
+      customStart?: number,
+      force = false,
+    ): boolean => {
+      const lastPoint = points.length > 0 ? points[points.length - 1] : null;
+      const lastPoi = lastPoint ? (lastPoint.poi as FilteredPoi) : undefined;
+      let transitTime = DEFAULT_TRANSIT_DURATION_MIN;
+
+      // RELAXATION
+      const relaxAll = force || (isSmallSet && points.length < 4);
+
+      if (lastPoi) {
+        const dist = this.haversineKm(
+          lastPoi.coordinates.lat,
+          lastPoi.coordinates.lon,
+          poi.coordinates.lat,
+          poi.coordinates.lon,
+        );
+        if (dist > 50) {
+          transitTime = Math.round((dist / 80) * 60);
+        } else {
+          const rawMinutes =
+            dist < 1.0 ? (dist / 5) * 60 : (dist / 25) * 60 + 10;
+          let finalTransit = Math.round(rawMinutes / walkingSpeed);
+          if (isSmallSet) finalTransit = Math.round(finalTransit * 0.7);
+          transitTime = Math.max(5, Math.min(90, finalTransit));
+        }
+      } else {
+        transitTime = 0;
+      }
+
+      const arrival = customStart ?? currentTime + transitTime;
+      const isFood = this.isFoodCategory(poi.category);
+      const mealType = isFood ? this.getMealType(arrival) : null;
+      const isHeavy =
+        poi.category === 'museum' || ((poi as any).duration || 0) > 90;
+
+      if (!relaxAll) {
+        if (lastPoi && this.isFoodCategory(lastPoi.category) && isFood)
+          return false;
+        if (energyLevel < 35 && isHeavy && !isFood) return false;
+        if (
+          lastPoi &&
+          this.isFoodCategory(lastPoi.category) &&
+          this.getMealType(this.timeToMinutes(lastPoint?.arrival_time)) ===
+            'dinner'
+        ) {
+          if (!this.isPostDinnerHighlight(poi) && !isFood) return false;
+          if (
+            this.haversineKm(
+              lastPoi.coordinates.lat,
+              lastPoi.coordinates.lon,
+              poi.coordinates.lat,
+              poi.coordinates.lon,
+            ) > 1.2
+          )
+            return false;
+        }
+      }
+
+      let visitDuration = VISIT_DURATION[poi.category] ?? 60;
+      if (isFood) visitDuration = mealType === 'dinner' ? 90 : 50;
+
+      const explanations: string[] = [];
+      const stayMultiplier = stayMultipliers[poi.category || ''] || 1.0;
+      if (stayMultiplier !== 1.0) {
+        explanations.push(
+          `Adjusted duration based on your typical stay time for ${poi.category}`,
+        );
+      }
+      visitDuration *= stayMultiplier;
+
+      if (isSmallSet) visitDuration *= 0.8;
+      if (isRelaxMode || energyLevel < 40) visitDuration *= 1.2;
+      visitDuration = Math.max(20, Math.round(visitDuration));
+
+      if (walkingSpeed !== 1.0 && transitTime > 0) {
+        explanations.push(
+          `Calculated transit time adjusted for your walking pace`,
+        );
+      }
+
+      const affinity = categoryAffinity[poi.category || ''] || 0;
+      if (affinity > 0.4) {
+        explanations.push(
+          `Added because you often choose ${poi.category} places`,
+        );
+      }
+
+      const leaveTime = arrival + visitDuration;
+      if (!relaxAll && leaveTime > endMinutes + 60) return false;
+
+      points.push({
+        poi_id: poi.id,
+        poi,
+        order: points.length + 1,
+        arrival_time: this.minutesToTime(arrival),
+        departure_time: this.minutesToTime(leaveTime),
+        visit_duration_min: visitDuration,
+        travel_from_prev_min: points.length === 0 ? undefined : transitTime,
+        estimated_cost: this.estimatePointCost(poi, dayBudget),
+        ai_explanations: explanations.length > 0 ? explanations : undefined,
+      });
+
+      dayCost += points[points.length - 1].estimated_cost;
+      currentTime = leaveTime;
+
+      if (isFood) energyLevel = Math.min(100, energyLevel + 25);
+      else {
+        energyLevel -= isHeavy ? 15 : 8;
+        energyLevel -= Math.round(transitTime / 5);
+      }
+      energyLevel = Math.max(0, energyLevel);
+
+      if (isFood) {
+        if (poi.category === 'restaurant') dayRestaurantPoints += 1;
+        else dayCafePoints += 1;
+        lastFoodTime = arrival;
+        lastMealType = mealType;
+      }
+      return true;
+    };
+
+    const availablePois = [...poisForDay];
+    const usedPoiIdsInDay = new Set<string>();
+
+    const firstPoi =
+      availablePois.find((p) => !this.isFoodCategory(p.category)) ||
+      availablePois[0];
+    if (firstPoi) {
+      tryAddPoint(firstPoi);
+      usedPoiIdsInDay.add(firstPoi.id);
+    }
+
+    const MIN_POINTS_PER_DAY = isSmallSet ? 4 : 3;
+
+    while (points.length < poisForDay.length && currentTime < endMinutes) {
+      const candidates = availablePois.filter((p) => !usedPoiIdsInDay.has(p.id));
+      if (candidates.length === 0) break;
+
+      const lastPoint = points.length > 0 ? points[points.length - 1] : null;
+      const lastPoi = lastPoint ? (lastPoint.poi as FilteredPoi) : undefined;
+      const prevPoi =
+        points.length > 1 ? points[points.length - 2].poi : undefined;
+
+      let validCandidates = candidates.filter((poi) => {
+        const cat = poi.category || '';
+        const isFood = this.isFoodCategory(cat);
+        if (lastPoi && lastPoi.category === cat && !isFood) {
+          if (Math.random() < diversityPressure) return false;
+        }
+        if (isFood) {
+          if (lastPoi && this.isFoodCategory(lastPoi.category)) return false;
+        }
+        if (dislikesMuseums && cat === 'museum') return false;
+        return true;
+      });
+
+      if (validCandidates.length === 0) {
+        if (points.length < MIN_POINTS_PER_DAY) {
+          validCandidates = candidates.slice(0, 3);
+        } else {
+          break;
+        }
+      }
+
+      const optimizedOrder = validCandidates.sort((a, b) => {
+        const distA = lastPoi
+          ? this.haversineKm(
+              lastPoi.coordinates.lat,
+              lastPoi.coordinates.lon,
+              a.coordinates.lat,
+              a.coordinates.lon,
+            )
+          : 0;
+        const distB = lastPoi
+          ? this.haversineKm(
+              lastPoi.coordinates.lat,
+              lastPoi.coordinates.lon,
+              b.coordinates.lat,
+              b.coordinates.lon,
+            )
+          : 0;
+
+        const weightA = (a as any).aiWeight || 0;
+        const weightB = (b as any).aiWeight || 0;
+
+        let scoreA = distA - weightA / 60;
+        let scoreB = distB - weightB / 60;
+
+        if (prevPoi && lastPoi) {
+          const angleA = this.calculateAngle(
+            prevPoi.coordinates,
+            lastPoi.coordinates,
+            a.coordinates,
+          );
+          const angleB = this.calculateAngle(
+            prevPoi.coordinates,
+            lastPoi.coordinates,
+            b.coordinates,
+          );
+          const pA = angleA > 115 ? 2.0 : 0;
+          const pB = angleB > 115 ? 2.0 : 0;
+          scoreA += pA * (weightA > 65 ? 0.2 : 1.0);
+          scoreB += pB * (weightB > 65 ? 0.2 : 1.0);
+        }
+
+        const affinityA = categoryAffinity[a.category || ''] || 0;
+        const affinityB = categoryAffinity[b.category || ''] || 0;
+        const boostA = Math.min(affinityA, 0.8) * 1.5;
+        const boostB = Math.min(affinityB, 0.8) * 1.5;
+        scoreA -= boostA;
+        scoreB -= boostB;
+
+        if (lovesCoffee && a.category === 'cafe') scoreA -= 1;
+        if (lovesCoffee && b.category === 'cafe') scoreB -= 1;
+        if (
+          lovesNature &&
+          ['park', 'garden', 'forest'].includes(a.category || '')
+        )
+          scoreA -= 0.8;
+        if (
+          lovesNature &&
+          ['park', 'garden', 'forest'].includes(b.category || '')
+        )
+          scoreB -= 0.8;
+
+        return scoreA - scoreB;
+      });
+
+      let added = false;
+      for (const next of optimizedOrder) {
+        if (tryAddPoint(next)) {
+          added = true;
+          usedPoiIdsInDay.add(next.id);
+          break;
+        }
+      }
+
+      if (!added) {
+        // Fallback
+        if (points.length < MIN_POINTS_PER_DAY && candidates.length > 0) {
+          const fallbackPoint = candidates.sort((a, b) => {
+            const distA = lastPoi
+              ? this.haversineKm(
+                  lastPoi.coordinates.lat,
+                  lastPoi.coordinates.lon,
+                  a.coordinates.lat,
+                  a.coordinates.lon,
+                )
+              : 0;
+            const distB = lastPoi
+              ? this.haversineKm(
+                  lastPoi.coordinates.lat,
+                  lastPoi.coordinates.lon,
+                  b.coordinates.lat,
+                  b.coordinates.lon,
+                )
+              : 0;
+            return distA - distB;
+          })[0];
+          if (tryAddPoint(fallbackPoint, undefined, true)) {
+            added = true;
+            usedPoiIdsInDay.add(fallbackPoint.id);
+          }
+        }
+      }
+
+      if (!added) {
+        break;
+      }
+    }
+
+    return {
+      day_number: dayInfo.day_number,
+      date: dayInfo.date,
+      day_budget_estimated: dayCost,
+      day_start_time: intent.start_time,
+      day_end_time: intent.end_time,
+      points,
+    };
+  }
+
+  buildPlan(
+    pois: FilteredPoi[],
+    intent: ParsedIntent & { city_from?: string; city_to?: string },
+  ): RoutePlan {
+    this.logger.log(
+      `Building plan v7 (Contextual Wisdom) for ${intent.days} days...`,
+    );
+
+    const startMinutes = this.timeToMinutes(intent.start_time);
+    const endMinutes = this.timeToMinutes(intent.end_time);
+    const dayBudget =
+      intent.budget_per_day ??
+      (intent.budget_total ? Math.round(intent.budget_total / intent.days) : 0);
+    const preferences = intent.preferences_text.toLowerCase();
+
+    // Context Detection
+    const isRelaxMode =
+      preferences.includes('расслабленно') ||
+      preferences.includes('неспешно') ||
+      preferences.includes('отдых');
+    const isExploreMode =
+      preferences.includes('активно') ||
+      preferences.includes('все посмотреть') ||
+      preferences.includes('максимум');
+    const lovesCoffee =
+      preferences.includes('кофе') || preferences.includes('кофейн');
+    const lovesNature =
+      preferences.includes('природ') ||
+      preferences.includes('парк') ||
+      preferences.includes('лес');
+    const dislikesMuseums =
+      preferences.includes('без музеев') ||
+      preferences.includes('не люблю музеи');
+    const isRainy =
+      preferences.includes('дождь') || preferences.includes('ливень');
+    const isCold =
+      preferences.includes('холодно') ||
+      preferences.includes('мороз') ||
+      preferences.includes('зима');
+
+    const userProfile = intent.user_profile;
+    const walkingSpeed = userProfile?.behavior?.walkingSpeed || 1.0;
+    const stayMultipliers = userProfile?.behavior?.stayMultiplier || {};
+    const categoryAffinity = userProfile?.categoryAffinity || {};
+
+    const cityComplexity = pois.length;
+    const isSmallTown = cityComplexity < 60;
+    const diversityPressure = cityComplexity > 20 ? 1.0 : 0.4;
     const availablePois = [...pois];
-    const totalNonFood = availablePois.filter(
-      (p) => p.category !== 'restaurant' && p.category !== 'cafe',
+    const totalPoisCount = availablePois.filter(
+      (p) => !this.isFoodCategory(p.category) || ((p as any).aiWeight || 0) > 0,
     ).length;
+
+    if (totalPoisCount > 0 && totalPoisCount < intent.days * 2) {
+      this.logger.warn(
+        `[Scheduler] Data Starvation detected for ${intent.city}. POIs: ${totalPoisCount}, Days: ${intent.days}`,
+      );
+      // Если точек критически мало, сокращаем количество дней до реалистичного минимума (1-2 точки на день)
+      intent.days = Math.max(1, Math.floor(totalPoisCount / 2));
+      this.logger.warn(`[Scheduler] Reduced planned days to ${intent.days}`);
+    }
 
     const days: PlanDay[] = [];
     const usedPoiIds = new Set<string>();
 
-    for (let dayNumber = 1; dayNumber <= intent.days; dayNumber += 1) {
+    // Извлекаем существующие даты для корректного переноса из PlannerPage
+    const preAssignedMap = new Map<string, FilteredPoi[]>();
+    pois.forEach((p) => {
+      const vDate =
+        (p as any).visitDate || (p as any).visit_date || (p as any).date;
+      if (vDate) {
+        if (!preAssignedMap.has(vDate)) preAssignedMap.set(vDate, []);
+        preAssignedMap.get(vDate)!.push(p);
+      }
+    });
+
+    const uniqueDates = Array.from(preAssignedMap.keys()).sort();
+    const totalDays = Math.max(intent.days, uniqueDates.length || 1);
+
+    // Multi-city city assignments
+    const cityAssignments = new Map<number, string>();
+    const cities =
+      intent.cities && intent.cities.length > 0
+        ? intent.cities
+        : intent.city_to
+          ? [intent.city_from || intent.city, intent.city_to]
+          : [intent.city];
+
+    if (cities.length > 1) {
+      const baseDays = Math.floor(totalDays / cities.length);
+      const extraDays = totalDays % cities.length;
+      let dayCursor = 1;
+
+      cities.forEach((city, index) => {
+        const daysForCity = baseDays + (index < extraDays ? 1 : 0);
+        for (let i = 0; i < daysForCity; i++) {
+          if (dayCursor <= totalDays) {
+            cityAssignments.set(dayCursor++, city);
+          }
+        }
+      });
+    }
+
+    // Оптимизация: Группировка POI по городам
+    const poisByCity = new Map<string, FilteredPoi[]>();
+    pois.forEach((p) => {
+      const c = p.city_name || intent.city;
+      if (!poisByCity.has(c)) poisByCity.set(c, []);
+      poisByCity.get(c)!.push(p);
+    });
+
+    const dateStrings: string[] = [];
+    for (let i = 0; i < totalDays; i++) {
+      if (i < uniqueDates.length) {
+        dateStrings.push(uniqueDates[i]);
+      } else {
+        const baseDate =
+          dateStrings.length > 0
+            ? new Date(dateStrings[dateStrings.length - 1])
+            : new Date();
+        if (dateStrings.length > 0) baseDate.setDate(baseDate.getDate() + 1);
+        else baseDate.setDate(baseDate.getDate() + i);
+        dateStrings.push(baseDate.toISOString().slice(0, 10));
+      }
+    }
+
+    let lastPoiFromPrevDay: FilteredPoi | undefined;
+
+    for (let dayNumber = 1; dayNumber <= totalDays; dayNumber += 1) {
       const points: PlanDayPoint[] = [];
       let currentTime = startMinutes;
+      let energyLevel = 100;
       let dayCost = 0;
       let dayRestaurantPoints = 0;
       let dayCafePoints = 0;
-      let lastRestaurantArrival: number | null = null;
+      let lastFoodTime: number | null = null;
+      let lastMealType: 'lunch' | 'dinner' | 'other' | null = null;
 
-      const daysRemaining = intent.days - dayNumber + 1;
-      const remainingUnique = availablePois.filter(
-        (p) => !usedPoiIds.has(p.id),
-      );
-      const pointsForThisDay = Math.max(
-        2,
-        Math.ceil(remainingUnique.length / daysRemaining),
-      );
+      const currentDateStr = dateStrings[dayNumber - 1];
+      const targetCity = cityAssignments.get(dayNumber);
 
-      const remainingNonFood = remainingUnique.filter(
-        (p) => p.category !== 'restaurant' && p.category !== 'cafe',
-      );
-      const remainingFood = remainingUnique.filter(
-        (p) => p.category === 'restaurant' || p.category === 'cafe',
-      );
-      const nonFoodQuotaForDay = Math.max(
-        remainingNonFood.length > 0 ? 1 : 0,
-        Math.ceil(totalNonFood / intent.days),
-      );
-      let dayNonFoodPoints = 0;
+      const daysRemaining = totalDays - dayNumber + 1;
 
-      const tryAddPoint = (poi: FilteredPoi, customStart?: number): boolean => {
-        const lastPoi =
-          points.length > 0
-            ? (points[points.length - 1].poi as FilteredPoi)
+      // Filter available POIs for this day's city
+      const availableForDay = targetCity
+        ? poisByCity.get(targetCity) || []
+        : availablePois;
+
+      // FATIGUE-AWARE BLENDING
+      let pointsForThisDay =
+        Math.round((totalPoisCount - usedPoiIds.size) / daysRemaining) || 3;
+      if (isRelaxMode)
+        pointsForThisDay = Math.max(2, Math.floor(pointsForThisDay * 0.7));
+      if (isExploreMode) {
+        const fatigueFactor = (energyLevel / 100) * 0.4 + 0.6; // Scale from 0.6x to 1.0x
+        pointsForThisDay = Math.round(pointsForThisDay * 1.2 * fatigueFactor);
+      }
+      if (dayNumber === totalDays && totalDays > 1)
+        pointsForThisDay = Math.max(2, Math.floor(pointsForThisDay * 0.8));
+
+      const tryAddPoint = (
+        poi: FilteredPoi,
+        customStart?: number,
+        force: boolean = false,
+      ): boolean => {
+        const lastPoint = points.length > 0 ? points[points.length - 1] : null;
+        const lastPoi = lastPoint
+          ? (lastPoint.poi as FilteredPoi)
+          : lastPoiFromPrevDay?.city_name === targetCity
+            ? lastPoiFromPrevDay
             : undefined;
         let transitTime = DEFAULT_TRANSIT_DURATION_MIN;
+
+        // SMALL TOWN RELAXATION
+        const relaxAll = force || (isSmallTown && points.length < 4);
 
         if (lastPoi) {
           const dist = this.haversineKm(
@@ -292,52 +586,90 @@ export class SchedulerService {
             poi.coordinates.lat,
             poi.coordinates.lon,
           );
-          // TRI-108-2: Realistic travel time calculation
-          const rawMinutes =
-            dist < 1.0 ? (dist / 5) * 60 : (dist / 25) * 60 + 10;
-          transitTime = Math.max(5, Math.min(90, Math.round(rawMinutes)));
+          if (dist > 50) {
+            // Переезд между городами! Принимаем среднюю скорость 80 км/ч
+            transitTime = Math.round((dist / 80) * 60);
+          } else {
+            const rawMinutes =
+              dist < 1.0 ? (dist / 5) * 60 : (dist / 25) * 60 + 10;
+            let finalTransit = Math.round(rawMinutes / walkingSpeed);
+            
+            // In small towns, we assume things are closer or easier to reach
+            if (isSmallTown) finalTransit = Math.round(finalTransit * 0.7);
+            
+            transitTime = Math.max(5, Math.min(90, finalTransit));
+          }
         } else {
           transitTime = 0;
         }
 
         const arrival = customStart ?? currentTime + transitTime;
-        const baseDuration = VISIT_DURATION[poi.category] ?? 90;
-        const visitDuration = Math.max(30, baseDuration);
+        const isFood = this.isFoodCategory(poi.category);
+        const mealType = isFood ? this.getMealType(arrival) : null;
+
+        const isHeavy =
+          poi.category === 'museum' || ((poi as any).duration || 0) > 90;
+
+        if (!relaxAll) {
+          if (lastPoi && this.isFoodCategory(lastPoi.category) && isFood)
+            return false;
+
+          // ENERGY GUARD
+          if (energyLevel < 35 && isHeavy && !isFood) return false;
+
+          // POST-DINNER LOGIC
+          if (
+            lastPoi &&
+            this.isFoodCategory(lastPoi.category) &&
+            this.getMealType(this.timeToMinutes(lastPoint?.arrival_time)) ===
+              'dinner'
+          ) {
+            if (!this.isPostDinnerHighlight(poi) && !isFood) return false;
+            if (
+              this.haversineKm(
+                lastPoi.coordinates.lat,
+                lastPoi.coordinates.lon,
+                poi.coordinates.lat,
+                poi.coordinates.lon,
+              ) > 1.2
+            )
+              return false;
+          }
+        }
+
+        let visitDuration = VISIT_DURATION[poi.category] ?? 60;
+        if (isFood) visitDuration = mealType === 'dinner' ? 90 : 50;
+
+        const explanations: string[] = [];
+
+        // Apply user stay multiplier
+        const stayMultiplier = stayMultipliers[poi.category || ''] || 1.0;
+        if (stayMultiplier !== 1.0) {
+          explanations.push(
+            `Adjusted duration based on your typical stay time for ${poi.category}`,
+          );
+        }
+        visitDuration *= stayMultiplier;
+
+        if (isSmallTown) visitDuration *= 0.8; // Faster visits in small towns
+        if (isRelaxMode || energyLevel < 40) visitDuration *= 1.2;
+        visitDuration = Math.max(20, Math.round(visitDuration));
+
+        if (walkingSpeed !== 1.0 && transitTime > 0) {
+          explanations.push(
+            `Calculated transit time adjusted for your walking pace`,
+          );
+        }
+
+        const affinity = categoryAffinity[poi.category || ''] || 0;
+        if (affinity > 0.4) {
+          explanations.push(
+            `Added because you often choose ${poi.category} places`,
+          );
+        }
+
         const leaveTime = arrival + visitDuration;
-
-        if (leaveTime > endMinutes + 120) return false;
-
-        const pointCost = this.estimatePointCost(poi, dayBudget);
-
-        // BUDGET GUARD (TRI-104-BUDGET): Prevent adding points that would exceed budget significantly.
-        // We allow 10% overflow to handle rounding and essential points.
-        if (
-          dayBudget > 0 &&
-          points.length > 0 &&
-          dayCost + pointCost > dayBudget * 1.1
-        ) {
-          this.logger.debug(
-            `Skipping point ${poi.name} (cost ${pointCost}) - day budget reached (${dayCost}/${dayBudget})`,
-          );
-          return false;
-        }
-
-        const lat = poi.coordinates?.lat;
-        const lon = poi.coordinates?.lon;
-        const isCoordValid =
-          lat !== undefined &&
-          lon !== undefined &&
-          Number.isFinite(lat) &&
-          Number.isFinite(lon) &&
-          (Math.abs(lat) > 0.001 || Math.abs(lon) > 0.001) &&
-          !(lat === 0 && lon === 0); // Explicitly exclude (0,0) coordinates
-
-        if (!isCoordValid) {
-          this.logger.error(
-            `[Scheduler] Skipping point "${poi.name}" due to invalid coordinates: (${lat}, ${lon})`,
-          );
-          return false;
-        }
+        if (!relaxAll && leaveTime > endMinutes + 60) return false;
 
         points.push({
           poi_id: poi.id,
@@ -347,98 +679,199 @@ export class SchedulerService {
           departure_time: this.minutesToTime(leaveTime),
           visit_duration_min: visitDuration,
           travel_from_prev_min: points.length === 0 ? undefined : transitTime,
-          estimated_cost: pointCost,
+          estimated_cost: this.estimatePointCost(poi, dayBudget),
+          ai_explanations: explanations.length > 0 ? explanations : undefined,
         });
 
-        dayCost += pointCost;
+        dayCost += points[points.length - 1].estimated_cost;
         currentTime = leaveTime;
         usedPoiIds.add(poi.id);
 
-        if (poi.category === 'restaurant') {
-          dayRestaurantPoints += 1;
-          lastRestaurantArrival = arrival;
-        } else if (poi.category === 'cafe') {
-          dayCafePoints += 1;
-        } else {
-          dayNonFoodPoints += 1;
+        // Update Energy
+        if (isFood) energyLevel = Math.min(100, energyLevel + 25);
+        else {
+          energyLevel -= isHeavy ? 15 : 8;
+          energyLevel -= Math.round(transitTime / 5);
         }
+        energyLevel = Math.max(0, energyLevel);
 
+        if (isFood) {
+          if (poi.category === 'restaurant') dayRestaurantPoints += 1;
+          else dayCafePoints += 1;
+          lastFoodTime = arrival;
+          lastMealType = mealType;
+        }
         return true;
       };
 
-      // Шаг 1: минимум 1 non-food (если доступно)
-      const mandatoryNonFood = remainingNonFood[0];
-      if (mandatoryNonFood) {
-        tryAddPoint(mandatoryNonFood);
-      }
-
-      // Шаг 2: минимум 1 food (если не отключено пользователем)
-      if (!skipFoodByUser && remainingFood.length > 0) {
-        const mandatoryFood =
-          remainingFood.find((p) => p.category === 'restaurant') ??
-          remainingFood[0];
-        if (mandatoryFood && !usedPoiIds.has(mandatoryFood.id)) {
-          const mealStart = Math.max(currentTime, startMinutes + 3 * 60);
-          tryAddPoint(mandatoryFood, mealStart);
+      // Step 0: Сначала добавляем точки, которые пользователь сам закрепил за этой датой в Планировщике
+      const dayPreAssigned = preAssignedMap.get(currentDateStr) || [];
+      for (const prePoi of dayPreAssigned) {
+        if (!usedPoiIds.has(prePoi.id)) {
+          tryAddPoint(prePoi, undefined, true);
         }
       }
 
-      // Шаг 3: заполняем день до целевого объема, соблюдая ограничения питания
-      while (points.length < pointsForThisDay && currentTime < endMinutes) {
-        const candidates = availablePois.filter((p) => !usedPoiIds.has(p.id));
+      // Step 1: First point
+      const remainingUniqueInLoop = availableForDay.filter(
+        (p) => !usedPoiIds.has(p.id),
+      );
+      const firstNonFood = remainingUniqueInLoop.find(
+        (p) => !this.isFoodCategory(p.category),
+      );
+      if (firstNonFood) tryAddPoint(firstNonFood);
+
+      // Main Loop
+      const MIN_POINTS_PER_DAY = isSmallTown ? 4 : 3;
+
+      while (points.length < pointsForThisDay + 2 && currentTime < endMinutes) {
+        const candidates = availableForDay.filter((p) => !usedPoiIds.has(p.id));
         if (candidates.length === 0) break;
-        const hasFoodCandidates = candidates.some(
-          (p) => p.category === 'restaurant' || p.category === 'cafe',
-        );
 
-        // Фильтруем кандидатов по бизнес-правилам
-        const validCandidates = candidates.filter((poi) => {
-          if (poi.category === 'restaurant') {
-            if (dayRestaurantPoints >= 3) return false;
-            if (
-              lastRestaurantArrival !== null &&
-              currentTime - lastRestaurantArrival < RESTAURANT_MIN_GAP_MIN
-            ) {
-              return false;
-            }
-          }
+        const lastPoint = points.length > 0 ? points[points.length - 1] : null;
+        const lastPoi = lastPoint ? (lastPoint.poi as FilteredPoi) : undefined;
+        const prevPoi =
+          points.length > 1 ? points[points.length - 2].poi : undefined;
 
-          if (poi.category === 'cafe') {
-            if (dayCafePoints >= 2) return false;
-            if (
-              lastRestaurantArrival !== null &&
-              currentTime - lastRestaurantArrival < CAFE_AFTER_MEAL_MIN
-            ) {
-              return false;
-            }
-          }
+        let validCandidates = candidates.filter((poi) => {
+          const cat = poi.category || '';
+          const isFood = this.isFoodCategory(cat);
+          const meal = this.getMealType(currentTime + 20);
 
+          // SMART SLOTS v2
+          // 1. Обед (12:30-14:30) -> Жёстко требуем еду, если ещё не ели
           if (
-            poi.category !== 'restaurant' &&
-            poi.category !== 'cafe' &&
-            dayNonFoodPoints >= nonFoodQuotaForDay &&
-            hasFoodCandidates
+            currentTime >= 12.5 * 60 &&
+            currentTime <= 14.5 * 60 &&
+            dayCafePoints + dayRestaurantPoints === 0
           ) {
-            return false;
+            if (!isFood) {
+              const hasFood = candidates.some((c) =>
+                this.isFoodCategory(c.category),
+              );
+              if (hasFood) return false;
+            }
           }
 
+          // 2. Утро -> Приоритет культуре, если скоринг высокий
+          if (currentTime < 12 * 60 && !isFood) {
+            const weight = (poi as any).aiWeight || 0;
+            if (cat === 'museum' && weight < 40) return false;
+          }
+
+          if (lastPoi && lastPoi.category === cat && !isFood) {
+            const hasOthers = candidates.some(
+              (c) => c.category !== cat && !this.isFoodCategory(c.category),
+            );
+            if (hasOthers && Math.random() < diversityPressure) return false;
+          }
+
+          if (isFood) {
+            if (lastPoi && this.isFoodCategory(lastPoi.category)) return false;
+            if (meal === 'lunch' && dayCafePoints + dayRestaurantPoints >= 1)
+              return false;
+            if (meal === 'dinner' && dayRestaurantPoints >= 1) return false;
+          }
+
+          if (dislikesMuseums && cat === 'museum') return false;
           return true;
         });
 
         if (validCandidates.length === 0) {
-          currentTime += TIME_SHIFT_ON_FOOD_CONFLICT_MIN;
-          continue;
+          // If we have few points, relax candidates filter
+          if (points.length < MIN_POINTS_PER_DAY) {
+            validCandidates = candidates.slice(0, 5);
+          } else {
+            break;
+          }
         }
 
-        // TRI-108-5: Use geographic optimization to minimize backtracking
-        const lastPoi =
-          points.length > 0
-            ? (points[points.length - 1].poi as FilteredPoi)
-            : undefined;
-        const optimizedOrder = this.optimizeRouteOrder(
-          validCandidates,
-          lastPoi,
-        );
+        // ADVANCED SCORING v7
+        let optimizedOrder = validCandidates.sort((a, b) => {
+          const distA = lastPoi
+            ? this.haversineKm(
+                lastPoi.coordinates.lat,
+                lastPoi.coordinates.lon,
+                a.coordinates.lat,
+                a.coordinates.lon,
+              )
+            : 0;
+          const distB = lastPoi
+            ? this.haversineKm(
+                lastPoi.coordinates.lat,
+                lastPoi.coordinates.lon,
+                b.coordinates.lat,
+                b.coordinates.lon,
+              )
+            : 0;
+
+          const meal = this.getMealType(currentTime + 20);
+          let weightA = (a as any).aiWeight || 0;
+          let weightB = (b as any).aiWeight || 0;
+
+          // Еда получает критический буст в обеденное время, если еще не ели
+          if (
+            this.isFoodCategory(a.category) &&
+            meal === 'lunch' &&
+            dayCafePoints + dayRestaurantPoints === 0
+          )
+            weightA += 150;
+          if (
+            this.isFoodCategory(b.category) &&
+            meal === 'lunch' &&
+            dayCafePoints + dayRestaurantPoints === 0
+          )
+            weightB += 150;
+
+          let scoreA = distA - weightA / 60;
+          let scoreB = distB - weightB / 60;
+
+          // PRIORITY-AWARE ZIGZAG
+          if (prevPoi && lastPoi) {
+            const angleA = this.calculateAngle(
+              prevPoi.coordinates,
+              lastPoi.coordinates,
+              a.coordinates,
+            );
+            const angleB = this.calculateAngle(
+              prevPoi.coordinates,
+              lastPoi.coordinates,
+              b.coordinates,
+            );
+            const pA = angleA > 115 ? 2.0 : 0;
+            const pB = angleB > 115 ? 2.0 : 0;
+            scoreA += pA * (weightA > 65 ? 0.2 : 1.0); // 80% discount for top priority
+            scoreB += pB * (weightB > 65 ? 0.2 : 1.0);
+          }
+
+          // NEURAL AFFINITY BOOST
+          // Category affinity acts as a negative penalty (boost).
+          // We apply a saturation effect to cap the impact and prevent "filter bubbles".
+          const affinityA = categoryAffinity[a.category || ''] || 0;
+          const affinityB = categoryAffinity[b.category || ''] || 0;
+
+          // Cap the effective affinity at 0.8 to leave room for exploration
+          const boostA = Math.min(affinityA, 0.8) * 1.5;
+          const boostB = Math.min(affinityB, 0.8) * 1.5;
+
+          scoreA -= boostA;
+          scoreB -= boostB;
+
+          if (lovesCoffee && a.category === 'cafe') scoreA -= 1;
+          if (lovesCoffee && b.category === 'cafe') scoreB -= 1;
+          if (
+            lovesNature &&
+            ['park', 'garden', 'forest'].includes(a.category || '')
+          )
+            scoreA -= 0.8;
+          if (
+            lovesNature &&
+            ['park', 'garden', 'forest'].includes(b.category || '')
+          )
+            scoreB -= 0.8;
+
+          return scoreA - scoreB;
+        });
 
         let added = false;
         for (const next of optimizedOrder) {
@@ -449,55 +882,70 @@ export class SchedulerService {
         }
 
         if (!added) {
-          break;
+          // Fallback: try to add ANY candidate with 'force' if we have very few points
+          if (points.length < MIN_POINTS_PER_DAY && candidates.length > 0) {
+            const fallbackPoint = candidates.sort((a, b) => {
+              const distA = lastPoi
+                ? this.haversineKm(
+                    lastPoi.coordinates.lat,
+                    lastPoi.coordinates.lon,
+                    a.coordinates.lat,
+                    a.coordinates.lon,
+                  )
+                : 0;
+              const distB = lastPoi
+                ? this.haversineKm(
+                    lastPoi.coordinates.lat,
+                    lastPoi.coordinates.lon,
+                    b.coordinates.lat,
+                    b.coordinates.lon,
+                  )
+                : 0;
+              return distA - distB;
+            })[0];
+            if (tryAddPoint(fallbackPoint, undefined, true)) {
+              added = true;
+            }
+          }
+        }
+
+        if (!added) break;
+      }
+
+      // WEATHER-AWARE FALLBACK
+      const lastPointFinal = points[points.length - 1];
+      if (
+        lastPointFinal &&
+        this.isFoodCategory(lastPointFinal.poi.category) &&
+        this.getMealType(this.timeToMinutes(lastPointFinal.arrival_time)) ===
+          'dinner'
+      ) {
+        if (!isRainy && !isCold) {
+          const nearby = availablePois.find(
+            (p) =>
+              !usedPoiIds.has(p.id) &&
+              this.haversineKm(
+                lastPointFinal.poi.coordinates.lat,
+                lastPointFinal.poi.coordinates.lon,
+                p.coordinates.lat,
+                p.coordinates.lon,
+              ) < 0.6,
+          );
+          if (nearby) tryAddPoint(nearby);
+        } else {
+          this.logger.log(
+            `[Weather] Skipping micro-walk due to poor conditions.`,
+          );
         }
       }
 
-      // TRI-108-3: Fill remaining budget with food POIs if available
-      const remainingBudget = dayBudget - dayCost;
-      const budgetUtilization =
-        dayBudget > 0 ? (dayCost / dayBudget) * 100 : 100;
-
-      if (remainingBudget > 500 && currentTime < endMinutes - 60) {
-        // Try to add food venues to fill remaining budget
-        const MAX_RESTAURANTS = 3;
-        const MAX_CAFES = 2;
-
-        const foodCandidates = availablePois.filter(
-          (p) =>
-            !usedPoiIds.has(p.id) &&
-            (p.category === 'restaurant' || p.category === 'cafe') &&
-            (p.category !== 'cafe' || dayCafePoints < MAX_CAFES) &&
-            (p.category !== 'restaurant' ||
-              dayRestaurantPoints < MAX_RESTAURANTS),
-        );
-
-        // Sort by price (budget ones first to maximize count)
-        foodCandidates.sort((a, b) => {
-          const costA = this.estimatePointCost(a, dayBudget);
-          const costB = this.estimatePointCost(b, dayBudget);
-          return costA - costB;
-        });
-
-        // Add food POIs until budget exhausted or time exhausted
-        for (const foodPoi of foodCandidates) {
-          if (!tryAddPoint(foodPoi, currentTime)) {
-            break; // Can't fit this one
-          }
-          const newBudget = dayBudget - dayCost;
-          if (newBudget < 300) {
-            break; // Remaining budget too small
-          }
-        }
+      if (points.length > 0) {
+        lastPoiFromPrevDay = points[points.length - 1].poi as FilteredPoi;
       }
-
-      this.logger.log(
-        `[TRI-108-3] Day ${dayNumber}: spent ${dayCost}/${dayBudget} (${budgetUtilization.toFixed(0)}%)`,
-      );
 
       days.push({
         day_number: dayNumber,
-        date: this.dayDateFromNow(dayNumber - 1),
+        date: currentDateStr,
         day_budget_estimated: dayCost,
         day_start_time: intent.start_time,
         day_end_time: intent.end_time,
@@ -505,38 +953,62 @@ export class SchedulerService {
       });
     }
 
-    const totalBudgetEstimated = days.reduce(
-      (acc, day) => acc + day.day_budget_estimated,
+    // Если маршрут мульти-городской, склеиваем название
+    const finalCity =
+      intent.cities && intent.cities.length > 1
+        ? intent.cities.join(' - ')
+        : intent.city_from && intent.city_to
+          ? `${intent.city_from} - ${intent.city_to}`
+          : intent.city;
+
+    const totalBudget = days.reduce(
+      (acc, d) => acc + d.day_budget_estimated,
       0,
     );
-
-    const plan = {
-      city: intent.city,
-      total_budget_estimated: totalBudgetEstimated,
+    return {
+      city: finalCity,
+      cities: intent.cities,
+      route_type: intent.route_type,
+      total_budget_estimated: totalBudget,
       days,
     };
+  }
 
-    this.logger.log(
-      `Route plan successfully generated. Total budget estimated: ${totalBudgetEstimated} rub.`,
+  private isFoodCategory(cat: string | undefined): boolean {
+    const c = (cat || '').toLowerCase();
+    return [
+      'restaurant',
+      'cafe',
+      'bar',
+      'pub',
+      'fast_food',
+      'food_court',
+    ].includes(c);
+  }
+
+  private getMealType(minutes: number): 'lunch' | 'dinner' | 'other' {
+    if (minutes >= 11 * 60 && minutes <= 16 * 60) return 'lunch';
+    if (minutes >= 18 * 60) return 'dinner';
+    return 'other';
+  }
+
+  private isPostDinnerHighlight(poi: FilteredPoi): boolean {
+    const cat = (poi.category || '').toLowerCase();
+    return (
+      [
+        'viewpoint',
+        'embankment',
+        'bridge',
+        'square',
+        'monument',
+        'park',
+      ].includes(cat) || ((poi as any).duration || 0) <= 30
     );
-    plan.days.forEach((day) => {
-      this.logger.log(`  Day ${day.day_number}: ${day.points.length} points`);
-      day.points.forEach((point) => {
-        this.logger.log(
-          `    - [${point.arrival_time}-${point.departure_time}] ${point.poi.name}`,
-        );
-      });
-    });
-
-    return plan;
   }
 
   private estimatePointCost(poi: FilteredPoi, dayBudget: number): number {
     if (poi.price_segment === 'free') return 0;
-
-    // If budget is not specified (0), use reasonable defaults
     const budget = dayBudget > 0 ? dayBudget : 5000;
-
     if (poi.price_segment === 'budget')
       return Math.max(150, Math.round(budget * 0.1));
     if (poi.price_segment === 'mid')
@@ -549,9 +1021,7 @@ export class SchedulerService {
   public timeToMinutes(value: string | undefined | null): number {
     if (!value || typeof value !== 'string') return 0;
     const parts = value.split(':').map(Number);
-    const h = parts[0] || 0;
-    const m = parts[1] || 0;
-    return h * 60 + m;
+    return (parts[0] || 0) * 60 + (parts[1] || 0);
   }
 
   public minutesToTime(total: number): string {
@@ -573,109 +1043,12 @@ export class SchedulerService {
     lat2: number,
     lon2: number,
   ): number {
-    const toRad = (value: number) => (value * Math.PI) / 180;
-
+    const toRad = (v: number) => (v * Math.PI) / 180;
     const dLat = toRad(lat2 - lat1);
     const dLon = toRad(lon2 - lon1);
     const a =
       Math.sin(dLat / 2) ** 2 +
       Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-
     return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  }
-
-  // TRI-108-5: Geographic clustering for route optimization
-  private clusterPoisByZone(pois: FilteredPoi[]): Map<string, FilteredPoi[]> {
-    const clusters = new Map<string, FilteredPoi[]>();
-
-    for (const poi of pois) {
-      // Create zone key: round coordinates to 0.1 degree (~11km) grid
-      const latZone = Math.round(poi.coordinates.lat * 10) / 10;
-      const lonZone = Math.round(poi.coordinates.lon * 10) / 10;
-      const zoneKey = `${latZone},${lonZone}`;
-
-      if (!clusters.has(zoneKey)) {
-        clusters.set(zoneKey, []);
-      }
-      clusters.get(zoneKey)!.push(poi);
-    }
-
-    return clusters;
-  }
-
-  // TRI-108-5: Sort POIs to minimize backtracking using nearest-neighbor with zone awareness
-  private optimizeRouteOrder(
-    candidates: FilteredPoi[],
-    lastPoi?: FilteredPoi,
-  ): FilteredPoi[] {
-    if (candidates.length === 0) return [];
-    if (candidates.length === 1) return candidates;
-
-    const clusters = this.clusterPoisByZone(candidates);
-    const clusterCenters = Array.from(clusters.entries()).map(([key, pois]) => {
-      const avgLat =
-        pois.reduce((sum, p) => sum + p.coordinates.lat, 0) / pois.length;
-      const avgLon =
-        pois.reduce((sum, p) => sum + p.coordinates.lon, 0) / pois.length;
-      return { key, lat: avgLat, lon: avgLon, pois };
-    });
-
-    // Sort clusters by proximity to last position
-    let currentLat = lastPoi?.coordinates.lat ?? 0;
-    let currentLon = lastPoi?.coordinates.lon ?? 0;
-
-    const sortedClusters: typeof clusterCenters = [];
-    const visitedKeys = new Set<string>();
-
-    // Greedy TSP: visit nearest unvisited cluster
-    while (visitedKeys.size < clusterCenters.length) {
-      let nearestCluster: (typeof clusterCenters)[number] | null = null;
-      let minDistance = Infinity;
-
-      for (const cluster of clusterCenters) {
-        if (visitedKeys.has(cluster.key)) continue;
-        const dist = this.haversineKm(
-          currentLat,
-          currentLon,
-          cluster.lat,
-          cluster.lon,
-        );
-        if (dist < minDistance) {
-          minDistance = dist;
-          nearestCluster = cluster;
-        }
-      }
-
-      if (nearestCluster !== null) {
-        sortedClusters.push(nearestCluster);
-        visitedKeys.add(nearestCluster.key);
-        currentLat = nearestCluster.lat;
-        currentLon = nearestCluster.lon;
-      }
-    }
-
-    // Flatten clusters into ordered POI list
-    const optimized: FilteredPoi[] = [];
-    for (const cluster of sortedClusters) {
-      // Within cluster, sort by proximity to cluster center
-      const sortedPois = cluster.pois.sort((a, b) => {
-        const distA = this.haversineKm(
-          cluster.lat,
-          cluster.lon,
-          a.coordinates.lat,
-          a.coordinates.lon,
-        );
-        const distB = this.haversineKm(
-          cluster.lat,
-          cluster.lon,
-          b.coordinates.lat,
-          b.coordinates.lon,
-        );
-        return distA - distB;
-      });
-      optimized.push(...sortedPois);
-    }
-
-    return optimized;
   }
 }
