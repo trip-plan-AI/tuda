@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Надежный скрипт миграции БД для продакшена
-# Стратегия: drizzle-kit migrate -> fallback на db:push --yes -> валидация схемы
-set -euo pipefail
+# Надежный и безопасный скрипт миграции БД для продакшена
+# Стратегия: preflight checks -> apply enums -> drizzle-kit migrate -> валидация схемы
+set -Eeuo pipefail
 
 LOG_FILE="${LOG_FILE:-/tmp/db_migrate.log}"
 MAX_RETRIES="${MAX_RETRIES:-2}"
@@ -13,6 +13,35 @@ log() {
 
 log_error() {
   echo "[migrate][error] $(date -u +"%Y-%m-%dT%H:%M:%SZ") $*" | tee -a "$LOG_FILE" >&2
+}
+
+preflight_checks() {
+  log "running preflight checks..."
+
+  if [ ! -f "./apps/api/src/db/00-enums.sql" ]; then
+    log_error "required file not found: ./apps/api/src/db/00-enums.sql"
+    return 1
+  fi
+
+  if [ ! -f "./apps/api/src/db/migrations/meta/_journal.json" ]; then
+    log_error "required migrations journal not found: ./apps/api/src/db/migrations/meta/_journal.json"
+    return 1
+  fi
+
+  if ! ls ./apps/api/src/db/migrations/*.sql >/dev/null 2>&1; then
+    log_error "no SQL migration files found in ./apps/api/src/db/migrations"
+    return 1
+  fi
+
+  docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT 1" >/dev/null
+  ' 2>&1 | tee -a "$LOG_FILE"
+
+  docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT postgis_full_version();" >/dev/null
+  ' 2>&1 | tee -a "$LOG_FILE"
+
+  log "preflight checks passed"
 }
 
 # Функция для применения миграций через drizzle-kit migrate
@@ -35,20 +64,6 @@ run_migrate() {
 
   log_error "all migrate attempts failed"
   return 1
-}
-
-# Функция для fallback на db:push с флагом --yes (неинтерактивный режим)
-run_push_fallback() {
-  log "starting db:push --yes (non-interactive fallback)..."
-
-  if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 docker compose -f "$COMPOSE_FILE" run --rm -T --no-deps api \
-    pnpm --filter api db:push --yes < /dev/null 2>&1 | tee -a "$LOG_FILE"; then
-    log "push completed successfully"
-    return 0
-  else
-    log_error "push failed"
-    return 1
-  fi
 }
 
 # Пост-миграционная валидация критических колонок
@@ -90,7 +105,7 @@ validate_schema() {
   fi
 
   log "schema validation passed — all critical columns exist"
-  
+
   # Дополнительная проверка ENUM типов
   log "validating ENUM types..."
   local enum_check
@@ -121,12 +136,10 @@ validate_schema() {
 # Применение идемпотентных ENUM типов
 apply_enums() {
   log "applying idempotent ENUM types..."
-  
-  local enums_sql="/app/apps/api/src/db/00-enums.sql"
-  
-  if docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc "
-    psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 -f \"$enums_sql\"
-  " 2>&1 | tee -a "$LOG_FILE"; then
+
+  if docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1
+  ' < ./apps/api/src/db/00-enums.sql 2>&1 | tee -a "$LOG_FILE"; then
     log "ENUM types applied successfully"
     return 0
   else
@@ -139,27 +152,29 @@ apply_enums() {
 main() {
   log "started"
 
-  # Шаг 0: Применяем ENUM типы (идемпотентно)
+  # Шаг 0: Preflight проверки перед миграцией
+  if ! preflight_checks; then
+    log_error "preflight checks failed"
+    exit 1
+  fi
+
+  # Шаг 1: Применяем ENUM типы (идемпотентно)
   if ! apply_enums; then
     log_error "ENUM application failed, continuing anyway..."
   fi
 
-  # Шаг 1: Активируем PostGIS (идемпотентно)
+  # Шаг 2: Активируем PostGIS (идемпотентно)
   log "enabling PostGIS extension..."
   docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
   ' 2>&1 | tee -a "$LOG_FILE" || log "PostGIS extension may already exist"
 
-  # Шаг 2: Применяем миграции через drizzle-kit migrate
+  # Шаг 3: Применяем миграции через drizzle-kit migrate
   if run_migrate; then
     log "success via migrate"
   else
-    # Шаг 3: Fallback на db:push --yes (неинтерактивный)
-    log "falling back to db:push --yes..."
-    if ! run_push_fallback; then
-      log_error "all migration methods failed"
-      exit 1
-    fi
+    log_error "migrate failed, automatic fallback is disabled for production safety"
+    exit 1
   fi
 
   # Шаг 4: Пост-миграционная валидация
