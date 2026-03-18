@@ -608,6 +608,35 @@ export class SchedulerService {
       }
     }
 
+    // Pre-compute geographic anchors for soft day affinity.
+    // An anchor is the "center of gravity" for each day — determined by farthest-first selection.
+    // Used in scoring as a soft penalty (not a hard filter).
+    const dayAnchors = new Map<number, FilteredPoi>();
+    if (cities.length === 1 && totalDays > 1 && preAssignedMap.size === 0 && availablePois.length > 0) {
+      const sorted = [...availablePois].sort((a, b) => b.score - a.score);
+      const anchors: FilteredPoi[] = [sorted[0]];
+      const unselected = new Set(sorted.slice(1));
+
+      for (let i = 1; i < totalDays; i++) {
+        let maxDist = -1;
+        let nextAnchor: FilteredPoi | null = null;
+        for (const poi of unselected) {
+          let minDist = Infinity;
+          for (const anchor of anchors) {
+            const d = this.haversineKm(
+              poi.coordinates.lat, poi.coordinates.lon,
+              anchor.coordinates.lat, anchor.coordinates.lon,
+            );
+            if (d < minDist) minDist = d;
+          }
+          if (minDist > maxDist) { maxDist = minDist; nextAnchor = poi; }
+        }
+        if (nextAnchor) { anchors.push(nextAnchor); unselected.delete(nextAnchor); }
+      }
+      anchors.forEach((a, i) => dayAnchors.set(i + 1, a));
+      this.logger.log(`[Scheduler] Day anchors: ${anchors.map((a, i) => `Day${i+1}=${a.name}`).join(', ')}`);
+    }
+
     let lastPoiFromPrevDay: FilteredPoi | undefined;
 
     for (let dayNumber = 1; dayNumber <= totalDays; dayNumber += 1) {
@@ -947,8 +976,25 @@ export class SchedulerService {
           const distPenaltyA = distA > 10 ? distA * 3 : distA;
           const distPenaltyB = distB > 10 ? distB * 3 : distB;
 
-          let scoreA = distPenaltyA - weightA / 60;
-          let scoreB = distPenaltyB - weightB / 60;
+          // SOFT ANCHOR PENALTY: штраф за удалённость от якоря текущего дня (> 15 км)
+          const dayAnchor = dayAnchors.get(dayNumber);
+          let anchorPenaltyA = 0;
+          let anchorPenaltyB = 0;
+          if (dayAnchor) {
+            const anchorDistA = this.haversineKm(
+              dayAnchor.coordinates.lat, dayAnchor.coordinates.lon,
+              a.coordinates.lat, a.coordinates.lon,
+            );
+            const anchorDistB = this.haversineKm(
+              dayAnchor.coordinates.lat, dayAnchor.coordinates.lon,
+              b.coordinates.lat, b.coordinates.lon,
+            );
+            anchorPenaltyA = anchorDistA > 15 ? anchorDistA * 0.5 : 0;
+            anchorPenaltyB = anchorDistB > 15 ? anchorDistB * 0.5 : 0;
+          }
+
+          let scoreA = distPenaltyA + anchorPenaltyA - weightA / 60;
+          let scoreB = distPenaltyB + anchorPenaltyB - weightB / 60;
 
           // PRIORITY-AWARE ZIGZAG
           if (prevPoi && lastPoi) {
