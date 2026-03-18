@@ -511,8 +511,9 @@ export function AIAssistantPage() {
     collaborateApi.getAll(socketTripId).then(setCollaborators).catch(() => {});
   }, [socketTripId, setCollaborators]);
 
-  // Кнопка AI-режима видна если у маршрута есть хотя бы один участник (онлайн или нет)
-  const hasCollaborators = collaborators.length > 0 || onlineUserIds.length > 1;
+  // Кнопка AI-режима видна только если онлайн 2+ человек (ты + хотя бы один другой).
+  // Если ты один — все сообщения идут в AI по умолчанию, тоггл не нужен.
+  const hasCollaborators = onlineUserIds.length > 1;
 
   const [isAddPointMode, setIsAddPointMode] = useState(false);
 
