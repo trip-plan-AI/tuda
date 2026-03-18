@@ -168,7 +168,7 @@ export class CollaborationGateway
     this.collabService.addPresence(client.id, {
       userId: client.data.userId,
       tripId: data.trip_id,
-      name: client.data.email,
+      name: client.data.name,
       color: this.collabService.getUserColor(client.data.userId),
     });
 
@@ -279,6 +279,18 @@ export class CollaborationGateway
     client.to(`trip_${trip_id}`).emit('trip:update', { trip_id, ...patch });
   }
 
+  @SubscribeMessage('trip:budget_updated')
+  async handleTripBudgetUpdated(
+    @ConnectedSocket() client: TypedSocket,
+    @MessageBody() data: { trip_id: string; budget: number },
+  ) {
+    await this.checkAccess(client.data.userId, data.trip_id);
+    // DB already saved via HTTP PATCH — broadcast budget update to all other room members
+    client
+      .to(`trip_${data.trip_id}`)
+      .emit('trip:budget_updated', { trip_id: data.trip_id, budget: data.budget });
+  }
+
   emitTripUpdate(tripId: string, patch: Record<string, unknown> = {}) {
     if (!this.server) return;
     this.server
@@ -319,7 +331,7 @@ export class CollaborationGateway
   ) {
     client.to(`trip_${data.trip_id}`).emit('cursor:moved', {
       user_id: client.data.userId,
-      name: client.data.email,
+      name: client.data.name,
       color: this.collabService.getUserColor(client.data.userId),
       x: data.x,
       y: data.y,
