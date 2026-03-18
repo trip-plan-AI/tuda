@@ -137,7 +137,6 @@ jobs:
 
           echo "[deploy][step] migration assets preflight started"
           test -f ./apps/api/drizzle.config.ts
-          test -f ./apps/api/src/db/00-enums.sql
           test -f ./apps/api/src/db/migrations/meta/_journal.json
           ls ./apps/api/src/db/migrations/*.sql >/dev/null
           echo "[deploy][step] migration assets preflight finished"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Надежный и безопасный скрипт миграции БД для продакшена
-# Стратегия: preflight checks -> apply enums -> drizzle-kit migrate -> валидация схемы
+# Стратегия: preflight checks -> drizzle-kit migrate -> валидация схемы
 set -Eeuo pipefail
 
 LOG_FILE="${LOG_FILE:-/tmp/db_migrate.log}"
@@ -17,11 +17,6 @@ log_error() {
 
 preflight_checks() {
   log "running preflight checks..."
-
-  if [ ! -f "./apps/api/src/db/00-enums.sql" ]; then
-    log_error "required file not found: ./apps/api/src/db/00-enums.sql"
-    return 1
-  fi
 
   if [ ! -f "./apps/api/src/db/migrations/meta/_journal.json" ]; then
     log_error "required migrations journal not found: ./apps/api/src/db/migrations/meta/_journal.json"
@@ -64,6 +59,82 @@ run_migrate() {
 
   log_error "all migrate attempts failed"
   return 1
+}
+
+# Если прод уже инициализирован (таблицы/ENUM существуют),
+# но таблица истории миграций отсутствует, аккуратно создаем baseline.
+bootstrap_drizzle_history_if_needed() {
+  log "checking drizzle migrations baseline..."
+
+  local need_baseline
+  need_baseline=$(docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -t -A -c "
+      SELECT CASE
+        WHEN to_regclass('\''public.__drizzle_migrations'\'') IS NULL
+         AND to_regclass('\''public.trips'\'') IS NOT NULL
+         AND to_regclass('\''public.route_points'\'') IS NOT NULL
+         AND to_regclass('\''public.trip_chat_messages'\'') IS NOT NULL
+         AND to_regclass('\''public.ai_cities'\'') IS NOT NULL
+         AND to_regclass('\''public.ai_clusters'\'') IS NOT NULL
+         AND to_regclass('\''public.ai_pois'\'') IS NOT NULL
+         AND EXISTS (
+           SELECT 1
+           FROM information_schema.columns
+           WHERE table_schema = '\''public'\''
+             AND table_name = '\''trips'\''
+             AND column_name = '\''distance_km'\''
+         )
+         AND EXISTS (
+           SELECT 1
+           FROM information_schema.columns
+           WHERE table_schema = '\''public'\''
+             AND table_name = '\''route_points'\''
+             AND column_name = '\''duration'\''
+         )
+         AND EXISTS (SELECT 1 FROM pg_type WHERE typname = '\''collaborator_role'\'')
+        THEN '\''yes'\''
+        ELSE '\''no'\''
+      END;
+    "
+  ' 2>&1) || {
+    log_error "failed to detect drizzle baseline state"
+    return 1
+  }
+
+  need_baseline="$(echo "$need_baseline" | tr -d '[:space:]')"
+
+  if [ "$need_baseline" != "yes" ]; then
+    log "drizzle baseline is not required"
+    return 0
+  fi
+
+  log "drizzle migrations table is missing on initialized schema, bootstrapping baseline..."
+
+  docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "
+      CREATE TABLE IF NOT EXISTS public.__drizzle_migrations (
+        id serial PRIMARY KEY,
+        hash text NOT NULL UNIQUE,
+        created_at bigint NOT NULL
+      );
+    "
+  ' 2>&1 | tee -a "$LOG_FILE"
+
+  local file hash created_at
+  for file in ./apps/api/src/db/migrations/*.sql; do
+    hash=$(sha256sum "$file" | awk '{print $1}')
+    created_at=$(date +%s%3N)
+
+    docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc "
+      psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 -c \"
+        INSERT INTO public.__drizzle_migrations (hash, created_at)
+        VALUES ('$hash', $created_at)
+        ON CONFLICT (hash) DO NOTHING;
+      \"
+    " 2>&1 | tee -a "$LOG_FILE"
+  done
+
+  log "drizzle baseline bootstrap finished"
 }
 
 # Пост-миграционная валидация критических колонок
@@ -133,21 +204,6 @@ validate_schema() {
   return 0
 }
 
-# Применение идемпотентных ENUM типов
-apply_enums() {
-  log "applying idempotent ENUM types..."
-
-  if docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
-    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1
-  ' < ./apps/api/src/db/00-enums.sql 2>&1 | tee -a "$LOG_FILE"; then
-    log "ENUM types applied successfully"
-    return 0
-  else
-    log_error "failed to apply ENUM types"
-    return 1
-  fi
-}
-
 # Основная функция
 main() {
   log "started"
@@ -158,16 +214,17 @@ main() {
     exit 1
   fi
 
-  # Шаг 1: Применяем ENUM типы (идемпотентно)
-  if ! apply_enums; then
-    log_error "ENUM application failed, continuing anyway..."
-  fi
-
-  # Шаг 2: Активируем PostGIS (идемпотентно)
+  # Шаг 1: Активируем PostGIS (идемпотентно)
   log "enabling PostGIS extension..."
   docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
   ' 2>&1 | tee -a "$LOG_FILE" || log "PostGIS extension may already exist"
+
+  # Шаг 2: Проверяем/восстанавливаем историю drizzle миграций для существующей схемы
+  if ! bootstrap_drizzle_history_if_needed; then
+    log_error "failed to bootstrap drizzle migration baseline"
+    exit 1
+  fi
 
   # Шаг 3: Применяем миграции через drizzle-kit migrate
   if run_migrate; then
