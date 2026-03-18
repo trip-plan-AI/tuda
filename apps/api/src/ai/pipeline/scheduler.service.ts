@@ -72,6 +72,79 @@ export class SchedulerService {
     return this.buildPlan(uniquePois, intent);
   }
 
+  private clusterizeByCentroid(
+    pois: FilteredPoi[],
+    days: number,
+  ): Record<number, FilteredPoi[]> {
+    if (days <= 1 || pois.length <= days) {
+      return { 1: pois };
+    }
+
+    // 1. Сортируем по весу (score) или aiWeight
+    const sortedPois = [...pois].sort((a, b) => {
+      const scoreA = a.score || ((a as any).aiWeight ? (a as any).aiWeight / 100 : 0);
+      const scoreB = b.score || ((b as any).aiWeight ? (b as any).aiWeight / 100 : 0);
+      return scoreB - scoreA;
+    });
+
+    // 2. Выбираем якоря для каждого дня
+    const anchors = [sortedPois[0]];
+    const unselected = new Set(sortedPois.slice(1));
+
+    for (let i = 1; i < days; i++) {
+      let maxDist = -1;
+      let nextAnchor: FilteredPoi | null = null;
+
+      for (const poi of unselected) {
+        let minDistToAnchor = Infinity;
+        for (const anchor of anchors) {
+          const dist = this.haversineKm(
+            poi.coordinates.lat,
+            poi.coordinates.lon,
+            anchor.coordinates.lat,
+            anchor.coordinates.lon,
+          );
+          if (dist < minDistToAnchor) minDistToAnchor = dist;
+        }
+
+        if (minDistToAnchor > maxDist) {
+          maxDist = minDistToAnchor;
+          nextAnchor = poi;
+        }
+      }
+
+      if (nextAnchor) {
+        anchors.push(nextAnchor);
+        unselected.delete(nextAnchor);
+      }
+    }
+
+    // 3. Распределяем остальные точки по ближайшим якорям
+    const clusters: Record<number, FilteredPoi[]> = {};
+    for (let i = 1; i <= days; i++) clusters[i] = [];
+
+    for (const poi of pois) {
+      let minDist = Infinity;
+      let bestDay = 1;
+
+      for (let i = 0; i < anchors.length; i++) {
+        const dist = this.haversineKm(
+          poi.coordinates.lat,
+          poi.coordinates.lon,
+          anchors[i].coordinates.lat,
+          anchors[i].coordinates.lon,
+        );
+        if (dist < minDist) {
+          minDist = dist;
+          bestDay = i + 1;
+        }
+      }
+      clusters[bestDay].push(poi);
+    }
+
+    return clusters;
+  }
+
   public rebuildSingleDayPlan(
     poisForDay: FilteredPoi[],
     intent: ParsedIntent,
@@ -257,7 +330,9 @@ export class SchedulerService {
     const MIN_POINTS_PER_DAY = isSmallSet ? 4 : 3;
 
     while (points.length < poisForDay.length && currentTime < endMinutes) {
-      const candidates = availablePois.filter((p) => !usedPoiIdsInDay.has(p.id));
+      const candidates = availablePois.filter(
+        (p) => !usedPoiIdsInDay.has(p.id),
+      );
       if (candidates.length === 0) break;
 
       const lastPoint = points.length > 0 ? points[points.length - 1] : null;
@@ -307,8 +382,12 @@ export class SchedulerService {
         const weightA = (a as any).aiWeight || 0;
         const weightB = (b as any).aiWeight || 0;
 
-        let scoreA = distA - weightA / 60;
-        let scoreB = distB - weightB / 60;
+        // DISTANCE PENALTY: нелинейный штраф за дальние переезды (> 10 км)
+        const distPenaltyA = distA > 10 ? distA * 3 : distA;
+        const distPenaltyB = distB > 10 ? distB * 3 : distB;
+
+        let scoreA = distPenaltyA - weightA / 60;
+        let scoreB = distPenaltyB - weightB / 60;
 
         if (prevPoi && lastPoi) {
           const angleA = this.calculateAngle(
@@ -406,6 +485,7 @@ export class SchedulerService {
   buildPlan(
     pois: FilteredPoi[],
     intent: ParsedIntent & { city_from?: string; city_to?: string },
+    onDayReady?: (day: PlanDay) => void,
   ): RoutePlan {
     this.logger.log(
       `Building plan v7 (Contextual Wisdom) for ${intent.days} days...`,
@@ -529,6 +609,49 @@ export class SchedulerService {
       }
     }
 
+    // Pre-compute geographic anchors for soft day affinity.
+    // An anchor is the "center of gravity" for each day — determined by farthest-first selection.
+    // Used in scoring as a soft penalty (not a hard filter).
+    const dayAnchors = new Map<number, FilteredPoi>();
+    if (cities.length === 1 && totalDays > 1 && preAssignedMap.size === 0 && availablePois.length > 0) {
+      // ANCHOR QUALIFICATION: only isProtected or score > 0.9 can be anchors.
+      // Prevents "Старый светофор" from dictating the day's geography.
+      const qualifiedAnchors = availablePois.filter(
+        (p) => (p as any).isProtected || p.score > 0.9,
+      );
+      // Fallback: if not enough qualified, fill up with top-scored non-food points
+      const fallbackPool = availablePois
+        .filter((p) => !this.isFoodCategory(p.category))
+        .sort((a, b) => b.score - a.score);
+      const anchorPool =
+        qualifiedAnchors.length >= totalDays
+          ? qualifiedAnchors.sort((a, b) => b.score - a.score)
+          : fallbackPool;
+
+      const sorted = anchorPool;
+      const anchors: FilteredPoi[] = [sorted[0]];
+      const unselected = new Set(sorted.slice(1));
+
+      for (let i = 1; i < totalDays; i++) {
+        let maxDist = -1;
+        let nextAnchor: FilteredPoi | null = null;
+        for (const poi of unselected) {
+          let minDist = Infinity;
+          for (const anchor of anchors) {
+            const d = this.haversineKm(
+              poi.coordinates.lat, poi.coordinates.lon,
+              anchor.coordinates.lat, anchor.coordinates.lon,
+            );
+            if (d < minDist) minDist = d;
+          }
+          if (minDist > maxDist) { maxDist = minDist; nextAnchor = poi; }
+        }
+        if (nextAnchor) { anchors.push(nextAnchor); unselected.delete(nextAnchor); }
+      }
+      anchors.forEach((a, i) => dayAnchors.set(i + 1, a));
+      this.logger.log(`[Scheduler] Day anchors: ${anchors.map((a, i) => `Day${i+1}=${a.name}`).join(', ')}`);
+    }
+
     let lastPoiFromPrevDay: FilteredPoi | undefined;
 
     for (let dayNumber = 1; dayNumber <= totalDays; dayNumber += 1) {
@@ -544,12 +667,25 @@ export class SchedulerService {
       const currentDateStr = dateStrings[dayNumber - 1];
       const targetCity = cityAssignments.get(dayNumber);
 
-      const daysRemaining = totalDays - dayNumber + 1;
+      // --- NEW CLUSTERING LOGIC (RELAXED) ---
+      // If we only have one city and more than one day, use LOOSE geographic hints
+      // but allow full POI pool to prevent "1 point per day" problem
+      const isNewSingleCityPlan =
+        cities.length === 1 && totalDays > 1 && preAssignedMap.size === 0;
+      let availableForDay: FilteredPoi[] = [];
 
-      // Filter available POIs for this day's city
-      const availableForDay = targetCity
-        ? poisByCity.get(targetCity) || []
-        : availablePois;
+      if (isNewSingleCityPlan) {
+        // TEMP FIX: Use full POI pool instead of strict clustering
+        // to prevent single-point-per-day issue. Scheduler will handle geographic distribution.
+        availableForDay = availablePois;
+      } else {
+        availableForDay = targetCity
+          ? poisByCity.get(targetCity) || []
+          : availablePois;
+      }
+      // ----------------------------
+
+      const daysRemaining = totalDays - dayNumber + 1;
 
       // FATIGUE-AWARE BLENDING
       let pointsForThisDay =
@@ -593,10 +729,10 @@ export class SchedulerService {
             const rawMinutes =
               dist < 1.0 ? (dist / 5) * 60 : (dist / 25) * 60 + 10;
             let finalTransit = Math.round(rawMinutes / walkingSpeed);
-            
+
             // In small towns, we assume things are closer or easier to reach
             if (isSmallTown) finalTransit = Math.round(finalTransit * 0.7);
-            
+
             transitTime = Math.max(5, Math.min(90, finalTransit));
           }
         } else {
@@ -738,7 +874,7 @@ export class SchedulerService {
           const isFood = this.isFoodCategory(cat);
           const meal = this.getMealType(currentTime + 20);
 
-          // SMART SLOTS v2
+          // SMART SLOTS v3
           // 1. Обед (12:30-14:30) -> Жёстко требуем еду, если ещё не ели
           if (
             currentTime >= 12.5 * 60 &&
@@ -746,6 +882,18 @@ export class SchedulerService {
             dayCafePoints + dayRestaurantPoints === 0
           ) {
             if (!isFood) {
+              const hasFood = candidates.some((c) =>
+                this.isFoodCategory(c.category),
+              );
+              if (hasFood) return false;
+            }
+          }
+
+          // 1b. Ужин (18:30-20:30) -> Требуем ужин, если еда после 18:00 ещё не была
+          if (currentTime >= 18.5 * 60 && currentTime <= 20.5 * 60) {
+            const hadDinner =
+              lastFoodTime !== null && lastFoodTime >= 18 * 60;
+            if (!hadDinner && !isFood) {
               const hasFood = candidates.some((c) =>
                 this.isFoodCategory(c.category),
               );
@@ -787,7 +935,7 @@ export class SchedulerService {
         }
 
         // ADVANCED SCORING v7
-        let optimizedOrder = validCandidates.sort((a, b) => {
+        const optimizedOrder = validCandidates.sort((a, b) => {
           const distA = lastPoi
             ? this.haversineKm(
                 lastPoi.coordinates.lat,
@@ -823,8 +971,45 @@ export class SchedulerService {
           )
             weightB += 150;
 
-          let scoreA = distA - weightA / 60;
-          let scoreB = distB - weightB / 60;
+          // Ужин: буст если еда после 18:00 ещё не была
+          const hadDinner =
+            lastFoodTime !== null && lastFoodTime >= 18 * 60;
+          if (
+            this.isFoodCategory(a.category) &&
+            meal === 'dinner' &&
+            !hadDinner
+          )
+            weightA += 120;
+          if (
+            this.isFoodCategory(b.category) &&
+            meal === 'dinner' &&
+            !hadDinner
+          )
+            weightB += 120;
+
+          // DISTANCE PENALTY: нелинейный штраф за дальние переезды (> 10 км)
+          const distPenaltyA = distA > 10 ? distA * 3 : distA;
+          const distPenaltyB = distB > 10 ? distB * 3 : distB;
+
+          // SOFT ANCHOR PENALTY: штраф за удалённость от якоря текущего дня (> 15 км)
+          const dayAnchor = dayAnchors.get(dayNumber);
+          let anchorPenaltyA = 0;
+          let anchorPenaltyB = 0;
+          if (dayAnchor) {
+            const anchorDistA = this.haversineKm(
+              dayAnchor.coordinates.lat, dayAnchor.coordinates.lon,
+              a.coordinates.lat, a.coordinates.lon,
+            );
+            const anchorDistB = this.haversineKm(
+              dayAnchor.coordinates.lat, dayAnchor.coordinates.lon,
+              b.coordinates.lat, b.coordinates.lon,
+            );
+            anchorPenaltyA = anchorDistA > 15 ? anchorDistA * 0.5 : 0;
+            anchorPenaltyB = anchorDistB > 15 ? anchorDistB * 0.5 : 0;
+          }
+
+          let scoreA = distPenaltyA + anchorPenaltyA - weightA / 60;
+          let scoreB = distPenaltyB + anchorPenaltyB - weightB / 60;
 
           // PRIORITY-AWARE ZIGZAG
           if (prevPoi && lastPoi) {
@@ -939,18 +1124,85 @@ export class SchedulerService {
         }
       }
 
+      // GEO-BALANCE: detect lone outlier points (> 20 km from day's centroid)
+      // If a non-protected outlier has no neighbors in the pool → eject it.
+      // If a protected outlier exists → pull up to 2 nearest neighbors from the global pool.
+      if (points.length >= 2) {
+        const nonFoodPoints = points.filter(
+          (p) => !this.isFoodCategory(p.poi.category),
+        );
+        if (nonFoodPoints.length >= 2) {
+          // Compute centroid of non-food points
+          const centLat =
+            nonFoodPoints.reduce((s, p) => s + p.poi.coordinates.lat, 0) /
+            nonFoodPoints.length;
+          const centLon =
+            nonFoodPoints.reduce((s, p) => s + p.poi.coordinates.lon, 0) /
+            nonFoodPoints.length;
+
+          for (let pi = points.length - 1; pi >= 0; pi--) {
+            const pt = points[pi];
+            const d = this.haversineKm(
+              centLat, centLon,
+              pt.poi.coordinates.lat, pt.poi.coordinates.lon,
+            );
+
+            if (d > 20) {
+              const poi = pt.poi as FilteredPoi;
+              if ((poi as any).isProtected) {
+                // Protected outlier: pull 2 nearest neighbors from global unused pool
+                const neighbors = availablePois
+                  .filter((p) => !usedPoiIds.has(p.id) && !this.isFoodCategory(p.category))
+                  .sort((a, b) =>
+                    this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, a.coordinates.lat, a.coordinates.lon) -
+                    this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, b.coordinates.lat, b.coordinates.lon),
+                  )
+                  .slice(0, 2)
+                  .filter((p) =>
+                    this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, p.coordinates.lat, p.coordinates.lon) < 8,
+                  );
+                for (const nb of neighbors) {
+                  tryAddPoint(nb, undefined, true);
+                }
+                if (neighbors.length > 0) {
+                  this.logger.log(
+                    `[GeoBalance] Protected outlier "${poi.name}" pulled ${neighbors.length} neighbor(s)`,
+                  );
+                }
+              } else {
+                // Non-protected outlier with no neighbors → eject
+                const hasNearbyUnused = availablePois.some(
+                  (p) =>
+                    !usedPoiIds.has(p.id) &&
+                    this.haversineKm(poi.coordinates.lat, poi.coordinates.lon, p.coordinates.lat, p.coordinates.lon) < 5,
+                );
+                if (!hasNearbyUnused) {
+                  this.logger.log(
+                    `[GeoBalance] Ejecting lone outlier "${poi.name}" (${d.toFixed(1)} km from centroid, no neighbors)`,
+                  );
+                  usedPoiIds.delete(poi.id); // return to pool for next day
+                  points.splice(pi, 1);
+                }
+              }
+            }
+          }
+        }
+      }
+
       if (points.length > 0) {
         lastPoiFromPrevDay = points[points.length - 1].poi as FilteredPoi;
       }
 
-      days.push({
+      const builtDay: PlanDay = {
         day_number: dayNumber,
         date: currentDateStr,
         day_budget_estimated: dayCost,
         day_start_time: intent.start_time,
         day_end_time: intent.end_time,
         points,
-      });
+      };
+      days.push(builtDay);
+      onDayReady?.(builtDay);
     }
 
     // Если маршрут мульти-городской, склеиваем название

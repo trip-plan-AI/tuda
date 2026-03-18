@@ -7,6 +7,7 @@ const buildPoi = (id: string): FilteredPoi => ({
   name: `POI ${id}`,
   address: `Address ${id}`,
   category: 'museum',
+  score: 0.5,
   coordinates: { lat: 55.75, lon: 37.61 },
   description: `desc ${id}`,
 });

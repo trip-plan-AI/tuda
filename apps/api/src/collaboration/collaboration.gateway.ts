@@ -67,6 +67,18 @@ export class CollaborationGateway
           trip_id: event.tripId,
           session_id: event.payload?.session_id,
         });
+      } else if (event.type === 'ai:thinking') {
+        this.server.to(`trip_${event.tripId}`).emit('ai:thinking', {
+          trip_id: event.tripId,
+          session_id: event.payload?.session_id,
+          stage: event.payload?.stage,
+        });
+      } else if (event.type === 'ai:day_ready') {
+        this.server.to(`trip_${event.tripId}`).emit('ai:day_ready', {
+          trip_id: event.tripId,
+          session_id: event.payload?.session_id,
+          day: event.payload?.day,
+        });
       }
     });
   }
@@ -82,9 +94,11 @@ export class CollaborationGateway
   handleConnection(client: TypedSocket) {
     try {
       const token = String(client.handshake.auth?.token ?? '');
-      const payload = this.jwtService.verify<{ sub: string; email: string; name?: string }>(
-        token,
-      );
+      const payload = this.jwtService.verify<{
+        sub: string;
+        email: string;
+        name?: string;
+      }>(token);
       client.data.userId = payload.sub;
       client.data.email = payload.email;
       client.data.name = payload.name ?? payload.email;

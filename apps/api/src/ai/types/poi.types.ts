@@ -5,6 +5,7 @@ export type PriceSegment = 'free' | 'budget' | 'mid' | 'premium';
 export interface PoiItem {
   id: string;
   name: string;
+  score: number; // Universal priority score (0.0 to 1.0)
   address: string;
   logical_id?: string;
   coordinates: {
@@ -19,6 +20,7 @@ export interface PoiItem {
   website?: string;
   image_url?: string;
   ai_generated?: boolean; // TRI-108-6: Mark AI-generated food POIs
+  isProtected?: boolean; // True if confirmed by multiple sources or heritage OSM tags
   description?: string;
   reason?: string;
   provider?: string;
