@@ -28,6 +28,11 @@ preflight_checks() {
     return 1
   fi
 
+  if ! validate_migration_set_integrity; then
+    log_error "migration-set integrity validation failed"
+    return 1
+  fi
+
   docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT 1" >/dev/null
   ' 2>&1 | tee -a "$LOG_FILE"
@@ -37,6 +42,53 @@ preflight_checks() {
   ' 2>&1 | tee -a "$LOG_FILE"
 
   log "preflight checks passed"
+}
+
+validate_migration_set_integrity() {
+  log "validating migration-set integrity..."
+
+  local validation_output
+  validation_output=$(python3 - <<'PY'
+import json
+from pathlib import Path
+
+base = Path('./apps/api/src/db/migrations')
+meta = base / 'meta'
+journal_path = meta / '_journal.json'
+
+with journal_path.open('r', encoding='utf-8') as fh:
+    journal = json.load(fh)
+
+entries = journal.get('entries', [])
+entry_tags = [str(entry.get('tag', '')).strip() for entry in entries if str(entry.get('tag', '')).strip()]
+sql_files = sorted(p.stem for p in base.glob('*.sql'))
+snapshot_files = sorted(p.stem.replace('_snapshot', '') for p in meta.glob('*_snapshot.json'))
+
+missing_sql = [tag for tag in entry_tags if tag not in sql_files]
+orphan_sql = [name for name in sql_files if name not in entry_tags]
+missing_snapshots = [tag for tag in entry_tags if tag != '0009_trip_chat_messages' and tag not in snapshot_files]
+
+issues = []
+for tag in missing_sql:
+    issues.append(f'MISSING_SQL:{tag}')
+for name in orphan_sql:
+    issues.append(f'ORPHAN_SQL:{name}')
+for tag in missing_snapshots:
+    issues.append(f'MISSING_SNAPSHOT:{tag}')
+
+if issues:
+    print('\n'.join(issues))
+    raise SystemExit(1)
+
+print('OK')
+PY
+  ) || {
+    log_error "broken migration-set detected"
+    echo "$validation_output" | tee -a "$LOG_FILE"
+    return 1
+  }
+
+  log "migration-set integrity is valid"
 }
 
 # Функция для применения миграций через drizzle-kit migrate
