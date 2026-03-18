@@ -11,7 +11,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useAiQueryStore } from '@/features/ai-query';
 import { useShallow } from 'zustand/react/shallow';
 import { useTripStore } from '@/entities/trip';
-import { useCollaborationSocket, CollaboratorsAvatarGroup, useChatSync, useCollaborateStore } from '@/features/route-collaborate';
+import { useCollaborationSocket, CollaboratorsAvatarGroup, useChatSync, useCollaborateStore, collaborateApi } from '@/features/route-collaborate';
 import { AiChat } from '@/widgets/ai-chat';
 import { Button } from '@/shared/ui/button';
 import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
@@ -436,8 +436,19 @@ export function AIAssistantPage() {
   const socketTripId = activeSession?.tripId || '';
   useCollaborationSocket(socketTripId);
   const { sendChatMessage } = useChatSync(socketTripId);
+
   const onlineUserIds = useCollaborateStore((s) => s.onlineUserIds);
-  const hasCollaborators = onlineUserIds.length > 1;
+  const collaborators = useCollaborateStore((s) => s.collaborators);
+  const setCollaborators = useCollaborateStore((s) => s.setCollaborators);
+
+  // Загружаем список участников при смене маршрута
+  useEffect(() => {
+    if (!socketTripId) return;
+    collaborateApi.getAll(socketTripId).then(setCollaborators).catch(() => {});
+  }, [socketTripId, setCollaborators]);
+
+  // Кнопка AI-режима видна если у маршрута есть хотя бы один участник (онлайн или нет)
+  const hasCollaborators = collaborators.length > 0 || onlineUserIds.length > 1;
 
   const [isAddPointMode, setIsAddPointMode] = useState(false);
 

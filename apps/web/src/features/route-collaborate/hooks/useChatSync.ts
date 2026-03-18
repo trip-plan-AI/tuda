@@ -3,6 +3,7 @@
 import { useEffect, useCallback } from 'react';
 import { getSocket } from '@/shared/socket/socket-client';
 import { useAiQueryStore } from '@/features/ai-query';
+import { useUserStore } from '@/entities/user';
 import type { ChatMessage } from '@/shared/types/ai-chat';
 
 interface RemoteChatPayload {
@@ -32,6 +33,24 @@ interface AgentResponsePayload {
  * Логика /help: проверяется ТОЛЬКО в вызывающем компоненте (AIAssistantPage).
  * Этот хук занимается исключительно транспортным слоем сокета.
  */
+// Хелпер: сообщение является собственным если user_id совпадает с текущим пользователем
+function buildChatMessage(data: RemoteChatPayload, currentUserId: string | undefined): ChatMessage {
+  const isOwn = !!currentUserId && data.user_id === currentUserId;
+  return {
+    id: data.id,
+    role: 'user',
+    content: data.content,
+    timestamp: data.timestamp,
+    // Своё сообщение — без userName/userAvatar, чтобы рендерилось справа
+    ...(isOwn
+      ? {}
+      : {
+          userName: data.user_name,
+          userAvatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user_name || 'U')}&background=random&color=fff`,
+        }),
+  };
+}
+
 export function useChatSync(tripId: string) {
   useEffect(() => {
     if (!tripId || tripId.startsWith('guest-')) return;
@@ -39,15 +58,8 @@ export function useChatSync(tripId: string) {
     const socket = getSocket();
 
     const handleMessage = (data: RemoteChatPayload) => {
-      const incomingMessage: ChatMessage = {
-        id: data.id,
-        role: 'user',
-        content: data.content,
-        userName: data.user_name,
-        userAvatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user_name || 'U')}&background=random&color=fff`,
-        timestamp: data.timestamp,
-      };
-      useAiQueryStore.getState().addLocalMessage(incomingMessage);
+      const currentUserId = useUserStore.getState().user?.id;
+      useAiQueryStore.getState().addLocalMessage(buildChatMessage(data, currentUserId));
     };
 
     const handleAgentResponse = (data: AgentResponsePayload) => {
@@ -63,23 +75,13 @@ export function useChatSync(tripId: string) {
 
     // Load persisted chat history when joining the trip room
     const handleChatHistory = (messages: RemoteChatPayload[]) => {
-      // console.log('✅ Получена история чата:', messages);
-      if (!Array.isArray(messages) || messages.length === 0) {
-        console.warn('⚠️  chat:history получил пустой или не массив:', messages);
-        return;
-      }
+      if (!Array.isArray(messages) || messages.length === 0) return;
 
-      // TRI-120: RACE CONDITION FIX - передаём весь массив одним вызовом
-      const mappedHistory: ChatMessage[] = messages.map((data) => ({
-        id: data.id,
-        role: 'user',
-        content: data.content,
-        userName: data.user_name,
-        userAvatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user_name || 'U')}&background=random&color=fff`,
-        timestamp: data.timestamp,
-      }));
+      const currentUserId = useUserStore.getState().user?.id;
+      const mappedHistory: ChatMessage[] = messages.map((data) =>
+        buildChatMessage(data, currentUserId),
+      );
 
-      // console.log('📦 Добавляем историю в стейт:', mappedHistory.length, 'сообщений');
       useAiQueryStore.getState().addChatHistory(mappedHistory);
     };
 
