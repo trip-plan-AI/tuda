@@ -10,6 +10,7 @@ describe('VectorPrefilterService', () => {
       name: 'Точка 1',
       address: 'Москва',
       category: 'museum',
+      score: 0.5,
       coordinates: {
         lat: 55.75,
         lon: 37.61,
@@ -20,6 +21,7 @@ describe('VectorPrefilterService', () => {
       name: 'Точка 2',
       address: 'Москва',
       category: 'park',
+      score: 0.5,
       coordinates: {
         lat: 55.76,
         lon: 37.62,
