@@ -29,9 +29,6 @@ interface OverpassElement {
     'diet:vegan'?: string;
     'dog:welcomed'?: string;
     wikidata?: string;
-    heritage?: string;          // heritage=1/2/3/yes → protected cultural site
-    'heritage:operator'?: string;
-    protection_title?: string;  // e.g. "Объект культурного наследия"
     [key: string]: string | undefined;
   };
 }
@@ -88,17 +85,13 @@ export class OverpassClientService {
     }
 
     // 3. Формируем запрос around (теперь это основной метод)
-    const radiusSteps = [cityCoords.radius, 10000, 15000, 25000].filter(
-      (r) => r >= cityCoords.radius,
-    );
+    const radiusSteps = [cityCoords.radius, 10000, 15000, 25000].filter(r => r >= cityCoords.radius);
     const uniqueSteps = [...new Set(radiusSteps)].sort((a, b) => a - b);
 
     let elements: OverpassElement[] = [];
 
     for (const stepRadius of uniqueSteps) {
-      this.logger.log(
-        `Overpass: searching around ${city} with radius ${stepRadius}m...`,
-      );
+      this.logger.log(`Overpass: searching around ${city} with radius ${stepRadius}m...`);
       const center = `${stepRadius},${cityCoords.lat},${cityCoords.lon}`;
       const query = `
         [out:json][timeout:25];
@@ -116,9 +109,7 @@ export class OverpassClientService {
       elements = await this.executeOverpass(query);
       if (elements.length >= 10) break;
       if (stepRadius < uniqueSteps[uniqueSteps.length - 1]) {
-        this.logger.log(
-          `Overpass: only ${elements.length} points found, expanding radius...`,
-        );
+        this.logger.log(`Overpass: only ${elements.length} points found, expanding radius...`);
       }
     }
 
@@ -194,9 +185,7 @@ export class OverpassClientService {
           continue;
         }
 
-        const data = (await response.json()) as {
-          elements?: OverpassElement[];
-        };
+        const data = (await response.json()) as { elements?: OverpassElement[] };
         return data.elements ?? [];
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') {
@@ -233,46 +222,10 @@ export class OverpassClientService {
       descriptionParts.push('Веганское меню');
     if (item.tags?.['dog:welcomed'] === 'yes')
       descriptionParts.push('Можно с собаками');
-    if (item.tags?.cuisine)
-      descriptionParts.push(`Кухня: ${item.tags.cuisine}`);
+    if (item.tags?.cuisine) descriptionParts.push(`Кухня: ${item.tags.cuisine}`);
 
     const description =
       descriptionParts.length > 0 ? descriptionParts.join('. ') : undefined;
-
-    // TAG WISDOM: score from OSM significance signals
-    const tags = item.tags ?? {};
-    let tagScore = 0.5; // default
-    let isProtected = false;
-
-    // TECHNICAL PENALTY first — cap score before any boost
-    // railway=*, man_made=signal/pipeline/mast, power=* (except plant) → utility objects
-    const isTechnical =
-      !!tags.railway ||
-      tags.man_made === 'signal' ||
-      tags.man_made === 'pipeline' ||
-      tags.man_made === 'mast' ||
-      tags.man_made === 'pole' ||
-      (tags.power && tags.power !== 'plant') || // power plant is interesting, pole is not
-      tags.amenity === 'parking' ||
-      tags.amenity === 'fuel';
-
-    if (isTechnical) {
-      tagScore = 0.15; // hard cap — will not win anchor election or top-15
-    } else {
-      // Heritage tag → confirmed cultural significance, hard protect
-      if (tags.heritage || tags.protection_title || tags['heritage:operator']) {
-        tagScore += 0.4;
-        isProtected = true;
-      }
-      // Wikidata link → global notability confirmed
-      if (tags.wikidata) tagScore += 0.1;
-      // tourism=attraction or tourism=museum → explicit tourist marker
-      if (tags.tourism === 'attraction' || tags.tourism === 'museum') tagScore += 0.2;
-      // Large city park
-      if (tags.leisure === 'park') tagScore += 0.1;
-    }
-
-    tagScore = Math.min(tagScore, 1.0);
 
     return {
       id: this.makePoiId(name, address, lat, lon),
@@ -282,14 +235,12 @@ export class OverpassClientService {
       coordinates: { lat, lon },
       category,
       rating: 4.0,
-      score: tagScore,
-      isProtected: isProtected || undefined,
-      working_hours: tags.opening_hours,
+      working_hours: item.tags?.opening_hours,
       price_segment: this.toPriceSegment(category),
-      phone: tags.phone,
-      website: tags.website,
+      phone: item.tags?.phone,
+      website: item.tags?.website,
       description,
-      wikidata: tags.wikidata,
+      wikidata: item.tags?.wikidata,
     };
   }
 

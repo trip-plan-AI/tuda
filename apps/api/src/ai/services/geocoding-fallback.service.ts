@@ -73,16 +73,10 @@ export class GeocodingFallbackService {
       name: string;
       coordinates?: { lat: number; lon: number };
       city_name?: string;
-      isProtected?: boolean;
     }>,
     defaultCity: string,
-  ): Promise<{
-    coords: Map<string, { lat: number; lon: number }>;
-    geocodedIds: Set<string>;
-  }> {
+  ): Promise<Map<string, { lat: number; lon: number }>> {
     const geocodedPoints = new Map<string, { lat: number; lon: number }>();
-    // geocodedIds — точки, прошедшие через реальный геокодинг (не просто pass-through с готовыми coords)
-    const geocodedIds = new Set<string>();
 
     // nameToCoords — локальный кэш для текущего запроса (чтобы не дергать Redis/API для дублей в одном списке)
     const nameToCoords = new Map<string, { lat: number; lon: number }>();
@@ -127,7 +121,6 @@ export class GeocodingFallbackService {
                 `[GEOCODING] 🚀 Global Cache hit: "${point.name}" in ${city}`,
               );
               geocodedPoints.set(point.id, coords);
-              geocodedIds.add(point.id);
               nameToCoords.set(point.name, coords);
               geocoded = true;
             }
@@ -141,53 +134,27 @@ export class GeocodingFallbackService {
         if (!geocoded) {
           // --- ШАГ 1: Быстрый первичный поиск ---
           this.logger.log(`[GEOCODING] ⚡ Fast search for "${point.name}"...`);
-          let initialResults = await this.performRawSearch(
+          const initialResults = await this.performRawSearch(
             point.name,
             city,
             cityCenter,
           );
 
           // --- ШАГ 2: Кодовая валидация (без ИИ) ---
-          let bestValidResult = initialResults.find((res) =>
-            this.isResultInExpectedRegion(res.displayName, city) &&
-            this.isValidCoord(Number(res.lat), Number(res.lon))
+          const bestValidResult = initialResults.find((res) =>
+            this.isResultInExpectedRegion(res.displayName, city),
           );
-
-          // Фикс №3: Повторный геокодинг (расширенный запрос)
-          if (!bestValidResult) {
-            const hasMatchWithoutCoords = initialResults.some((res) =>
-              this.isResultInExpectedRegion(res.displayName, city),
-            );
-            if (hasMatchWithoutCoords || point.isProtected) {
-              const extendedQuery = `Россия, ${city}, ${point.name}`;
-              this.logger.log(
-                `[GEOCODING] 🔄 Retrying search with extended query: "${extendedQuery}"...`,
-              );
-              await this.delay(200);
-              initialResults = await this.performRawSearch(
-                extendedQuery,
-                city,
-                cityCenter,
-              );
-              bestValidResult = initialResults.find(
-                (res) =>
-                  this.isResultInExpectedRegion(res.displayName, city) &&
-                  this.isValidCoord(Number(res.lat), Number(res.lon)),
-              );
-            }
-          }
 
           if (bestValidResult) {
             this.logger.log(
               `[GEOCODING] ✅ Fast success: "${point.name}" in ${city}`,
             );
             const coords = {
-              lat: Number(bestValidResult.lat),
-              lon: Number(bestValidResult.lon),
+              lat: bestValidResult.lat,
+              lon: bestValidResult.lon,
             };
             await this.saveToGlobalCache(globalCacheKey, coords);
             geocodedPoints.set(point.id, coords);
-            geocodedIds.add(point.id);
             nameToCoords.set(point.name, coords);
             geocoded = true;
           }
@@ -215,10 +182,9 @@ export class GeocodingFallbackService {
               this.logger.log(
                 `[GEOCODING] ✅ AI-Refined success: "${aiResult.searchQuery}" → (${bestAiMatch.lat}, ${bestAiMatch.lon})`,
               );
-              const coords = { lat: Number(bestAiMatch.lat), lon: Number(bestAiMatch.lon) };
+              const coords = { lat: bestAiMatch.lat, lon: bestAiMatch.lon };
               await this.saveToGlobalCache(globalCacheKey, coords);
               geocodedPoints.set(point.id, coords);
-              geocodedIds.add(point.id);
               nameToCoords.set(point.name, coords);
               geocoded = true;
             }
@@ -234,7 +200,6 @@ export class GeocodingFallbackService {
             );
             await this.saveToGlobalCache(globalCacheKey, coords);
             geocodedPoints.set(point.id, coords);
-            geocodedIds.add(point.id);
             nameToCoords.set(point.name, coords);
             geocoded = true;
           }
@@ -242,25 +207,10 @@ export class GeocodingFallbackService {
 
         // --- ШАГ 5: Исключение (Point not found) ---
         if (!geocoded) {
-          if (point.isProtected && cityCenter) {
-            this.logger.warn(
-              `[GEOCODING] ⚠️ FAILED all strategies for protected point "${point.name}". Using city center with offset.`,
-            );
-            const offset = (Math.random() - 0.5) * 0.002; // ~ +/- 100m
-            const coords = {
-              lat: cityCenter.lat + offset,
-              lon: cityCenter.lon + offset,
-            };
-            geocodedPoints.set(point.id, coords);
-            geocodedIds.add(point.id);
-            nameToCoords.set(point.name, coords);
-            geocoded = true;
-          } else {
-            this.logger.warn(
-              `[GEOCODING] ❌ FAILED all strategies for "${point.name}". This point will be excluded.`,
-            );
-            // Мы просто не добавляем точку в geocodedPoints, контроллер сам отфильтрует её
-          }
+          this.logger.warn(
+            `[GEOCODING] ❌ FAILED all strategies for "${point.name}". This point will be excluded.`,
+          );
+          // Мы просто не добавляем точку в geocodedPoints, контроллер сам отфильтрует её
         }
       } catch (error) {
         this.logger.error(
@@ -269,7 +219,7 @@ export class GeocodingFallbackService {
       }
     }
 
-    return { coords: geocodedPoints, geocodedIds };
+    return geocodedPoints;
   }
 
   private async saveToGlobalCache(
@@ -307,16 +257,6 @@ export class GeocodingFallbackService {
     city: string,
     cityCenter: { lat: number; lon: number } | null,
   ): Promise<any[]> {
-    const cacheKey = `geo:rawsearch:${city.toLowerCase()}:${query.toLowerCase().trim()}`;
-    try {
-      const cached = await this.redis.get(cacheKey);
-      if (cached) {
-        return JSON.parse(cached);
-      }
-    } catch (e) {
-      this.logger.error(`[GEOCODING] Redis cache read error: ${e}`);
-    }
-
     const bbox = this.getCityBbox(city);
     let results: any[] = [];
 
@@ -339,14 +279,7 @@ export class GeocodingFallbackService {
         : await this.geosearchService.suggest(query);
     }
 
-    const finalResults = results || [];
-    try {
-      await this.redis.set(cacheKey, JSON.stringify(finalResults), 60 * 60 * 24 * 7); // 7 days
-    } catch (e) {
-      this.logger.error(`[GEOCODING] Redis cache write error: ${e}`);
-    }
-
-    return finalResults;
+    return results || [];
   }
 
   private isValidCoord(
