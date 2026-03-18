@@ -174,6 +174,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
             imageUrl: attr.imageUrl,
             order: idx,
             createdAt: new Date().toISOString(),
+            duration: 60,
           });
         });
       } else if (safeCoords) {
@@ -190,6 +191,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           imageUrl: null,
           order: 0,
           createdAt: new Date().toISOString(),
+          duration: 60,
         });
       }
       setPoints(newPoints, false);
