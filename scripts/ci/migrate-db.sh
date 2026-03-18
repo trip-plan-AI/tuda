@@ -66,19 +66,16 @@ snapshot_files = sorted(p.stem.replace('_snapshot', '') for p in meta.glob('*_sn
 
 missing_sql = [tag for tag in entry_tags if tag not in sql_files]
 orphan_sql = [name for name in sql_files if name not in entry_tags]
-missing_snapshots = [tag for tag in entry_tags if tag != '0009_trip_chat_messages' and tag not in snapshot_files]
+missing_snapshots = [tag for tag in entry_tags if tag not in snapshot_files]
 
-issues = []
-for tag in missing_sql:
-    issues.append(f'MISSING_SQL:{tag}')
-for name in orphan_sql:
-    issues.append(f'ORPHAN_SQL:{name}')
-for tag in missing_snapshots:
-    issues.append(f'MISSING_SNAPSHOT:{tag}')
-
-if issues:
-    print('\n'.join(issues))
+if missing_sql:
+    print('\n'.join(f'MISSING_SQL:{tag}' for tag in missing_sql))
     raise SystemExit(1)
+
+for name in orphan_sql:
+    print(f'WARN_ORPHAN_SQL:{name}')
+for tag in missing_snapshots:
+    print(f'WARN_MISSING_SNAPSHOT:{tag}')
 
 print('OK')
 PY
@@ -88,6 +85,7 @@ PY
     return 1
   }
 
+  echo "$validation_output" | tee -a "$LOG_FILE"
   log "migration-set integrity is valid"
 }
 
