@@ -1100,7 +1100,8 @@ export const useAiQueryStore = create<AiQueryStore>()(
         [activeId]: {
           ...session,
           messages: newMessages,
-          updatedAt: new Date().toISOString(),
+          // Не обновляем updatedAt при загрузке истории — это не активность пользователя.
+          // Иначе сессии с активным трипом всплывают вверх при каждом реконнекте WS (trip:join).
         },
       };
 
