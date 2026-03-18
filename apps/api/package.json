@@ -38,6 +38,8 @@
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/platform-socket.io": "^11.1.15",
     "@nestjs/websockets": "^11.1.15",
+    "@turf/clusters-dbscan": "^7.3.4",
+    "@turf/helpers": "^7.3.4",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
