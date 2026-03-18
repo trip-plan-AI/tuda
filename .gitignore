@@ -33,6 +33,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Raw Overpass Data
+overpass_data/
+
 # Misc
 .DS_Store
 *.pem

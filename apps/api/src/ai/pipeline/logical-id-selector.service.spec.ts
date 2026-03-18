@@ -8,19 +8,13 @@ describe('LogicalIdSelectorService', () => {
   ];
 
   const createService = (content: string | Error) => {
+    const chat =
+      content instanceof Error
+        ? jest.fn().mockRejectedValue(content)
+        : jest.fn().mockResolvedValue(content);
+
     const llmClientService = {
-      client: {
-        chat: {
-          completions: {
-            create:
-              content instanceof Error
-                ? jest.fn().mockRejectedValue(content)
-                : jest.fn().mockResolvedValue({
-                    choices: [{ message: { content } }],
-                  }),
-          },
-        },
-      },
+      chat,
     };
 
     return {
