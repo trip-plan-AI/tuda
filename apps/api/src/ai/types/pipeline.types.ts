@@ -17,27 +17,8 @@ export type PoiCategory =
   | 'shopping'
   | 'entertainment';
 
-export interface UserBehavior {
-  walkingSpeed: number; // 0.5 to 1.5, default 1.0
-  stayMultiplier: Record<string, number>; // e.g. { museum: 1.2, cafe: 0.8 }
-  energyDecay: 'morning_person' | 'evening_person' | 'normal';
-}
-
-export interface UserMemoryProfile {
-  categoryAffinity: Record<string, number>; // 0 to 1 scale
-  tagsAffinity?: Record<string, number>; // e.g. "museum_science": 0.8
-  dislikedCategories: string[];
-  lastSelectedPoiIds: string[];
-  behavior: UserBehavior;
-}
-
 export interface ParsedIntent {
   city: string;
-  cities?: string[];
-  route_type?: 'single_city'; // | 'multi_city';
-  city_from?: string;
-  city_to?: string;
-  country_code: string | null;
   days: number;
   budget_total: number | null;
   budget_per_day: number | null;
@@ -55,7 +36,12 @@ export interface ParsedIntent {
   start_time: string;
   end_time: string;
   preferences_text: string;
+  country_code?: string | null;
   user_profile?: UserMemoryProfile;
+  cities?: string[];
+  route_type?: string;
+  city_from?: string;
+  city_to?: string;
 }
 
 export interface PlanDayPoint {
@@ -67,7 +53,7 @@ export interface PlanDayPoint {
   visit_duration_min: number;
   travel_from_prev_min?: number;
   estimated_cost: number;
-  ai_explanations?: string[]; // Natural language reasons for choice (v8)
+  ai_explanations?: string[];
 }
 
 export interface PlanDay {
@@ -81,11 +67,11 @@ export interface PlanDay {
 
 export interface RoutePlan {
   city: string;
-  cities?: string[];
-  route_type?: 'single_city'; // | 'multi_city';
   total_budget_estimated: number;
   days: PlanDay[];
   notes?: string;
+  cities?: string[];
+  route_type?: string;
 }
 
 export type PlannerVersion = 'legacy' | 'v2-shadow' | 'v2';
@@ -127,9 +113,7 @@ export type MassCollectionShadowProvider =
   | 'kudago'
   | 'overpass'
   | 'llm_fill'
-  | 'photon'
-  | 'osm_fetch'
-  | 'discovery';
+  | 'photon';
 
 export interface MassCollectionShadowProviderStat {
   provider: MassCollectionShadowProvider;
@@ -138,7 +122,6 @@ export interface MassCollectionShadowProviderStat {
   used_count: number;
   failed: boolean;
   fail_reason?: string;
-  raw_data?: any[];
 }
 
 export interface MassCollectionShadowMeta {
@@ -198,6 +181,16 @@ export interface PolicySnapshot {
   };
   user_persona_summary: string;
   policy_version: Extract<PlannerVersion, 'v2-shadow' | 'v2'>;
+}
+
+export interface UserMemoryProfile {
+  categoryAffinity: Record<string, number>;
+  tagsAffinity?: Record<string, number>;
+  behavior?: {
+    walkingSpeed?: number;
+    stayMultiplier?: Record<string, number>;
+  };
+  lastUpdated?: string;
 }
 
 export type IntentRouterActionType =

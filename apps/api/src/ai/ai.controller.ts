@@ -955,12 +955,14 @@ ${JSON.stringify(points)}
       providerDuration = Date.now() - providerStart;
 
       const semanticStart = Date.now();
-      selectedForScheduler = allSuccessfullyGeocoded;
+      // Dedup before refinement to avoid 3x same POI in batches
+      const dedupedForRefinement = this.removeDuplicatePoi(allSuccessfullyGeocoded);
+      selectedForScheduler = dedupedForRefinement;
 
       try {
         const refinementResult =
           await this.llmBatchRefinementService.refineSelectedInBatches(
-            allSuccessfullyGeocoded,
+            dedupedForRefinement,
             yandexPersonaSummary,
             { intent },
           );
