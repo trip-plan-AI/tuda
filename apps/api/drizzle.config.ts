@@ -15,6 +15,9 @@ export default defineConfig({
   // Важно: prefix должен быть enum-значением drizzle-kit,
   // иначе `drizzle-kit migrate` падает на валидации конфига.
   migrations: {
+    // Критично для прод-совместимости: явно фиксируем схему,
+    // иначе drizzle может читать историю из schema `drizzle` по умолчанию.
+    schema: 'public',
     table: '__drizzle_migrations',
     prefix: 'index',
   },
