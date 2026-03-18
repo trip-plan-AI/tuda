@@ -86,11 +86,20 @@ function AiResponseSkeleton({ stage }: { stage?: string | null }) {
 }
 
 function StreamingDayPreview({ days }: { days: ChatRoutePlanDay[] }) {
+  const [dots, setDots] = useState('');
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDots((prev) => (prev.length < 3 ? prev + '.' : ''));
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="flex justify-start">
       <div className="w-full max-w-[85%] rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
         <div className="mb-3 flex items-center gap-1.5">
-          <span className="text-sm font-medium text-brand-indigo">Маршрут формируется...</span>
+          <span className="text-sm font-medium text-brand-indigo">📅 Маршрут формируется{dots}</span>
         </div>
         <div className="flex flex-col gap-2">
           {days.map((day) => (
