@@ -4,7 +4,6 @@ import { asc, eq } from 'drizzle-orm';
 import { DRIZZLE } from '../db/db.module';
 import * as schema from '../db/schema';
 import { RedisService } from '../redis/redis.service';
-import { CityExtractionService } from './city-extraction.service';
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
@@ -38,7 +37,6 @@ export class TripImageService implements OnModuleInit {
     @Inject(DRIZZLE)
     private readonly db: NodePgDatabase<typeof schema>,
     private readonly redisService: RedisService,
-    private readonly cityExtractionService: CityExtractionService,
   ) {}
 
   async onModuleInit() {
@@ -105,80 +103,19 @@ export class TripImageService implements OnModuleInit {
         `[${tripId}] selected point: "${selectedPoint.title}" (address="${selectedPoint.address}", lat=${selectedPoint.lat}, lon=${selectedPoint.lon})`,
       );
 
-      // ============================================
-      // КОНТУР 1: Reverse Geocoding по координатам
-      // ============================================
-      let cityForSearch: string | null = null;
+      // Приоритет: то, что ввел пользователь (title) > полный адрес из поиска
+      const rawCity = selectedPoint.title || selectedPoint.address || '';
+      const baseCity = rawCity.split(',')[0].trim();
 
-      try {
-        // Примитивный reverse geocoding через Nominatim
-        const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${selectedPoint.lat}&lon=${selectedPoint.lon}&zoom=10&accept-language=ru`;
-        const response = await fetch(nominatimUrl, {
-          headers: { 'User-Agent': 'TravelPlanner/1.0' },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const addr = data?.address;
-          // Каскад: city → town → village → state_district
-          cityForSearch =
-            addr?.city ||
-            addr?.town ||
-            addr?.village ||
-            addr?.state_district ||
-            addr?.county ||
-            null;
-
-          if (cityForSearch) {
-            this.logger.debug(
-              `[${tripId}] Reverse geocoding success: ${cityForSearch}`,
-            );
-          }
-        }
-      } catch (error) {
-        this.logger.warn(
-          `[${tripId}] Reverse geocoding failed: ${error}, trying GPT fallback`,
-        );
-      }
-
-      // ============================================
-      // КОНТУР 2: GPT-4o-mini (fallback)
-      // ============================================
-      if (!cityForSearch) {
-        const input = selectedPoint.title || selectedPoint.address || '';
-        if (input) {
-          this.logger.debug(
-            `[${tripId}] Reverse geocoding failed, trying GPT with: "${input}"`,
-          );
-
-          const gptResult = await this.cityExtractionService.extractCity(input);
-          if (gptResult?.city) {
-            cityForSearch = gptResult.city;
-            this.logger.log(
-              `[${tripId}] ✅ GPT extracted city: ${cityForSearch} (region: ${gptResult.region || 'N/A'}, confidence: ${(gptResult.confidence * 100).toFixed(0)}%)`,
-            );
-          } else {
-            this.logger.warn(
-              `[${tripId}] ❌ GPT failed to extract city (input: "${input}")`,
-            );
-          }
-        }
-      }
-
-      if (!cityForSearch) {
-        this.logger.warn(
-          `[${tripId}] No city found via reverse geocoding or GPT`,
-        );
+      if (!baseCity) {
+        this.logger.warn(`[${tripId}] selected point has no title or address`);
         return;
       }
 
-      // Для поиска API используем оригинальное название (без транслитерации)
-      const cleanedCity = this.cleanCityName(cityForSearch);
-      // Для имени файла используем транслитерированный slug
+      const cleanedCity = this.cleanCityName(baseCity);
       const slug = this.toSlug(cleanedCity);
-
       this.logger.debug(
-        `[${tripId}] city="${cityForSearch}" cleaned="${cleanedCity}" slug="${slug}"`,
+        `[${tripId}] city="${baseCity}" cleaned="${cleanedCity}" slug="${slug}"`,
       );
       if (!slug) return;
 
@@ -364,10 +301,9 @@ export class TripImageService implements OnModuleInit {
       return null;
     }
 
-    // Google лучше работает с латиницей + английский запрос
-    const query = `beautiful cityscape of ${slug}`;
+    const query = `эстетика красивого города ${city} `;
 
-    // Построение URL с корректным кодированием
+    // Построение URL с корректным кодированием кириллицы
     const url = new URL('https://www.googleapis.com/customsearch/v1');
     url.searchParams.set('key', apiKey);
     url.searchParams.set('cx', cx);
@@ -389,14 +325,6 @@ export class TripImageService implements OnModuleInit {
         url.toString(),
         { timeoutMs: 6000, retries: 1 },
         'Google',
-        {
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            Accept: 'application/json',
-            'Accept-Language': 'en-US,en;q=0.9',
-          },
-        },
       );
     } catch (error) {
       this.logger.error(`Google request failed: ${String(error)}`);
@@ -405,7 +333,7 @@ export class TripImageService implements OnModuleInit {
 
     const imageUrl = response?.items?.[0]?.link;
     if (!imageUrl) {
-      this.logger.warn(`❌  Google: No image found for "${slug}"`);
+      this.logger.warn(`❌  Google: No image found for "${city}"`);
       return null;
     }
 
@@ -431,44 +359,25 @@ export class TripImageService implements OnModuleInit {
       return null;
     }
 
-    // Pixabay требует латиницу, используем slug
-    // per_page мин=3, макс=100
-    const query = `beautiful cityscape ${slug}`;
+    const query = `эстетика красивого города ${city}`;
     const params = new URLSearchParams({
       key: apiKey,
       q: query,
       image_type: 'photo',
-      safesearch: 'true',
-      orientation: 'horizontal',
       order: 'popular',
-      per_page: '3', // Минимальное значение для Pixabay
+      per_page: '1',
     });
 
-    const pixabayUrl = `https://pixabay.com/api/?${params.toString()}`;
     this.logger.log(`🔍  Searching Pixabay: "${query}"`);
-    this.logger.debug(`   Pixabay URL: ${pixabayUrl.replace(apiKey, '***')}`);
-    this.logger.debug(
-      `   Headers: User-Agent=Mozilla/5.0..., Accept=application/json, Referer=pixabay.com`,
-    );
 
     let response: PixabayResponse | null = null;
     try {
       response = await this.fetchWithRetry<PixabayResponse>(
-        pixabayUrl,
+        `https://pixabay.com/api/?${params.toString()}`,
         { timeoutMs: 6000, retries: 1 },
         'Pixabay',
-        {
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            Accept: 'application/json',
-            Referer: 'https://pixabay.com/',
-            'Accept-Language': 'en-US,en;q=0.9',
-          },
-        },
       );
-    } catch (error) {
-      this.logger.error(`Pixabay request failed: ${error}`);
+    } catch {
       return null;
     }
 
@@ -598,27 +507,17 @@ export class TripImageService implements OnModuleInit {
     url: string,
     options: { timeoutMs: number; retries: number },
     provider = 'API',
-    fetchOptions?: { headers?: Record<string, string> },
   ): Promise<T | null> {
     for (let attempt = 0; attempt <= options.retries; attempt += 1) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
 
       try {
-        const res = await fetch(url, {
-          signal: controller.signal,
-          headers: fetchOptions?.headers,
-        });
+        const res = await fetch(url, { signal: controller.signal });
 
-        if (res.status === 429) {
-          this.logger.warn(`${provider} rate limited (429), skipping`);
-          return null;
-        }
-
-        if (res.status === 403) {
-          const errorBody = await res.text().catch(() => '');
-          this.logger.error(
-            `${provider} forbidden (403): ${errorBody.slice(0, 200)}`,
+        if (res.status === 429 || res.status === 403) {
+          this.logger.warn(
+            `${provider} rate limited or forbidden (${res.status}), skipping`,
           );
           return null;
         }

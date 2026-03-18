@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Send } from 'lucide-react';
+import { Send, Bot } from 'lucide-react';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { MessageBubble } from './MessageBubble';
@@ -23,6 +23,8 @@ interface AiChatProps {
   appliedTripId?: string | null;
   onOpenPlanner?: (tripId: string | null, messageId?: string) => void;
   onDeletePoint?: (pointName: string) => Promise<void>;
+  hasCollaborators?: boolean;
+  onSendToAi?: (query: string) => void | Promise<void>;
 }
 
 const DEFAULT_QUICK_ACTIONS = [
@@ -81,6 +83,8 @@ export function AiChat({
   appliedTripId = null,
   onOpenPlanner,
   onDeletePoint,
+  hasCollaborators = false,
+  onSendToAi,
 }: AiChatProps) {
   const [query, setQuery] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -171,14 +175,38 @@ export function AiChat({
           ))}
         </div>
 
+        {hasCollaborators && (
+          <p className="mb-2 text-[11px] text-slate-400">
+            <Bot className="mr-1 inline h-3 w-3" />
+            Нажми на кнопку слева, чтобы отправить запрос AI. Обычное сообщение увидят все участники чата.
+          </p>
+        )}
+
         <div className="flex gap-2">
+          {hasCollaborators && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              title="Отправить в AI"
+              onClick={() => {
+                if (!query.trim()) return;
+                void onSendToAi?.(query.trim());
+                setQuery('');
+              }}
+              disabled={isLoading}
+              className="shrink-0 border-brand-sky text-brand-sky hover:bg-brand-sky/10"
+            >
+              <Bot className="h-4 w-4" />
+            </Button>
+          )}
           <Input
             value={query}
             onChange={(e) => {
               setQuery(e.target.value.slice(0, 1000));
               if (validationError) setValidationError(null);
             }}
-            placeholder="Например: 2 дня в Казани с бюджетом 10000"
+            placeholder={hasCollaborators ? 'Сообщение участникам...' : 'Например: 2 дня в Казани с бюджетом 10000'}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();

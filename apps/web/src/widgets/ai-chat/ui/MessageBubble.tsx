@@ -41,7 +41,7 @@ export function MessageBubble({
   const isRemoteUser = !isAssistant && !!message.userName;
 
   const formatTime = (timestamp: string) =>
-    new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    new Date(timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false });
 
   const getFallbackPoi = (point: {
     poi_id?: string;

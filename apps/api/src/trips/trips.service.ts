@@ -103,11 +103,18 @@ export class TripsService {
     return [...ownTrips, ...collabTrips.filter((t) => !ownIds.has(t.id))];
   }
 
-  findPredefined() {
-    return this.db.query.trips.findMany({
-      where: eq(schema.trips.isPredefined, true),
-      with: { points: { orderBy: [schema.routePoints.order] } },
-    });
+  async findPredefined() {
+    try {
+      return await this.db.query.trips.findMany({
+        where: eq(schema.trips.isPredefined, true),
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to fetch predefined trips: ${(error as Error).message}`,
+        (error as Error).stack,
+      );
+      throw error;
+    }
   }
 
   async findById(id: string) {

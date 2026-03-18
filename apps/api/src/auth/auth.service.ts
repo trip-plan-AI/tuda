@@ -32,7 +32,7 @@ export class AuthService {
       .values({ email: dto.email, passwordHash, name: dto.name })
       .returning();
 
-    return { accessToken: this.signToken(user.id, user.email, user.name) };
+    return { accessToken: this.signToken(user.id, user.email) };
   }
 
   async login(dto: LoginDto) {
@@ -44,7 +44,7 @@ export class AuthService {
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Invalid credentials');
 
-    return { accessToken: this.signToken(user.id, user.email, user.name) };
+    return { accessToken: this.signToken(user.id, user.email) };
   }
 
   async validateUser(email: string, password: string) {
@@ -60,7 +60,7 @@ export class AuthService {
     return result;
   }
 
-  private signToken(userId: string, email: string, name: string) {
-    return this.jwtService.sign({ sub: userId, email, name });
+  private signToken(userId: string, email: string) {
+    return this.jwtService.sign({ sub: userId, email });
   }
 }

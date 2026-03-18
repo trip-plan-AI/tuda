@@ -6,7 +6,6 @@ export interface PoiItem {
   id: string;
   name: string;
   address: string;
-  provider?: string;
   logical_id?: string;
   coordinates: {
     lat: number;
@@ -19,10 +18,11 @@ export interface PoiItem {
   phone?: string;
   website?: string;
   image_url?: string;
-  description?: string;
-  wikidata?: string;
   ai_generated?: boolean; // TRI-108-6: Mark AI-generated food POIs
-  city_name?: string; // Helpful for multi-city routing
+  description?: string;
+  reason?: string;
+  provider?: string;
+  wikidata?: string;
 }
 
 export interface FilteredPoiResponse {
@@ -45,4 +45,5 @@ export interface LlmGeneratedPoiResponse {
 export interface FilteredPoi extends PoiItem {
   description: string;
   needs_geocoding?: boolean; // Flag to indicate this point needs geocoding
+  city_name?: string;
 }

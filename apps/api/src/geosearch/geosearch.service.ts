@@ -308,20 +308,19 @@ export class GeosearchService {
     });
 
     // Dedup pass 2: имя
+    // Для бизнесов ключ = название (без типа — "Кафе"/"Магазин") + адрес
+    // Яндекс использует · (U+00B7), не • (U+2022)
     const seenName = new Set<string>();
     const scored = coordDeduped
       .filter((item) => {
         let coreName = item.displayName;
-        if ((item as any).isBusiness && coreName.includes('•')) {
-          const parts = coreName.split('•');
-          const left = parts[0].trim();
-          const right = parts.slice(1).join('•').trim();
-          const lastCommaIdx = left.lastIndexOf(',');
-          if (lastCommaIdx !== -1) {
-            coreName = left.substring(0, lastCommaIdx).trim() + ', ' + right;
-          } else {
-            coreName = left + ', ' + right;
-          }
+        if ((item as any).isBusiness && coreName.includes('·')) {
+          const parts = coreName.split('·');
+          const left = parts[0].trim(); // "Джаганнат, Кафе"
+          const right = parts.slice(1).join('·').trim(); // "Москва, улица Кузнецкий Мост, 11с1"
+          // берём только название (до первой запятой), игнорируем тип заведения
+          const name = left.split(',')[0].trim(); // "Джаганнат"
+          coreName = name + ' · ' + right;
         } else if (!(item as any).isBusiness) {
           coreName = coreName.split(',')[0];
         }
@@ -511,16 +510,12 @@ export class GeosearchService {
     const scored = coordDeduped
       .filter((item) => {
         let coreName = item.displayName;
-        if ((item as any).isBusiness && coreName.includes('•')) {
-          const parts = coreName.split('•');
+        if ((item as any).isBusiness && coreName.includes('·')) {
+          const parts = coreName.split('·');
           const left = parts[0].trim();
-          const right = parts.slice(1).join('•').trim();
-          const lastCommaIdx = left.lastIndexOf(',');
-          if (lastCommaIdx !== -1) {
-            coreName = left.substring(0, lastCommaIdx).trim() + ', ' + right;
-          } else {
-            coreName = left + ', ' + right;
-          }
+          const right = parts.slice(1).join('·').trim();
+          const name = left.split(',')[0].trim();
+          coreName = name + ' · ' + right;
         } else if (!(item as any).isBusiness) {
           coreName = coreName.split(',')[0];
         }
@@ -760,39 +755,52 @@ export class GeosearchService {
 
       console.log(`[YandexSuggest] Query: "${q}", Count: ${items.length}`);
 
-      return items.map((item: any) => {
-        const title = item?.title?.text || item?.value || '';
-        const subtitle = item?.subtitle?.text || '';
-        const displayName = subtitle ? `${title}, ${subtitle}` : title;
-        const tags = item?.tags || [];
-        const isBusiness = tags.includes('business');
+      // Дедупликация по названию + типу (без адреса: координаты, город, улица и т.д.)
+      const seenPlaces = new Set<string>();
 
-        let lat = 0;
-        let lon = 0;
+      return items
+        .map((item: any) => {
+          const title = item?.title?.text || item?.value || '';
+          const subtitle = item?.subtitle?.text || '';
+          const displayName = subtitle ? `${title}, ${subtitle}` : title;
+          const tags = item?.tags || [];
+          const isBusiness = tags.includes('business');
 
-        if (item?.geometry?.point) {
-          lat = Number(item.geometry.point.lat);
-          lon = Number(item.geometry.point.lon);
-        } else if (item?.uri) {
-          const match = item.uri.match(/[?&]ll=([^&]+)/);
-          if (match) {
-            const [lonStr, latStr] = decodeURIComponent(match[1]).split(',');
-            lat = Number(latStr);
-            lon = Number(lonStr);
+          let lat = 0;
+          let lon = 0;
+
+          if (item?.geometry?.point) {
+            lat = Number(item.geometry.point.lat);
+            lon = Number(item.geometry.point.lon);
+          } else if (item?.uri) {
+            const match = item.uri.match(/[?&]ll=([^&]+)/);
+            if (match) {
+              const [lonStr, latStr] = decodeURIComponent(match[1]).split(',');
+              lat = Number(latStr);
+              lon = Number(lonStr);
+            }
           }
-        }
 
-        console.log(`[YandexSuggest] Item: "${displayName}", isBusiness: ${isBusiness}, coords: ${lat},${lon}`);
+          return {
+            displayName,
+            title, // Храним title для дедупликации
+            uri: item?.uri || `ymapsbm1://geo?ll=${lon},${lat}&z=12`,
+            lat,
+            lon,
+            source: 'yandex',
+            isBusiness,
+          };
+        })
+        .filter((item) => {
+          // Для бизнесов uri=ymapsbm1://org?oid=... не содержит координат — не фильтруем
+          const isOrgUri = item.uri?.startsWith('ymapsbm1://org');
+          if (!isOrgUri && item.lat === 0 && item.lon === 0) return false;
 
-        return {
-          displayName,
-          uri: item?.uri || `ymapsbm1://geo?ll=${lon},${lat}&z=12`,
-          lat,
-          lon,
-          source: 'yandex',
-          isBusiness,
-        };
-      });
+          // Дедупликация по title — "Джаганнат" одинаковый для всех филиалов
+          if (seenPlaces.has(item.title)) return false;
+          seenPlaces.add(item.title);
+          return true;
+        });
     } catch {
       return [];
     }
