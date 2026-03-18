@@ -36,6 +36,12 @@ export interface ParsedIntent {
   start_time: string;
   end_time: string;
   preferences_text: string;
+  country_code?: string | null;
+  user_profile?: UserMemoryProfile;
+  cities?: string[];
+  route_type?: string;
+  city_from?: string;
+  city_to?: string;
 }
 
 export interface PlanDayPoint {
@@ -47,6 +53,7 @@ export interface PlanDayPoint {
   visit_duration_min: number;
   travel_from_prev_min?: number;
   estimated_cost: number;
+  ai_explanations?: string[];
 }
 
 export interface PlanDay {
@@ -63,6 +70,8 @@ export interface RoutePlan {
   total_budget_estimated: number;
   days: PlanDay[];
   notes?: string;
+  cities?: string[];
+  route_type?: string;
 }
 
 export type PlannerVersion = 'legacy' | 'v2-shadow' | 'v2';
@@ -174,13 +183,25 @@ export interface PolicySnapshot {
   policy_version: Extract<PlannerVersion, 'v2-shadow' | 'v2'>;
 }
 
+export interface UserMemoryProfile {
+  categoryAffinity: Record<string, number>;
+  tagsAffinity?: Record<string, number>;
+  behavior?: {
+    walkingSpeed?: number;
+    stayMultiplier?: Record<string, number>;
+  };
+  lastUpdated?: string;
+}
+
 export type IntentRouterActionType =
   | 'REMOVE_POI'
   | 'REPLACE_POI'
   | 'ADD_POI'
   | 'ADD_DAYS'
   | 'APPLY_GLOBAL_FILTER'
-  | 'NEW_ROUTE';
+  | 'NEW_ROUTE'
+  | 'OFF_TOPIC'
+  | 'SMALL_TALK';
 
 export type IntentRouterRouteMode = 'targeted_mutation' | 'full_rebuild';
 
@@ -189,5 +210,5 @@ export interface IntentRouterDecision {
   confidence: number;
   target_poi_id: string | null;
   route_mode: IntentRouterRouteMode;
-  fallback_reason?: 'LOW_CONFIDENCE';
+  fallback_reason?: 'LOW_CONFIDENCE' | 'SPAM_BLOCKED';
 }

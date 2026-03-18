@@ -19,6 +19,10 @@ export interface PoiItem {
   website?: string;
   image_url?: string;
   ai_generated?: boolean; // TRI-108-6: Mark AI-generated food POIs
+  description?: string;
+  reason?: string;
+  provider?: string;
+  wikidata?: string;
 }
 
 export interface FilteredPoiResponse {
@@ -41,4 +45,5 @@ export interface LlmGeneratedPoiResponse {
 export interface FilteredPoi extends PoiItem {
   description: string;
   needs_geocoding?: boolean; // Flag to indicate this point needs geocoding
+  city_name?: string;
 }

@@ -216,7 +216,7 @@ export class LlmClientService {
     return cleaned;
   }
 
-  isCisRegion(countryCode: string | null, city: string): boolean {
+  isCisRegion(countryCode: string | null | undefined, city: string): boolean {
     const cisCountries = [
       'RU',
       'BY',
