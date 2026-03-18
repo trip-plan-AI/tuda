@@ -10,7 +10,7 @@ async function run() {
     await pool.query(`ALTER TYPE transport_mode ADD VALUE IF NOT EXISTS 'bike'`);
     await pool.query(`ALTER TYPE transport_mode ADD VALUE IF NOT EXISTS 'direct'`);
     console.log('Enum updated');
-  } catch(e) { console.error((e as Error).message) }
+  } catch(e) { console.error(e.message) }
   await pool.end();
 }
 run();

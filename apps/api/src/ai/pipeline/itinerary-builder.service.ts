@@ -239,7 +239,8 @@ export class ItineraryBuilderService {
 
           // Food Cooldown: Не едим чаще чем раз в 4 часа
           if (isFood && node.lastFoodTime !== undefined) {
-            const timeSinceLastFood = node.currentTimeSpent - node.lastFoodTime;
+            const timeSinceLastFood =
+              node.currentTimeSpent - node.lastFoodTime;
             if (timeSinceLastFood < FOOD_COOLDOWN_MIN) continue;
           }
 

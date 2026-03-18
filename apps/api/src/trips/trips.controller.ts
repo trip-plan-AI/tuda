@@ -13,14 +13,10 @@ import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { CollaborationEventsService } from '../collaboration/collaboration-events.service';
 
 @Controller('trips')
 export class TripsController {
-  constructor(
-    private readonly tripsService: TripsService,
-    private readonly eventsService: CollaborationEventsService,
-  ) {}
+  constructor(private readonly tripsService: TripsService) {}
 
   // Публичный эндпоинт — предопределённые туры доступны без авторизации
   @Get('predefined')
@@ -48,14 +44,12 @@ export class TripsController {
 
   @UseGuards(JwtAuthGuard)
   @Patch(':id')
-  async update(
+  update(
     @Param('id') id: string,
     @CurrentUser() user: { id: string },
     @Body() dto: UpdateTripDto,
   ) {
-    const result = await this.tripsService.update(id, user.id, dto);
-    this.eventsService.emitTripRefresh(id);
-    return result;
+    return this.tripsService.update(id, user.id, dto);
   }
 
   @UseGuards(JwtAuthGuard)
