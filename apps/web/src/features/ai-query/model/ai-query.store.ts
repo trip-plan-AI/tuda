@@ -1068,11 +1068,12 @@ export const useAiQueryStore = create<AiQueryStore>()(
       const session = state.sessions[activeId];
       if (!session) return state;
 
-      // Не загружаем WebSocket-историю в только что созданную сессию (sessionId=null, messages=[]).
-      // Это предотвращает появление старых сообщений трипа при создании нового чата:
-      // useCollaborationSocket отправляет trip:join → сервер отвечает chat:history → addChatHistory
-      // попадает в пустую новую сессию и заполняет её старыми сообщениями.
-      if (session.sessionId === null && session.messages.length === 0) return state;
+      // Загружаем chat:history только если сессия имеет backend ID, но ещё не загружены сообщения.
+      // Это предотвращает два сценария:
+      // 1) Пустая новая сессия (sessionId=null) — старые сообщения трипа не должны туда попасть.
+      // 2) Активная сессия с сообщениями — повторный trip:join (переподключение WS) не должен
+      //    инжектировать старые сообщения из других сессий в текущий активный чат.
+      if (!session.sessionId || session.messages.length > 0) return state;
 
       const existingMap = new Map(session.messages.map((m) => [m.id, m]));
       const newMessages = [...session.messages];
@@ -1099,7 +1100,8 @@ export const useAiQueryStore = create<AiQueryStore>()(
         [activeId]: {
           ...session,
           messages: newMessages,
-          updatedAt: new Date().toISOString(),
+          // Не обновляем updatedAt при загрузке истории — это не активность пользователя.
+          // Иначе сессии с активным трипом всплывают вверх при каждом реконнекте WS (trip:join).
         },
       };
 
