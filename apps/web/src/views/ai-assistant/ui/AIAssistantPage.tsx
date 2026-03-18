@@ -409,7 +409,18 @@ export function AIAssistantPage() {
   }, [lastPlanMessage?.routePlan, currentTrip?.id]);
 
   const displayPoints = useMemo(() => {
-    // Если сессия привязана к маршруту — всегда показываем актуальное состояние из сокет-стейта.
+    // Если есть свежий AI-план, который ещё не применён — показываем его точки на карте.
+    // Это покрывает случай когда сессия уже привязана к трипу, но пришёл новый план с 16 точками.
+    const hasUnappliedPlan =
+      lastPlanMessage?.routePlan &&
+      lastPlanMessage.id !== lastAppliedPlanMessageId &&
+      aiPoints.length > 0;
+
+    if (hasUnappliedPlan) {
+      return aiPoints;
+    }
+
+    // Если сессия привязана к маршруту — показываем актуальное состояние из сокет-стейта.
     // Это гарантирует, что изменения от других участников (через useCollaborationSocket)
     // немедленно отражаются на карте.
     if (activeSession?.tripId) {
@@ -418,7 +429,7 @@ export function AIAssistantPage() {
 
     // Нет привязанного маршрута — показываем черновик ИИ из истории чата
     return aiPoints;
-  }, [activeSession?.tripId, currentTrip?.points, aiPoints]);
+  }, [activeSession?.tripId, currentTrip?.points, aiPoints, lastPlanMessage, lastAppliedPlanMessageId]);
 
   const socketTripId = activeSession?.tripId || '';
   useCollaborationSocket(socketTripId);
