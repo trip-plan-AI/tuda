@@ -9,7 +9,6 @@ import type {
   ParsedIntent,
 } from '../types/pipeline.types';
 import type { PoiItem } from '../types/poi.types';
-import { RedisService } from '../../redis/redis.service';
 import { KudagoClientService } from './kudago-client.service';
 import { OverpassClientService } from './overpass-client.service';
 import { OsmFetchService } from './osm-fetch.service';
@@ -35,7 +34,6 @@ export class ProviderSearchService {
   private readonly logger = new Logger('AI_PIPELINE:ProviderSearch');
 
   constructor(
-    private readonly redis: RedisService,
     private readonly kudagoClient: KudagoClientService,
     private readonly overpassClient: OverpassClientService,
     private readonly osmFetchClient: OsmFetchService,
@@ -111,28 +109,6 @@ export class ProviderSearchService {
   }> {
     const city = this.normalizeCityName(intent.city || 'Москва');
 
-    // --- POI POOL CACHE ---
-    // Cache-Aside: POI pool is city-specific and reusable across different user intents.
-    // CIS cities include KudaGo event data (changes daily) → shorter TTL.
-    // Non-CIS cities rely only on static OSM data → longer TTL.
-    const isCisCity = this.llmClientService.isCisRegion(intent.country_code, city);
-    const POI_CACHE_TTL = isCisCity
-      ? 60 * 60 * 24       // 24h  — KudaGo events may change daily
-      : 60 * 60 * 24 * 7;  // 7d   — OSM static data is stable
-    const poiCacheKey = `poi_pool:v2:${city.toLowerCase().replace(/\s+/g, '_')}`;
-    const cachedPool = await this.redis.get(poiCacheKey);
-    if (cachedPool) {
-      try {
-        const pois = JSON.parse(cachedPool) as PoiItem[];
-        this.logger.log(
-          `[POICache] HIT for "${city}" — returning ${pois.length} cached pois, skipping external APIs`,
-        );
-        return { pois };
-      } catch {
-        this.logger.warn(`[POICache] Parse error for "${city}", rebuilding from scratch`);
-      }
-    }
-
     const stats = {
       kudago: this.buildEmptyProviderStat('kudago'),
       overpass: this.buildEmptyProviderStat('overpass'),
@@ -156,12 +132,8 @@ export class ProviderSearchService {
     );
 
     // --- STAGE 1: Hard Data Collection ---
-    const locationStr = searchLocation
-      ? `(${searchLocation.lat.toFixed(4)}, ${searchLocation.lon.toFixed(4)})`
-      : '(no coords)';
-    this.logger.log(
-      `[Stage 1] Collecting hard data for city: ${city} ${locationStr}...`,
-    );
+    const locationStr = searchLocation ? `(${searchLocation.lat.toFixed(4)}, ${searchLocation.lon.toFixed(4)})` : '(no coords)';
+    this.logger.log(`[Stage 1] Collecting hard data for city: ${city} ${locationStr}...`);
 
     let allHardPois: PoiItem[] = [];
     const isCis = this.llmClientService.isCisRegion(intent.country_code, city);
@@ -174,7 +146,9 @@ export class ProviderSearchService {
           return [] as PoiItem[];
         }),
       isCis
-        ? this.kudagoClient.fetchByIntent(intent).catch(() => [] as PoiItem[])
+        ? this.kudagoClient
+            .fetchByIntent(intent)
+            .catch(() => [] as PoiItem[])
         : Promise.resolve([] as PoiItem[]),
       !isCis
         ? this.osmFetchClient
@@ -192,72 +166,12 @@ export class ProviderSearchService {
     stats.kudago.attempted = isCis;
     stats.osm_fetch.attempted = !isCis;
 
-    // CROSS-SOURCE PROTECTION: points confirmed by both KudaGo and Overpass → isProtected
-    // KudaGo is curated (no "traffic lights"), Overpass is raw OSM.
-    // If the same place appears in both — it's a proven MustVisit.
-    if (kudagoRaw.length > 0 && overpassRaw.length > 0) {
-      for (const kudaPoi of kudagoRaw) {
-        for (const ovPoi of overpassRaw) {
-          const nameScore = this.fuzzyMatcher.calculateMatchScore(
-            kudaPoi.name,
-            ovPoi.name,
-            0,
-          );
-          if (nameScore > 0.82) {
-            // COORDINATE SANITY: if name matches but coords diverge >5 km → ghost node, not confirmed.
-            // Example: "Стадион Фишт" can appear as a ticket-office ghost in city center (KudaGo)
-            // and as the real stadium 30 km away (Overpass). Same name ≠ same place.
-            const coordDist = this.haversineKm(
-              kudaPoi.coordinates.lat,
-              kudaPoi.coordinates.lon,
-              ovPoi.coordinates.lat,
-              ovPoi.coordinates.lon,
-            );
-            if (coordDist > 5) {
-              this.logger.warn(
-                `[CrossSource] "${kudaPoi.name}" name-match but coords ${coordDist.toFixed(1)} km apart — skipping isProtected`,
-              );
-              continue;
-            }
-
-            // Mark both copies; deduplicate will keep one with highest quality
-            (kudaPoi as any).isProtected = true;
-            (ovPoi as any).isProtected = true;
-            // Boost scores to float to top of AI selector list
-            kudaPoi.score = Math.max(kudaPoi.score, 0.8);
-            ovPoi.score = Math.max(ovPoi.score, 0.8);
-          }
-        }
-      }
-    }
-
-    // LARGE VENUE SANITY: stadium/arena with typical urban street address = ghost node.
-    // Real stadiums are on stadium grounds, not pedestrian shopping streets.
-    const LARGE_VENUE_KW = ['стадион', 'арена', 'амфитеатр'];
-    for (const poi of allHardPois) {
-      if ((poi as any).isProtected) continue;
-      const nameLower = poi.name.toLowerCase();
-      const addrLower = (poi.address || '').toLowerCase();
-      const isLargeVenueName = LARGE_VENUE_KW.some((kw) => nameLower.includes(kw));
-      // Heuristic: "ул. X" or "улица X" in address but category is not sports → suspect
-      const hasStreetAddr = /^ул\.|^улица\s|\bул\.\s|\bулица\s/.test(addrLower);
-      if (isLargeVenueName && hasStreetAddr) {
-        const oldScore = poi.score;
-        poi.score = Math.min(poi.score, 0.15);
-        this.logger.warn(
-          `[LargeVenueSanity] "${poi.name}" at "${poi.address}" — stadium on street address, score capped ${oldScore.toFixed(2)} → ${poi.score.toFixed(2)}`,
-        );
-      }
-    }
-
     // Filter by geographic awareness using resolved center or fallback geosearch
-    const center = searchLocation || (await this.geosearch.suggest(city))?.[0];
+    const center =
+      searchLocation || (await this.geosearch.suggest(city))?.[0];
 
     const hardPois = this.deduplicate(allHardPois).filter((p) => {
       if (this.isToxicPoi(p.name)) return false;
-      // isProtected points are NEVER dropped by radius — they are proven landmarks.
-      // Аквариум / Дача Сталина may be 20+ km from city centroid but are genuine MustVisit.
-      if ((p as any).isProtected) return true;
       if (center) {
         const d = this.haversineKm(
           center.lat,
@@ -265,7 +179,8 @@ export class ProviderSearchService {
           p.coordinates.lat,
           p.coordinates.lon,
         );
-        const limitKm = (searchRadius + 5000) / 1000;
+        // Use resolved radius + buffer (2km) to avoid hard cutoffs, or default 15km
+        const limitKm = (searchRadius + 2000) / 1000;
         if (d > limitKm) return false;
       }
       return true;
@@ -273,20 +188,24 @@ export class ProviderSearchService {
 
     this.logger.log(`[Stage 1] Collected ${hardPois.length} hard points.`);
 
+    // --- STAGE 1.5: Smart Enrichment ---
+    const enrichedPois = await this.applySmartEnrichment(hardPois, city);
+    this.logger.log(`[Stage 1.5] After enrichment: ${enrichedPois.length} points (was ${hardPois.length})`);
+
     // --- STAGE 2: AI Selection (Selector Mode) ---
     this.logger.log(`[Stage 2] AI Selection (Selector Mode)...`);
 
     // Dynamic City Context based on actual data (or default if no data)
     let cityContext = `Индустриальный город, важна промышленная мощь, набережные и местный колорит.`;
-    if (hardPois.length > 0) {
+    if (enrichedPois.length > 0) {
       const cityProfile = this.cityAnalyzer.analyze(
-        hardPois.map((p) => ({ tags: { tourism: p.category, ...p } })),
+        enrichedPois.map((p) => ({ tags: { tourism: p.category, ...p } })),
       );
       cityContext = cityProfile.description;
     }
 
     // Pre-clustering for geographic awareness
-    const clusterResult = this.clusteringService.clusterPois(hardPois, 1.0);
+    const clusterResult = this.clusteringService.clusterPois(enrichedPois, 1.0);
     const poiToClusterId = new Map<string, number>();
     clusterResult.clusters.forEach((c) => {
       c.poiIds.forEach((pid) => poiToClusterId.set(pid, c.id));
@@ -299,24 +218,7 @@ export class ProviderSearchService {
     };
 
     // 1. Prepare clusters for LLM with IDs
-    // STAGE 1.8: Pre-rank by metadata before AI Selection
-    const preRanked = [...hardPois].sort((a, b) => {
-      const isAttrA =
-        a.category === 'attraction' ||
-        a.category === 'museum' ||
-        a.provider === 'kudago'
-          ? 1
-          : 0;
-      const isAttrB =
-        b.category === 'attraction' ||
-        b.category === 'museum' ||
-        b.provider === 'kudago'
-          ? 1
-          : 0;
-      return isAttrB - isAttrA || (b.rating || 0) - (a.rating || 0);
-    });
-
-    const cultureList = preRanked
+    const cultureList = enrichedPois
       .filter((p) =>
         [
           'museum',
@@ -331,7 +233,7 @@ export class ProviderSearchService {
         ].includes(p.category),
       )
       .slice(0, 40);
-    const natureList = hardPois
+    const natureList = enrichedPois
       .filter((p) =>
         [
           'park',
@@ -343,7 +245,7 @@ export class ProviderSearchService {
         ].includes(p.category),
       )
       .slice(0, 20);
-    const foodList = hardPois
+    const foodList = enrichedPois
       .filter((p) =>
         ['restaurant', 'cafe', 'bar', 'pub', 'fast_food'].includes(p.category),
       )
@@ -355,9 +257,8 @@ export class ProviderSearchService {
 ### TASK
 1. ОПРЕДЕЛИ 3 главных архетипа этого города (напр.: 'Индустриальный гигант', 'Портовый узел', 'Университетский центр', 'Купеческий городок'). 
 2. ВЫБЕРИ из предоставленного списка (с ID) те объекты, которые являются "лицом" этих архетипов.
-3. ОЦЕНИ каждую выбранную точку (priority_score от 1 до 10) на основе ее культурной и туристической значимости.
-4. ПРОВЕРЬ ГЕОГРАФИЮ: Игнорируй объекты, которые явно находятся в других регионах или странах, даже если названия похожи.
-5. ВЫЯВИ "Hidden Gems": Если ты знаешь уникальный объект, которого нет в списке, добавь его. Be strictly realistic. Do not hallucinate famous landmarks from other cities.
+3. ПРОВЕРЬ ГЕОГРАФИЮ: Игнорируй объекты, которые явно находятся в других регионах или странах, даже если названия похожи.
+4. ВЫЯВИ "Hidden Gems": Если ты знаешь уникальный объект, которого нет в списке, добавь его.
 
 ### SELECTION CRITERIA (Strict Rules)
 1. ПРИНЦИП "АНТИ-ТИПОВОЙ": 
@@ -376,9 +277,9 @@ export class ProviderSearchService {
    - Уникальный гастро-опыт (с историей).
 
 ### OUTPUT
-Верни СТРОГО JSON. Для каждого выбранного объекта укажи, к какому АРХЕТИПУ он относится и его SCORE (1-10).`;
+Верни СТРОГО JSON. Для каждого выбранного объекта укажи, к какому АРХЕТИПУ он относится.`;
 
-    const isSmallCity = hardPois.length < 10;
+    const isSmallCity = enrichedPois.length < 10;
     const hiddenGemsTarget = isSmallCity ? '10-15' : '3-5';
 
     const selectionPrompt = `Город: ${city}
@@ -397,23 +298,16 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
 
 ЗАДАЧА:
 1. Выбери до 15 лучших объектов из списка.
-2. Предложи ${hiddenGemsTarget} "Hidden Gems" — конкретных мест, которых НЕТ в списке.
-
-ПРАВИЛА ДЛЯ HIDDEN GEMS (СТРОГО):
-- Только конкретные НАЗВАНИЯ объектов: "Приморская набережная Сочи", "Центральный рынок Сочи".
-- ЗАПРЕЩЕНО: абстракции ("Прогулки по набережной"), описания действий ("Посещение рынка").
-- ЗАПРЕЩЕНО: места из других городов.
-- Если не уверен в существовании объекта — НЕ добавляй его. Лучше меньше, но точнее.
+2. Обязательно предложи ${hiddenGemsTarget} лучших мест ("Hidden Gems"), которых НЕТ в списке.
 
 Верни JSON:
 {
-  "selected": [{"id": "ID объекта", "archetype": "соответствующий архетип", "score": 8}],
-  "hidden_gems": [{"name": "точное название объекта", "reason": "почему это Must-see", "archetype": "архетип"}]
+  "selected": [{"id": "ID объекта", "archetype": "соответствующий архетип"}],
+  "hidden_gems": [{"name": "название", "reason": "почему это Must-see", "archetype": "архетип"}]
 }`;
 
     let selectedIds: string[] = [];
     let hiddenHypotheses: any[] = [];
-    const aiScoreMap = new Map<string, number>();
 
     try {
       const content = await this.llmClientService.chat(
@@ -430,15 +324,10 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
 
       const parsed = JSON.parse(content || '{}');
       selectedIds = (parsed.selected || []).map((s: any) => s.id);
-      (parsed.selected || []).forEach((s: any) => {
-        if (s.id && s.score) aiScoreMap.set(s.id, s.score);
-      });
       hiddenHypotheses = parsed.hidden_gems || [];
 
-      if (selectedIds.length === 0 && hardPois.length > 0) {
-        this.logger.warn(
-          `[Stage 2] LLM Selection returned 0 IDs. Falling back to top 15 from hardPois.`,
-        );
+      if (selectedIds.length === 0 && enrichedPois.length > 0) {
+        this.logger.warn(`[Stage 2] LLM Selection returned 0 IDs. Falling back to top 15 from enrichedPois.`);
         selectedIds = [...cultureList, ...natureList, ...foodList]
           .slice(0, 15)
           .map((p) => p.id);
@@ -454,38 +343,12 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     }
 
     // Safety Filter: оставляем только те ID, которые реально были в источнике
-    const validIdSet = new Set(hardPois.map((p) => p.id));
+    const validIdSet = new Set(enrichedPois.map((p) => p.id));
     const verifiedIds = selectedIds.filter((id) => validIdSet.has(id));
 
-    let curatedPois = hardPois
-      .filter((p) => verifiedIds.includes(p.id))
-      .map((p) => {
-        // Multi-factor Scoring
-        const aiRank = (aiScoreMap.get(p.id) || 5) / 10; // AI Significance (0.5 weight)
-        const isAttraction =
-          p.category === 'attraction' ||
-          p.category === 'museum' ||
-          p.provider === 'kudago';
-        const dataSourceScore = isAttraction ? 1.0 : 0.0; // Data Source (0.3 weight)
-        const popularityScore = p.rating && p.rating > 0 ? 1.0 : 0.0; // Popularity (0.2 weight)
-
-        const finalScore =
-          aiRank * 0.5 + dataSourceScore * 0.3 + popularityScore * 0.2;
-
-        return {
-          ...p,
-          score: finalScore,
-        };
-      });
-
+    const curatedPois = enrichedPois.filter((p) => verifiedIds.includes(p.id));
     this.logger.log(
-      `[Stage 2] Curated ${curatedPois.length} points from Ground Truth with scores.`,
-    );
-
-    // --- STAGE 2.5: Smart Enrichment ---
-    curatedPois = await this.applySmartEnrichment(curatedPois, city);
-    this.logger.log(
-      `[Stage 2.5] After enrichment: ${curatedPois.length} curated points`,
+      `[Stage 2] Curated ${curatedPois.length} points from Ground Truth.`,
     );
 
     // --- STAGE 3: Hidden Gems & Geocoding ---
@@ -498,7 +361,7 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     if (citySuggestions && citySuggestions.length > 0) {
       const firstSuggestion = citySuggestions[0] as GeosearchResult;
       const { lat, lon } = firstSuggestion;
-      const delta = 0.3; // ~33km — expanded for large cities (e.g. Сочи spans ~100km coastline)
+      const delta = 0.1; // ~10-12km
       cityBbox = `${lon - delta},${lat - delta},${lon + delta},${lat + delta}`;
     }
 
@@ -507,7 +370,9 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
       for (const hypo of hiddenHypotheses) {
         if (
           !hypo.name ||
-          [city].some((c) => this.isAnotherCityName(hypo.name as string, c)) ||
+          [city].some((c) =>
+            this.isAnotherCityName(hypo.name as string, c),
+          ) ||
           this.isToxicPoi(hypo.name as string)
         )
           continue;
@@ -546,9 +411,7 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
             rating: 4.8,
             description: hypo.reason as string,
             price_segment: 'mid',
-            score: 0.95, // Raised score to ensure they survive synthesis
-            isProtected: true, // Hidden gems get protected status to pull neighbors in remote clusters
-          } as any);
+          });
         }
       }
     }
@@ -561,30 +424,22 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
       ...curatedPois,
     ]);
 
-    // If result is too small, refill from hardPois to have a healthy pool for downstream
-    if (allCandidates.length < 20 && hardPois.length > allCandidates.length) {
-      let extra = hardPois
+    // If result is too small, refill from enrichedPois to have a healthy pool for downstream
+    if (allCandidates.length < 20 && enrichedPois.length > allCandidates.length) {
+      const extra = enrichedPois
         .filter(
           (p) =>
             !allCandidates.some(
               (r) =>
                 r.id === p.id ||
                 this.haversineKm(
-                  r.coordinates.lat,
-                  r.coordinates.lon,
-                  p.coordinates.lat,
-                  p.coordinates.lon,
+                  r.coordinates.lat, r.coordinates.lon,
+                  p.coordinates.lat, p.coordinates.lon,
                 ) < 0.07,
             ),
         )
         .slice(0, 30);
-
-      // No enrichment for extra/fallback points — they are low-priority filler.
-      // Enrichment runs only on curated (AI-selected) points in Stage 2.5.
-      // This avoids 16+ Yandex calls for points the scheduler likely won't use.
-      allCandidates.push(
-        ...extra.map((p) => ({ ...p, score: p.score ?? 0.3 })),
-      );
+      allCandidates.push(...extra);
     }
 
     // Quota: 50 non-food + 50 food
@@ -620,10 +475,6 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
       `[Stage 4] Pipeline finished. Total points: ${resultPois.length} (Food: ${foodPois.length}, Non-Food: ${nonFoodPois.length})`,
     );
 
-    // Store full POI pool in cache for subsequent requests for the same city
-    await this.redis.set(poiCacheKey, JSON.stringify(resultPois), POI_CACHE_TTL);
-    this.logger.log(`[POICache] Stored "${city}" (${resultPois.length} pois, TTL: 24h)`);
-
     return {
       pois: resultPois,
       shadowDiagnostics: {
@@ -634,7 +485,7 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
           stats.discovery,
         ],
         totals: {
-          before_dedup: hardPois.length + verifiedHiddenPois.length,
+          before_dedup: enrichedPois.length + verifiedHiddenPois.length,
           after_dedup: allCandidates.length,
           returned: resultPois.length,
         },
@@ -687,65 +538,14 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
   }
 
   // --- Smart Enrichment (Stage 1.5) ---
-  // Group A: pure category words → drop immediately (utility/service, not attractions)
+  // Group A: pure category words → drop immediately
   private readonly GENERIC_NAMES = new Set([
-    'кафе',
-    'ресторан',
-    'бар',
-    'паб',
-    'столовая',
-    'буфет',
-    'закусочная',
-    'пиццерия',
-    'суши',
-    'шаурма',
-    'фастфуд',
-    'магазин',
-    'супермаркет',
-    'аптека',
-    'банк',
-    'банкомат',
-    'отель',
-    'гостиница',
-    'хостел',
-    'мотель',
-    'парковка',
-    'заправка',
-    'автомойка',
-    'прачечная',
-    'химчистка',
-    'салон',
-    'парикмахерская',
-    'стадион',
-    'спортзал',
-    'фитнес',
-    'кинотеатр',
-    'клуб',
-    'кальянная',
-  ]);
-
-  // Geographic/natural feature names — single-word but represent real landmarks.
-  // These are ALWAYS enriched (mandatory, bypasses ENRICH_THRESHOLD).
-  private readonly GEOGRAPHIC_CATEGORY_NAMES = new Set([
-    'пляж',
-    'парк',
-    'сквер',
-    'каньон',
-    'водопад',
-    'гора',
-    'озеро',
-    'мыс',
-    'бухта',
-    'ущелье',
-    'скала',
-    'роща',
-    'поляна',
-    'родник',
-    'река',
-    'маяк',
-    'пещера',
-    'плато',
-    'хребет',
+    'кафе', 'ресторан', 'бар', 'паб', 'столовая', 'буфет', 'закусочная',
+    'пиццерия', 'суши', 'шаурма', 'фастфуд', 'магазин', 'супермаркет',
+    'аптека', 'банк', 'банкомат', 'отель', 'гостиница', 'хостел', 'мотель',
+    'парковка', 'заправка', 'автомойка', 'прачечная', 'химчистка',
+    'салон', 'парикмахерская', 'пляж', 'парк', 'сквер', 'стадион',
+    'спортзал', 'фитнес', 'кинотеатр', 'клуб', 'бар', 'кальянная',
   ]);
 
   // Group B: short (≤6) or single-word brands that look uninformative
@@ -753,8 +553,7 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     const n = name.trim();
     if (n.length <= 6) return true;
     // Single word that doesn't look like a proper place name
-    if (!n.includes(' ') && !/[A-ZА-ЯЁ]{2,}/.test(n) && n.length <= 10)
-      return true;
+    if (!n.includes(' ') && !/[A-ZА-ЯЁ]{2,}/.test(n) && n.length <= 10) return true;
     return false;
   }
 
@@ -765,69 +564,35 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
   private async enrichPoiName(
     poi: PoiItem,
     city: string,
-    localCache: Map<string, string | null>,
   ): Promise<string | null> {
-    const cacheKey = `enrich:${city}:${poi.name.toLowerCase().trim()}`;
-
-    // 1. Local Request Cache
-    if (localCache.has(cacheKey)) {
-      return localCache.get(cacheKey)!;
-    }
-
-    // 2. Redis Cache
-    try {
-      const cached = await this.redis.get(cacheKey);
-      if (cached) {
-        const val = cached === 'null' ? null : cached;
-        localCache.set(cacheKey, val);
-        return val;
-      }
-    } catch (e) {
-      this.logger.warn(`Redis get error: ${e}`);
-    }
-
-    let resultName: string | null = null;
     try {
       const results = await this.geosearch.suggestWithBias(
         `${poi.name} ${city}`,
         poi.coordinates.lat,
         poi.coordinates.lon,
       );
-      if (results && results.length > 0) {
-        const best = results[0] as { displayName?: string; title?: string };
-        const fullName: string =
-          (best.title as string) || (best.displayName as string) || '';
+      if (!results || results.length === 0) return null;
 
-        // Only use if the enriched name is actually better (longer and contains original)
-        if (
-          fullName &&
-          fullName.length > poi.name.length + 3 &&
-          fullName.toLowerCase().includes(poi.name.toLowerCase())
-        ) {
-          resultName = fullName.split(',')[0].trim(); // take first part before comma
-        }
+      const best = results[0] as { displayName?: string; title?: string };
+      const fullName: string =
+        (best.title as string) || (best.displayName as string) || '';
+
+      // Only use if the enriched name is actually better (longer and contains original)
+      if (
+        fullName &&
+        fullName.length > poi.name.length + 3 &&
+        fullName.toLowerCase().includes(poi.name.toLowerCase())
+      ) {
+        return fullName.split(',')[0].trim(); // take first part before comma
       }
     } catch {
       // ignore
     }
-
-    localCache.set(cacheKey, resultName);
-    try {
-      await this.redis.set(cacheKey, resultName || 'null', 60 * 60 * 24 * 7); // 7 days cache
-    } catch (e) {
-      this.logger.warn(`Redis set error: ${e}`);
-    }
-
-    return resultName;
+    return null;
   }
 
   private readonly FOOD_CATEGORIES = new Set([
-    'restaurant',
-    'cafe',
-    'bar',
-    'pub',
-    'fast_food',
-    'food_court',
+    'restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court',
   ]);
 
   /**
@@ -845,29 +610,19 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     city: string,
   ): Promise<PoiItem[]> {
     const ENRICH_THRESHOLD = 15; // based on non-food count only
-    const currentFoodCount = pois.filter((p) =>
-      this.FOOD_CATEGORIES.has(p.category),
-    ).length;
+    const currentFoodCount = pois.filter((p) => this.FOOD_CATEGORIES.has(p.category)).length;
     const nonFoodCount = pois.length - currentFoodCount;
     const shouldDropNonFood = nonFoodCount >= ENRICH_THRESHOLD;
 
     const groupA: PoiItem[] = []; // generic non-food → drop
-    const groupB: PoiItem[] = []; // uninformative → enrich (pool-limited)
-    const groupGeo: PoiItem[] = []; // geographic categories → ALWAYS enrich (mandatory)
+    const groupB: PoiItem[] = []; // uninformative → enrich
     const clean: PoiItem[] = [];
 
     for (const poi of pois) {
       const lower = poi.name.toLowerCase().trim();
       const isFood = this.FOOD_CATEGORIES.has(poi.category);
 
-      const isShortCanyonOrWaterfall =
-        poi.name.length < 7 &&
-        ['canyon', 'waterfall'].includes(poi.category);
-
-      if (this.GEOGRAPHIC_CATEGORY_NAMES.has(lower) || isShortCanyonOrWaterfall) {
-        // Single-word geographic/natural feature: always enrich — could be "Каньон Псахо" etc.
-        groupGeo.push(poi);
-      } else if (this.GENERIC_NAMES.has(lower)) {
+      if (this.GENERIC_NAMES.has(lower)) {
         // Food with generic name: always try to enrich (keep if fails and foodCount < 4)
         if (isFood) {
           groupB.push(poi);
@@ -882,18 +637,15 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     }
 
     this.logger.debug(
-      `[Stage 1.5] Smart Enrichment: ${clean.length} clean, ${groupA.length} generic non-food (drop), ${groupGeo.length} geo-mandatory, ${groupB.length} to enrich (food: ${currentFoodCount})`,
+      `[Stage 1.5] Smart Enrichment: ${clean.length} clean, ${groupA.length} generic non-food (drop), ${groupB.length} to enrich (food: ${currentFoodCount})`,
     );
 
-    if (groupB.length === 0 && groupGeo.length === 0) return [...clean];
+    if (groupB.length === 0) return [...clean];
 
-    // Always enrich food and geographic features; enrich non-food only if pool is small enough
-    const toEnrich = [
-      ...groupGeo, // geographic names: always enrich, no threshold
-      ...groupB.filter(
-        (p) => this.FOOD_CATEGORIES.has(p.category) || !shouldDropNonFood,
-      ),
-    ];
+    // Always enrich food; enrich non-food only if pool is small enough
+    const toEnrich = groupB.filter(
+      (p) => this.FOOD_CATEGORIES.has(p.category) || !shouldDropNonFood,
+    );
     const toDrop = groupB.filter(
       (p) => !this.FOOD_CATEGORIES.has(p.category) && shouldDropNonFood,
     );
@@ -906,57 +658,21 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
 
     const enriched: PoiItem[] = [];
     if (toEnrich.length > 0) {
-      const localCache = new Map<string, string | null>();
-
-      // Concurrency limit helper (e.g. 5 parallel requests)
-      const results: (string | null)[] = new Array(toEnrich.length);
-      const limit = 5;
-      let i = 0;
-
-      const worker = async () => {
-        while (i < toEnrich.length) {
-          const index = i++;
-          results[index] = await this.enrichPoiName(
-            toEnrich[index],
-            city,
-            localCache,
-          );
-        }
-      };
-
-      const workers = Array.from(
-        { length: Math.min(limit, toEnrich.length) },
-        worker,
+      const results = await Promise.all(
+        toEnrich.map((poi) => this.enrichPoiName(poi, city)),
       );
-      await Promise.all(workers);
-
       for (let i = 0; i < toEnrich.length; i++) {
         const poi = toEnrich[i];
         const newName = results[i];
         const isFood = this.FOOD_CATEGORIES.has(poi.category);
 
-        const isGeo =
-          this.GEOGRAPHIC_CATEGORY_NAMES.has(poi.name.toLowerCase().trim()) ||
-          (poi.name.length < 7 &&
-            ['canyon', 'waterfall'].includes(poi.category));
-
         if (newName) {
           enriched.push({ ...poi, name: newName });
-          this.logger.debug(
-            `[Stage 1.5] Enriched: "${poi.name}" → "${newName}"`,
-          );
+          this.logger.debug(`[Stage 1.5] Enriched: "${poi.name}" → "${newName}"`);
         } else if (isFood && currentFoodCount < 4) {
           // Food protection: keep even without enrichment
           enriched.push(poi);
-          this.logger.debug(
-            `[Stage 1.5] Food protected (kept as-is): "${poi.name}"`,
-          );
-        } else if (isGeo) {
-          // Geographic feature: keep as-is if enrichment failed (better than dropping)
-          enriched.push(poi);
-          this.logger.debug(
-            `[Stage 1.5] Geo feature kept (no enrichment found): "${poi.name}"`,
-          );
+          this.logger.debug(`[Stage 1.5] Food protected (kept as-is): "${poi.name}"`);
         } else if (!isFood && clean.length < 8) {
           enriched.push(poi);
         } else if (!isFood) {
@@ -973,7 +689,6 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
 
   private isToxicPoi(name: string): boolean {
     const TOXIC = [
-      // War memorials / political
       'ликвидаторам',
       'чернобыль',
       'афганцам',
@@ -982,14 +697,6 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
       'участникам',
       'обелиск славы',
       'вечный огонь',
-      // Technical infrastructure — not tourist attractions
-      'светофор',
-      'семафор',
-      'железнодорожный светофор',
-      'дорожный знак',
-      'будка охраны',
-      'трансформаторная',
-      'водонапорная башня',
     ];
     const lower = name.toLowerCase();
     return TOXIC.some((kw) => lower.includes(kw));

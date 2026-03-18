@@ -60,30 +60,12 @@ export class IntentRouterService {
 
   private isTravelRelatedRuleBased(text: string): boolean {
     const travelKeywords = [
-      'маршрут',
-      'поездка',
-      'город',
-      'сходить',
-      'достопримечательности',
-      'еда',
-      'ресторан',
-      'кафе',
-      'музей',
-      'парк',
-      'план',
-      'поехать',
-      'найти',
-      'удали',
-      'замени',
-      'добавь',
-      'завтрак',
-      'обед',
-      'ужин',
-      'тур',
-      'день',
-      'бюджет',
+      'маршрут', 'поездка', 'город', 'сходить', 'достопримечательности',
+      'еда', 'ресторан', 'кафе', 'музей', 'парк', 'план', 'поехать',
+      'найти', 'удали', 'замени', 'добавь', 'завтрак', 'обед', 'ужин',
+      'тур', 'день', 'бюджет'
     ];
-    return travelKeywords.some((kw) => text.toLowerCase().includes(kw));
+    return travelKeywords.some(kw => text.toLowerCase().includes(kw));
   }
 
   async route(
@@ -92,7 +74,7 @@ export class IntentRouterService {
     currentRoutePois?: Array<{ poi_id: string; title?: string | null }>,
   ): Promise<IntentRouterDecision> {
     const query = message.trim();
-
+    
     // 1. Anti-Spam Check
     if (this.getSpamScore(query) >= 3) {
       this.logger.warn(`Spam detected for query: "${query}"`);
@@ -124,16 +106,11 @@ export class IntentRouterService {
         jsonMode: true,
       });
 
-      const parsed = this.parseAndValidateLlmResponse(content || '{}');
+      let parsed = this.parseAndValidateLlmResponse(content || '{}');
 
       // 2. Rule-based + LLM Combo for OFF_TOPIC
       const isTravelRelated = this.isTravelRelatedRuleBased(query);
-      if (
-        !isTravelRelated &&
-        parsed.confidence < 0.7 &&
-        parsed.action_type !== 'OFF_TOPIC' &&
-        parsed.action_type !== 'SMALL_TALK'
-      ) {
+      if (!isTravelRelated && parsed.confidence < 0.7 && parsed.action_type !== 'OFF_TOPIC' && parsed.action_type !== 'SMALL_TALK') {
         parsed.action_type = 'OFF_TOPIC';
       }
 
@@ -153,11 +130,7 @@ export class IntentRouterService {
         action_type: normalizedActionType,
         confidence: parsed.confidence,
         target_poi_id:
-          normalizedActionType === 'NEW_ROUTE' ||
-          normalizedActionType === 'OFF_TOPIC' ||
-          normalizedActionType === 'SMALL_TALK'
-            ? null
-            : targetPoiId,
+          (normalizedActionType === 'NEW_ROUTE' || normalizedActionType === 'OFF_TOPIC' || normalizedActionType === 'SMALL_TALK') ? null : targetPoiId,
         route_mode:
           normalizedActionType === 'REMOVE_POI' ||
           normalizedActionType === 'REPLACE_POI' ||

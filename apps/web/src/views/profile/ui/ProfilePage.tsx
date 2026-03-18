@@ -290,17 +290,6 @@ export function ProfilePage() {
 
   const progressDegrees = Math.round(scrollProgress * 360);
 
-  // Tab change clears card selection so map resets to tab-based view
-  const handleTabChange = useCallback((tab: TabKey) => {
-    setActiveTab(tab);
-    setSelectedTripId(null);
-  }, []);
-
-  // Toggle: clicking same card deselects it
-  const handleCardClick = useCallback((tripId: string) => {
-    setSelectedTripId((prev) => (prev === tripId ? null : tripId));
-  }, []);
-
   useEffect(() => {
     setIsAuthResolved(true);
   }, []);
@@ -368,67 +357,36 @@ export function ProfilePage() {
       : (allTrips.find((t) => t.id === selectedTripId) ?? null)
     : (displayedActiveRoute ?? travelTrips[0] ?? null);
 
-  // Feed points to PersistentMapShell (right aside in layout).
-  // Priority: selected card → tab-based (routes=current+past, saved=all saved)
+  // Feed points to PersistentMapShell (right aside in layout)
+  // Show all points from current and past trips on the map
   useEffect(() => {
-    const now = new Date();
-    let mapPoints: any[];
-    let fitKey: string;
-
-    if (selectedTripId) {
-      const trip = allTrips.find((t) => t.id === selectedTripId);
-      mapPoints = trip?.points || [];
-      fitKey = `profile-trip-${selectedTripId}`;
-    } else if (activeTab === 'saved') {
-      mapPoints = allTrips.filter((t) => !t.startDate || !t.endDate).flatMap((t) => t.points || []);
-      fitKey = 'profile-saved-trips';
-    } else {
-      mapPoints = allTrips
-        .filter(
-          (t) =>
-            t.startDate &&
-            t.endDate &&
-            (new Date(t.endDate) < now ||
-              (new Date(t.startDate) <= now && new Date(t.endDate) >= now)),
-        )
-        .flatMap((t) => t.points || []);
-      fitKey = 'profile-all-trips';
-    }
-
+    const allPoints = [...currentTrips, ...pastTrips].flatMap((t) => t.points || []);
     setConfig({
       source: 'profile-page',
       priority: 80,
-      points: mapPoints,
+      points: allPoints,
       readonly: true,
       draggable: false,
       routeProfile: 'driving',
-      fitKey,
+      fitKey: 'profile-all-trips',
     });
     return () => {
       clearConfig('profile-page');
     };
-  }, [selectedTripId, activeTab, allTrips]);
+  }, [currentTrips, pastTrips]);
 
-  // Join all trip sockets for real-time card updates.
-  // Re-joins on socket reconnect so budget/point events keep arriving
-  // even after a brief network disconnect.
+  // Join all trip sockets for real-time card updates
   useEffect(() => {
     const socket = getSocket();
     const joinedIds = allTrips.map((t) => t.id).filter(Boolean);
 
-    const joinAll = () => {
-      joinedIds.forEach((id) => {
-        if (id !== activeRoute?.id) {
-          socket.emit('join:trip', { trip_id: id });
-        }
-      });
-    };
-
-    joinAll();
-    socket.on('connect', joinAll);
+    joinedIds.forEach((id) => {
+      if (id !== activeRoute?.id) {
+        socket.emit('join:trip', { trip_id: id });
+      }
+    });
 
     return () => {
-      socket.off('connect', joinAll);
       joinedIds.forEach((id) => {
         if (id !== activeRoute?.id) {
           socket.emit('leave:trip', { trip_id: id });
@@ -457,9 +415,10 @@ export function ProfilePage() {
 
   useEffect(() => {
     const socket = getSocket();
+    if (!currentTrip?.id) return;
 
     const onPointReorder = ({ trip_id, pointIds }: { trip_id: string; pointIds: string[] }) => {
-      if (currentTrip?.id && trip_id === currentTrip.id) {
+      if (trip_id === currentTrip.id) {
         const currentPoints = useTripStore.getState().currentTrip?.points || [];
         const pointMap = new Map(currentPoints.map((p) => [p.id, p]));
         const newPoints: any[] = [];
@@ -498,7 +457,7 @@ export function ProfilePage() {
       ...patch
     }: { trip_id: string; point_id: string } & any) => {
       if (!trip_id) return;
-      if (currentTrip?.id && trip_id === currentTrip.id) {
+      if (trip_id === currentTrip.id) {
         const currentPoints = useTripStore.getState().currentTrip?.points || [];
         setPoints(currentPoints.map((p) => (p.id === point_id ? { ...p, ...patch } : p)));
       }
@@ -525,7 +484,7 @@ export function ProfilePage() {
       coords: { lat: number; lon: number };
     }) => {
       if (!trip_id) return;
-      if (currentTrip?.id && trip_id === currentTrip.id) {
+      if (trip_id === currentTrip.id) {
         const currentPoints = useTripStore.getState().currentTrip?.points || [];
         setPoints(
           currentPoints.map((p) =>
@@ -550,7 +509,7 @@ export function ProfilePage() {
     // point:added payload: { trip_id, point }
     const onPointAdd = ({ trip_id, point }: { trip_id: string; point: any }) => {
       if (!trip_id) return;
-      if (currentTrip?.id && trip_id === currentTrip.id) {
+      if (trip_id === currentTrip.id) {
         addPoint(point);
       }
 
@@ -565,7 +524,7 @@ export function ProfilePage() {
     // point:deleted payload: { trip_id, point_id }
     const onPointDelete = ({ trip_id, point_id }: { trip_id: string; point_id: string }) => {
       if (!trip_id) return;
-      if (currentTrip?.id && trip_id === currentTrip.id) {
+      if (trip_id === currentTrip.id) {
         removePoint(point_id);
       }
 
@@ -578,33 +537,10 @@ export function ProfilePage() {
     };
 
     const onTripUpdate = ({ trip_id, ...patch }: { trip_id: string } & any) => {
-      if (currentTrip?.id && trip_id === currentTrip.id) {
+      if (trip_id === currentTrip.id) {
         updateCurrentTrip(patch);
       }
       setAllTrips((prev) => prev.map((t) => (t.id === trip_id ? { ...t, ...patch } : t)));
-    };
-
-    const onTripBudgetUpdated = ({ trip_id, budget }: { trip_id: string; budget: number }) => {
-      if (!trip_id) return;
-      // Update allTrips so TripCard re-renders with the new plannedBudget.
-      // currentTrip is handled by useCollaborationSocket's handleTripBudgetUpdated.
-      setAllTrips((prev) => prev.map((t) => (t.id === trip_id ? { ...t, budget } : t)));
-    };
-
-    // trip:refresh — reload the full trip (points + budget) from API.
-    // Triggered by AI flow or after bulk operations; ensures profile stays in sync.
-    const onTripRefresh = ({ trip_id }: { trip_id: string }) => {
-      if (!trip_id) return;
-      Promise.all([tripsApi.getOne(trip_id), pointsApi.getAll(trip_id)])
-        .then(([trip, points]) => {
-          if (!trip) return;
-          setAllTrips((prev) =>
-            prev.map((t) =>
-              t.id === trip_id ? { ...trip, points: points ?? t.points } : t,
-            ),
-          );
-        })
-        .catch(console.error);
     };
 
     socket.on('point:reorder', onPointReorder);
@@ -613,8 +549,6 @@ export function ProfilePage() {
     socket.on('point:added', onPointAdd);
     socket.on('point:deleted', onPointDelete);
     socket.on('trip:update', onTripUpdate);
-    socket.on('trip:budget_updated', onTripBudgetUpdated);
-    socket.on('trip:refresh', onTripRefresh);
 
     return () => {
       socket.off('point:reorder', onPointReorder);
@@ -623,8 +557,6 @@ export function ProfilePage() {
       socket.off('point:added', onPointAdd);
       socket.off('point:deleted', onPointDelete);
       socket.off('trip:update', onTripUpdate);
-      socket.off('trip:budget_updated', onTripBudgetUpdated);
-      socket.off('trip:refresh', onTripRefresh);
     };
   }, [currentTrip?.id, setPoints, updateCurrentTrip, addPoint, removePoint]);
 
@@ -1003,7 +935,7 @@ export function ProfilePage() {
       <div className="px-4 pt-2.5 pb-0 shrink-0 bg-white border-b border-slate-100">
         <div className="flex gap-4">
           <button
-            onClick={() => handleTabChange('routes')}
+            onClick={() => setActiveTab('routes')}
             className={cn(
               'pb-2 text-[12px] font-bold tracking-wide border-b-2 transition-all',
               activeTab === 'routes'
@@ -1015,7 +947,7 @@ export function ProfilePage() {
             <span className="ml-1.5 text-[10px] font-black opacity-60">{travelTrips.length}</span>
           </button>
           <button
-            onClick={() => handleTabChange('saved')}
+            onClick={() => setActiveTab('saved')}
             className={cn(
               'pb-2 text-[12px] font-bold tracking-wide border-b-2 transition-all',
               activeTab === 'saved'
@@ -1101,7 +1033,7 @@ export function ProfilePage() {
                           key={trip.id}
                           trip={trip}
                           isSelected={selectedTripId === trip.id}
-                          onCardClick={handleCardClick}
+                          onCardClick={setSelectedTripId}
                           highlighted={highlightedTripId === trip.id}
                           cardRef={(node) => registerTripCardRef(trip.id, node)}
                           onOpenPlanner={handleEditRoute}
@@ -1135,7 +1067,7 @@ export function ProfilePage() {
                           key={trip.id}
                           trip={trip}
                           isSelected={selectedTripId === trip.id}
-                          onCardClick={handleCardClick}
+                          onCardClick={setSelectedTripId}
                           highlighted={highlightedTripId === trip.id}
                           cardRef={(node) => registerTripCardRef(trip.id, node)}
                           onOpenPlanner={handleEditRoute}
@@ -1169,7 +1101,7 @@ export function ProfilePage() {
                           key={trip.id}
                           trip={trip}
                           isSelected={selectedTripId === trip.id}
-                          onCardClick={handleCardClick}
+                          onCardClick={setSelectedTripId}
                           highlighted={highlightedTripId === trip.id}
                           cardRef={(node) => registerTripCardRef(trip.id, node)}
                           onOpenPlanner={handleEditRoute}
@@ -1208,7 +1140,7 @@ export function ProfilePage() {
                   key={trip.id}
                   trip={trip}
                   isSelected={selectedTripId === trip.id}
-                  onCardClick={handleCardClick}
+                  onCardClick={setSelectedTripId}
                   highlighted={highlightedTripId === trip.id}
                   cardRef={(node) => registerTripCardRef(trip.id, node)}
                   onOpenPlanner={handleEditRoute}

@@ -17,7 +17,6 @@ describe('PolicyService', () => {
     categories: ['museum', 'restaurant'],
     excluded_categories: [],
     radius_km: 5,
-    country_code: null,
     start_time: '10:00',
     end_time: '20:00',
     preferences_text: 'хочется спокойный маршрут',

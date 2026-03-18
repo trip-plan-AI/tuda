@@ -171,10 +171,10 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
             lon: attr.lon || (safeCoords ? safeCoords.lon + (Math.random() - 0.5) * 0.05 : 0),
             budget: attr.budget,
             visitDate: null,
+            duration: 0,
             imageUrl: attr.imageUrl,
             order: idx,
             createdAt: new Date().toISOString(),
-            duration: 60,
           });
         });
       } else if (safeCoords) {
@@ -188,10 +188,10 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           lon: safeCoords.lon,
           budget: 0,
           visitDate: null,
+          duration: 0,
           imageUrl: null,
           order: 0,
           createdAt: new Date().toISOString(),
-          duration: 60,
         });
       }
       setPoints(newPoints, false);

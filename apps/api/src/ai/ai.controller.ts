@@ -68,7 +68,6 @@ import { CollaborationEventsService } from '../collaboration/collaboration-event
 import { GeocodingFallbackService } from './services/geocoding-fallback.service';
 import { CityAnalyzerService } from './pipeline/city-analyzer.service';
 import { LlmExplainerService } from './pipeline/llm-explainer.service';
-import { PoiCacheWarmupService } from './pipeline/poi-cache-warmup.service';
 
 @Controller('ai')
 @UseGuards(JwtAuthGuard)
@@ -127,7 +126,6 @@ export class AiController {
     private readonly geocodingFallbackService: GeocodingFallbackService,
     private readonly analyzer: CityAnalyzerService,
     private readonly explainer: LlmExplainerService,
-    private readonly cacheWarmup: PoiCacheWarmupService,
   ) {}
 
   private isLocationError(error: unknown): boolean {
@@ -615,16 +613,9 @@ ${JSON.stringify(points)}
     const history = session.messages;
 
     // Guard Layer: Deduplication
-    const lastUserMessage = [...history]
-      .reverse()
-      .find((m) => m.role === 'user');
-    if (
-      lastUserMessage &&
-      lastUserMessage.content.trim() === dto.user_query.trim()
-    ) {
-      this.logger.warn(
-        `Duplicate message detected for session ${session.id}: "${dto.user_query}"`,
-      );
+    const lastUserMessage = [...history].reverse().find((m) => m.role === 'user');
+    if (lastUserMessage && lastUserMessage.content.trim() === dto.user_query.trim()) {
+      this.logger.warn(`Duplicate message detected for session ${session.id}: "${dto.user_query}"`);
       // Optionally, we could just return the last plan. Here we throw to avoid re-running the heavy pipeline.
       throw new UnprocessableEntityException({
         code: 'DUPLICATE_MESSAGE',
@@ -671,9 +662,8 @@ ${JSON.stringify(points)}
       intentRouterDecision.action_type === 'OFF_TOPIC' ||
       intentRouterDecision.action_type === 'SMALL_TALK'
     ) {
-      const fallbackMsg =
-        'Я помогаю с планированием маршрутов и поездок. Можешь уточнить, в каком городе ты хочешь маршрут или какие места найти? 🙂';
-
+      const fallbackMsg = 'Я помогаю с планированием маршрутов и поездок. Можешь уточнить, в каком городе ты хочешь маршрут или какие места найти? 🙂';
+      
       const clarificationMessages: SessionMessage[] = [
         ...history,
         { role: 'user' as const, content: dto.user_query },
@@ -710,9 +700,7 @@ ${JSON.stringify(points)}
         throw error;
       }
 
-      const errorResponse = (
-        error as UnprocessableEntityException
-      ).getResponse() as any;
+      const errorResponse = (error as UnprocessableEntityException).getResponse() as any;
       const clarificationMsg = errorResponse.message || this.needCityMessage;
 
       const clarificationMessages: SessionMessage[] = [
@@ -749,12 +737,10 @@ ${JSON.stringify(points)}
     }
 
     const hasMultipleCitiesInArray = intent.cities && intent.cities.length > 1;
-    const hasDifferentFromAndTo =
-      intent.city_from && intent.city_to && intent.city_from !== intent.city_to;
+    const hasDifferentFromAndTo = intent.city_from && intent.city_to && intent.city_from !== intent.city_to;
 
     if (hasMultipleCitiesInArray || hasDifferentFromAndTo) {
-      const multiCityMessage =
-        'Я могу построить маршрут по местам в рамках одного города. Пожалуйста, укажите его название.';
+      const multiCityMessage = 'Я могу построить маршрут по местам в рамках одного города. Пожалуйста, укажите его название.';
       const clarificationMessages: SessionMessage[] = [
         ...history,
         { role: 'user' as const, content: dto.user_query },
@@ -791,19 +777,19 @@ ${JSON.stringify(points)}
     // Если нужно просто удалить точку, нам не нужно искать новые (Kudago, Overpass, Yandex).
     const skipSearch = intentRouterDecision.action_type === 'REMOVE_POI';
 
-    const rawPoi: any[] = [];
+    let rawPoi: any[] = [];
     let providerDuration = 0;
     let massCollectionShadowMeta: MassCollectionShadowMeta | null = null;
-    const vectorPrefilterShadowMeta: VectorPrefilterShadowMeta | null = null;
-    const logicalIdShadowMeta: LogicalIdShadowMeta | null = null;
+    let vectorPrefilterShadowMeta: VectorPrefilterShadowMeta | null = null;
+    let logicalIdShadowMeta: LogicalIdShadowMeta | null = null;
     let semanticDuration = 0;
     let selectedForScheduler: any[] = [];
     let yandexBatchRefinementDiagnostics: YandexBatchRefinementDiagnostics | null =
       null;
-    const logicalSelectorResult: any = { selected_ids: [] };
-    const logicalSelectedPool: any[] = [];
-    const selected: any[] = [];
-    const yandexPersonaSummary: string =
+    let logicalSelectorResult: any = { selected_ids: [] };
+    let logicalSelectedPool: any[] = [];
+    let selected: any[] = [];
+    let yandexPersonaSummary: string =
       policySnapshot.user_persona_summary ?? dto.user_query;
 
     if (!skipSearch) {
@@ -820,11 +806,6 @@ ${JSON.stringify(points)}
       const allStats: any[] = [];
       let totalBeforeDedup = 0;
       const allSuccessfullyGeocoded: FilteredPoi[] = [];
-
-      // Progress: Stage 1 — searching all sources
-      if (session.tripId && session.id) {
-        this.eventsService.emitAiThinking(session.tripId, session.id, 'collecting');
-      }
 
       const cityPromises = citiesToSearch.map(async (cityName) => {
         this.logger.log(`[PIPELINE] Starting city task: ${cityName}`);
@@ -852,11 +833,6 @@ ${JSON.stringify(points)}
           this.resolveVectorTopK(),
         );
 
-        // Progress: Stage 1.5 — diving into local data
-        if (session.tripId && session.id) {
-          this.eventsService.emitAiThinking(session.tripId, session.id, 'hidden_gems');
-        }
-
         // 3. Logical Selection
         const reserveFactor = 3;
         const baseTarget = cityDays * 4;
@@ -880,22 +856,12 @@ ${JSON.stringify(points)}
           selectedIdSet.has(poi.id),
         );
 
-        // Progress: Stage 2 — AI choosing top N
-        if (session.tripId && session.id) {
-          this.eventsService.emitAiThinking(session.tripId, session.id, 'selecting');
-        }
-
         // 4. Semantic Selection
         const citySelected = await this.semanticFilterService.select(
           logicalSelectedPool,
           cityIntent,
           fallbacks,
         );
-
-        // Progress: Stage 2.5 — validating coordinates
-        if (session.tripId && session.id) {
-          this.eventsService.emitAiThinking(session.tripId, session.id, 'geocoding');
-        }
 
         // 5. Geocoding
         const geocodedResult =
@@ -905,16 +871,15 @@ ${JSON.stringify(points)}
               name: point.name,
               coordinates: point.coordinates,
               city_name: cityName,
-              isProtected: (point as any).isProtected,
             })),
             cityName,
           );
 
         const geocodedPois: FilteredPoi[] = [];
         for (const point of citySelected) {
-          if (geocodedResult.coords.has(point.id)) {
-            const coords = geocodedResult.coords.get(point.id)!;
-            const geocodedPoi: FilteredPoi & { _geocodeConfirmed?: boolean } = {
+          if (geocodedResult.has(point.id)) {
+            const coords = geocodedResult.get(point.id)!;
+            geocodedPois.push({
               ...point,
               city_name: cityName,
               coordinates: {
@@ -922,11 +887,7 @@ ${JSON.stringify(points)}
                 lat: coords.lat,
                 lon: coords.lon,
               },
-            };
-            if (geocodedResult.geocodedIds.has(point.id)) {
-              geocodedPoi._geocodeConfirmed = true;
-            }
-            geocodedPois.push(geocodedPoi);
+            });
           }
         }
 
@@ -946,9 +907,7 @@ ${JSON.stringify(points)}
           throw error;
         }
 
-        const errorResponse = (
-          error as UnprocessableEntityException
-        ).getResponse() as any;
+        const errorResponse = (error as UnprocessableEntityException).getResponse() as any;
         const clarificationMsg = errorResponse.message || this.needCityMessage;
 
         const clarificationMessages: SessionMessage[] = [
@@ -997,15 +956,8 @@ ${JSON.stringify(points)}
 
       const semanticStart = Date.now();
       // Dedup before refinement to avoid 3x same POI in batches
-      const dedupedForRefinement = this.removeDuplicatePoi(
-        allSuccessfullyGeocoded,
-      );
+      const dedupedForRefinement = this.removeDuplicatePoi(allSuccessfullyGeocoded);
       selectedForScheduler = dedupedForRefinement;
-
-      // Progress: Stage 3 — enriching with YandexGPT scoring
-      if (session.tripId && session.id) {
-        this.eventsService.emitAiThinking(session.tripId, session.id, 'enrichment');
-      }
 
       try {
         const refinementResult =
@@ -1030,21 +982,6 @@ ${JSON.stringify(points)}
             !(point.coordinates.lat === 0 && point.coordinates.lon === 0);
 
           if (!isValid) {
-            // Protected points (cross-source confirmed or OSM heritage tag) survive
-            // zero-coord filtering — they are proven landmarks, not hallucinations.
-            // Coordinates will be resolved by geocoding fallback downstream.
-            if ((point as any).isProtected) {
-              this.logger.warn(
-                `Protected point "${point.name}" has zero coords — keeping (will re-geocode)`,
-              );
-              return true;
-            }
-            if ((point as any)._geocodeConfirmed) {
-              this.logger.warn(
-                `Geocode-confirmed point "${point.name}" has zero/invalid coords — keeping`,
-              );
-              return true;
-            }
             droppedPoiNames.push(point.name);
           }
           return isValid;
@@ -1107,16 +1044,7 @@ ${JSON.stringify(points)}
       intentRouterDecision.action_type === 'NEW_ROUTE' || !existingRoutePlan;
 
     if (isNewRouteRequested) {
-      if (session.tripId && session.id) {
-        this.eventsService.emitAiThinking(session.tripId, session.id, 'scheduling');
-      }
-      routePlan = this.schedulerService.buildPlan(
-        selectedForScheduler,
-        intent,
-        session.tripId && session.id
-          ? (day) => this.eventsService.emitAiDayReady(session.tripId!, session.id, day)
-          : undefined,
-      );
+      routePlan = this.schedulerService.buildPlan(selectedForScheduler, intent);
 
       // TRI-115: Storytelling - анализируем город и генерируем объяснение
       try {
@@ -1578,11 +1506,7 @@ ${JSON.stringify(points)}
 
     const totalPointsGenerated = routePlan.days.flatMap((d) => d.points).length;
     let warningPrefix = '';
-    if (
-      totalPointsGenerated > 0 &&
-      totalPointsGenerated < intent.days * 2 &&
-      isNewRouteRequested
-    ) {
+    if (totalPointsGenerated > 0 && totalPointsGenerated < intent.days * 2 && isNewRouteRequested) {
       warningPrefix = `⚠️ В городе ${intent.city} мало известных мест, нашел только ${totalPointsGenerated}. Маршрут может быть короче.\n\n`;
     }
 
@@ -1898,7 +1822,6 @@ ${JSON.stringify(points)}
               description: point.description,
               coordinates: { lat: point.lat ?? 0, lon: point.lon ?? 0 },
               category: 'attraction' as const,
-              score: 0.5, // Default score for trip points
             },
           })),
       }));
@@ -2354,19 +2277,10 @@ ${JSON.stringify(points)}
       }
 
       // Есть точки — отправляем с обновлённым маршрутом
-      // Берём city из последнего route_plan сессии, иначе fallback на trip.title
-      let planCity = (trip as any)?.title || 'Маршрут';
-      if (body.sessionId) {
-        const session = await this.aiSessionsService.getByIdForUser(
-          body.sessionId,
-          user.id,
-        );
-        const existingPlan = session
-          ? this.extractCurrentRoutePlan(session.messages)
-          : null;
-        if (existingPlan?.city) planCity = existingPlan.city;
-      }
-      const routePlan = this.buildRoutePlanFromPoints(planCity, result.points);
+      const routePlan = this.buildRoutePlanFromPoints(
+        trip?.title || 'Маршрут',
+        result.points,
+      );
 
       if (body.sessionId) {
         await this.aiSessionsService.appendMessages(body.sessionId, [
@@ -2379,18 +2293,5 @@ ${JSON.stringify(points)}
     }
 
     return result;
-  }
-
-  /**
-   * Admin: invalidate POI pool cache for a specific city and immediately re-warm it.
-   * Use via Swagger or curl when a city's data becomes stale.
-   * Example: POST /ai/cache/flush  { "city": "Сочи" }
-   */
-  @Post('cache/flush')
-  async flushCityCache(@Body('city') city: string) {
-    if (!city || typeof city !== 'string' || !city.trim()) {
-      throw new BadRequestException('city is required');
-    }
-    return this.cacheWarmup.flushCity(city.trim());
   }
 }

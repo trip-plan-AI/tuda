@@ -72,22 +72,21 @@ export function MessageBubble({
         />
       )}
 
-      <div className="flex max-w-[85%] flex-col gap-0.5">
-        {/* Имя отправителя — над пузырём, вне белого блока */}
+      <div
+        className={[
+          'max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm',
+          isAssistant
+            ? 'bg-white text-slate-800 border border-slate-100'
+            : isRemoteUser
+              ? 'bg-white border border-slate-200 text-slate-800'
+              : 'bg-brand-indigo text-white',
+        ].join(' ')}
+      >
+        {/* Имя отправителя для чужих сообщений */}
         {isRemoteUser && (
-          <p className="ml-1 text-[11px] font-semibold text-brand-indigo">{message.userName}</p>
+          <p className="text-xs text-brand-indigo font-medium mb-1">{message.userName}</p>
         )}
 
-        <div
-          className={[
-            'rounded-2xl px-4 py-3 text-sm shadow-sm',
-            isAssistant
-              ? 'bg-white text-slate-800 border border-slate-100'
-              : isRemoteUser
-                ? 'bg-white border border-slate-200 text-slate-800'
-                : 'bg-brand-indigo text-white',
-          ].join(' ')}
-        >
         <p className="whitespace-pre-wrap">{message.content}</p>
 
         {/* Время в правом нижнем углу */}
@@ -181,7 +180,6 @@ export function MessageBubble({
              </div>
           </div>
         )}
-        </div>
       </div>
     </div>
   );
