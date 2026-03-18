@@ -382,8 +382,12 @@ export class SchedulerService {
         const weightA = (a as any).aiWeight || 0;
         const weightB = (b as any).aiWeight || 0;
 
-        let scoreA = distA - weightA / 60;
-        let scoreB = distB - weightB / 60;
+        // DISTANCE PENALTY: нелинейный штраф за дальние переезды (> 10 км)
+        const distPenaltyA = distA > 10 ? distA * 3 : distA;
+        const distPenaltyB = distB > 10 ? distB * 3 : distB;
+
+        let scoreA = distPenaltyA - weightA / 60;
+        let scoreB = distPenaltyB - weightB / 60;
 
         if (prevPoi && lastPoi) {
           const angleA = this.calculateAngle(
@@ -826,7 +830,7 @@ export class SchedulerService {
           const isFood = this.isFoodCategory(cat);
           const meal = this.getMealType(currentTime + 20);
 
-          // SMART SLOTS v2
+          // SMART SLOTS v3
           // 1. Обед (12:30-14:30) -> Жёстко требуем еду, если ещё не ели
           if (
             currentTime >= 12.5 * 60 &&
@@ -834,6 +838,18 @@ export class SchedulerService {
             dayCafePoints + dayRestaurantPoints === 0
           ) {
             if (!isFood) {
+              const hasFood = candidates.some((c) =>
+                this.isFoodCategory(c.category),
+              );
+              if (hasFood) return false;
+            }
+          }
+
+          // 1b. Ужин (18:30-20:30) -> Требуем ужин, если еда после 18:00 ещё не была
+          if (currentTime >= 18.5 * 60 && currentTime <= 20.5 * 60) {
+            const hadDinner =
+              lastFoodTime !== null && lastFoodTime >= 18 * 60;
+            if (!hadDinner && !isFood) {
               const hasFood = candidates.some((c) =>
                 this.isFoodCategory(c.category),
               );
@@ -911,8 +927,28 @@ export class SchedulerService {
           )
             weightB += 150;
 
-          let scoreA = distA - weightA / 60;
-          let scoreB = distB - weightB / 60;
+          // Ужин: буст если еда после 18:00 ещё не была
+          const hadDinner =
+            lastFoodTime !== null && lastFoodTime >= 18 * 60;
+          if (
+            this.isFoodCategory(a.category) &&
+            meal === 'dinner' &&
+            !hadDinner
+          )
+            weightA += 120;
+          if (
+            this.isFoodCategory(b.category) &&
+            meal === 'dinner' &&
+            !hadDinner
+          )
+            weightB += 120;
+
+          // DISTANCE PENALTY: нелинейный штраф за дальние переезды (> 10 км)
+          const distPenaltyA = distA > 10 ? distA * 3 : distA;
+          const distPenaltyB = distB > 10 ? distB * 3 : distB;
+
+          let scoreA = distPenaltyA - weightA / 60;
+          let scoreB = distPenaltyB - weightB / 60;
 
           // PRIORITY-AWARE ZIGZAG
           if (prevPoi && lastPoi) {
