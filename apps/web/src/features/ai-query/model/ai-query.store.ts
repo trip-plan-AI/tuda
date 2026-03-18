@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { api } from '@/shared/api';
 import { useTripStore } from '@/entities/trip';
 import type { RoutePoint } from '@/entities/route-point/model/route-point.types';
@@ -87,7 +88,9 @@ interface AiQueryStore {
   sessionId: string | null;
   lastAppliedPlanMessageId: string | null;
   loadSessions: () => Promise<void>;
-  sendQuery: (query: string, tripId?: string) => Promise<void>;
+  // preAddedMessageId — если передан, сообщение пользователя уже добавлено в стор с этим ID,
+  // sendQuery не создаёт его повторно (используется для синхронного показа перед AI-запросом).
+  sendQuery: (query: string, tripId?: string, preAddedMessageId?: string) => Promise<void>;
   // TRI-104: применяет AI-план в Planner-trip и возвращает tripId для навигации/подсветки UI.
   // MERGE-NOTE: контракт используется в AIAssistantPage и MessageBubble, не менять тип без синхронных правок UI.
   applyPlanToCurrentTrip: (messageId: string) => Promise<string | null>;
@@ -104,7 +107,9 @@ interface AiQueryStore {
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   clearChat: (keepLastPlan?: boolean) => void;
+  // TRI-120: добавляет одно сообщение в активную сессию без вызова AI (сокет-транспорт).
   addLocalMessage: (message: ChatMessage) => void;
+  // TRI-120: добавляет массив сообщений истории чата (chat:history) без дубликатов.
   addChatHistory: (messages: ChatMessage[]) => void;
 }
 
@@ -267,7 +272,9 @@ function ensureActiveSession(state: AiQueryStore): {
   };
 }
 
-export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
+export const useAiQueryStore = create<AiQueryStore>()(
+  persist(
+    (set, get) => ({
   sessions: {},
   activeSessionId: null,
   messages: [],
@@ -386,14 +393,16 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     }
   },
 
-  sendQuery: async (query, tripId) => {
+  sendQuery: async (query, tripId, preAddedMessageId) => {
     const normalized = sanitizeQuery(query);
     if (!normalized || get().isLoading) return;
 
     const ensured = ensureActiveSession(get());
     const activeId = ensured.activeSessionId;
     const currentSession = ensured.sessions[activeId] ?? createSession(tripId ?? null);
-    const requestId = crypto.randomUUID();
+    // Если передан preAddedMessageId — сообщение уже в сторе, используем его ID.
+    // Иначе создаём новое сообщение пользователя.
+    const requestId = preAddedMessageId ?? crypto.randomUUID();
     let ensuredSessionId = currentSession.sessionId;
 
     const userMessage: ChatMessage = {
@@ -403,11 +412,17 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       timestamp: new Date().toISOString(),
     };
 
+    // Если сообщение уже добавлено (preAddedMessageId), не дублируем его в список
+    const existingMessages = currentSession.messages;
+    const alreadyAdded = preAddedMessageId
+      ? existingMessages.some((m) => m.id === preAddedMessageId)
+      : false;
+
     const preRequestSession: ChatSession = {
       ...currentSession,
       tripId: tripId ?? currentSession.tripId,
       title: currentSession.messages.length === 0 ? normalized.slice(0, 60) : currentSession.title,
-      messages: [...currentSession.messages, userMessage],
+      messages: alreadyAdded ? existingMessages : [...existingMessages, userMessage],
       updatedAt: new Date().toISOString(),
     };
 
@@ -844,20 +859,12 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     const target = state.sessions[nextSessionId];
     if (!target) return;
 
-    // TRI-106: Обновляем updatedAt при переключении, чтобы чат "всплывал" в списке
-    const nextSessions = {
-      ...state.sessions,
-      [nextSessionId]: {
-        ...target,
-        updatedAt: new Date().toISOString(),
-      },
-    };
-
+    // updatedAt не трогаем при переключении — чат всплывает только при отправке сообщений
     set({
-      sessions: nextSessions,
+      sessions: state.sessions,
       activeSessionId: nextSessionId,
       isLoading: false,
-      ...syncLegacyFields(nextSessions, nextSessionId),
+      ...syncLegacyFields(state.sessions, nextSessionId),
     });
 
     // Не загружаем историю если сессия только что была очищена (justCleared флаг)
@@ -1021,6 +1028,9 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     });
   },
 
+  // TRI-120: добавляет одно сообщение в активную сессию без вызова AI.
+  // Используется для отображения сообщений других участников через сокет
+  // и собственных сообщений, не требующих ответа AI.
   addLocalMessage: (message) => {
     set((state) => {
       const activeId = state.activeSessionId;
@@ -1046,6 +1056,7 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
     });
   },
 
+  // TRI-120: добавляет массив сообщений истории чата (chat:history) без дубликатов.
   addChatHistory: (messages) => {
     set((state) => {
       const activeId = state.activeSessionId;
@@ -1088,4 +1099,15 @@ export const useAiQueryStore = create<AiQueryStore>()((set, get) => ({
       };
     });
   },
-}));
+    }),
+    {
+      name: 'ai-query-sessions',
+      storage: createJSONStorage(() => localStorage),
+      // Сохраняем только сессии и активную сессию — не сохраняем isLoading и т.п.
+      partialize: (state) => ({
+        sessions: state.sessions,
+        activeSessionId: state.activeSessionId,
+      }),
+    },
+  ),
+);
