@@ -82,9 +82,11 @@ export class CollaborationGateway
   handleConnection(client: TypedSocket) {
     try {
       const token = String(client.handshake.auth?.token ?? '');
-      const payload = this.jwtService.verify<{ sub: string; email: string; name?: string }>(
-        token,
-      );
+      const payload = this.jwtService.verify<{
+        sub: string;
+        email: string;
+        name?: string;
+      }>(token);
       client.data.userId = payload.sub;
       client.data.email = payload.email;
       client.data.name = payload.name ?? payload.email;

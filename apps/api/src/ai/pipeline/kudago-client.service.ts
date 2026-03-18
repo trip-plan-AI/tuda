@@ -192,6 +192,7 @@ export class KudagoClientService {
       category,
       // В KudaGo нет четкого рейтинга в этом эндпоинте, ставим дефолтный хороший, так как KudaGo уже фильтрует интересное
       rating: 4.5,
+      score: 0.6, // Default score for KudaGo data
       price_segment: this.toPriceSegment(category),
     };
   }

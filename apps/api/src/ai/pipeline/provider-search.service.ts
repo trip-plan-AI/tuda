@@ -9,6 +9,7 @@ import type {
   ParsedIntent,
 } from '../types/pipeline.types';
 import type { PoiItem } from '../types/poi.types';
+import { RedisService } from '../../redis/redis.service';
 import { KudagoClientService } from './kudago-client.service';
 import { OverpassClientService } from './overpass-client.service';
 import { OsmFetchService } from './osm-fetch.service';
@@ -34,6 +35,7 @@ export class ProviderSearchService {
   private readonly logger = new Logger('AI_PIPELINE:ProviderSearch');
 
   constructor(
+    private readonly redis: RedisService,
     private readonly kudagoClient: KudagoClientService,
     private readonly overpassClient: OverpassClientService,
     private readonly osmFetchClient: OsmFetchService,
@@ -132,8 +134,12 @@ export class ProviderSearchService {
     );
 
     // --- STAGE 1: Hard Data Collection ---
-    const locationStr = searchLocation ? `(${searchLocation.lat.toFixed(4)}, ${searchLocation.lon.toFixed(4)})` : '(no coords)';
-    this.logger.log(`[Stage 1] Collecting hard data for city: ${city} ${locationStr}...`);
+    const locationStr = searchLocation
+      ? `(${searchLocation.lat.toFixed(4)}, ${searchLocation.lon.toFixed(4)})`
+      : '(no coords)';
+    this.logger.log(
+      `[Stage 1] Collecting hard data for city: ${city} ${locationStr}...`,
+    );
 
     let allHardPois: PoiItem[] = [];
     const isCis = this.llmClientService.isCisRegion(intent.country_code, city);
@@ -146,9 +152,7 @@ export class ProviderSearchService {
           return [] as PoiItem[];
         }),
       isCis
-        ? this.kudagoClient
-            .fetchByIntent(intent)
-            .catch(() => [] as PoiItem[])
+        ? this.kudagoClient.fetchByIntent(intent).catch(() => [] as PoiItem[])
         : Promise.resolve([] as PoiItem[]),
       !isCis
         ? this.osmFetchClient
@@ -167,8 +171,7 @@ export class ProviderSearchService {
     stats.osm_fetch.attempted = !isCis;
 
     // Filter by geographic awareness using resolved center or fallback geosearch
-    const center =
-      searchLocation || (await this.geosearch.suggest(city))?.[0];
+    const center = searchLocation || (await this.geosearch.suggest(city))?.[0];
 
     const hardPois = this.deduplicate(allHardPois).filter((p) => {
       if (this.isToxicPoi(p.name)) return false;
@@ -188,24 +191,20 @@ export class ProviderSearchService {
 
     this.logger.log(`[Stage 1] Collected ${hardPois.length} hard points.`);
 
-    // --- STAGE 1.5: Smart Enrichment ---
-    const enrichedPois = await this.applySmartEnrichment(hardPois, city);
-    this.logger.log(`[Stage 1.5] After enrichment: ${enrichedPois.length} points (was ${hardPois.length})`);
-
     // --- STAGE 2: AI Selection (Selector Mode) ---
     this.logger.log(`[Stage 2] AI Selection (Selector Mode)...`);
 
     // Dynamic City Context based on actual data (or default if no data)
     let cityContext = `Индустриальный город, важна промышленная мощь, набережные и местный колорит.`;
-    if (enrichedPois.length > 0) {
+    if (hardPois.length > 0) {
       const cityProfile = this.cityAnalyzer.analyze(
-        enrichedPois.map((p) => ({ tags: { tourism: p.category, ...p } })),
+        hardPois.map((p) => ({ tags: { tourism: p.category, ...p } })),
       );
       cityContext = cityProfile.description;
     }
 
     // Pre-clustering for geographic awareness
-    const clusterResult = this.clusteringService.clusterPois(enrichedPois, 1.0);
+    const clusterResult = this.clusteringService.clusterPois(hardPois, 1.0);
     const poiToClusterId = new Map<string, number>();
     clusterResult.clusters.forEach((c) => {
       c.poiIds.forEach((pid) => poiToClusterId.set(pid, c.id));
@@ -218,7 +217,24 @@ export class ProviderSearchService {
     };
 
     // 1. Prepare clusters for LLM with IDs
-    const cultureList = enrichedPois
+    // STAGE 1.8: Pre-rank by metadata before AI Selection
+    const preRanked = [...hardPois].sort((a, b) => {
+      const isAttrA =
+        a.category === 'attraction' ||
+        a.category === 'museum' ||
+        a.provider === 'kudago'
+          ? 1
+          : 0;
+      const isAttrB =
+        b.category === 'attraction' ||
+        b.category === 'museum' ||
+        b.provider === 'kudago'
+          ? 1
+          : 0;
+      return isAttrB - isAttrA || (b.rating || 0) - (a.rating || 0);
+    });
+
+    const cultureList = preRanked
       .filter((p) =>
         [
           'museum',
@@ -233,7 +249,7 @@ export class ProviderSearchService {
         ].includes(p.category),
       )
       .slice(0, 40);
-    const natureList = enrichedPois
+    const natureList = hardPois
       .filter((p) =>
         [
           'park',
@@ -245,7 +261,7 @@ export class ProviderSearchService {
         ].includes(p.category),
       )
       .slice(0, 20);
-    const foodList = enrichedPois
+    const foodList = hardPois
       .filter((p) =>
         ['restaurant', 'cafe', 'bar', 'pub', 'fast_food'].includes(p.category),
       )
@@ -257,8 +273,9 @@ export class ProviderSearchService {
 ### TASK
 1. ОПРЕДЕЛИ 3 главных архетипа этого города (напр.: 'Индустриальный гигант', 'Портовый узел', 'Университетский центр', 'Купеческий городок'). 
 2. ВЫБЕРИ из предоставленного списка (с ID) те объекты, которые являются "лицом" этих архетипов.
-3. ПРОВЕРЬ ГЕОГРАФИЮ: Игнорируй объекты, которые явно находятся в других регионах или странах, даже если названия похожи.
-4. ВЫЯВИ "Hidden Gems": Если ты знаешь уникальный объект, которого нет в списке, добавь его.
+3. ОЦЕНИ каждую выбранную точку (priority_score от 1 до 10) на основе ее культурной и туристической значимости.
+4. ПРОВЕРЬ ГЕОГРАФИЮ: Игнорируй объекты, которые явно находятся в других регионах или странах, даже если названия похожи.
+5. ВЫЯВИ "Hidden Gems": Если ты знаешь уникальный объект, которого нет в списке, добавь его. Be strictly realistic. Do not hallucinate famous landmarks from other cities.
 
 ### SELECTION CRITERIA (Strict Rules)
 1. ПРИНЦИП "АНТИ-ТИПОВОЙ": 
@@ -277,9 +294,9 @@ export class ProviderSearchService {
    - Уникальный гастро-опыт (с историей).
 
 ### OUTPUT
-Верни СТРОГО JSON. Для каждого выбранного объекта укажи, к какому АРХЕТИПУ он относится.`;
+Верни СТРОГО JSON. Для каждого выбранного объекта укажи, к какому АРХЕТИПУ он относится и его SCORE (1-10).`;
 
-    const isSmallCity = enrichedPois.length < 10;
+    const isSmallCity = hardPois.length < 10;
     const hiddenGemsTarget = isSmallCity ? '10-15' : '3-5';
 
     const selectionPrompt = `Город: ${city}
@@ -302,12 +319,13 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
 
 Верни JSON:
 {
-  "selected": [{"id": "ID объекта", "archetype": "соответствующий архетип"}],
+  "selected": [{"id": "ID объекта", "archetype": "соответствующий архетип", "score": 8}],
   "hidden_gems": [{"name": "название", "reason": "почему это Must-see", "archetype": "архетип"}]
 }`;
 
     let selectedIds: string[] = [];
     let hiddenHypotheses: any[] = [];
+    const aiScoreMap = new Map<string, number>();
 
     try {
       const content = await this.llmClientService.chat(
@@ -324,10 +342,15 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
 
       const parsed = JSON.parse(content || '{}');
       selectedIds = (parsed.selected || []).map((s: any) => s.id);
+      (parsed.selected || []).forEach((s: any) => {
+        if (s.id && s.score) aiScoreMap.set(s.id, s.score);
+      });
       hiddenHypotheses = parsed.hidden_gems || [];
 
-      if (selectedIds.length === 0 && enrichedPois.length > 0) {
-        this.logger.warn(`[Stage 2] LLM Selection returned 0 IDs. Falling back to top 15 from enrichedPois.`);
+      if (selectedIds.length === 0 && hardPois.length > 0) {
+        this.logger.warn(
+          `[Stage 2] LLM Selection returned 0 IDs. Falling back to top 15 from hardPois.`,
+        );
         selectedIds = [...cultureList, ...natureList, ...foodList]
           .slice(0, 15)
           .map((p) => p.id);
@@ -343,12 +366,38 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     }
 
     // Safety Filter: оставляем только те ID, которые реально были в источнике
-    const validIdSet = new Set(enrichedPois.map((p) => p.id));
+    const validIdSet = new Set(hardPois.map((p) => p.id));
     const verifiedIds = selectedIds.filter((id) => validIdSet.has(id));
 
-    const curatedPois = enrichedPois.filter((p) => verifiedIds.includes(p.id));
+    let curatedPois = hardPois
+      .filter((p) => verifiedIds.includes(p.id))
+      .map((p) => {
+        // Multi-factor Scoring
+        const aiRank = (aiScoreMap.get(p.id) || 5) / 10; // AI Significance (0.5 weight)
+        const isAttraction =
+          p.category === 'attraction' ||
+          p.category === 'museum' ||
+          p.provider === 'kudago';
+        const dataSourceScore = isAttraction ? 1.0 : 0.0; // Data Source (0.3 weight)
+        const popularityScore = p.rating && p.rating > 0 ? 1.0 : 0.0; // Popularity (0.2 weight)
+
+        const finalScore =
+          aiRank * 0.5 + dataSourceScore * 0.3 + popularityScore * 0.2;
+
+        return {
+          ...p,
+          score: finalScore,
+        };
+      });
+
     this.logger.log(
-      `[Stage 2] Curated ${curatedPois.length} points from Ground Truth.`,
+      `[Stage 2] Curated ${curatedPois.length} points from Ground Truth with scores.`,
+    );
+
+    // --- STAGE 2.5: Smart Enrichment ---
+    curatedPois = await this.applySmartEnrichment(curatedPois, city);
+    this.logger.log(
+      `[Stage 2.5] After enrichment: ${curatedPois.length} curated points`,
     );
 
     // --- STAGE 3: Hidden Gems & Geocoding ---
@@ -370,9 +419,7 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
       for (const hypo of hiddenHypotheses) {
         if (
           !hypo.name ||
-          [city].some((c) =>
-            this.isAnotherCityName(hypo.name as string, c),
-          ) ||
+          [city].some((c) => this.isAnotherCityName(hypo.name as string, c)) ||
           this.isToxicPoi(hypo.name as string)
         )
           continue;
@@ -411,6 +458,7 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
             rating: 4.8,
             description: hypo.reason as string,
             price_segment: 'mid',
+            score: 0.85, // High score for verified hidden gems
           });
         }
       }
@@ -424,22 +472,28 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
       ...curatedPois,
     ]);
 
-    // If result is too small, refill from enrichedPois to have a healthy pool for downstream
-    if (allCandidates.length < 20 && enrichedPois.length > allCandidates.length) {
-      const extra = enrichedPois
+    // If result is too small, refill from hardPois to have a healthy pool for downstream
+    if (allCandidates.length < 20 && hardPois.length > allCandidates.length) {
+      let extra = hardPois
         .filter(
           (p) =>
             !allCandidates.some(
               (r) =>
                 r.id === p.id ||
                 this.haversineKm(
-                  r.coordinates.lat, r.coordinates.lon,
-                  p.coordinates.lat, p.coordinates.lon,
+                  r.coordinates.lat,
+                  r.coordinates.lon,
+                  p.coordinates.lat,
+                  p.coordinates.lon,
                 ) < 0.07,
             ),
         )
         .slice(0, 30);
-      allCandidates.push(...extra);
+
+      extra = await this.applySmartEnrichment(extra, city);
+      allCandidates.push(
+        ...extra.map((p) => ({ ...p, score: p.score ?? 0.3 })),
+      );
     }
 
     // Quota: 50 non-food + 50 food
@@ -485,7 +539,7 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
           stats.discovery,
         ],
         totals: {
-          before_dedup: enrichedPois.length + verifiedHiddenPois.length,
+          before_dedup: hardPois.length + verifiedHiddenPois.length,
           after_dedup: allCandidates.length,
           returned: resultPois.length,
         },
@@ -540,12 +594,43 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
   // --- Smart Enrichment (Stage 1.5) ---
   // Group A: pure category words → drop immediately
   private readonly GENERIC_NAMES = new Set([
-    'кафе', 'ресторан', 'бар', 'паб', 'столовая', 'буфет', 'закусочная',
-    'пиццерия', 'суши', 'шаурма', 'фастфуд', 'магазин', 'супермаркет',
-    'аптека', 'банк', 'банкомат', 'отель', 'гостиница', 'хостел', 'мотель',
-    'парковка', 'заправка', 'автомойка', 'прачечная', 'химчистка',
-    'салон', 'парикмахерская', 'пляж', 'парк', 'сквер', 'стадион',
-    'спортзал', 'фитнес', 'кинотеатр', 'клуб', 'бар', 'кальянная',
+    'кафе',
+    'ресторан',
+    'бар',
+    'паб',
+    'столовая',
+    'буфет',
+    'закусочная',
+    'пиццерия',
+    'суши',
+    'шаурма',
+    'фастфуд',
+    'магазин',
+    'супермаркет',
+    'аптека',
+    'банк',
+    'банкомат',
+    'отель',
+    'гостиница',
+    'хостел',
+    'мотель',
+    'парковка',
+    'заправка',
+    'автомойка',
+    'прачечная',
+    'химчистка',
+    'салон',
+    'парикмахерская',
+    'пляж',
+    'парк',
+    'сквер',
+    'стадион',
+    'спортзал',
+    'фитнес',
+    'кинотеатр',
+    'клуб',
+    'бар',
+    'кальянная',
   ]);
 
   // Group B: short (≤6) or single-word brands that look uninformative
@@ -553,7 +638,8 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     const n = name.trim();
     if (n.length <= 6) return true;
     // Single word that doesn't look like a proper place name
-    if (!n.includes(' ') && !/[A-ZА-ЯЁ]{2,}/.test(n) && n.length <= 10) return true;
+    if (!n.includes(' ') && !/[A-ZА-ЯЁ]{2,}/.test(n) && n.length <= 10)
+      return true;
     return false;
   }
 
@@ -564,35 +650,69 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
   private async enrichPoiName(
     poi: PoiItem,
     city: string,
+    localCache: Map<string, string | null>,
   ): Promise<string | null> {
+    const cacheKey = `enrich:${city}:${poi.name.toLowerCase().trim()}`;
+
+    // 1. Local Request Cache
+    if (localCache.has(cacheKey)) {
+      return localCache.get(cacheKey)!;
+    }
+
+    // 2. Redis Cache
+    try {
+      const cached = await this.redis.get(cacheKey);
+      if (cached) {
+        const val = cached === 'null' ? null : cached;
+        localCache.set(cacheKey, val);
+        return val;
+      }
+    } catch (e) {
+      this.logger.warn(`Redis get error: ${e}`);
+    }
+
+    let resultName: string | null = null;
     try {
       const results = await this.geosearch.suggestWithBias(
         `${poi.name} ${city}`,
         poi.coordinates.lat,
         poi.coordinates.lon,
       );
-      if (!results || results.length === 0) return null;
+      if (results && results.length > 0) {
+        const best = results[0] as { displayName?: string; title?: string };
+        const fullName: string =
+          (best.title as string) || (best.displayName as string) || '';
 
-      const best = results[0] as { displayName?: string; title?: string };
-      const fullName: string =
-        (best.title as string) || (best.displayName as string) || '';
-
-      // Only use if the enriched name is actually better (longer and contains original)
-      if (
-        fullName &&
-        fullName.length > poi.name.length + 3 &&
-        fullName.toLowerCase().includes(poi.name.toLowerCase())
-      ) {
-        return fullName.split(',')[0].trim(); // take first part before comma
+        // Only use if the enriched name is actually better (longer and contains original)
+        if (
+          fullName &&
+          fullName.length > poi.name.length + 3 &&
+          fullName.toLowerCase().includes(poi.name.toLowerCase())
+        ) {
+          resultName = fullName.split(',')[0].trim(); // take first part before comma
+        }
       }
     } catch {
       // ignore
     }
-    return null;
+
+    localCache.set(cacheKey, resultName);
+    try {
+      await this.redis.set(cacheKey, resultName || 'null', 60 * 60 * 24 * 7); // 7 days cache
+    } catch (e) {
+      this.logger.warn(`Redis set error: ${e}`);
+    }
+
+    return resultName;
   }
 
   private readonly FOOD_CATEGORIES = new Set([
-    'restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court',
+    'restaurant',
+    'cafe',
+    'bar',
+    'pub',
+    'fast_food',
+    'food_court',
   ]);
 
   /**
@@ -610,7 +730,9 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
     city: string,
   ): Promise<PoiItem[]> {
     const ENRICH_THRESHOLD = 15; // based on non-food count only
-    const currentFoodCount = pois.filter((p) => this.FOOD_CATEGORIES.has(p.category)).length;
+    const currentFoodCount = pois.filter((p) =>
+      this.FOOD_CATEGORIES.has(p.category),
+    ).length;
     const nonFoodCount = pois.length - currentFoodCount;
     const shouldDropNonFood = nonFoodCount >= ENRICH_THRESHOLD;
 
@@ -658,9 +780,30 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
 
     const enriched: PoiItem[] = [];
     if (toEnrich.length > 0) {
-      const results = await Promise.all(
-        toEnrich.map((poi) => this.enrichPoiName(poi, city)),
+      const localCache = new Map<string, string | null>();
+
+      // Concurrency limit helper (e.g. 5 parallel requests)
+      const results: (string | null)[] = new Array(toEnrich.length);
+      const limit = 5;
+      let i = 0;
+
+      const worker = async () => {
+        while (i < toEnrich.length) {
+          const index = i++;
+          results[index] = await this.enrichPoiName(
+            toEnrich[index],
+            city,
+            localCache,
+          );
+        }
+      };
+
+      const workers = Array.from(
+        { length: Math.min(limit, toEnrich.length) },
+        worker,
       );
+      await Promise.all(workers);
+
       for (let i = 0; i < toEnrich.length; i++) {
         const poi = toEnrich[i];
         const newName = results[i];
@@ -668,11 +811,15 @@ ${foodList.length > 0 ? foodList.map((p) => formatPoiForLlm(p)).join('\n') : 'С
 
         if (newName) {
           enriched.push({ ...poi, name: newName });
-          this.logger.debug(`[Stage 1.5] Enriched: "${poi.name}" → "${newName}"`);
+          this.logger.debug(
+            `[Stage 1.5] Enriched: "${poi.name}" → "${newName}"`,
+          );
         } else if (isFood && currentFoodCount < 4) {
           // Food protection: keep even without enrichment
           enriched.push(poi);
-          this.logger.debug(`[Stage 1.5] Food protected (kept as-is): "${poi.name}"`);
+          this.logger.debug(
+            `[Stage 1.5] Food protected (kept as-is): "${poi.name}"`,
+          );
         } else if (!isFood && clean.length < 8) {
           enriched.push(poi);
         } else if (!isFood) {

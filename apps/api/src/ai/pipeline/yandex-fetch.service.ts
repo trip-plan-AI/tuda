@@ -318,6 +318,7 @@ export class YandexFetchService {
       coordinates: { lat, lon },
       category,
       rating: undefined,
+      score: 0.4, // Default score for Photon data
       working_hours: undefined,
       price_segment: this.toPriceSegment(category),
       phone: undefined,
@@ -380,6 +381,7 @@ export class YandexFetchService {
       coordinates: { lat, lon },
       category,
       rating: undefined,
+      score: 0.4, // Default score for Nominatim data
       working_hours: undefined,
       price_segment: this.toPriceSegment(category),
       phone: undefined,
@@ -444,6 +446,7 @@ export class YandexFetchService {
       coordinates: { lat, lon },
       category: categoryOverride,
       rating,
+      score: rating && rating > 0 ? rating / 5 : 0.5, // Normalize Yandex rating to 0-1 scale
       working_hours: workingHours,
       price_segment: this.toPriceSegment(categoryOverride, rating),
       phone,
