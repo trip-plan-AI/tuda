@@ -34,9 +34,10 @@ export function filterUniqueSuggestions(results: any[]): GeoSuggestion[] {
       }
     }
 
-    // Only deduplicate by coords if they're valid (not 0,0)
-    // Yandex API returns many results with lat:0,lon:0 - we should show all of them
-    if (coordsKey && coordsKey !== '0.00000,0.00000') {
+    // Reject results with invalid 0,0 coordinates - they can't be placed on map
+    if (coordsKey === '0.00000,0.00000') continue;
+
+    if (coordsKey) {
       if (seenCoords.has(coordsKey)) continue;
       seenCoords.add(coordsKey);
     }
