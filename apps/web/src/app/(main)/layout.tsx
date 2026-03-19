@@ -51,10 +51,11 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 <Sidebar />
               </div>
               <main
-                className="min-w-0 bg-white pb-16 md:pb-0 flex flex-col overflow-hidden"
+                className="min-w-0 bg-white pb-16 md:pb-0"
+                style={{ height: 'calc(100vh - 64px)' }}
                 data-testid="desktop-profile-pane"
               >
-                <OverlayScrollbarsComponent className="flex flex-1 overflow-hidden">
+                <OverlayScrollbarsComponent className="h-full w-full">
                   {children}
                 </OverlayScrollbarsComponent>
               </main>
@@ -83,9 +84,12 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             <div className="fixed top-0 left-0 right-0 z-50">
               <Header />
             </div>
-            <div className="flex flex-1 w-full overflow-hidden">
-              <main className="flex-1 bg-white min-w-0 pb-16 md:pb-0 flex flex-col">
-                <OverlayScrollbarsComponent className="flex flex-1 overflow-hidden">
+            <div className="flex flex-1 w-full">
+              <main
+                className="flex-1 bg-white min-w-0 pb-16 md:pb-0"
+                style={{ height: 'calc(100vh - 64px)' }}
+              >
+                <OverlayScrollbarsComponent className="h-full w-full">
                   {children}
                 </OverlayScrollbarsComponent>
               </main>
@@ -109,8 +113,12 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 </div>
 
                 {/* Main Scrolling Content */}
-                <main className="min-w-0 bg-white pb-16 md:pb-0 flex flex-col overflow-hidden" data-testid="desktop-content-pane">
-                  <OverlayScrollbarsComponent className="flex flex-1 overflow-hidden">
+                <main
+                  className="min-w-0 bg-white pb-16 md:pb-0"
+                  style={{ height: 'calc(100vh - 64px)' }}
+                  data-testid="desktop-content-pane"
+                >
+                  <OverlayScrollbarsComponent className="h-full w-full">
                     {children}
                   </OverlayScrollbarsComponent>
                 </main>
