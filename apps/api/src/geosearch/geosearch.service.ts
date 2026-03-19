@@ -670,10 +670,12 @@ export class GeosearchService {
     }
 
     let typeBonus = 0;
-    if (/\b(аэропорт|airport|aerodrome|aeroporto)\b/i.test(dn)) typeBonus = 2.0;
+    if (/\b(аэропорт|airport|aerodrome|aeroporto)\b/i.test(dn)) typeBonus = 3.0;
     else if (/\b(город|г\.|city|town|capitale|столица|capital)\b/i.test(dn))
-      typeBonus = 2.0;
+      typeBonus = 2.5;
     else if (/\b(курорт|resort|остров|island|île)\b/i.test(dn)) typeBonus = 1.5;
+    else if (/\b(область|oblast|provinc|кр\.|край|регион|region)\b/i.test(dn))
+      typeBonus = -1.0;
     else if (
       /\b(улица|ул\.|проспект|пр-т|переулок|шоссе|street|avenue|road)\b/i.test(
         dn,
