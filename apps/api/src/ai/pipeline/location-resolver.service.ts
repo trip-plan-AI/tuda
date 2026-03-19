@@ -24,15 +24,46 @@ export class LocationResolverService {
     private readonly popularDestinations: PopularDestinationsService,
   ) {}
 
-  async resolve(query: string): Promise<ResolvedLocation | null> {
-    this.logger.log(`Resolving location for query: "${query}"`);
+  // Страны СНГ → примерный bounding box: lat 35–82, lon 19–192
+  private static readonly CIS_COUNTRY_CODES = new Set([
+    'RU', 'UA', 'BY', 'KZ', 'UZ', 'TM', 'TJ', 'KG', 'AM', 'AZ', 'GE', 'MD',
+  ]);
 
-    let suggestions = await this.geosearch.suggest(query);
+  private static readonly CIS_COUNTRY_NAMES: Record<string, string> = {
+    RU: 'Россия', UA: 'Украина', BY: 'Беларусь', KZ: 'Казахстан',
+    UZ: 'Узбекистан', TM: 'Туркменистан', TJ: 'Таджикистан',
+    KG: 'Кыргызстан', AM: 'Армения', AZ: 'Азербайджан',
+    GE: 'Грузия', MD: 'Молдова',
+  };
+
+  private isCoordPlausible(lat: number, lon: number, countryCode?: string | null): boolean {
+    if (!countryCode) return true;
+    if (LocationResolverService.CIS_COUNTRY_CODES.has(countryCode)) {
+      return lat >= 35 && lat <= 82 && lon >= 19 && lon <= 192;
+    }
+    return true;
+  }
+
+  async resolve(query: string, countryCode?: string | null): Promise<ResolvedLocation | null> {
+    // Если кириллица + известная страна — добавляем страну к запросу,
+    // чтобы геокодер не путал "Анапа" с "Anapu" в Бразилии
+    const hasCyrillic = /[а-яёА-ЯЁ]/.test(query);
+    const countryHint = countryCode ? LocationResolverService.CIS_COUNTRY_NAMES[countryCode] : null;
+    const enrichedQuery =
+      hasCyrillic && countryHint && !query.toLowerCase().includes(countryHint.toLowerCase())
+        ? `${query}, ${countryHint}`
+        : query;
+
+    this.logger.log(
+      `Resolving location: "${enrichedQuery}" (original: "${query}", country: ${countryCode ?? 'unknown'})`,
+    );
+
+    let suggestions = await this.geosearch.suggest(enrichedQuery);
 
     // Fallback 1: Try fuzzy matching/cleaning if no suggestions
     if (!suggestions || suggestions.length === 0) {
       this.logger.warn(
-        `No location found for query: "${query}", trying fuzzy cleanup...`,
+        `No location found for query: "${enrichedQuery}", trying fuzzy cleanup...`,
       );
       // Убираем предлоги и лишние слова
       const cleanedQuery = query
@@ -81,13 +112,26 @@ export class LocationResolverService {
     const type = best.type || 'unknown';
     const className = best.class || 'unknown';
 
+    // Валидация координат: если страна известна и bbox не совпадает — кидаем ошибку.
+    // Пример: "Анапа" → Anapu (Бразилия, lat=-3.47) при RU должна быть отброшена.
+    if (!this.isCoordPlausible(best.lat, best.lon, countryCode)) {
+      this.logger.error(
+        `Location "${best.displayName}" (lat=${best.lat}, lon=${best.lon}) is outside expected bbox for country "${countryCode}". Rejecting.`,
+      );
+      throw new UnprocessableEntityException({
+        code: 'LOCATION_WRONG_COUNTRY',
+        message: `Не удалось найти "${query}" в стране ${countryCode}. Геокодер вернул точку в другой стране — уточните запрос.`,
+        query,
+      });
+    }
+
     const radius = this.determineRadius(className, type);
-    const countryCode = await this.popularDestinations.getCountryCode(
+    const resolvedCountryCode = await this.popularDestinations.getCountryCode(
       best.displayName,
     );
 
     this.logger.log(
-      `Resolved "${query}" to "${best.displayName}" (type: ${type}, class: ${className}) -> lat: ${best.lat}, lon: ${best.lon}, radius: ${radius}m`,
+      `Resolved "${enrichedQuery}" to "${best.displayName}" (type: ${type}, class: ${className}) -> lat: ${best.lat}, lon: ${best.lon}, radius: ${radius}m`,
     );
 
     return {
@@ -95,7 +139,7 @@ export class LocationResolverService {
       lon: best.lon,
       radius,
       displayName: best.displayName,
-      countryCode,
+      countryCode: resolvedCountryCode,
       type,
     };
   }

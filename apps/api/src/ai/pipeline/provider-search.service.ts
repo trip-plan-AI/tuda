@@ -141,7 +141,7 @@ export class ProviderSearchService {
     };
 
     // --- STAGE 0: Location Resolution ---
-    const resolvedLocation = await this.locationResolver.resolve(city);
+    const resolvedLocation = await this.locationResolver.resolve(city, intent.country_code);
     const searchRadius = resolvedLocation?.radius ?? 15000;
     const searchLocation = resolvedLocation
       ? {
