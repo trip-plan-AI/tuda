@@ -61,6 +61,26 @@ export class AiSessionsService {
     }
 
     const routePlan = lastWithRoute.route_plan;
+
+    // Extract first and last point names from route plan
+    if (routePlan.days && routePlan.days.length > 0) {
+      const firstDay = routePlan.days[0];
+      const lastDay = routePlan.days[routePlan.days.length - 1];
+
+      const firstPoint = firstDay?.points?.[0];
+      const lastPoint = lastDay?.points?.[lastDay.points.length - 1];
+
+      if (firstPoint?.poi?.name && lastPoint?.poi?.name) {
+        const firstName = firstPoint.poi.name;
+        const lastName = lastPoint.poi.name;
+        if (firstName !== lastName) {
+          return `${firstName} - ${lastName}`;
+        }
+        return firstName;
+      }
+    }
+
+    // Fallback to city name
     if (routePlan.cities && routePlan.cities.length > 1) {
       const firstCity = routePlan.cities[0];
       const lastCity = routePlan.cities[routePlan.cities.length - 1];
@@ -241,6 +261,7 @@ export class AiSessionsService {
         tripId: existing.tripId,
         userId: existing.userId,
         messages: this.normalizeMessages(existing.messages),
+        title: existing.title,
         createdAt: existing.createdAt,
       };
     }
@@ -260,6 +281,7 @@ export class AiSessionsService {
       tripId: created.tripId,
       userId: created.userId,
       messages: [] as SessionMessage[],
+      title: created.title,
       createdAt: created.createdAt,
     };
   }
@@ -500,5 +522,15 @@ export class AiSessionsService {
           (item as { role?: unknown }).role === 'assistant') &&
         typeof (item as { content?: unknown }).content === 'string',
     );
+  }
+
+  async updateSessionTitle(sessionId: string, session: AiSessionEntity) {
+    // Derive and update session title from the latest route plan in messages
+    const title = this.deriveSessionTitleFromRoute(session.messages);
+
+    await this.db
+      .update(schema.aiSessions)
+      .set({ title, updatedAt: new Date() })
+      .where(eq(schema.aiSessions.id, sessionId));
   }
 }

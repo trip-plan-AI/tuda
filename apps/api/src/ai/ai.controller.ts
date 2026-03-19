@@ -2191,6 +2191,7 @@ ${JSON.stringify(points)}
         msg.role === 'assistant' && msg.route_plan !== undefined,
     );
 
+    let messagesUpdated = false;
     if (!hasRouteContext) {
       const routeContextMessage: SessionMessage = {
         role: 'assistant',
@@ -2204,6 +2205,18 @@ ${JSON.stringify(points)}
       ];
 
       await this.aiSessionsService.saveMessages(session.id, updatedMessages);
+      messagesUpdated = true;
+    }
+
+    // Update session title if messages were changed or if session is new
+    if (messagesUpdated || !session.title) {
+      const currentSession = await this.aiSessionsService.getByIdForUser(
+        session.id,
+        user.id,
+      );
+      if (currentSession) {
+        await this.aiSessionsService.updateSessionTitle(session.id, currentSession);
+      }
     }
 
     this.eventsService.emitTripRefresh(tripId);
