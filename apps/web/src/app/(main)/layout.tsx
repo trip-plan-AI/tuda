@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/widgets/sidebar/ui/Sidebar';
 import { Header } from '@/widgets/header/ui/Header';
@@ -12,6 +13,26 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const isLanding = pathname === '/';
   const isProfile = pathname.startsWith('/profile');
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mediaQuery = window.matchMedia('(min-width: 768px)');
+    const applyMatch = (matches: boolean) => setIsDesktop(matches);
+
+    applyMatch(mediaQuery.matches);
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      applyMatch(event.matches);
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleChange);
+    };
+  }, []);
 
   // Profile page: uses standard window scroll with sticky sidebars (no MobileContentSheet)
   if (isProfile) {
@@ -19,29 +40,29 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       <div className="bg-white min-h-screen w-full flex flex-col relative">
         <Header />
         <div className="flex flex-1 w-full pt-0 relative">
-          {/* Mobile: no map, just content */}
-          <div className="md:hidden flex w-full">
-            <main className="w-full flex flex-col min-w-0 pb-16">{children}</main>
-          </div>
-
-          {/* Desktop: Grid with Sticky Map and Sidebar */}
-          <div
-            className="hidden md:grid w-full"
-            style={{ gridTemplateColumns: '80px minmax(0, 1fr) minmax(0, 1fr)' }}
-          >
-            <div className="sticky top-16 h-[calc(100vh-64px)] z-40 self-start">
-              <Sidebar />
-            </div>
-            <main
-              className="min-w-0 bg-white pb-16 md:pb-0 flex flex-col"
-              data-testid="desktop-profile-pane"
+          {isDesktop ? (
+            <div
+              className="grid w-full"
+              style={{ gridTemplateColumns: '80px minmax(0, 1fr) minmax(0, 1fr)' }}
             >
-              {children}
-            </main>
-            <aside className="min-w-0 border-l border-slate-200 bg-slate-50 h-[calc(100vh-64px)] sticky top-16 self-start">
-              <PersistentMapShell />
-            </aside>
-          </div>
+              <div className="sticky top-16 h-[calc(100vh-64px)] z-40 self-start">
+                <Sidebar />
+              </div>
+              <main
+                className="min-w-0 bg-white pb-16 md:pb-0 flex flex-col"
+                data-testid="desktop-profile-pane"
+              >
+                {children}
+              </main>
+              <aside className="min-w-0 border-l border-slate-200 bg-slate-50 h-[calc(100vh-64px)] sticky top-16 self-start">
+                <PersistentMapShell />
+              </aside>
+            </div>
+          ) : (
+            <div className="flex w-full">
+              <main className="w-full flex flex-col min-w-0 pb-16">{children}</main>
+            </div>
+          )}
         </div>
         <div className="md:hidden shrink-0 fixed bottom-0 left-0 right-0 z-50">
           <BottomNav />
@@ -69,36 +90,40 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         <>
           <Header />
           <div className="flex flex-1 w-full pt-0 relative">
-            <div className="md:hidden absolute inset-0 z-0" data-testid="mobile-map-layer">
-              <PersistentMapShell />
-            </div>
-
-            <div className="md:hidden relative z-10 flex w-full">
-              <MobileContentSheet>{children}</MobileContentSheet>
-            </div>
-
-            <div
-              className="hidden md:grid w-full"
-              style={{ gridTemplateColumns: '80px minmax(0, 1fr) minmax(0, 1fr)' }}
-            >
-              {/* Sidebar Wrapper for Sticky Positioning */}
-              <div className="sticky top-16 h-[calc(100vh-64px)] z-40 self-start">
-                <Sidebar />
-              </div>
-
-              {/* Main Scrolling Content */}
-              <main className="min-w-0 bg-white pb-16 md:pb-0" data-testid="desktop-content-pane">
-                {children}
-              </main>
-
-              {/* Sticky Map Aside */}
-              <aside
-                className="min-w-0 border-l border-slate-200 bg-slate-50 h-[calc(100vh-64px)] sticky top-16 self-start"
-                data-testid="desktop-map-pane"
+            {isDesktop ? (
+              <div
+                className="grid w-full"
+                style={{ gridTemplateColumns: '80px minmax(0, 1fr) minmax(0, 1fr)' }}
               >
-                <PersistentMapShell />
-              </aside>
-            </div>
+                {/* Sidebar Wrapper for Sticky Positioning */}
+                <div className="sticky top-16 h-[calc(100vh-64px)] z-40 self-start">
+                  <Sidebar />
+                </div>
+
+                {/* Main Scrolling Content */}
+                <main className="min-w-0 bg-white pb-16 md:pb-0" data-testid="desktop-content-pane">
+                  {children}
+                </main>
+
+                {/* Sticky Map Aside */}
+                <aside
+                  className="min-w-0 border-l border-slate-200 bg-slate-50 h-[calc(100vh-64px)] sticky top-16 self-start"
+                  data-testid="desktop-map-pane"
+                >
+                  <PersistentMapShell />
+                </aside>
+              </div>
+            ) : (
+              <>
+                <div className="absolute inset-0 z-0" data-testid="mobile-map-layer">
+                  <PersistentMapShell />
+                </div>
+
+                <div className="relative z-10 flex w-full">
+                  <MobileContentSheet>{children}</MobileContentSheet>
+                </div>
+              </>
+            )}
           </div>
           <Footer />
           <BottomNav />
