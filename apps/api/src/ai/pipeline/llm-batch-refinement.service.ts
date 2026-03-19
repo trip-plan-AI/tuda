@@ -91,17 +91,41 @@ export class LlmBatchRefinementService {
         const match = (parsed.refinedPois || []).find(
           (r: any) => r.id === poi.id,
         );
-        return match ? { ...poi, description: match.description } : poi;
+        if (!match) return poi;
+
+        // LLM может вернуть улучшенное имя для generic POI
+        const updatedPoi = {
+          ...poi,
+          description: match.description,
+        };
+
+        // Если LLM предложил улучшенное имя и оно отличается от исходного, используй его
+        if (match.name && match.name !== poi.name && match.name.trim().length > 0) {
+          updatedPoi.name = match.name;
+          this.logger.debug(
+            `[REFINEMENT] LLM improved name: "${poi.name}" → "${match.name}"`,
+          );
+        }
+
+        return updatedPoi;
       });
 
-      // Enrich POI names via reverse geocoding for generic names
+      // Дополнительное обогащение через reverse geocoding для оставшихся generic имён
       const enrichedPois: FilteredPoi[] = [];
       for (const poi of refined) {
-        const enrichedName = await this.enrichPoiNameViaReverseGeocoding(poi);
-        enrichedPois.push({
-          ...poi,
-          name: enrichedName || poi.name,
-        });
+        // Проверяем, остаётся ли имя generic (если LLM его не улучшил)
+        const words = poi.name.split(/\s+/).length;
+        if (words <= 2) {
+          const enrichedName = await this.enrichPoiNameViaReverseGeocoding(poi);
+          if (enrichedName) {
+            enrichedPois.push({
+              ...poi,
+              name: enrichedName,
+            });
+            continue;
+          }
+        }
+        enrichedPois.push(poi);
       }
 
       return {
@@ -154,15 +178,20 @@ ${alternatives.map((p, i) => `${i + 1}: ${p.name} (${p.category})`).join('\n')}
     persona: string,
     city: string,
   ): string {
-    return `Ты — локальный гид по городу ${city}. Твоя задача — написать живые, короткие (15 слов) описания для выбранных мест, учитывая интересы туриста: "${persona}".
+    return `Ты — локальный гид по городу ${city}. Твоя задача — обогатить информацию о выбранных местах, учитывая интересы туриста: "${persona}".
 
 СПИСОК МЕСТ (ID: Название):
 ${selected.map((p) => `${p.id}: ${p.name} (${p.category})`).join('\n')}
 
+ПРАВИЛА:
+1. Если название generic (одно слово типа "Кафе", "Ресторан", "Визит"), предложи более конкретное имя.
+2. Если имя уже конкретное, оставь как есть.
+3. Напиши живое, короткое описание (10-15 слов) с акцентом на интересы туриста.
+
 ВЕРНИ ТОЛЬКО JSON:
 {
   "refinedPois": [
-    { "id": "ID_из_списка", "description": "Живое описание с акцентом на интересы туриста." }
+    { "id": "ID_из_списка", "name": "Уточненное или исходное имя", "description": "Живое описание." }
   ]
 }`;
   }
