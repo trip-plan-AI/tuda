@@ -371,6 +371,7 @@ export function LandingPage() {
             imageUrl: null,
             order: 0,
             createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
             duration: 0,
           };
           guestPoints.push(fromPoint);
@@ -390,6 +391,7 @@ export function LandingPage() {
             imageUrl: null,
             order: 1,
             createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
             duration: 0,
           };
           guestPoints.push(toPoint);

@@ -14,4 +14,5 @@ export interface RoutePoint {
   isTitleCustom?: boolean
   transportMode?: 'driving' | 'foot' | 'bike' | 'direct'
   createdAt: string
+  updatedAt: string  // ← Last-Write-Wins timestamp
 }

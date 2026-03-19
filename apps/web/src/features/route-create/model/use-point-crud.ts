@@ -64,9 +64,14 @@ export function usePointCrud(tripId: string | undefined) {
       if (!tripId) return;
       updatePoint(id, payload); // optimistic update
       if (!tripId.startsWith('guest-')) {
-        await pointsApi.update(tripId, id, payload);
-        // Broadcast to collaborators in real-time
-        getSocket().emit('point:update', { trip_id: tripId, point_id: id, ...payload });
+        const updated = await pointsApi.update(tripId, id, payload);
+        // Broadcast to collaborators with server's updated_at for Last-Write-Wins
+        getSocket().emit('point:update', {
+          trip_id: tripId,
+          point_id: id,
+          ...payload,
+          updated_at: updated?.updatedAt || new Date().toISOString(),
+        });
       }
     },
     [tripId, updatePoint],
@@ -78,8 +83,14 @@ export function usePointCrud(tripId: string | undefined) {
       updatePoints(updates);
       if (!tripId.startsWith('guest-')) {
         for (const u of updates) {
-          pointsApi.update(tripId, u.id, u.data).catch(console.error);
-          getSocket().emit('point:update', { trip_id: tripId, point_id: u.id, ...u.data });
+          const updated = await pointsApi.update(tripId, u.id, u.data).catch(console.error);
+          // Broadcast with server's updated_at for Last-Write-Wins
+          getSocket().emit('point:update', {
+            trip_id: tripId,
+            point_id: u.id,
+            ...u.data,
+            updated_at: updated?.updatedAt || new Date().toISOString(),
+          });
         }
       }
     },

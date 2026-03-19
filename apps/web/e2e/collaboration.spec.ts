@@ -87,7 +87,7 @@ test.describe('Collaboration E2E Tests', () => {
     test('should update point on Profile and reflect on Planner', async () => {
       // User 2: меняет название точки в профиле
       await user2Page.click('[data-testid="trip-point-edit-0"]');
-      await user2Page.clear('[data-testid="point-name-input"]');
+      await user2Page.locator('[data-testid="point-name-input"]').clear();
       await user2Page.fill('[data-testid="point-name-input"]', 'Новое название');
       await user2Page.click('[data-testid="confirm-edit"]');
 
@@ -336,7 +336,7 @@ test.describe('Collaboration E2E Tests', () => {
 
       // Точки должны быть в правильном порядке
       for (let i = 0; i < 3; i++) {
-        const text = await points[i].textContent();
+        const text = await points[i]!.textContent();
         expect(text).toContain(`Точка ${i + 1}`);
       }
     });

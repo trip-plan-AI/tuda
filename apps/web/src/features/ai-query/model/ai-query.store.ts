@@ -182,6 +182,7 @@ function toRoutePoints(routePlan: ChatRoutePlan, tripId: string): RoutePoint[] {
           order: point.order,
           duration: point.visit_duration_min ?? 0,
           createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         },
       ];
     }),

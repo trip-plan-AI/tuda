@@ -109,6 +109,7 @@ export const routePoints = pgTable('route_points', {
   duration: integer('duration').notNull().default(0),
   isTitleLocked: boolean('is_title_locked').notNull().default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),  // ← Last-Write-Wins
 });
 
 export const routePointsRelations = relations(routePoints, ({ one }) => ({

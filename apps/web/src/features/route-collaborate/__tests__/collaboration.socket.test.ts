@@ -252,8 +252,8 @@ describe('Collaboration Socket Events', () => {
         },
       ];
 
-      expect(collaborators[0].isOnline).toBe(true);
-      expect(collaborators[1].isOnline).toBe(false);
+      expect(collaborators[0]!.isOnline).toBe(true);
+      expect(collaborators[1]!.isOnline).toBe(false);
     });
 
     it('should handle join:trip event', () => {

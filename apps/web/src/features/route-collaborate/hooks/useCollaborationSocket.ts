@@ -93,21 +93,59 @@ export function useCollaborationSocket(tripId: string) {
     const handlePointMoved = ({
       point_id,
       coords,
+      updated_at,
     }: {
       point_id: string;
       coords: { lat: number; lon: number };
+      updated_at?: string;
     }) => {
-      if (checkTripId()) updatePoint(point_id, { lat: coords.lat, lon: coords.lon });
+      if (!checkTripId()) return;
+
+      // Last-Write-Wins: compare timestamps before merging
+      const currentPoint = useTripStore.getState().currentTrip?.points?.find(p => p.id === point_id);
+      if (currentPoint?.updatedAt && updated_at) {
+        const remoteTime = new Date(updated_at).getTime();
+        const localTime = new Date(currentPoint.updatedAt).getTime();
+        if (localTime > remoteTime) {
+          console.warn(`[LWW] Ignoring stale point:moved for ${point_id} (local=${localTime} > remote=${remoteTime})`);
+          return;
+        }
+      }
+
+      updatePoint(point_id, {
+        lat: coords.lat,
+        lon: coords.lon,
+        updatedAt: updated_at || new Date().toISOString(),
+      });
     };
+
     const handlePointDeleted = ({ point_id }: { point_id: string }) => {
       if (checkTripId()) removePoint(point_id);
     };
+
     const handlePointUpdated = ({
       point_id,
       trip_id: _trip_id,
+      updated_at,
       ...patch
-    }: { point_id: string; trip_id?: string } & Record<string, unknown>) => {
-      if (checkTripId()) updatePoint(point_id, patch as Parameters<typeof updatePoint>[1]);
+    }: { point_id: string; trip_id?: string; updated_at?: string } & Record<string, unknown>) => {
+      if (!checkTripId()) return;
+
+      // Last-Write-Wins: compare timestamps before merging
+      const currentPoint = useTripStore.getState().currentTrip?.points?.find(p => p.id === point_id);
+      if (currentPoint?.updatedAt && updated_at) {
+        const remoteTime = new Date(updated_at).getTime();
+        const localTime = new Date(currentPoint.updatedAt).getTime();
+        if (localTime > remoteTime) {
+          console.warn(`[LWW] Ignoring stale point:updated for ${point_id} (local=${localTime} > remote=${remoteTime})`);
+          return;
+        }
+      }
+
+      updatePoint(point_id, {
+        ...(patch as Parameters<typeof updatePoint>[1]),
+        updatedAt: updated_at || new Date().toISOString(),
+      });
     };
     const handleTripUpdate = (patch: Record<string, unknown>) => {
       if (!checkTripId()) return;

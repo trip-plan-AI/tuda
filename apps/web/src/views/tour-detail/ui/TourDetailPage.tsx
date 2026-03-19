@@ -174,6 +174,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
             imageUrl: attr.imageUrl,
             order: idx,
             createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
             duration: 60,
           });
         });
@@ -191,6 +192,7 @@ export function TourDetailPage({ tourId }: TourDetailPageProps) {
           imageUrl: null,
           order: 0,
           createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
           duration: 60,
         });
       }

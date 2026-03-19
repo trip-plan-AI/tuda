@@ -46,7 +46,10 @@ export class PointsService {
     const point = await this.findOne(id, tripId);
     const [updated] = await this.db
       .update(schema.routePoints)
-      .set(dto)
+      .set({
+        ...dto,
+        updatedAt: new Date(),  // ← Always update timestamp for Last-Write-Wins
+      })
       .where(eq(schema.routePoints.id, point.id))
       .returning();
 
