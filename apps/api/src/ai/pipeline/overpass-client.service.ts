@@ -191,6 +191,10 @@ export class OverpassClientService {
           this.logger.warn(
             `Overpass API error from ${baseUrl}: ${response.status}`,
           );
+          if (response.status === 429) {
+            // Rate limited — ждём перед следующим зеркалом
+            await new Promise((r) => setTimeout(r, 2000));
+          }
           continue;
         }
 
