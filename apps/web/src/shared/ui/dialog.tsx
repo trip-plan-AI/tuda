@@ -58,6 +58,8 @@ function DialogContent({
         )}
         {...props}
       >
+        {/* Hidden title for accessibility - required by Radix Dialog */}
+        <DialogPrimitive.Title className="sr-only">Dialog</DialogPrimitive.Title>
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close
