@@ -669,6 +669,13 @@ export function usePlanner() {
 
   const addPoint_ = useCallback(
     async (payload: { title: string; lat: number; lon: number; address?: string }) => {
+      console.log('[addPoint_] Adding point with payload:', {
+        title: payload.title,
+        lat: payload.lat,
+        lon: payload.lon,
+        address: payload.address,
+      });
+
       let visitDate: string | undefined = undefined;
       const lastPoint = points[points.length - 1];
 
@@ -682,12 +689,22 @@ export function usePlanner() {
         visitDate = lastPoint.visitDate;
       }
 
+      console.log('[addPoint_] Sending to CRUD:', {
+        title: payload.title,
+        lat: payload.lat,
+        lon: payload.lon,
+        visitDate,
+        transportMode: routeProfile,
+      });
+
       await crud.add({
         ...payload,
         budget: 0,
         visitDate,
         transportMode: routeProfile as any,
       });
+
+      console.log('[addPoint_] Point added successfully');
     },
     [crud, points, routeInfo, routeProfile],
   );
@@ -952,6 +969,21 @@ export function usePlanner() {
   );
 
   useEffect(() => {
+    console.log('[usePlanner] Updating route config with points:', {
+      pointCount: points.length,
+      points: points.map((p) => ({ title: p.title, lat: p.lat, lon: p.lon })),
+    });
+
+    const handleRouteInfoUpdate = (info: any) => {
+      console.log('[usePlanner] RouteInfo updated:', {
+        legsCount: info?.legs?.length,
+        totalDistance: info?.distance,
+        totalTime: info?.totalTime,
+        legs: info?.legs?.map((l: any) => ({ distance: l.distance, duration: l.duration })),
+      });
+      setRouteInfo(info);
+    };
+
     setConfig({
       source: 'planner-page',
       priority: 100,
@@ -967,7 +999,7 @@ export function usePlanner() {
       onPointDragEnd: handlePointDragEnd,
       onMapClick: handleMapClick,
       onAddPointModeChange: handleAddPointModeChange,
-      onRouteInfoUpdate: setRouteInfo,
+      onRouteInfoUpdate: handleRouteInfoUpdate,
       onRouteInfoLoading: setIsRouteLoading,
       onAffectedSegmentsChange: setAffectedSegments,
       onPointClick: handlePointClick,
