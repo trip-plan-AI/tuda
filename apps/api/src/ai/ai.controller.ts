@@ -1387,7 +1387,15 @@ ${JSON.stringify(points)}
           }
 
           case 'ADD_DAYS': {
-            const daysToAdd = Math.max(0, intent.days);
+            // intent.days может быть как дельтой ("добавь 2 дня" → 2),
+            // так и итогом ("сделай 5 дней" → 5 при existingDays=3).
+            // Если intent.days <= existingDays — это дельта, берём как есть.
+            // Если intent.days > existingDays — считаем разницу.
+            const existingDaysCount = existingRoutePlan.days.length;
+            const rawDays = Math.max(1, intent.days);
+            const daysToAdd = rawDays <= existingDaysCount
+              ? rawDays
+              : rawDays - existingDaysCount;
             const usedPoiIds = new Set(
               existingRoutePlan.days.flatMap((day) =>
                 day.points.map((point) => point.poi_id),

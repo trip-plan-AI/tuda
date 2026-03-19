@@ -232,7 +232,8 @@ export class IntentRouterService {
         route_mode:
           normalizedActionType === 'REMOVE_POI' ||
           normalizedActionType === 'REPLACE_POI' ||
-          normalizedActionType === 'ADD_POI'
+          normalizedActionType === 'ADD_POI' ||
+          normalizedActionType === 'ADD_DAYS'
             ? 'targeted_mutation'
             : 'full_rebuild',
       });
