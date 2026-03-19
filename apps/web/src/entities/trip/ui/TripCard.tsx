@@ -321,7 +321,7 @@ export function TripCard({
       </div>
 
       {/* ── COLLABORATORS: Owner + Others with slots ── */}
-      <div className="px-3 py-2 flex items-center justify-between border-b border-slate-100">
+      <div className="px-3 py-2 flex items-center justify-between border-b border-slate-100 group">
         <div className="flex items-center gap-4">
           {/* Owner */}
           {owner && (
@@ -402,7 +402,7 @@ export function TripCard({
                   }}
                   title="Добавить участника"
                   className={cn(
-                    'relative flex items-center justify-center w-8 h-8 rounded-full bg-slate-50 border-2 border-white text-slate-400 hover:text-brand-sky hover:bg-brand-sky/10 transition-colors shadow-sm',
+                    'relative flex items-center justify-center w-8 h-8 rounded-full bg-slate-50 border-2 border-white text-slate-400 group-hover:text-brand-sky group-hover:bg-brand-sky/10 transition-colors shadow-sm',
                     (visibleOthers.length > 0 || i > 0) && '-ml-4',
                   )}
                 >
@@ -420,7 +420,7 @@ export function TripCard({
               onCollaboratorsClick?.(trip.id);
             }}
             className="ml-auto flex items-center justify-center w-8 h-8 rounded-lg
-                       bg-slate-100 text-slate-500 hover:bg-slate-200
+                       bg-slate-100 text-slate-500 group-hover:bg-slate-200
                        transition-colors shrink-0"
             title="Все участники"
           >
