@@ -33,6 +33,7 @@ export function AIAssistantPage() {
   const [pendingDraftMessageId, setPendingDraftMessageId] = useState<string | null>(null);
   const [conflictType, setConflictType] = useState<PlannerConflictType>('different_route');
   const [pendingAction, setPendingAction] = useState<'navigate' | 'apply' | null>(null);
+  const [activePreviewMessageId, setActivePreviewMessageId] = useState<string | null>(null);
   
   const handleClearChat = async () => {
     // Используем displayPoints для определения, есть ли точки на карте
@@ -439,6 +440,33 @@ export function AIAssistantPage() {
     }
   };
 
+  const handleTogglePreview = useCallback(
+    async (messageId: string) => {
+      if (activePreviewMessageId === messageId) {
+        // Deactivate — restore real-time state
+        setActivePreviewMessageId(null);
+        // Re-fetch fresh points via API to sync any changes made while previewing
+        const tripId = activeSession?.tripId;
+        if (tripId && !tripId.startsWith('guest-')) {
+          try {
+            const [trip, pts] = await Promise.all([
+              tripsApi.getOne(tripId),
+              pointsApi.getAll(tripId),
+            ]);
+            useTripStore.getState().setCurrentTrip({ ...trip, points: pts });
+            useTripStore.getState().setPoints(pts, false);
+          } catch {
+            // silent — stale data is fine, socket will eventually sync
+          }
+        }
+      } else {
+        // Deactivate any other active preview first, then activate this one
+        setActivePreviewMessageId(messageId);
+      }
+    },
+    [activePreviewMessageId, activeSession?.tripId],
+  );
+
   const plannerRouteTitle = currentTrip?.title?.trim() || 'без названия';
 
   const lastPlanMessage = useMemo(() => {
@@ -481,32 +509,52 @@ export function AIAssistantPage() {
     );
   }, [lastPlanMessage?.routePlan, currentTrip?.id]);
 
+  // Вычисляем точки для предпросмотра конкретного сообщения
+  const previewPoints = useMemo(() => {
+    if (!activePreviewMessageId) return null;
+    const msg = messages.find((m) => m.id === activePreviewMessageId);
+    if (!msg?.routePlan) return null;
+
+    let idx = 0;
+    return msg.routePlan.days.flatMap((day: any) =>
+      (day.points ?? []).flatMap((point: any) => {
+        const poi = point?.poi;
+        const lat = poi?.coordinates?.lat;
+        const lon = poi?.coordinates?.lon;
+        if (!poi || typeof lat !== 'number' || typeof lon !== 'number') return [];
+        return [{
+          id: poi.id || `preview-${idx++}`,
+          tripId: currentTrip?.id || 'temp',
+          title: poi.name || `Точка #${point.order}`,
+          lat,
+          lon,
+          budget: point.estimated_cost ?? null,
+          visitDate: day.date || null,
+          duration: point.visit_duration_min ?? 0,
+          imageUrl: poi.image_url ?? null,
+          address: poi.address || '',
+          order: point.order ?? idx,
+        }];
+      }),
+    );
+  }, [activePreviewMessageId, messages, currentTrip?.id]);
+
   const displayPoints = useMemo(() => {
-    // Новая/пустая сессия — карта чистая, независимо от tripId.
-    // Без этого новый чат наследует tripId и показывает точки предыдущего маршрута.
+    // Новая/пустая сессия — карта чистая
     if (messages.length === 0) return [];
 
-    // Если есть свежий AI-план, который ещё не применён — показываем его точки на карте.
-    // Это покрывает случай когда сессия уже привязана к трипу, но пришёл новый план с 16 точками.
-    const hasUnappliedPlan =
-      lastPlanMessage?.routePlan &&
-      lastPlanMessage.id !== lastAppliedPlanMessageId &&
-      aiPoints.length > 0;
+    // Пользователь явно активировал предпросмотр конкретного сообщения
+    if (previewPoints !== null) return previewPoints;
 
-    if (hasUnappliedPlan) {
-      return aiPoints;
-    }
-
-    // Если сессия привязана к маршруту — показываем актуальное состояние из сокет-стейта.
-    // Это гарантирует, что изменения от других участников (через useCollaborationSocket)
-    // немедленно отражаются на карте.
+    // Сессия привязана к маршруту — показываем актуальное состояние из сокет-стейта.
+    // Пользователь всегда видит свои реальные точки, а не авто-черновик AI.
     if (activeSession?.tripId) {
       return currentTrip?.points || [];
     }
 
-    // Нет привязанного маршрута — показываем черновик ИИ из истории чата
+    // Нет привязанного маршрута — показываем последний AI-черновик
     return aiPoints;
-  }, [messages.length, activeSession?.tripId, currentTrip?.points, aiPoints, lastPlanMessage, lastAppliedPlanMessageId]);
+  }, [messages.length, previewPoints, activeSession?.tripId, currentTrip?.points, aiPoints]);
 
   const socketTripId = activeSession?.tripId || '';
   useCollaborationSocket(socketTripId);
@@ -532,11 +580,11 @@ export function AIAssistantPage() {
   const [streamingDays, setStreamingDays] = useState<ChatRoutePlanDay[]>([]);
   const prevIsLoadingRef = useRef(false);
 
-  // Сбрасываем стриминговые данные при смене чата или получении серверного sessionId,
-  // чтобы не видеть "хвосты" недогруженных/прерванных стримингов из других сессий.
+  // Сбрасываем стриминговые данные и активный предпросмотр при смене чата или сессии
   useEffect(() => {
     setStreamingDays([]);
     setThinkingStage(null);
+    setActivePreviewMessageId(null);
   }, [activeSession?.id, activeSession?.sessionId]);
 
   // Clear streaming state when the HTTP request completes
@@ -627,13 +675,17 @@ export function AIAssistantPage() {
       readonly: true,
       draggable: false,
       routeProfile: 'driving',
-      fitKey: streamingPoints ? `stream-${streamingPoints.length}` : undefined,
+      fitKey: streamingPoints
+        ? `stream-${streamingPoints.length}`
+        : activePreviewMessageId
+          ? `preview-${activePreviewMessageId}`
+          : undefined,
     });
 
     return () => {
       clearConfig('ai-assistant-page');
     };
-  }, [displayPoints, streamingPoints]);
+  }, [displayPoints, streamingPoints, activePreviewMessageId]);
 
   return (
     <div className="min-h-full w-full">
@@ -771,6 +823,8 @@ export function AIAssistantPage() {
             onSendToAi={(query) => sendQuery(query, activeSession?.tripId ?? undefined)}
             thinkingStage={thinkingStage}
             streamingDays={streamingDays}
+            activePreviewMessageId={activePreviewMessageId}
+            onTogglePreview={handleTogglePreview}
           />
 
           <div className="mt-3 flex flex-wrap justify-end gap-3">
