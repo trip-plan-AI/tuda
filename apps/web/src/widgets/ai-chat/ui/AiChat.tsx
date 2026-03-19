@@ -292,6 +292,7 @@ export function AiChat({
               }
             }}
             disabled={isLoading}
+            className="focus-visible:border-brand-blue focus-visible:ring-brand-blue/30"
           />
           <Button
             type="button"
