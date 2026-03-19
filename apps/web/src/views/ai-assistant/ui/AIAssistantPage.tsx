@@ -219,7 +219,8 @@ export function AIAssistantPage() {
       });
 
       // 2. Сразу транслируем другим участникам (до AI-запроса, чтобы порядок был правильным)
-      if (socketTripId) {
+      // Отправляем если есть коллаборанты и tripId
+      if (hasCollaborators && socketTripId) {
         sendChatMessage(cleanQuery, messageId);
       }
 
@@ -230,7 +231,8 @@ export function AIAssistantPage() {
       const updatedMessages = useAiQueryStore.getState().messages;
       const lastAssistant = [...updatedMessages].reverse().find(m => m.role === 'assistant');
 
-      if (lastAssistant && socketTripId) {
+      // Транслируем ответ AI если есть коллаборанты и tripId
+      if (lastAssistant && hasCollaborators && socketTripId) {
         const socket = getSocket();
         socket.emit('agent:response', {
           trip_id: socketTripId,
@@ -243,7 +245,12 @@ export function AIAssistantPage() {
     } else {
       // Обычное сообщение в чат коллаборации — показываем локально и транслируем
       const messageId = crypto.randomUUID();
-      sendChatMessage(query, messageId);
+
+      // Транслируем другим участникам если есть tripId
+      if (socketTripId) {
+        sendChatMessage(query, messageId);
+      }
+
       addLocalMessage({
         id: messageId,
         role: 'user',
@@ -508,7 +515,9 @@ export function AIAssistantPage() {
     return aiPoints;
   }, [messages.length, activeSession?.tripId, currentTrip?.points, aiPoints, lastPlanMessage, lastAppliedPlanMessageId]);
 
-  const socketTripId = activeSession?.tripId || '';
+  // Для синхронизации сообщений в коллабе используем tripId из activeSession
+  // Fallback на currentTrip?.id если tripId не установлен в сессии
+  const socketTripId = activeSession?.tripId || currentTrip?.id || '';
   useCollaborationSocket(socketTripId);
   const { sendChatMessage } = useChatSync(socketTripId);
 
