@@ -590,7 +590,8 @@ export function RouteMap({
 
     const isPointVisible = (p: RoutePoint) => {
       if (!selectedDays || selectedDays.length === 0) return true;
-      const dayKey = p.visitDate ? format(new Date(p.visitDate), 'yyyy-MM-dd') : 'no-date';
+      const _d = p.visitDate ? new Date(p.visitDate) : null;
+      const dayKey = _d && !isNaN(_d.getTime()) ? format(_d, 'yyyy-MM-dd') : 'no-date';
       return selectedDays.includes(dayKey);
     };
 
@@ -946,7 +947,8 @@ export function RouteMap({
 
     const visiblePoints = points.filter((p) => {
       if (!selectedDays || selectedDays.length === 0) return true;
-      const dayKey = p.visitDate ? format(new Date(p.visitDate), 'yyyy-MM-dd') : 'no-date';
+      const _d = p.visitDate ? new Date(p.visitDate) : null;
+      const dayKey = _d && !isNaN(_d.getTime()) ? format(_d, 'yyyy-MM-dd') : 'no-date';
       return selectedDays.includes(dayKey);
     });
 
