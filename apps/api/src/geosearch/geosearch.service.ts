@@ -126,7 +126,7 @@ export class GeosearchService {
   }
 
   private get yandexSuggestApiKey() {
-    return process.env.YANDEX_GEOSUGGEST_API_KEY;
+    return process.env.YANDEX_SUGGEST_KEY;
   }
 
   async suggest(query: string, userLat?: number, userLon?: number) {
