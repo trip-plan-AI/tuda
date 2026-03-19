@@ -99,6 +99,15 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Debug: Log component mount
+  useEffect(() => {
+    console.log('[PlannerPointRow] Component mounted for point:', {
+      pointId: point.id,
+      title: point.title,
+      address: point.address,
+    });
+  }, [point.id, point.title, point.address]);
+
   useEffect(() => {
     setAddressVal(point.address ?? '');
   }, [point.address]);

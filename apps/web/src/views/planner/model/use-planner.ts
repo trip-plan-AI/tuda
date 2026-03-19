@@ -153,17 +153,46 @@ export function usePlanner() {
       const data = await res.json();
       const results = data.results ?? [];
 
+      console.log('[resolveCoords] Geosearch results for query:', {
+        query,
+        resultCount: results.length,
+        firstResult: results[0],
+      });
+
       if (results.length > 0) {
         const first = results[0];
-        const match = first.uri?.match(/[?&]ll=([^&]+)/);
-        if (match) {
-          const [lonStr, latStr] = decodeURIComponent(match[1]).split(',');
-          const lon = Number(lonStr);
-          const lat = Number(latStr);
-          if (Number.isFinite(lon) && Number.isFinite(lat)) {
-            return { lon, lat, address: first.displayName || query };
+
+        // Try to extract coordinates from URI parameter (e.g., "...?ll=37.6173,55.7558&...")
+        if (first.uri) {
+          const match = first.uri.match(/[?&]ll=([^&]+)/);
+          if (match) {
+            const [lonStr, latStr] = decodeURIComponent(match[1]).split(',');
+            const lon = Number(lonStr);
+            const lat = Number(latStr);
+            if (Number.isFinite(lon) && Number.isFinite(lat)) {
+              console.log('[resolveCoords] Found coordinates in URI:', { lon, lat });
+              return { lon, lat, address: first.displayName || query };
+            }
           }
         }
+
+        // Fallback: try to get coordinates from direct lat/lon properties
+        const lat = (first as any).lat;
+        const lon = (first as any).lon;
+        if (lat !== undefined && lon !== undefined) {
+          const latNum = Number(lat);
+          const lonNum = Number(lon);
+          if (Number.isFinite(latNum) && Number.isFinite(lonNum)) {
+            console.log('[resolveCoords] Found coordinates in object properties:', { lon: lonNum, lat: latNum });
+            return { lon: lonNum, lat: latNum, address: first.displayName || query };
+          }
+        }
+
+        console.warn('[resolveCoords] No coordinates found in result:', {
+          uri: first.uri,
+          lat: (first as any).lat,
+          lon: (first as any).lon,
+        });
       }
     } catch (e) {
       console.error('[Geosearch] Geocoding failed:', e);
@@ -820,12 +849,21 @@ export function usePlanner() {
   };
 
   const handleSelectSuggestion = async (s: GeoSuggestion) => {
+    console.log('[handleSelectSuggestion] Selected suggestion:', {
+      displayName: s.displayName,
+      uri: s.uri,
+      lat: (s as any).lat,
+      lon: (s as any).lon,
+    });
+
     setShowDropdown(false);
     setSearchInput('');
     setSuggestions([]);
     setIsSearching(true);
     try {
       let coords: { lat: number; lon: number } | null = null;
+
+      // Try to extract from URI first
       if (s.uri) {
         const match = s.uri.match(/[?&]ll=([^&]+)/);
         if (match) {
@@ -833,11 +871,35 @@ export function usePlanner() {
             number,
             number,
           ];
-          if (Number.isFinite(lon) && Number.isFinite(lat)) coords = { lat, lon };
+          if (Number.isFinite(lon) && Number.isFinite(lat)) {
+            coords = { lat, lon };
+            console.log('[handleSelectSuggestion] Got coords from URI:', coords);
+          }
         }
       }
-      if (!coords) coords = await resolveCoords(s.displayName);
-      if (!coords) return;
+
+      // If not found in URI, try direct lat/lon properties
+      if (!coords && (s as any).lat !== undefined && (s as any).lon !== undefined) {
+        const lat = Number((s as any).lat);
+        const lon = Number((s as any).lon);
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          coords = { lat, lon };
+          console.log('[handleSelectSuggestion] Got coords from object properties:', coords);
+        }
+      }
+
+      // If still not found, try to geocode the display name
+      if (!coords) {
+        console.log('[handleSelectSuggestion] Coords not found, trying resolveCoords...');
+        coords = await resolveCoords(s.displayName);
+      }
+
+      if (!coords) {
+        console.warn('[handleSelectSuggestion] Could not get coordinates for:', s.displayName);
+        return;
+      }
+
+      console.log('[handleSelectSuggestion] Adding point with coords:', coords);
       await addPoint_({
         title: s.displayName.split(/[.,;]/)[0]?.trim() || s.displayName,
         lat: coords.lat,
