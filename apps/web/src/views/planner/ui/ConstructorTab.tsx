@@ -6,8 +6,6 @@ import {
   MapPin,
   Route as RouteIcon,
   Plus,
-  MessageSquare,
-  ArrowRight,
   X,
   GripVertical,
   Calendar as CalendarIcon,
@@ -183,26 +181,6 @@ export function ConstructorTab(props: ConstructorTabProps) {
                     Ничего не найдено
                   </div>
                 )}
-                <button
-                  onClick={() => {}}
-                  className="flex items-center gap-3 w-full text-left px-5 py-5 bg-slate-50 hover:bg-slate-100 transition-colors group mt-2 border-t border-slate-100"
-                >
-                  <div className="w-12 h-12 rounded-2xl bg-brand-purple text-white flex items-center justify-center shadow-lg shadow-brand-purple/20 group-hover:scale-105 transition-transform duration-300">
-                    <MessageSquare size={22} />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="font-black text-brand-purple uppercase tracking-wider text-xs">
-                      Найти с AI
-                    </span>
-                    <span className="text-slate-500 text-sm font-medium">
-                      AI найдет место: «{searchInput}»
-                    </span>
-                  </div>
-                  <ArrowRight
-                    size={18}
-                    className="ml-auto text-brand-purple transition-transform group-hover:translate-x-1"
-                  />
-                </button>
               </div>
             </div>
           )}
