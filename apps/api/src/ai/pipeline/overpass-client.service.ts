@@ -39,11 +39,14 @@ interface OverpassElement {
 @Injectable()
 export class OverpassClientService {
   private readonly logger = new Logger(OverpassClientService.name);
+  // Round-robin зеркала Overpass с приоритетом на стабильные (lz4, kumi)
   private readonly baseUrls = [
-    'https://overpass-api.de/api/interpreter',
-    'https://lz4.overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
+    'https://lz4.overpass-api.de/api/interpreter',        // fast + reliable
+    'https://overpass.kumi.systems/api/interpreter',       // very reliable
+    'https://overpass-api.de/api/interpreter',             // main (может быть перегружен)
+    'https://z.overpass-api.de/api/interpreter',           // backup France mirror
   ];
+  private lastMirrorIndex = 0;
 
   constructor(
     private readonly geosearch: GeosearchService,
@@ -175,7 +178,15 @@ export class OverpassClientService {
   }
 
   private async executeOverpass(query: string): Promise<OverpassElement[]> {
-    for (const baseUrl of this.baseUrls) {
+    // Round-robin: начинаем со следующего зеркала после последнего удачного/неудачного
+    let attempts = 0;
+    let backoffMs = 1000;
+
+    while (attempts < this.baseUrls.length) {
+      const baseUrl = this.baseUrls[this.lastMirrorIndex % this.baseUrls.length];
+      this.lastMirrorIndex++;
+      attempts++;
+
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 30000);
 
@@ -191,9 +202,13 @@ export class OverpassClientService {
           this.logger.warn(
             `Overpass API error from ${baseUrl}: ${response.status}`,
           );
-          if (response.status === 429) {
-            // Rate limited — ждём перед следующим зеркалом
-            await new Promise((r) => setTimeout(r, 2000));
+          // Exponential backoff на ошибки (особенно 429, 503, 504)
+          if ([429, 503, 504].includes(response.status)) {
+            this.logger.log(
+              `Rate/overload limiting detected (${response.status}), waiting ${backoffMs}ms before next mirror...`,
+            );
+            await new Promise((r) => setTimeout(r, backoffMs));
+            backoffMs = Math.min(backoffMs * 1.5, 5000); // cap at 5s
           }
           continue;
         }
@@ -213,6 +228,10 @@ export class OverpassClientService {
         clearTimeout(timer);
       }
     }
+
+    this.logger.error(
+      `All Overpass mirrors exhausted after ${attempts} attempts. Returning empty result.`,
+    );
     return [];
   }
 

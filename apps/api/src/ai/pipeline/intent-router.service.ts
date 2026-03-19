@@ -20,6 +20,9 @@ const ALLOWED_ACTION_TYPES: IntentRouterActionType[] = [
   'ADD_POI',
   'ADD_DAYS',
   'APPLY_GLOBAL_FILTER',
+  'REDUCE_BUDGET',
+  'ADD_CATEGORY',
+  'REMOVE_BORING',
   'NEW_ROUTE',
   'OFF_TOPIC',
   'SMALL_TALK',
@@ -28,7 +31,7 @@ const ALLOWED_ACTION_TYPES: IntentRouterActionType[] = [
 const SYSTEM_PROMPT = `You are an intent router for travel route edits.
 Analyze the user message with optional history and current route POIs.
 Return ONLY valid JSON with this exact structure:
-{ "action_type": "REMOVE_POI"|"REPLACE_POI"|"ADD_POI"|"ADD_DAYS"|"APPLY_GLOBAL_FILTER"|"NEW_ROUTE"|"OFF_TOPIC"|"SMALL_TALK", "confidence": number, "target_poi_id": string|null }
+{ "action_type": "REMOVE_POI"|"REPLACE_POI"|"ADD_POI"|"ADD_DAYS"|"APPLY_GLOBAL_FILTER"|"REDUCE_BUDGET"|"ADD_CATEGORY"|"REMOVE_BORING"|"NEW_ROUTE"|"OFF_TOPIC"|"SMALL_TALK", "confidence": number, "target_poi_id": string|null }
 Rules:
 - action_type must be one of allowed values.
 - confidence must be a number between 0 and 1.
@@ -38,6 +41,9 @@ Rules:
 - Use NEW_ROUTE when user wants to create a COMPLETELY new trip, start over, or requests a route for a city.
 - Use REMOVE_POI when user wants to delete a specific place from the CURRENT route.
 - Use ADD_POI when user wants to add a new place or category (e.g. "add a cafe", "find a museum") to the CURRENT route.
+- Use REDUCE_BUDGET when user wants to make the route cheaper, reduce costs, or spend less (e.g. "сделай дешевле", "снизь бюджет").
+- Use ADD_CATEGORY when user wants to add more items of a category (e.g. "добавь больше музеев", "найди кино").
+- Use REMOVE_BORING when user wants to remove dull or low-rated POIs (e.g. "удали скучное", "убери неинтересное").
 - If the user says "Удали точку X" or "Убери X", and X is in currentRoutePois, it is ALWAYS REMOVE_POI.
 - If currentRoutePois is empty (no existing route in this session) and the request is travel-related, treat it as NEW_ROUTE.
 - For REMOVE_POI/REPLACE_POI, target_poi_id is the ID from currentRoutePois that best matches the user's request.

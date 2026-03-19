@@ -9,6 +9,57 @@ export class LlmBatchRefinementService {
 
   constructor(private readonly llmClientService: LlmClientService) {}
 
+  private async enrichPoiNameViaReverseGeocoding(
+    poi: FilteredPoi,
+  ): Promise<string | null> {
+    try {
+      // Skip if name is already detailed (more than 3 words or contains proper nouns)
+      const words = poi.name.split(/\s+/).length;
+      if (words > 3) return null;
+
+      // Skip if no coordinates
+      if (!poi.coordinates?.lat || !poi.coordinates?.lon) return null;
+
+      const { lat, lon } = poi.coordinates;
+
+      // Try Nominatim reverse geocoding (open-source, no API key needed)
+      const nominatimResponse = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
+        {
+          headers: {
+            'User-Agent': 'TravelPlanner/1.0',
+          },
+        },
+      );
+
+      if (nominatimResponse.ok) {
+        const data = await nominatimResponse.json();
+
+        // Try to extract business/place name from address
+        const address = data.address || {};
+        const poiName =
+          address.amenity ||
+          address.shop ||
+          address.tourism ||
+          address.leisure ||
+          address.restaurant ||
+          address.cafe ||
+          address.pub;
+
+        if (poiName && typeof poiName === 'string' && poiName.length > 0) {
+          this.logger.debug(
+            `[REVERSE_GEOCODING] Enriched "${poi.name}" → "${poiName}"`,
+          );
+          return poiName;
+        }
+      }
+    } catch (error) {
+      this.logger.debug(`[REVERSE_GEOCODING] Failed for ${poi.name}: ${error}`);
+    }
+
+    return null;
+  }
+
   async refineSelectedInBatches(
     selected: FilteredPoi[],
     personaSummary: string,
@@ -36,15 +87,49 @@ export class LlmBatchRefinementService {
       );
 
       const parsed = JSON.parse(content || '{}');
-      const refined = selected.map((poi) => {
+      let refined = selected.map((poi) => {
         const match = (parsed.refinedPois || []).find(
           (r: any) => r.id === poi.id,
         );
-        return match ? { ...poi, description: match.description } : poi;
+        if (!match) return poi;
+
+        // LLM может вернуть улучшенное имя для generic POI
+        const updatedPoi = {
+          ...poi,
+          description: match.description,
+        };
+
+        // Если LLM предложил улучшенное имя и оно отличается от исходного, используй его
+        if (match.name && match.name !== poi.name && match.name.trim().length > 0) {
+          updatedPoi.name = match.name;
+          this.logger.debug(
+            `[REFINEMENT] LLM improved name: "${poi.name}" → "${match.name}"`,
+          );
+        }
+
+        return updatedPoi;
       });
 
+      // Дополнительное обогащение через reverse geocoding для оставшихся generic имён
+      const enrichedPois: FilteredPoi[] = [];
+      for (const poi of refined) {
+        // Проверяем, остаётся ли имя generic (если LLM его не улучшил)
+        const words = poi.name.split(/\s+/).length;
+        if (words <= 2) {
+          const enrichedName = await this.enrichPoiNameViaReverseGeocoding(poi);
+          if (enrichedName) {
+            enrichedPois.push({
+              ...poi,
+              name: enrichedName,
+            });
+            continue;
+          }
+        }
+        enrichedPois.push(poi);
+      }
+
       return {
-        refined,
+        refined: enrichedPois,
         diagnostics: {
           provider: isCis ? 'yandex-preferred' : 'openrouter-preferred',
         },
@@ -93,15 +178,20 @@ ${alternatives.map((p, i) => `${i + 1}: ${p.name} (${p.category})`).join('\n')}
     persona: string,
     city: string,
   ): string {
-    return `Ты — локальный гид по городу ${city}. Твоя задача — написать живые, короткие (15 слов) описания для выбранных мест, учитывая интересы туриста: "${persona}".
+    return `Ты — локальный гид по городу ${city}. Твоя задача — обогатить информацию о выбранных местах, учитывая интересы туриста: "${persona}".
 
 СПИСОК МЕСТ (ID: Название):
 ${selected.map((p) => `${p.id}: ${p.name} (${p.category})`).join('\n')}
 
+ПРАВИЛА:
+1. Если название generic (одно слово типа "Кафе", "Ресторан", "Визит"), предложи более конкретное имя.
+2. Если имя уже конкретное, оставь как есть.
+3. Напиши живое, короткое описание (10-15 слов) с акцентом на интересы туриста.
+
 ВЕРНИ ТОЛЬКО JSON:
 {
   "refinedPois": [
-    { "id": "ID_из_списка", "description": "Живое описание с акцентом на интересы туриста." }
+    { "id": "ID_из_списка", "name": "Уточненное или исходное имя", "description": "Живое описание." }
   ]
 }`;
   }

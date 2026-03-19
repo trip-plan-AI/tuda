@@ -15,7 +15,6 @@ interface AiChatProps {
   onApplyPlan?: (messageId: string) => void;
   lastAppliedPlanMessageId?: string | null;
   lastPlanMessageId?: string | null;
-  quickActions?: string[];
   // TRI-104: флаги, влияющие на CTA внутри MessageBubble:
   // "Применить" vs "Обновить" + deep-link в Planner по tripId.
   // MERGE-NOTE: изменение этих пропсов требует синхронной правки MessageBubble.
@@ -31,11 +30,11 @@ interface AiChatProps {
   streamingDays?: ChatRoutePlanDay[];
 }
 
-const DEFAULT_QUICK_ACTIONS = [
-  'Добавь ресторан',
-  'Сократи маршрут',
-  'Что посмотреть?',
-  'Смени город',
+// Кнопки для улучшения существующего маршрута (появляются только если уже есть routePlan)
+const ROUTE_MUTATION_ACTIONS = [
+  'Сделай дешевле',
+  'Добавь больше музеев',
+  'Удали самое скучное',
 ];
 
 const THINKING_STAGE_TEXT: Record<string, string> = {
@@ -132,7 +131,6 @@ export function AiChat({
   onApplyPlan,
   lastAppliedPlanMessageId = null,
   lastPlanMessageId = null,
-  quickActions = DEFAULT_QUICK_ACTIONS,
   hasLinkedTrip = false,
   appliedTripId = null,
   onOpenPlanner,
@@ -225,19 +223,23 @@ export function AiChat({
       </div>
 
       <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-4">
-        <div className="mb-3 flex flex-wrap gap-2">
-          {quickActions.map((action) => (
-            <button
-              key={action}
-              type="button"
-              onClick={() => onSend(action)}
-              disabled={isLoading}
-              className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 transition hover:border-brand-sky hover:text-brand-sky disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {action}
-            </button>
-          ))}
-        </div>
+        {/* Показываем кнопки только если есть маршрут */}
+        {messages.some((m) => m.routePlan) && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {ROUTE_MUTATION_ACTIONS.map((action) => (
+              <button
+                key={action}
+                type="button"
+                onClick={() => onSend(action)}
+                disabled={isLoading}
+                className="rounded-full border border-brand-sky/40 bg-brand-sky/10 px-3 py-1 text-xs text-brand-sky transition hover:border-brand-sky hover:bg-brand-sky/20 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Улучшить текущий маршрут"
+              >
+                {action}
+              </button>
+            ))}
+          </div>
+        )}
 
         {hasCollaborators && (
           <p className="mb-2 text-[11px] text-slate-400">

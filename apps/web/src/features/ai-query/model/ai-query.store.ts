@@ -127,6 +127,7 @@ interface ChatSession {
   createdAt: string;
   updatedAt: string;
   justCleared?: boolean; // Флаг: была ли сессия только что очищена (не загружать из бэка)
+  isLoading?: boolean; // Per-session loading state для сохранения при переключении чатов
 }
 
 const MAX_QUERY_LENGTH = 1000;
@@ -246,7 +247,9 @@ function mapStoredMessagesToChatMessages(
       id: crypto.randomUUID(),
       role: message.role,
       content: message.content,
-      timestamp: new Date(Date.now() + index).toISOString(),
+      // Используем текущее время без смещения на index
+      // (раньше было Date.now() + index, что сдвигало время в будущее)
+      timestamp: new Date().toISOString(),
     } satisfies ChatMessage;
   });
 }
@@ -258,6 +261,7 @@ function syncLegacyFields(sessions: Record<string, ChatSession>, activeSessionId
     messages: activeSession?.messages ?? [],
     sessionId: activeSession?.sessionId ?? null,
     lastAppliedPlanMessageId: activeSession?.lastAppliedPlanMessageId ?? null,
+    isLoading: activeSession?.isLoading ?? false,
   };
 }
 
@@ -432,13 +436,12 @@ export const useAiQueryStore = create<AiQueryStore>()(
 
     const preRequestSessions = {
       ...ensured.sessions,
-      [activeId]: preRequestSession,
+      [activeId]: { ...preRequestSession, isLoading: true },
     };
 
     set(() => ({
       sessions: preRequestSessions,
       activeSessionId: activeId,
-      isLoading: true,
       ...syncLegacyFields(preRequestSessions, activeId),
     }));
 
@@ -534,6 +537,7 @@ export const useAiQueryStore = create<AiQueryStore>()(
           sessionId: persistedSessionId,
           messages: [...activeSession.messages, assistantMessage],
           updatedAt: new Date().toISOString(),
+          isLoading: false,
         };
 
         let nextSessions = { ...state.sessions };
@@ -546,7 +550,6 @@ export const useAiQueryStore = create<AiQueryStore>()(
         return {
           sessions: nextSessions,
           activeSessionId: persistedSessionId,
-          isLoading: false,
           ...syncLegacyFields(nextSessions, persistedSessionId),
         };
       });
@@ -579,6 +582,7 @@ export const useAiQueryStore = create<AiQueryStore>()(
           sessionId: serverSessionId ?? activeSession.sessionId,
           messages: [...activeSession.messages, errorMessage],
           updatedAt: new Date().toISOString(),
+          isLoading: false,
         };
 
         let nextSessions = { ...state.sessions };
@@ -591,7 +595,6 @@ export const useAiQueryStore = create<AiQueryStore>()(
         return {
           sessions: nextSessions,
           activeSessionId: nextSession.id,
-          isLoading: false,
           ...syncLegacyFields(nextSessions, nextSession.id),
         };
       });
@@ -621,10 +624,10 @@ export const useAiQueryStore = create<AiQueryStore>()(
           ...session,
           messages: [...session.messages, userMessage],
           updatedAt: new Date().toISOString(),
+          isLoading: true,
         },
       };
       return {
-        isLoading: true,
         sessions: nextSessions,
         ...syncLegacyFields(nextSessions, activeId),
       };
@@ -687,10 +690,10 @@ export const useAiQueryStore = create<AiQueryStore>()(
             ...session,
             messages: [...session.messages, aiMessage],
             updatedAt: new Date().toISOString(),
+            isLoading: false,
           },
         };
         return {
-          isLoading: false,
           sessions: nextSessions,
           ...syncLegacyFields(nextSessions, activeId),
         };
@@ -707,7 +710,7 @@ export const useAiQueryStore = create<AiQueryStore>()(
 
       set((state) => {
         const activeId = state.activeSessionId;
-        if (!activeId || !state.sessions[activeId]) return { isLoading: false };
+        if (!activeId || !state.sessions[activeId]) return state;
         const session = state.sessions[activeId];
         const nextSessions = {
           ...state.sessions,
@@ -715,10 +718,10 @@ export const useAiQueryStore = create<AiQueryStore>()(
             ...session,
             messages: [...session.messages, errorMessage],
             updatedAt: new Date().toISOString(),
+            isLoading: false,
           },
         };
         return {
-          isLoading: false,
           sessions: nextSessions,
           ...syncLegacyFields(nextSessions, activeId),
         };
@@ -818,9 +821,9 @@ export const useAiQueryStore = create<AiQueryStore>()(
           tripId: response.trip_id,
           sessionId: response.session_id,
           messages: mappedMessages,
-          // updatedAt обновляем только если сообщения действительно изменились
+          // Всегда обновляем updatedAt если есть новые сообщения
           updatedAt:
-            JSON.stringify(baseSession.messages) !== JSON.stringify(mappedMessages)
+            mappedMessages.length > baseSession.messages.length
               ? new Date().toISOString()
               : baseSession.updatedAt,
         };
@@ -850,7 +853,6 @@ export const useAiQueryStore = create<AiQueryStore>()(
       return {
         sessions: nextSessions,
         activeSessionId: session.id,
-        isLoading: false,
         ...syncLegacyFields(nextSessions, session.id),
       };
     });
@@ -867,7 +869,6 @@ export const useAiQueryStore = create<AiQueryStore>()(
     set({
       sessions: state.sessions,
       activeSessionId: nextSessionId,
-      isLoading: false,
       ...syncLegacyFields(state.sessions, nextSessionId),
     });
 
@@ -884,6 +885,7 @@ export const useAiQueryStore = create<AiQueryStore>()(
           const nextSession: ChatSession = {
             ...freshTarget,
             messages: mappedMessages,
+            isLoading: false, // Сброс флага загрузки после загрузки сообщений
           };
 
           const nextSessions = {
@@ -899,6 +901,23 @@ export const useAiQueryStore = create<AiQueryStore>()(
       } catch {
         // no-op
       }
+    } else if (target.sessionId && target.messages.length > 0) {
+      // Если сессия уже имеет сообщения, убедиться что isLoading = false
+      // (может остаться true из-за persist при возврате на страницу)
+      set((currentState) => {
+        const session = currentState.sessions[nextSessionId];
+        if (!session || !session.isLoading) return {};
+        return {
+          sessions: {
+            ...currentState.sessions,
+            [nextSessionId]: { ...session, isLoading: false },
+          },
+          ...syncLegacyFields(
+            { ...currentState.sessions, [nextSessionId]: { ...session, isLoading: false } },
+            currentState.activeSessionId,
+          ),
+        };
+      });
     } else if (target.justCleared) {
       // Если была очистка, убираем флаг после активации сессии
       set((state) => {
@@ -944,7 +963,6 @@ export const useAiQueryStore = create<AiQueryStore>()(
       return {
         sessions: normalizedSessions,
         activeSessionId: nextActiveSessionId,
-        isLoading: false,
         ...syncLegacyFields(normalizedSessions, nextActiveSessionId),
       };
     });

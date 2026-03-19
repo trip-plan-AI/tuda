@@ -244,17 +244,36 @@ export class GeocodingFallbackService {
         if (!geocoded) {
           if (point.isProtected && cityCenter) {
             this.logger.warn(
-              `[GEOCODING] ⚠️ FAILED all strategies for protected point "${point.name}". Using city center with offset.`,
+              `[GEOCODING] ⚠️ FAILED all strategies for protected point "${point.name}". Using city center as fallback.`,
             );
-            const offset = (Math.random() - 0.5) * 0.002; // ~ +/- 100m
+            // Стратегия: для защищённых точек используем центр города, но сдвигаем немного для избежания прямого центра
+            // Сдвиг на 0.015° (примерно 1.5 км) в сторону от потенциального водоёма
+            let offsetLat = 0;
+            let offsetLon = 0;
+
+            // Если город близко к водоёму (по названию), смещаемся внутрь города
+            const waterKeywords = ['волга', 'волжск', 'амур', 'печора', 'обь', 'енисей', 'лена'];
+            const cityLower = city.toLowerCase();
+            const nearWater = waterKeywords.some((kw) => cityLower.includes(kw));
+
+            if (nearWater) {
+              // Смещаемся на небольшое расстояние от потенциального берега
+              // (юго-западное направление, но это эвристика)
+              offsetLat = -0.01;
+              offsetLon = 0.01;
+            }
+
             const coords = {
-              lat: cityCenter.lat + offset,
-              lon: cityCenter.lon + offset,
+              lat: cityCenter.lat + offsetLat,
+              lon: cityCenter.lon + offsetLon,
             };
             geocodedPoints.set(point.id, coords);
             geocodedIds.add(point.id);
             nameToCoords.set(point.name, coords);
             geocoded = true;
+            this.logger.log(
+              `[GEOCODING] Using city center (${coords.lat}, ${coords.lon}) for "${point.name}" (offset applied for waterfront city).`,
+            );
           } else {
             this.logger.warn(
               `[GEOCODING] ❌ FAILED all strategies for "${point.name}". This point will be excluded.`,
@@ -372,12 +391,15 @@ export class GeocodingFallbackService {
     city: string | null;
   } | null> {
     try {
-      const systemPrompt = `Ты — гео-ассистент. Твоя задача — преобразовать название места в идеальный поисковый запрос.
+      const systemPrompt = `Ты — гео-ассистент. Твоя задача — преобразовать название места в идеальный, КОРОТКИЙ поисковый запрос.
 ПРАВИЛА:
-1. Оставляй только официальное название.
-2. Поле searchQuery ДОЛЖНО заканчиваться городом через запятую.
-3. Для объектов Сириуса ВСЕГДА пиши "Сириус" вместо "Сочи".
-4. Ответ СТРОГО JSON: {"isValid": boolean, "searchQuery": "Название, Город", "city": "Город"}`;
+1. Сократи длинные названия до 2-3 ключевых слов (e.g. "Хвалынский парк культуры и отдыха" → "Городской парк, Хвалынск").
+2. Убирай описательные части (культуры и отдыха, имени Ленина и т.д.).
+3. Если для объекта не найдется точный адрес, используй описание типа "парк ${city}", "набережная ${city}", "центральная площадь ${city}".
+4. Для объектов на водоеме (парк, набережная, пляж), добавь уточнение типа "левый берег" или название центральной улицы рядом.
+5. Поле searchQuery ДОЛЖНО заканчиваться городом через запятую.
+6. Для объектов Сириуса ВСЕГДА пиши "Сириус" вместо "Сочи".
+7. Ответ СТРОГО JSON: {"isValid": boolean, "searchQuery": "Название, Город", "city": "Город"}`;
 
       if (process.env.YANDEX_GPT_API_KEY && process.env.YANDEX_FOLDER_ID) {
         const response = await fetch(
@@ -470,6 +492,7 @@ export class GeocodingFallbackService {
       Москва: { lat: 55.7558, lon: 37.6176 },
       СПб: { lat: 59.9343, lon: 30.3351 },
       'Санкт-Петербург': { lat: 59.9343, lon: 30.3351 },
+      Хвалынск: { lat: 51.96, lon: 47.68 },
     };
     const normalizedCity = city.toLowerCase().replace(/\s+/g, '');
     const matchedCity = Object.keys(cityCenters).find(
