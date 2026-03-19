@@ -132,7 +132,7 @@ export function ConstructorTab(props: ConstructorTabProps) {
           </div>
         )}
 
-        <div ref={searchContainerRef} className="w-full relative z-30">
+        <div ref={searchContainerRef} className="w-full relative z-50">
           <div className="w-full relative group">
             <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-blue transition-colors">
               {isSearching ? (
@@ -671,6 +671,7 @@ export function ConstructorTab(props: ConstructorTabProps) {
                     const showHeader =
                       !prevPoint || !isSameDay(prevPoint.visitDate, point.visitDate);
                     const isPointVisible = i < visibleCount;
+                    const currentLeg = routeInfo?.legs ? routeInfo.legs[i] : undefined;
 
                     return (
                       <div
@@ -733,7 +734,7 @@ export function ConstructorTab(props: ConstructorTabProps) {
                             onUpdate={handlePointUpdate}
                             onRemove={crud.remove}
                             onFocusPoint={setFocusCoords}
-                            leg={routeInfo?.legs ? routeInfo.legs[i] : undefined}
+                            leg={currentLeg}
                             isRouteLoading={isRouteLoading && affectedSegments.has(i)}
                             userLocation={userLocationRef.current ?? undefined}
                             prevPointDate={prevPoint?.visitDate}

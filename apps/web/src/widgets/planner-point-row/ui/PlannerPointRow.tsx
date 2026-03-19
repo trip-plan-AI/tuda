@@ -23,11 +23,13 @@ import { cn } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/button';
 import { Popover, PopoverContent, PopoverTrigger, Calendar } from '@/shared/ui';
 import {
+  ROUTE_PROFILE_COLORS,
   type GeoSuggestion,
   filterUniqueSuggestions,
   hasTime,
   formatDuration,
   formatDistance,
+  resolveTransportMode,
 } from '@/shared/lib/route-utils';
 
 export interface PointRowProps {
@@ -211,21 +213,10 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
     [onUpdate, minVisitDate],
   );
 
-  const getModeColor = (mode: string) => {
-    switch (mode) {
-      case 'foot':
-        return '#f59e0b';
-      case 'bike':
-        return '#10b981';
-      case 'direct':
-        return '#6366f1';
-      default:
-        return '#0ea5e9';
-    }
-  };
+  const getModeColor = (mode?: string | null) => ROUTE_PROFILE_COLORS[resolveTransportMode(mode)];
 
-  const leftColor = index > 0 ? getModeColor(point.transportMode || 'driving') : null;
-  const rightColor = !isLast ? getModeColor(nextTransportMode || 'driving') : null;
+  const leftColor = index > 0 ? getModeColor(point.transportMode) : null;
+  const rightColor = !isLast ? getModeColor(nextTransportMode) : null;
   const isSplit = leftColor && rightColor && leftColor !== rightColor;
 
   return (
@@ -262,7 +253,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
             onClick={() => onFocusPoint({ lat: point.lat, lon: point.lon })}
             className="w-7 h-7 shrink-0 rounded-full text-white font-bold hidden lg:flex items-center justify-center text-[12px] leading-none p-0 shadow-[0_2px_8px_rgba(0,0,0,0.3)] hover:scale-110 active:scale-95 transition-all relative overflow-hidden border-2 border-white"
             style={{
-              background: !isSplit ? leftColor || rightColor || '#3b82f6' : 'transparent',
+              background: !isSplit ? leftColor || rightColor || ROUTE_PROFILE_COLORS.driving : 'transparent',
               textShadow: '0 1px 2px rgba(0,0,0,0.5)',
             }}
           >
@@ -346,7 +337,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                 onClick={() => onFocusPoint({ lat: point.lat, lon: point.lon })}
                 className="w-7 h-7 shrink-0 rounded-full text-white font-bold flex items-center justify-center text-[12px] leading-none p-0 shadow-[0_2px_8px_rgba(0,0,0,0.3)] active:scale-90 transition-all relative overflow-hidden border-2 border-white"
                 style={{
-                  background: !isSplit ? leftColor || rightColor || '#3b82f6' : 'transparent',
+                  background: !isSplit ? leftColor || rightColor || ROUTE_PROFILE_COLORS.driving : 'transparent',
                   textShadow: '0 1px 2px rgba(0,0,0,0.5)',
                 }}
               >
@@ -597,7 +588,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
         </div>
       </div>
 
-      {!isLast && (leg || isRouteLoading) && (
+      {!isLast && nextPointId && (
         <div
           className={cn(
             'flex flex-wrap items-center gap-1.5 md:gap-3 self-center px-2.5 md:px-4 py-2 bg-white border border-slate-100 rounded-2xl md:rounded-full shadow-sm animate-in fade-in slide-in-from-top-1 my-2 relative z-10 w-full max-w-[300px] sm:max-w-[340px] md:max-w-[420px] justify-center transition-all',
@@ -661,7 +652,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                 <div className="w-4 h-4 border border-brand-indigo border-t-transparent rounded-full animate-spin" />
               </div>
             )}
-            {leg && (
+            {leg ? (
               <div
                 className={cn(
                   'flex flex-wrap items-center gap-x-3 gap-y-1',
@@ -685,6 +676,12 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                     {formatDistance(leg.distance)}
                   </span>
                 </div>
+              </div>
+            ) : (
+              <div className={cn('flex items-center gap-2 md:pl-2', isRouteLoading && 'opacity-40')}>
+                <span className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-tight">
+                  {isRouteLoading ? 'Считаем маршрут...' : 'Маршрут готовится...'}
+                </span>
               </div>
             )}
           </div>

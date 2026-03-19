@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import { loadYandexMaps } from '@/shared/lib/yandex-maps';
 import { env } from '@/shared/config/env';
 import type { RoutePoint } from '@/entities/route-point/model/route-point.types';
+import { ROUTE_PROFILE_COLORS, resolveTransportMode } from '@/shared/lib/route-utils';
 
 interface RouteMapProps {
   points: RoutePoint[];
@@ -123,6 +124,7 @@ export function RouteMap({
 
   const [segmentsData, setSegmentsData] = useState<SegmentData[] | null>(null);
   const [loadingSegments, setLoadingSegments] = useState<Set<number>>(new Set());
+  const previousPointsLengthRef = useRef(0);
 
   const onMapClickRef = useRef(onMapClick);
   const isAddPointModeRef = useRef(isAddPointMode);
@@ -151,12 +153,7 @@ export function RouteMap({
   }, [points.length]);
 
   // Карта цветов в зависимости от профиля маршрута
-  const profileColors = {
-    driving: '#0ea5e9', // brand-blue
-    foot: '#f59e0b',    // brand-amber
-    bike: '#10b981',    // emerald-500
-    direct: '#6366f1',  // indigo-500
-  };
+  const profileColors = ROUTE_PROFILE_COLORS;
   const activeColor = profileColors[routeProfile] || profileColors.driving;
 
   useEffect(() => {
@@ -417,8 +414,8 @@ export function RouteMap({
             oldPoint.lat !== newPoint.lat;
 
         // transportMode точки i определяет режим передвижения сегмента (i-1) -> i
-        const oldMode = oldPoint.transportMode || prevRouteProfileRef.current;
-        const newMode = newPoint.transportMode || routeProfile;
+        const oldMode = resolveTransportMode(oldPoint.transportMode || prevRouteProfileRef.current);
+        const newMode = resolveTransportMode(newPoint.transportMode || routeProfile);
         const modeChanged = oldMode !== newMode;
 
         if (coordsChanged || modeChanged) {
@@ -468,7 +465,7 @@ export function RouteMap({
         const from = points[segmentIndex]!;
         const to = points[segmentIndex + 1]!;
         // Режим сегмента i -> i+1 определяется настройкой точки i+1
-        const profile = to.transportMode || routeProfile;
+        const profile = resolveTransportMode(to.transportMode || routeProfile);
 
         if (profile === 'direct') {
           const dx = (to.lon - from.lon) * 111320 * Math.cos((from.lat * Math.PI) / 180);
@@ -600,7 +597,7 @@ export function RouteMap({
     // Функция для получения цвета сегмента i→(i+1)
     const getSegmentColor = (segmentIndex: number) => {
       if (segmentIndex < 0 || segmentIndex >= points.length - 1) return null;
-      const mode = points[segmentIndex + 1]!.transportMode || routeProfile;
+      const mode = resolveTransportMode(points[segmentIndex + 1]!.transportMode || routeProfile);
       return profileColors[mode];
     };
 
@@ -734,7 +731,7 @@ export function RouteMap({
             // Сегмент перед точкой (если это не первая точка)
             if (index > 0) {
               const prevPoint = pointsRef.current[index - 1]!;
-              const mode = draggedPoint.transportMode || routeProfile;
+              const mode = resolveTransportMode(draggedPoint.transportMode || routeProfile);
               const color = profileColors[mode];
               const stroke: any = { color, width: strokeWidth, opacity: 0.5, dash: [10, 10] };
               const pl = new ymaps3.YMapFeature({
@@ -748,7 +745,7 @@ export function RouteMap({
             // Сегмент после точки (если это не последняя точка)
             if (index < pointsRef.current.length - 1) {
               const nextPoint = pointsRef.current[index + 1]!;
-              const mode = nextPoint.transportMode || routeProfile;
+              const mode = resolveTransportMode(nextPoint.transportMode || routeProfile);
               const color = profileColors[mode];
               const stroke: any = { color, width: strokeWidth, opacity: 0.5, dash: [10, 10] };
               const pl = new ymaps3.YMapFeature({
@@ -843,7 +840,7 @@ export function RouteMap({
               });
               return;
             }
-            const segmentMode = toPoint.transportMode || routeProfile;
+            const segmentMode = resolveTransportMode(toPoint.transportMode || routeProfile);
             const segmentColor = profileColors[segmentMode];
 
             const stroke: any = {
@@ -887,7 +884,7 @@ export function RouteMap({
             });
             return;
           }
-          const segmentMode = toPoint.transportMode || routeProfile;
+          const segmentMode = resolveTransportMode(toPoint.transportMode || routeProfile);
           const segmentColor = profileColors[segmentMode];
 
           const stroke: any = {
@@ -945,7 +942,7 @@ export function RouteMap({
   }, [fitKey]);
 
   useEffect(() => {
-    if (!mapRef.current || !mapReady || points.length === 0 || hasInitialFitPerformed.current) return;
+    if (!mapRef.current || !mapReady || points.length === 0) return;
 
     const visiblePoints = points.filter((p) => {
       if (!selectedDays || selectedDays.length === 0) return true;
@@ -954,6 +951,14 @@ export function RouteMap({
     });
 
     const pointsToFit = visiblePoints.length > 0 ? visiblePoints : points;
+
+    const shouldFitInitial = !hasInitialFitPerformed.current;
+    const shouldFitAfterPointAdd = points.length > previousPointsLengthRef.current;
+
+    if (!shouldFitInitial && !shouldFitAfterPointAdd) {
+      previousPointsLengthRef.current = points.length;
+      return;
+    }
 
     const lons = pointsToFit.map(p => p.lon);
     const lats = pointsToFit.map(p => p.lat);
@@ -977,7 +982,8 @@ export function RouteMap({
 
     mapRef.current.update({ location: { bounds, duration: 500 } });
     hasInitialFitPerformed.current = true;
-  }, [points.length > 0, mapReady, fitKey]);
+    previousPointsLengthRef.current = points.length;
+  }, [pointsKey, mapReady, fitKey, selectedDays]);
 
   // Cleanup: удаляем cursor indicator при размонтировании
   useEffect(() => {
