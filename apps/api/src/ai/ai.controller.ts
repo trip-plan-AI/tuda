@@ -2177,43 +2177,11 @@ ${JSON.stringify(points)}
       user.id,
       tripId,
     );
-    const lastRoutePlanMessage = session.messages
-      .slice()
-      .reverse()
-      .find((message) => this.tryParseRoutePlan(message));
-    const lastRoutePlan = lastRoutePlanMessage
-      ? this.tryParseRoutePlan(lastRoutePlanMessage)
-      : null;
 
-    const currentTitles = new Set(
-      points.map((p) => p.title.toLowerCase().trim()),
-    );
-    const lastTitles = new Set(
-      (lastRoutePlan?.days ?? [])
-        .flatMap((d) => d.points)
-        .map((p) => (p.poi?.name ?? '').toLowerCase().trim()),
-    );
-    const routeChanged =
-      currentTitles.size !== lastTitles.size ||
-      [...currentTitles].some((t) => !lastTitles.has(t));
-
-    if (!lastRoutePlan) {
-      await this.aiSessionsService.appendMessages(session.id, [
-        {
-          role: 'assistant',
-          content: 'Что вы хотите изменить в вашем маршруте?',
-          route_plan: routePlan,
-        },
-      ]);
-    } else if (routeChanged) {
-      await this.aiSessionsService.appendMessages(session.id, [
-        {
-          role: 'assistant',
-          content: `Маршрут обновлён. Что дальше?`,
-          route_plan: routePlan,
-        },
-      ]);
-    }
+    // TRI-104: Load route context but don't send automatic greeting.
+    // User should start conversation themselves. Route context is available
+    // via session for AI to understand when user sends first message.
+    // No automatic messages are appended - just load the session.
 
     this.eventsService.emitTripRefresh(tripId);
     this.eventsService.emitAiUpdate(tripId, session.id);
