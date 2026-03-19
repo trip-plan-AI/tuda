@@ -24,6 +24,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@nestjs/throttler": "^6.5.0",
     "transliteration": "^2.6.1"
   }
 }
