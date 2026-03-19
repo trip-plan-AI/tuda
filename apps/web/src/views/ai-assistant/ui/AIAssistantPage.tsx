@@ -704,13 +704,10 @@ export function AIAssistantPage() {
                       <p className="mt-1 text-xs text-slate-500">
                         {(() => {
                           const date = new Date(session.updatedAt);
-                          // Явная конвертация в локальный timezone (UTC → локальное время)
-                          // Правильная формула: вычитаем offset (он отрицательный для UTC+X)
-                          const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-                          const day = String(localDate.getDate()).padStart(2, '0');
-                          const month = String(localDate.getMonth() + 1).padStart(2, '0');
-                          const hour = String(localDate.getHours()).padStart(2, '0');
-                          const minute = String(localDate.getMinutes()).padStart(2, '0');
+                          const day = String(date.getDate()).padStart(2, '0');
+                          const month = String(date.getMonth() + 1).padStart(2, '0');
+                          const hour = String(date.getHours()).padStart(2, '0');
+                          const minute = String(date.getMinutes()).padStart(2, '0');
                           return `${day}.${month}, ${hour}:${minute}`;
                         })()}
                       </p>
