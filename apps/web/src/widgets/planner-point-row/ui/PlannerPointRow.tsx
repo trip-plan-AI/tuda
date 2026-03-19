@@ -229,7 +229,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
     >
       <div
         className={cn(
-          'flex flex-row items-center lg:items-start justify-start gap-3 md:gap-4 group/row bg-slate-50 p-4 rounded-2xl border border-transparent hover:border-slate-200 transition-all shadow-sm hover:shadow-md relative z-0',
+          'flex flex-row items-center lg:items-start justify-start gap-3 md:gap-4 group/row bg-slate-50 p-4 rounded-2xl border border-transparent hover:border-slate-200 transition-all shadow-sm hover:shadow-md relative',
           isDragging && 'invisible',
         )}
       >
@@ -559,7 +559,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
               </div>
             </div>
             {showDropdownState && (
-              <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-2xl border border-slate-100 shadow-2xl overflow-hidden z-40 animate-in fade-in zoom-in-95 duration-200">
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl border border-slate-100 shadow-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
                 <div className="flex flex-col max-h-60 overflow-y-auto no-scrollbar">
                   {suggestions.length > 0 ? (
                     suggestions.map((s, idx) => (
