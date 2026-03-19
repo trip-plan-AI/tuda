@@ -90,6 +90,7 @@ export class PointMutationService {
           duration: 0,
           isTitleLocked: false,
           createdAt: new Date(),
+          updatedAt: new Date(),
         }),
       );
 
