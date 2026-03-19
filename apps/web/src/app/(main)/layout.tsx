@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { OverlayScrollbarsComponent } from 'overlayscrollbars-react';
+import 'overlayscrollbars/overlayscrollbars.css';
 import { Sidebar } from '@/widgets/sidebar/ui/Sidebar';
 import { Header } from '@/widgets/header/ui/Header';
 import { BottomNav } from '@/widgets/bottom-nav/ui/BottomNav';
@@ -49,10 +51,13 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 <Sidebar />
               </div>
               <main
-                className="min-w-0 bg-white pb-16 md:pb-0 flex flex-col"
+                className="min-w-0 bg-white pb-16 md:pb-0"
+                style={{ height: 'calc(100vh - 64px)' }}
                 data-testid="desktop-profile-pane"
               >
-                {children}
+                <OverlayScrollbarsComponent className="h-full w-full">
+                  {children}
+                </OverlayScrollbarsComponent>
               </main>
               <aside className="min-w-0 border-l border-slate-200 bg-slate-50 h-[calc(100vh-64px)] sticky top-16 self-start">
                 <PersistentMapShell />
@@ -80,7 +85,14 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
               <Header />
             </div>
             <div className="flex flex-1 w-full">
-              <main className="flex-1 bg-white min-w-0 pb-16 md:pb-0">{children}</main>
+              <main
+                className="flex-1 bg-white min-w-0 pb-16 md:pb-0"
+                style={{ height: 'calc(100vh - 64px)' }}
+              >
+                <OverlayScrollbarsComponent className="h-full w-full">
+                  {children}
+                </OverlayScrollbarsComponent>
+              </main>
             </div>
           </div>
           <Footer />
@@ -101,8 +113,14 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 </div>
 
                 {/* Main Scrolling Content */}
-                <main className="min-w-0 bg-white pb-16 md:pb-0" data-testid="desktop-content-pane">
-                  {children}
+                <main
+                  className="min-w-0 bg-white pb-16 md:pb-0"
+                  style={{ height: 'calc(100vh - 64px)' }}
+                  data-testid="desktop-content-pane"
+                >
+                  <OverlayScrollbarsComponent className="h-full w-full">
+                    {children}
+                  </OverlayScrollbarsComponent>
                 </main>
 
                 {/* Sticky Map Aside */}

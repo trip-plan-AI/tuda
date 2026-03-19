@@ -88,12 +88,14 @@ function getOsrmCacheKey(fromLon: number, fromLat: number, toLon: number, toLat:
 
 // localStorage кэширование OSRM результатов
 const OSRM_CACHE_PREFIX = 'osrm_cache_';
-const OSRM_CACHE_SIZE_LIMIT = 50 * 1024 * 1024; // 50MB limit
+const OSRM_CACHE_SIZE_LIMIT = 2 * 1024 * 1024; // 2MB limit (localStorage ~5MB total per domain)
 
 function saveToLocalStorageCache(key: string, data: { geometry: any; duration: number; distance: number } | null) {
   try {
     const cacheKey = OSRM_CACHE_PREFIX + key;
-    const cacheData = JSON.stringify(data);
+    // Добавляем временную метку для правильной очистки старых записей
+    const cachePayload = { ...data, cachedAt: Date.now() };
+    const cacheData = JSON.stringify(cachePayload);
 
     // Проверяем размер перед сохранением
     const estimatedSize = new Blob([cacheData]).size;
