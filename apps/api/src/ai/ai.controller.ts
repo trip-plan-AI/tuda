@@ -726,7 +726,7 @@ ${JSON.stringify(points)}
       });
     }
 
-    let intent: ParsedIntent;
+    let intent: ParsedIntent = null as any;
     try {
       intent = await this.orchestratorService.parseIntent(
         dto.user_query,
@@ -737,34 +737,53 @@ ${JSON.stringify(points)}
         throw error;
       }
 
-      const errorResponse = (
-        error as UnprocessableEntityException
-      ).getResponse() as any;
-      const clarificationMsg = errorResponse.message || this.needCityMessage;
-
-      const clarificationMessages: SessionMessage[] = [
-        ...history,
-        { role: 'user' as const, content: dto.user_query },
-        {
-          role: 'assistant' as const,
-          content: clarificationMsg,
-        },
-      ];
-
-      await this.aiSessionsService.saveMessages(
-        session.id,
-        clarificationMessages,
-      );
-
-      if (session.tripId) {
-        this.eventsService.emitTripRefresh(session.tripId);
+      // Если есть существующий маршрут — берём город из него и повторяем парсинг.
+      // Это позволяет "добавь ещё три точки" / "удали скучное" работать без указания города.
+      const existingCity = existingRoutePlan?.city;
+      if (existingCity) {
+        this.logger.log(
+          `NEED_CITY fallback: retrying with city="${existingCity}" from existing route`,
+        );
+        try {
+          intent = await this.orchestratorService.parseIntent(
+            `${dto.user_query} (город: ${existingCity})`,
+            llmContext,
+          );
+        } catch {
+          // Если и с городом не распарсилось — падаем ниже в стандартную ошибку
+          intent = null as any;
+        }
+        if (intent?.city) {
+          // Успешно распарсили с подсказкой города — продолжаем
+        } else {
+          intent = null as any;
+        }
       }
 
-      throw new UnprocessableEntityException({
-        code: errorResponse.code || 'NEED_CITY',
-        message: clarificationMsg,
-        session_id: session.id,
-      });
+      if (!intent?.city) {
+        const errorResponse = (
+          error as UnprocessableEntityException
+        ).getResponse() as any;
+        const clarificationMsg = errorResponse.message || this.needCityMessage;
+
+        const clarificationMessages: SessionMessage[] = [
+          ...history,
+          { role: 'user' as const, content: dto.user_query },
+          { role: 'assistant' as const, content: clarificationMsg },
+        ];
+
+        await this.aiSessionsService.saveMessages(session.id, clarificationMessages);
+
+        if (session.tripId) {
+          this.eventsService.emitTripRefresh(session.tripId);
+        }
+
+        throw new UnprocessableEntityException({
+          code: errorResponse.code || 'NEED_CITY',
+          message: clarificationMsg,
+          session_id: session.id,
+        });
+      }
     }
 
     if (!intent.city) {
