@@ -23,11 +23,13 @@ import { cn } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/button';
 import { Popover, PopoverContent, PopoverTrigger, Calendar } from '@/shared/ui';
 import {
+  ROUTE_PROFILE_COLORS,
   type GeoSuggestion,
   filterUniqueSuggestions,
   hasTime,
   formatDuration,
   formatDistance,
+  resolveTransportMode,
 } from '@/shared/lib/route-utils';
 
 export interface PointRowProps {
@@ -211,21 +213,10 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
     [onUpdate, minVisitDate],
   );
 
-  const getModeColor = (mode: string) => {
-    switch (mode) {
-      case 'foot':
-        return '#f59e0b';
-      case 'bike':
-        return '#10b981';
-      case 'direct':
-        return '#6366f1';
-      default:
-        return '#0ea5e9';
-    }
-  };
+  const getModeColor = (mode?: string | null) => ROUTE_PROFILE_COLORS[resolveTransportMode(mode)];
 
-  const leftColor = index > 0 ? getModeColor(point.transportMode || 'driving') : null;
-  const rightColor = !isLast ? getModeColor(nextTransportMode || 'driving') : null;
+  const leftColor = index > 0 ? getModeColor(point.transportMode) : null;
+  const rightColor = !isLast ? getModeColor(nextTransportMode) : null;
   const isSplit = leftColor && rightColor && leftColor !== rightColor;
 
   return (
@@ -262,7 +253,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
             onClick={() => onFocusPoint({ lat: point.lat, lon: point.lon })}
             className="w-7 h-7 shrink-0 rounded-full text-white font-bold hidden lg:flex items-center justify-center text-[12px] leading-none p-0 shadow-[0_2px_8px_rgba(0,0,0,0.3)] hover:scale-110 active:scale-95 transition-all relative overflow-hidden border-2 border-white"
             style={{
-              background: !isSplit ? leftColor || rightColor || '#3b82f6' : 'transparent',
+              background: !isSplit ? leftColor || rightColor || ROUTE_PROFILE_COLORS.driving : 'transparent',
               textShadow: '0 1px 2px rgba(0,0,0,0.5)',
             }}
           >
@@ -346,7 +337,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                 onClick={() => onFocusPoint({ lat: point.lat, lon: point.lon })}
                 className="w-7 h-7 shrink-0 rounded-full text-white font-bold flex items-center justify-center text-[12px] leading-none p-0 shadow-[0_2px_8px_rgba(0,0,0,0.3)] active:scale-90 transition-all relative overflow-hidden border-2 border-white"
                 style={{
-                  background: !isSplit ? leftColor || rightColor || '#3b82f6' : 'transparent',
+                  background: !isSplit ? leftColor || rightColor || ROUTE_PROFILE_COLORS.driving : 'transparent',
                   textShadow: '0 1px 2px rgba(0,0,0,0.5)',
                 }}
               >
