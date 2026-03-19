@@ -671,6 +671,7 @@ export function ConstructorTab(props: ConstructorTabProps) {
                     const showHeader =
                       !prevPoint || !isSameDay(prevPoint.visitDate, point.visitDate);
                     const isPointVisible = i < visibleCount;
+                    const currentLeg = routeInfo?.legs ? routeInfo.legs[i] : undefined;
 
                     return (
                       <div
@@ -724,7 +725,6 @@ export function ConstructorTab(props: ConstructorTabProps) {
                             point={point}
                             index={i}
                             isLast={i === points.length - 1}
-                            nextPoint={points[i + 1]}
                             nextPointId={points[i + 1]?.id}
                             nextTransportMode={points[i + 1]?.transportMode}
                             editingPointId={editingPointId}
@@ -734,7 +734,7 @@ export function ConstructorTab(props: ConstructorTabProps) {
                             onUpdate={handlePointUpdate}
                             onRemove={crud.remove}
                             onFocusPoint={setFocusCoords}
-                            leg={routeInfo?.legs ? routeInfo.legs[i] : undefined}
+                            leg={currentLeg}
                             isRouteLoading={isRouteLoading && affectedSegments.has(i)}
                             userLocation={userLocationRef.current ?? undefined}
                             prevPointDate={prevPoint?.visitDate}

@@ -19,7 +19,6 @@ import { startOfMonth, startOfToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import type { RoutePoint } from '@/entities/route-point';
 import { env } from '@/shared/config/env';
-import { haversine } from '@/shared/lib/haversine';
 import { cn } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/button';
 import { Popover, PopoverContent, PopoverTrigger, Calendar } from '@/shared/ui';
@@ -59,7 +58,6 @@ export interface PointRowProps {
   isRouteLoading?: boolean;
   userLocation?: { lat: number; lon: number };
   isLast: boolean;
-  nextPoint?: RoutePoint;
   nextPointId?: string;
   nextTransportMode?: 'driving' | 'foot' | 'bike' | 'direct';
   prevPointDate?: string | null;
@@ -70,7 +68,6 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
   point,
   index,
   isLast,
-  nextPoint,
   nextPointId,
   nextTransportMode,
   editingPointId,
@@ -221,31 +218,6 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
   const leftColor = index > 0 ? getModeColor(point.transportMode) : null;
   const rightColor = !isLast ? getModeColor(nextTransportMode) : null;
   const isSplit = leftColor && rightColor && leftColor !== rightColor;
-  const fallbackLeg = useMemo(() => {
-    if (!nextPoint) return null;
-
-    const distance = haversine(point.lat, point.lon, nextPoint.lat, nextPoint.lon) * 1000;
-    const mode = resolveTransportMode(nextTransportMode);
-
-    if (mode === 'direct') {
-      return { distance, duration: distance / 1.4 };
-    }
-
-    const speedByModeKmh = {
-      driving: 45,
-      foot: 5,
-      bike: 15,
-      direct: 5,
-    } as const;
-
-    const speedMs = (speedByModeKmh[mode] * 1000) / 3600;
-
-    return {
-      distance,
-      duration: distance / speedMs,
-    };
-  }, [nextPoint, nextTransportMode, point.lat, point.lon]);
-  const displayLeg = leg ?? fallbackLeg;
 
   return (
     <div
@@ -680,7 +652,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                 <div className="w-4 h-4 border border-brand-indigo border-t-transparent rounded-full animate-spin" />
               </div>
             )}
-            {displayLeg ? (
+            {leg ? (
               <div
                 className={cn(
                   'flex flex-wrap items-center gap-x-3 gap-y-1',
@@ -692,7 +664,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                     <div className="flex items-center gap-1.5 whitespace-nowrap">
                       <Clock size={12} className="text-brand-blue shrink-0" />
                       <span className="text-[10px] md:text-xs font-black text-slate-700 uppercase tracking-tight">
-                        {formatDuration(displayLeg.duration)}
+                        {formatDuration(leg.duration)}
                       </span>
                     </div>
                     <div className="w-px h-3 bg-slate-200" />
@@ -701,7 +673,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                 <div className="flex items-center gap-1.5 whitespace-nowrap">
                   <RouteIcon size={12} className="text-emerald-500 shrink-0" />
                   <span className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-tight">
-                    {formatDistance(displayLeg.distance)}
+                    {formatDistance(leg.distance)}
                   </span>
                 </div>
               </div>
