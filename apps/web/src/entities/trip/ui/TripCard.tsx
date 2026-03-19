@@ -623,13 +623,13 @@ export function TripCard({
                 router.push('/planner');
               }
             }}
-            className="ml-auto px-4 py-2.5 rounded-lg bg-brand-yellow/10 flex items-center justify-center gap-2
+            className="ml-auto px-2.5 py-1.5 rounded-lg bg-brand-yellow/10 flex items-center justify-center gap-1
                        text-brand-yellow hover:bg-brand-yellow hover:text-white
-                       transition-colors duration-150 text-sm font-semibold"
+                       transition-colors duration-150 text-xs font-semibold"
             title="Открыть в планнере"
           >
               в конструктор
-              <ArrowRight size={16} />
+              <ArrowRight size={14} />
             </button>
           </div>
       </div>
