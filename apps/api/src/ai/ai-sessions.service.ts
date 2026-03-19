@@ -39,27 +39,38 @@ export class AiSessionsService {
       try {
         const parsed = JSON.parse(lastAssistant.content) as {
           days?: Array<{ points?: Array<{ poi?: { name?: string } }> }>;
+          city?: string;
+          cities?: string[];
         };
-        const allPoints = (parsed.days ?? []).flatMap((d) => d.points ?? []);
-        const first = allPoints[0]?.poi?.name?.trim();
-        const last = allPoints[allPoints.length - 1]?.poi?.name?.trim();
-        if (first && last && first !== last)
-          return `${first} → ${last}`.slice(0, 60);
-        if (first) return first.slice(0, 60);
+        
+        if (parsed.cities && parsed.cities.length > 1) {
+          const firstCity = parsed.cities[0];
+          const lastCity = parsed.cities[parsed.cities.length - 1];
+          if (firstCity !== lastCity) {
+            return `${firstCity} - ${lastCity}`;
+          }
+        }
+        if (parsed.city) {
+          return parsed.city;
+        }
       } catch {
         // not JSON
       }
       return 'Новый чат';
     }
 
-    const allPoints = (lastWithRoute.route_plan.days ?? []).flatMap(
-      (d) => d.points ?? [],
-    );
-    const first = allPoints[0]?.poi?.name?.trim();
-    const last = allPoints[allPoints.length - 1]?.poi?.name?.trim();
-    if (first && last && first !== last)
-      return `${first} → ${last}`.slice(0, 60);
-    if (first) return first.slice(0, 60);
+    const routePlan = lastWithRoute.route_plan;
+    if (routePlan.cities && routePlan.cities.length > 1) {
+      const firstCity = routePlan.cities[0];
+      const lastCity = routePlan.cities[routePlan.cities.length - 1];
+      if (firstCity !== lastCity) {
+        return `${firstCity} - ${lastCity}`;
+      }
+    }
+    if (routePlan.city) {
+      return routePlan.city;
+    }
+
     return 'Новый чат';
   }
 
