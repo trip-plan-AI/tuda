@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { X, MapPin } from 'lucide-react';
+import { X, Eye, RotateCcw } from 'lucide-react';
 import type { ChatMessage } from '@/shared/types/ai-chat';
 
 interface MessageBubbleProps {
@@ -14,6 +14,8 @@ interface MessageBubbleProps {
   onOpenPlanner?: (tripId: string | null, messageId?: string) => void;
   onDeletePoint?: (pointName: string) => Promise<void>;
   isLatestRoutePlan?: boolean;
+  isPreviewActive?: boolean;
+  onTogglePreview?: (messageId: string) => void;
 }
 
 export function MessageBubble({
@@ -25,6 +27,8 @@ export function MessageBubble({
   onOpenPlanner,
   onDeletePoint,
   isLatestRoutePlan = false,
+  isPreviewActive = false,
+  onTogglePreview,
 }: MessageBubbleProps) {
   // TRI-104: bubble знает контекст связки chat<->trip и меняет CTA:
   // "Применить план" только для первого создания trip из чата.
@@ -213,8 +217,56 @@ export function MessageBubble({
               </p>
             )}
 
-             <div className="flex flex-wrap items-center gap-2">
-             </div>
+            {onTogglePreview && (
+              <button
+                type="button"
+                onClick={() => onTogglePreview(message.id)}
+                className={[
+                  'mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold',
+                  'transition-all duration-300 ease-in-out active:scale-[0.97]',
+                  isPreviewActive
+                    ? 'bg-brand-indigo/10 text-brand-indigo border border-brand-indigo/20 hover:bg-brand-indigo/15'
+                    : 'bg-linear-to-r from-brand-sky to-blue-600 text-white shadow-md shadow-brand-sky/25 hover:shadow-lg hover:shadow-brand-sky/35 hover:brightness-105',
+                ].join(' ')}
+              >
+                <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+                  <Eye
+                    className={[
+                      'absolute h-3.5 w-3.5 transition-all duration-300',
+                      isPreviewActive ? 'opacity-0 scale-50' : 'opacity-100 scale-100',
+                    ].join(' ')}
+                  />
+                  <RotateCcw
+                    className={[
+                      'absolute h-3.5 w-3.5 transition-all duration-300',
+                      isPreviewActive ? 'opacity-100 scale-100' : 'opacity-0 scale-50',
+                    ].join(' ')}
+                  />
+                </span>
+                <span className="relative overflow-hidden h-4 flex items-center">
+                  <span
+                    className={[
+                      'block transition-all duration-300 whitespace-nowrap',
+                      isPreviewActive
+                        ? 'translate-y-full opacity-0 absolute'
+                        : 'translate-y-0 opacity-100',
+                    ].join(' ')}
+                  >
+                    Отобразить на карте
+                  </span>
+                  <span
+                    className={[
+                      'block transition-all duration-300 whitespace-nowrap',
+                      isPreviewActive
+                        ? 'translate-y-0 opacity-100'
+                        : '-translate-y-full opacity-0 absolute',
+                    ].join(' ')}
+                  >
+                    Вернуть реальный маршрут
+                  </span>
+                </span>
+              </button>
+            )}
           </div>
         )}
         </div>
