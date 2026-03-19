@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Delete,
   Param,
@@ -26,6 +27,12 @@ export class InvitationsController {
     private tripsService: TripsService,
     private collabGateway: CollaborationGateway,
   ) {}
+
+  /** GET /invitations — pending invitations for current user */
+  @Get('invitations')
+  async listMine(@Req() req: any) {
+    return this.invitationsService.findAllForUser(req.user.id);
+  }
 
   /** POST /trips/:tripId/invitations — owner/editor sends invite */
   @Post('trips/:tripId/invitations')

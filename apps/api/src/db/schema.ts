@@ -201,6 +201,11 @@ export const invitations = pgTable(
   (t) => [unique().on(t.tripId, t.invitedUserId)],
 );
 
+export const invitationsRelations = relations(invitations, ({ one }) => ({
+  trip: one(trips, { fields: [invitations.tripId], references: [trips.id] }),
+  inviter: one(users, { fields: [invitations.inviterId], references: [users.id] }),
+}));
+
 // trip_chat_messages — real-time user chat messages per trip (TRI-121)
 export const tripChatMessages = pgTable('trip_chat_messages', {
   id: uuid('id').primaryKey().defaultRandom(),

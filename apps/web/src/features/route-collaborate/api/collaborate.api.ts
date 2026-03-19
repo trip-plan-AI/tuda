@@ -1,4 +1,5 @@
 import { api } from '@/shared/api/http';
+import type { Invitation } from '../ui/InvitationsModal';
 
 export interface Collaborator {
   userId: string;
@@ -34,6 +35,9 @@ export const collaborateApi = {
     api.get(`/users/search?email=${encodeURIComponent(email)}`),
 
   // ── Invitations ──
+  getPendingInvitations: (): Promise<Invitation[]> =>
+    api.get('/invitations'),
+
   sendInvitation: (tripId: string, userId: string): Promise<{ id: string }> =>
     api.post(`/trips/${tripId}/invitations`, { userId }),
 

@@ -146,9 +146,14 @@ export function Header() {
     });
   }, [hydrated, isAuthenticated, pathname]);
 
-  // ── Real-time: listen for incoming invitations ──
+  // ── Load pending invitations on mount + real-time updates ──
   useEffect(() => {
     if (!isAuthenticated) return;
+
+    // Load existing pending invitations from backend
+    collaborateApi.getPendingInvitations().then((list) => {
+      setInvitations(list);
+    }).catch(() => {/* ignore */});
 
     const socket = getSocket();
 
