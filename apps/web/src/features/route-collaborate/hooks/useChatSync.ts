@@ -59,7 +59,10 @@ export function useChatSync(tripId: string) {
 
     const handleMessage = (data: RemoteChatPayload) => {
       const currentUserId = useUserStore.getState().user?.id;
-      useAiQueryStore.getState().addLocalMessage(buildChatMessage(data, currentUserId));
+      useAiQueryStore.getState().addLocalMessageForTrip(
+        data.trip_id,
+        buildChatMessage(data, currentUserId),
+      );
     };
 
     const handleAgentResponse = (data: AgentResponsePayload) => {
@@ -70,7 +73,7 @@ export function useChatSync(tripId: string) {
         timestamp: data.timestamp,
         routePlan: (data.route_plan as ChatMessage['routePlan']) ?? undefined,
       };
-      useAiQueryStore.getState().addLocalMessage(agentMessage);
+      useAiQueryStore.getState().addLocalMessageForTrip(data.trip_id, agentMessage);
     };
 
     // Load persisted chat history when joining the trip room

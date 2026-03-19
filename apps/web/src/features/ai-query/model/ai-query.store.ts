@@ -109,6 +109,8 @@ interface AiQueryStore {
   clearChat: (keepLastPlan?: boolean) => void;
   // TRI-120: добавляет одно сообщение в активную сессию без вызова AI (сокет-транспорт).
   addLocalMessage: (message: ChatMessage) => void;
+  // TRI-120: добавляет сообщение в сессию по tripId (не зависит от activeSessionId).
+  addLocalMessageForTrip: (tripId: string, message: ChatMessage) => void;
   // TRI-120: добавляет массив сообщений истории чата (chat:history) без дубликатов.
   addChatHistory: (messages: ChatMessage[]) => void;
   // Удаляет точку по имени из routePlan последнего сообщения с планом (только внутри чата, не трогает конструктор).
@@ -1067,6 +1069,33 @@ export const useAiQueryStore = create<AiQueryStore>()(
       return {
         sessions: nextSessions,
         ...syncLegacyFields(nextSessions, activeId),
+      };
+    });
+  },
+
+  // TRI-120: добавляет сообщение в сессию по tripId (не зависит от activeSessionId).
+  addLocalMessageForTrip: (tripId, message) => {
+    set((state) => {
+      const sessionEntry = Object.entries(state.sessions).find(
+        ([, s]) => s.tripId === tripId,
+      );
+      if (!sessionEntry) return state;
+      const [sessionId, session] = sessionEntry;
+
+      if (session.messages.some((m) => m.id === message.id)) return state;
+
+      const nextSessions = {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          messages: [...session.messages, message],
+          updatedAt: new Date().toISOString(),
+        },
+      };
+
+      return {
+        sessions: nextSessions,
+        ...syncLegacyFields(nextSessions, state.activeSessionId),
       };
     });
   },
