@@ -12,6 +12,7 @@ export type AiThinkingStage =
 export interface CollaborationEvent {
   type: 'trip:refresh' | 'ai:update' | 'ai:thinking' | 'ai:day_ready';
   tripId: string;
+  userId?: string; // для персональной комнаты user_${userId} (события без tripId)
   payload?: any;
 }
 
@@ -32,18 +33,20 @@ export class CollaborationEventsService {
     });
   }
 
-  emitAiThinking(tripId: string, sessionId: string, stage: AiThinkingStage) {
+  emitAiThinking(tripId: string | null | undefined, sessionId: string, stage: AiThinkingStage, userId?: string) {
     this.eventsSubject.next({
       type: 'ai:thinking',
-      tripId,
+      tripId: tripId ?? '',
+      userId,
       payload: { session_id: sessionId, stage },
     });
   }
 
-  emitAiDayReady(tripId: string, sessionId: string, day: any) {
+  emitAiDayReady(tripId: string | null | undefined, sessionId: string, day: any, userId?: string) {
     this.eventsSubject.next({
       type: 'ai:day_ready',
-      tripId,
+      tripId: tripId ?? '',
+      userId,
       payload: { session_id: sessionId, day },
     });
   }
