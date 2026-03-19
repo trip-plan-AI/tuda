@@ -80,10 +80,11 @@ export function MessageBubble({
       <div className="flex max-w-[85%] flex-col gap-0.5">
         {/* Имя отправителя — над пузырём, вне белого блока */}
         {isRemoteUser && (
-          <p className="ml-1 text-[11px] font-semibold text-brand-indigo">{message.userName}</p>
+          <p data-testid="chat-message-user-name" className="ml-1 text-[11px] font-semibold text-brand-indigo">{message.userName}</p>
         )}
 
         <div
+          data-testid="chat-message"
           className={[
             'rounded-2xl px-4 py-3 text-sm shadow-sm',
             isAssistant

@@ -273,6 +273,7 @@ export function AiChat({
             </button>
           )}
           <Input
+            data-testid="chat-input"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value.slice(0, 1000));
@@ -295,6 +296,7 @@ export function AiChat({
             className="focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-brand-blue/20"
           />
           <Button
+            data-testid="send-message-btn"
             type="button"
             variant="brand-blue"
             size="icon"

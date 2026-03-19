@@ -265,6 +265,7 @@ export function TripCard({
   return (
     <div
       ref={cardRef}
+      data-testid="trip-card-item"
       onClick={() => onCardClick?.(trip.id)}
       className={`group cursor-pointer rounded-2xl overflow-hidden bg-white transition-all duration-200
         ${

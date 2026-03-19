@@ -723,7 +723,7 @@ export function RouteMap({
       const isSplit = leftColor && rightColor && leftColor !== rightColor;
 
       const el = document.createElement('div');
-      el.setAttribute('data-testid', 'route-map-marker');
+      el.setAttribute('data-testid', `map-marker-${index}`);
       el.setAttribute('data-marker-index', String(index));
 
       if (isSplit) {
@@ -1088,7 +1088,7 @@ export function RouteMap({
   }, []);
 
   return (
-    <div className="w-full h-full relative">
+    <div className="w-full h-full relative" data-testid="map-center">
       <div
         ref={containerRef}
         className="absolute inset-0 z-0"
