@@ -109,7 +109,7 @@ export function RouteMap({
   const objectsRef = useRef<any[]>([]);
   const polylineRef = useRef<any>(null);
   const pointsRef = useRef<RoutePoint[]>([]);
-  const controlsRef = useRef<any>(null);
+
   const addPointBtnRef = useRef<HTMLButtonElement>(null);
   const cursorIndicatorRef = useRef<HTMLDivElement>(null);
   const dragPlaceholdersRef = useRef<any[]>([]);
@@ -283,7 +283,6 @@ export function RouteMap({
     loadYandexMaps(env.yandexMapsKey)
       .then(async () => {
         if (cancelled || mapRef.current || !container) return;
-        const { YMapZoomControl } = await import('@yandex/ymaps3-default-ui-theme');
         if (cancelled) return;
 
         if (container.childElementCount > 0) {
@@ -295,17 +294,13 @@ export function RouteMap({
 
         mapRef.current = new ymaps3.YMap(container, {
           location: { center: [37.618423, 55.751244], zoom: 12 },
+          behaviors: ['drag'],
         });
         _mapRegistry.set(container, mapRef.current);
         _activeInstances.push({ container, instance: mapRef.current, timestamp: Date.now() });
 
         mapRef.current.addChild(new ymaps3.YMapDefaultSchemeLayer({}));
         mapRef.current.addChild(new ymaps3.YMapDefaultFeaturesLayer({}));
-
-        const controls = new ymaps3.YMapControls({ position: 'left' });
-        controls.addChild(new YMapZoomControl());
-        mapRef.current.addChild(controls);
-        controlsRef.current = controls;
 
         setMapReady(true);
       })
