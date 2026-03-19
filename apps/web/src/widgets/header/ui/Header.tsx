@@ -420,8 +420,7 @@ export function Header() {
           collaborateApi
             .acceptInvitation(id)
             .then(() => {
-              setInvitations((prev) => prev.filter((i) => i.id !== id));
-              toast.success('Приглашение принято! Маршрут добавлен в ваш список.');
+              toast.success('Приглашение принято! Выберите действие ниже.');
             })
             .catch(() => toast.error('Не удалось принять приглашение'));
         }}
@@ -435,10 +434,20 @@ export function Header() {
             .catch(() => toast.error('Не удалось отклонить приглашение'));
         }}
         onOpenInConstructor={(tripId) => {
+          // Find and remove the invitation
+          const invitation = invitations.find((i) => i.tripId === tripId);
+          if (invitation) {
+            setInvitations((prev) => prev.filter((i) => i.id !== invitation.id));
+          }
           setIsInvitationsOpen(false);
           router.push(`/planner?applyTripId=${tripId}`);
         }}
         onOpenInChat={(tripId) => {
+          // Find and remove the invitation
+          const invitation = invitations.find((i) => i.tripId === tripId);
+          if (invitation) {
+            setInvitations((prev) => prev.filter((i) => i.id !== invitation.id));
+          }
           setIsInvitationsOpen(false);
           router.push(`/ai-assistant?tripId=${tripId}`);
         }}
