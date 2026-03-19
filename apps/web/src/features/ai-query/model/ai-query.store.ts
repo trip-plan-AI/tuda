@@ -154,7 +154,11 @@ function mapErrorToUserMessage(error: HttpError) {
     return 'Не удалось построить маршрут по запросу. Уточните город и предпочтения.';
   if (error.status === 429) return 'Слишком много запросов. Подождите немного и повторите.';
   if (error.status === 504) return 'AI сервис отвечает слишком долго. Попробуйте повторить запрос.';
-  return error.message ?? 'Неизвестная ошибка. Попробуйте еще раз.';
+  if (error.code === 'PIPELINE_FAILURE' || error.code?.includes('PIPELINE'))
+    return 'Не получилось собрать маршрут по этому описанию. Попробуйте переформулировать запрос или уточните город и даты.';
+  if (error.status === 500 || error.status === 502 || error.status === 503)
+    return 'Сервис AI временно недоступен. Попробуйте повторить запрос через несколько минут.';
+  return error.message ?? 'Не удалось построить маршрут. Попробуйте еще раз позже или переформулируйте запрос.';
 }
 
 function toRoutePoints(routePlan: ChatRoutePlan, tripId: string): RoutePoint[] {

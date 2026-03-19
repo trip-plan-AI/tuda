@@ -226,8 +226,18 @@ export function AIAssistantPage() {
       // 3. Запускаем AI — передаём messageId чтобы sendQuery не добавлял дубликат
       await sendQuery(cleanQuery, activeSession?.tripId ?? undefined, messageId);
 
-      // 4. Делимся ответом AI с другими участниками
+      // 4. Проверяем, получилась ли ошибка, и показываем toast
       const updatedMessages = useAiQueryStore.getState().messages;
+      const lastMessage = updatedMessages[updatedMessages.length - 1];
+
+      if (lastMessage?.isError) {
+        toast.error('Ошибка при составлении маршрута', {
+          description: lastMessage.content,
+          duration: 5000,
+        });
+      }
+
+      // 5. Делимся ответом AI с другими участниками
       const lastAssistant = [...updatedMessages].reverse().find(m => m.role === 'assistant');
 
       if (lastAssistant && socketTripId) {
@@ -238,6 +248,7 @@ export function AIAssistantPage() {
           content: lastAssistant.content,
           timestamp: lastAssistant.timestamp,
           route_plan: lastAssistant.routePlan ?? null,
+          isError: lastAssistant.isError ?? false,
         });
       }
     } else {
