@@ -322,6 +322,9 @@ export const useAiQueryStore = create<AiQueryStore>()(
           sessionId: item.id,
           messages: existing?.messages ?? [],
           lastAppliedPlanMessageId: existing?.lastAppliedPlanMessageId ?? null,
+          // Сохраняем isLoading из in-memory стора — если пользователь переключился
+          // на другую вкладку пока AI строил маршрут, при возврате индикатор продолжит показываться.
+          isLoading: existing?.isLoading ?? false,
           createdAt: item.created_at,
           // TRI-106: Сохраняем более свежий updatedAt из локального стейта,
           // чтобы чат не "прыгал" вниз при фоновом обновлении списка.
@@ -902,22 +905,8 @@ export const useAiQueryStore = create<AiQueryStore>()(
         // no-op
       }
     } else if (target.sessionId && target.messages.length > 0) {
-      // Если сессия уже имеет сообщения, убедиться что isLoading = false
-      // (может остаться true из-за persist при возврате на страницу)
-      set((currentState) => {
-        const session = currentState.sessions[nextSessionId];
-        if (!session || !session.isLoading) return {};
-        return {
-          sessions: {
-            ...currentState.sessions,
-            [nextSessionId]: { ...session, isLoading: false },
-          },
-          ...syncLegacyFields(
-            { ...currentState.sessions, [nextSessionId]: { ...session, isLoading: false } },
-            currentState.activeSessionId,
-          ),
-        };
-      });
+      // isLoading управляется только через sendQuery — здесь не сбрасываем,
+      // чтобы не прерывать индикатор если пользователь переключился на другую вкладку.
     } else if (target.justCleared) {
       // Если была очистка, убираем флаг после активации сессии
       set((state) => {
