@@ -1592,6 +1592,17 @@ ${JSON.stringify(points)}
               аттракцион: 'attraction',
             };
 
+            // Keywords to match in POI name/description for strict category validation
+            const categoryNamePatterns: Record<string, RegExp> = {
+              museum: /музе[йя]|выставка|галерея|экспозиция/i,
+              restaurant: /ресторан|кухня|горячее|блюдо/i,
+              cafe: /кафе|кофей|пирожное|булка/i,
+              park: /парк|сквер|сад|аллея|роща/i,
+              shopping: /магазин|лавка|бутик|торговля/i,
+              entertainment: /развлечен|кино|театр|цирк|концерт/i,
+              attraction: /аттракцион|качель|горка|каток/i,
+            };
+
             let targetCategory = 'museum'; // Default fallback
             for (const [keyword, category] of Object.entries(categoryKeywords)) {
               if (queryLower.includes(keyword)) {
@@ -1606,11 +1617,15 @@ ${JSON.stringify(points)}
               ),
             );
 
+            const namePattern = categoryNamePatterns[targetCategory as keyof typeof categoryNamePatterns];
             const candidatesToAdd = selectedForScheduler
               .filter(
                 (poi) =>
                   !usedPoiIds.has(poi.id) &&
-                  poi.category === targetCategory,
+                  poi.category === targetCategory &&
+                  // Strict name/description validation: must match category keywords
+                  (namePattern.test(poi.name) ||
+                   (poi.description && namePattern.test(poi.description))),
               )
               .slice(0, 3); // Add up to 3 new POIs
 
