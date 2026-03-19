@@ -27,6 +27,7 @@ interface AiSessionDetailsResponse {
   messages: Array<{
     role: 'user' | 'assistant';
     content: string;
+    created_at?: string;
   }>;
 }
 
@@ -224,9 +225,12 @@ function tryParseRoutePlan(content: string): ChatRoutePlan | null {
 }
 
 function mapStoredMessagesToChatMessages(
-  messages: Array<{ role: 'user' | 'assistant'; content: string; route_plan?: unknown }>,
+  messages: Array<{ role: 'user' | 'assistant'; content: string; route_plan?: unknown; created_at?: string }>,
 ): ChatMessage[] {
   return messages.map((message, index) => {
+    // Используем оригинальный timestamp из БД, fallback на текущее время если отсутствует
+    const timestamp = message.created_at ?? new Date().toISOString();
+
     if (message.role === 'assistant') {
       // Сначала проверяем структурное поле route_plan (новый формат),
       // потом fallback на JSON в content (legacy формат)
@@ -240,7 +244,7 @@ function mapStoredMessagesToChatMessages(
           role: 'assistant',
           content: `Маршрут по городу ${routePlan.city} на ${routePlan.days.length} дн.`,
           routePlan,
-          timestamp: new Date().toISOString(),
+          timestamp,
         } satisfies ChatMessage;
       }
     }
@@ -249,9 +253,7 @@ function mapStoredMessagesToChatMessages(
       id: crypto.randomUUID(),
       role: message.role,
       content: message.content,
-      // Используем текущее время без смещения на index
-      // (раньше было Date.now() + index, что сдвигало время в будущее)
-      timestamp: new Date().toISOString(),
+      timestamp,
     } satisfies ChatMessage;
   });
 }
