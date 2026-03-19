@@ -69,8 +69,13 @@ export const trips = pgTable('trips', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
-export const tripsRelations = relations(trips, ({ many }) => ({
+export const tripsRelations = relations(trips, ({ many, one }) => ({
   points: many(routePoints),
+  collaborators: many(tripCollaborators),
+  owner: one(users, {
+    fields: [trips.ownerId],
+    references: [users.id],
+  }),
 }));
 
 // trip_collaborators
@@ -88,6 +93,20 @@ export const tripCollaborators = pgTable(
     joinedAt: timestamp('joined_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.tripId, t.userId] })],
+);
+
+export const tripCollaboratorsRelations = relations(
+  tripCollaborators,
+  ({ one }) => ({
+    trip: one(trips, {
+      fields: [tripCollaborators.tripId],
+      references: [trips.id],
+    }),
+    user: one(users, {
+      fields: [tripCollaborators.userId],
+      references: [users.id],
+    }),
+  }),
 );
 
 // route_points

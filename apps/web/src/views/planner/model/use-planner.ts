@@ -370,7 +370,26 @@ export function usePlanner() {
       .catch((e) => {
         console.error('Failed to load points:', e);
         const message = e instanceof Error ? e.message : '';
+        const status = (e as any)?.status;
+
+        // Trip not found (404) — clear stale cache
+        if (status === 404 || message.includes('Trip not found')) {
+          console.warn(
+            `⚠️  [usePlanner] Trip ${currentTrip.id} not found in DB (404). Clearing stale cache...`
+          );
+          Object.keys(localStorage).forEach(key => {
+            if (key.includes('trip') || key.includes('planner') || key.includes('zustand')) {
+              localStorage.removeItem(key);
+            }
+          });
+          console.log('✓ Cache cleared. You can now create a new route.');
+          setCurrentTrip(null as unknown as Trip);
+          loadedTripIdsRef.current.clear();
+          return;
+        }
+
         if (message.includes('Access denied') || message.includes('403')) {
+          console.warn(`⚠️  [usePlanner] Access denied to trip ${currentTrip.id}`);
           setCurrentTrip(null as unknown as Trip);
           loadedTripIdsRef.current.clear();
           return;
