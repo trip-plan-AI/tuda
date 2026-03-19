@@ -122,7 +122,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
   };
 
   const getSuggestions = async (query: string) => {
-    if (!query.trim() || query.length < 2) {
+    if (!query.trim() || query.length < 3) {
       setSuggestions([]);
       setShowDropdownState(false);
       return;
@@ -152,7 +152,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
 
   const handleAddressChange = (val: string) => {
     setAddressVal(val);
-    if (val.length > 1) {
+    if (val.length > 2) {
       setIsSearching(true);
     } else {
       setIsSearching(false);

@@ -596,7 +596,7 @@ export function usePlanner() {
   }, []);
 
   const geocode = useCallback(async (query: string) => {
-    if (!query.trim() || query.length < 2) {
+    if (!query.trim() || query.length < 3) {
       setSuggestions([]);
       setShowDropdown(false);
       return;
@@ -626,7 +626,7 @@ export function usePlanner() {
 
   const handleSearchChange = (value: string) => {
     setSearchInput(value);
-    if (value.length > 1) {
+    if (value.length > 2) {
       setIsSearching(true);
       setShowDropdown(false);
     } else {
