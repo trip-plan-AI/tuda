@@ -596,16 +596,14 @@ export function usePlanner() {
   }, []);
 
   const geocode = useCallback(async (query: string) => {
-    if (query.length < 3) {
+    if (!query.trim() || query.length < 3) {
       setSuggestions([]);
       setShowDropdown(false);
       return;
     }
     setIsSearching(true);
     try {
-      const loc = userLocationRef.current;
-      const locSuffix = loc ? `&lat=${loc.lat}&lon=${loc.lon}` : '';
-      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}${locSuffix}`;
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
       const res = await fetch(url);
 
       if (!res.ok) {
@@ -637,7 +635,7 @@ export function usePlanner() {
       setShowDropdown(false);
     }
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => geocode(value), 1000);
+    searchDebounceRef.current = setTimeout(() => geocode(value), 700);
   };
 
   const addPoint_ = useCallback(

@@ -931,25 +931,15 @@ export function RouteMap({
         // Показываем пунктирные линии для загружаемых сегментов
         if (loadingSegments.size > 0) {
           loadingSegments.forEach((i) => {
-            if (!isPointVisible(points[i]!) || !isPointVisible(points[i+1]!)) return;
+            // Проверяем существование точек перед вызовом isPointVisible
+            const fromPoint = points[i];
+            const toPoint = points[i + 1];
+            if (!fromPoint || !toPoint) return;
+            if (!isPointVisible(fromPoint) || !isPointVisible(toPoint)) return;
 
             // Пропускаем сегменты, которые затронуты перетаскиванием
             const dragIdx = draggedPointIndexRef.current;
             if (dragIdx !== null && (dragIdx === i || dragIdx === i + 1)) {
-              return;
-            }
-
-            const fromPoint = points[i]!;
-            const toPoint = points[i + 1]!;
-            if (!fromPoint || !toPoint) {
-              console.warn('[RouteMap][debug] invalid segment in loadingSegments (segmentsData branch)', {
-                segmentIndex: i,
-                pointsLength: points.length,
-                hasFromPoint: Boolean(fromPoint),
-                hasToPoint: Boolean(toPoint),
-                loadingSegments: Array.from(loadingSegments),
-                pointsSnapshot: points.map((p, idx) => ({ idx, id: p.id, lat: p.lat, lon: p.lon })),
-              });
               return;
             }
             const segmentMode = resolveTransportMode(toPoint.transportMode || routeProfile);
@@ -975,25 +965,15 @@ export function RouteMap({
       } else if (loadingSegments.size > 0) {
         // Во время загрузки (нет segmentsData): показываем пунктирную линию только для загружаемых сегментов
         loadingSegments.forEach((i) => {
-          if (!isPointVisible(points[i]!) || !isPointVisible(points[i+1]!)) return;
+          // Проверяем существование точек перед вызовом isPointVisible
+          const fromPoint = points[i];
+          const toPoint = points[i + 1];
+          if (!fromPoint || !toPoint) return;
+          if (!isPointVisible(fromPoint) || !isPointVisible(toPoint)) return;
 
           // Пропускаем сегменты, которые затронуты перетаскиванием
           const dragIdx = draggedPointIndexRef.current;
           if (dragIdx !== null && (dragIdx === i || dragIdx === i + 1)) {
-            return;
-          }
-
-          const fromPoint = points[i]!;
-          const toPoint = points[i + 1]!;
-          if (!fromPoint || !toPoint) {
-            console.warn('[RouteMap][debug] invalid segment in loadingSegments (no segmentsData branch)', {
-              segmentIndex: i,
-              pointsLength: points.length,
-              hasFromPoint: Boolean(fromPoint),
-              hasToPoint: Boolean(toPoint),
-              loadingSegments: Array.from(loadingSegments),
-              pointsSnapshot: points.map((p, idx) => ({ idx, id: p.id, lat: p.lat, lon: p.lon })),
-            });
             return;
           }
           const segmentMode = resolveTransportMode(toPoint.transportMode || routeProfile);
