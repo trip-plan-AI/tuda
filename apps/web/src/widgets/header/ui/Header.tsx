@@ -283,7 +283,7 @@ export function Header() {
                         )}
                         title="Приглашения"
                       >
-                        <Mail size={16} />
+                        <Mail size={16} stroke={isHome ? '#fff' : 'currentColor'} strokeWidth={2} />
                         {invitations.length > 0 && (
                           <span
                             className={cn(
