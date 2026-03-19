@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { OverlayScrollbarsComponent } from 'overlayscrollbars-react';
+import 'overlayscrollbars/overlayscrollbars.css';
 import { Sidebar } from '@/widgets/sidebar/ui/Sidebar';
 import { Header } from '@/widgets/header/ui/Header';
 import { BottomNav } from '@/widgets/bottom-nav/ui/BottomNav';
@@ -49,10 +51,12 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 <Sidebar />
               </div>
               <main
-                className="min-w-0 bg-white pb-16 md:pb-0 flex flex-col"
+                className="min-w-0 bg-white pb-16 md:pb-0 flex flex-col overflow-hidden"
                 data-testid="desktop-profile-pane"
               >
-                {children}
+                <OverlayScrollbarsComponent className="flex flex-1 overflow-hidden">
+                  {children}
+                </OverlayScrollbarsComponent>
               </main>
               <aside className="min-w-0 border-l border-slate-200 bg-slate-50 h-[calc(100vh-64px)] sticky top-16 self-start">
                 <PersistentMapShell />
@@ -79,8 +83,12 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             <div className="fixed top-0 left-0 right-0 z-50">
               <Header />
             </div>
-            <div className="flex flex-1 w-full">
-              <main className="flex-1 bg-white min-w-0 pb-16 md:pb-0">{children}</main>
+            <div className="flex flex-1 w-full overflow-hidden">
+              <main className="flex-1 bg-white min-w-0 pb-16 md:pb-0 flex flex-col">
+                <OverlayScrollbarsComponent className="flex flex-1 overflow-hidden">
+                  {children}
+                </OverlayScrollbarsComponent>
+              </main>
             </div>
           </div>
           <Footer />
@@ -101,8 +109,10 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 </div>
 
                 {/* Main Scrolling Content */}
-                <main className="min-w-0 bg-white pb-16 md:pb-0" data-testid="desktop-content-pane">
-                  {children}
+                <main className="min-w-0 bg-white pb-16 md:pb-0 flex flex-col overflow-hidden" data-testid="desktop-content-pane">
+                  <OverlayScrollbarsComponent className="flex flex-1 overflow-hidden">
+                    {children}
+                  </OverlayScrollbarsComponent>
                 </main>
 
                 {/* Sticky Map Aside */}
