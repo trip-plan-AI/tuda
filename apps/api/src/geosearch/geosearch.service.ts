@@ -126,7 +126,7 @@ export class GeosearchService {
   }
 
   private get yandexSuggestApiKey() {
-    return process.env.YANDEX_GEOSUGGEST_API_KEY;
+    return process.env.YANDEX_SUGGEST_KEY;
   }
 
   async suggest(query: string, userLat?: number, userLon?: number) {
@@ -670,10 +670,12 @@ export class GeosearchService {
     }
 
     let typeBonus = 0;
-    if (/\b(аэропорт|airport|aerodrome|aeroporto)\b/i.test(dn)) typeBonus = 2.0;
+    if (/\b(аэропорт|airport|aerodrome|aeroporto)\b/i.test(dn)) typeBonus = 3.0;
     else if (/\b(город|г\.|city|town|capitale|столица|capital)\b/i.test(dn))
-      typeBonus = 2.0;
+      typeBonus = 2.5;
     else if (/\b(курорт|resort|остров|island|île)\b/i.test(dn)) typeBonus = 1.5;
+    else if (/\b(область|oblast|provinc|кр\.|край|регион|region)\b/i.test(dn))
+      typeBonus = -1.0;
     else if (
       /\b(улица|ул\.|проспект|пр-т|переулок|шоссе|street|avenue|road)\b/i.test(
         dn,
@@ -783,45 +785,71 @@ export class GeosearchService {
       // Дедупликация по названию + типу (без адреса: координаты, город, улица и т.д.)
       const seenPlaces = new Set<string>();
 
-      return items
-        .map((item: any) => {
-          const title = item?.title?.text || item?.value || '';
-          const subtitle = item?.subtitle?.text || '';
-          const displayName = subtitle ? `${title}, ${subtitle}` : title;
-          const tags = item?.tags || [];
-          const isBusiness = tags.includes('business');
+      const mapped = items.map((item: any) => {
+        const title = item?.title?.text || item?.value || '';
+        const subtitle = item?.subtitle?.text || '';
+        const displayName = subtitle ? `${title}, ${subtitle}` : title;
+        const tags = item?.tags || [];
+        const isBusiness = tags.includes('business');
 
-          let lat = 0;
-          let lon = 0;
+        let lat = 0;
+        let lon = 0;
 
-          if (item?.geometry?.point) {
-            lat = Number(item.geometry.point.lat);
-            lon = Number(item.geometry.point.lon);
-          } else if (item?.uri) {
-            const match = item.uri.match(/[?&]ll=([^&]+)/);
-            if (match) {
-              const [lonStr, latStr] = decodeURIComponent(match[1]).split(',');
-              lat = Number(latStr);
-              lon = Number(lonStr);
+        if (item?.geometry?.point) {
+          lat = Number(item.geometry.point.lat);
+          lon = Number(item.geometry.point.lon);
+        } else if (item?.uri) {
+          const match = item.uri.match(/[?&]ll=([^&]+)/);
+          if (match) {
+            const [lonStr, latStr] = decodeURIComponent(match[1]).split(',');
+            lat = Number(latStr);
+            lon = Number(lonStr);
+          }
+        }
+
+        return {
+          displayName,
+          title,
+          uri: item?.uri || `ymapsbm1://geo?ll=${lon},${lat}&z=12`,
+          lat,
+          lon,
+          source: 'yandex',
+          isBusiness,
+          needsGeocoding: lat === 0 && lon === 0,
+        };
+      });
+
+      // Геокодировать результаты без координат (обычно бизнесы)
+      const needGeocoding = mapped.filter((item) => item.needsGeocoding);
+      if (needGeocoding.length > 0) {
+        const geocoded = await Promise.allSettled(
+          needGeocoding.map((item) =>
+            this.getNominatimSuggestions(item.displayName, undefined, 'ru,en', false),
+          ),
+        );
+
+        geocoded.forEach((result, idx) => {
+          if (result.status === 'fulfilled' && result.value?.length > 0) {
+            const first = result.value[0];
+            if (first?.lat && first?.lon) {
+              const idx_mapped = mapped.findIndex(
+                (m) => m.title === needGeocoding[idx].title,
+              );
+              if (idx_mapped !== -1) {
+                mapped[idx_mapped].lat = first.lat;
+                mapped[idx_mapped].lon = first.lon;
+              }
             }
           }
+        });
+      }
 
-          return {
-            displayName,
-            title, // Храним title для дедупликации
-            uri: item?.uri || `ymapsbm1://geo?ll=${lon},${lat}&z=12`,
-            lat,
-            lon,
-            source: 'yandex',
-            isBusiness,
-          };
-        })
+      return mapped
         .filter((item) => {
-          // Для бизнесов uri=ymapsbm1://org?oid=... не содержит координат — не фильтруем
-          const isOrgUri = item.uri?.startsWith('ymapsbm1://org');
-          if (!isOrgUri && item.lat === 0 && item.lon === 0) return false;
+          // Исключить результаты без координат (неудачное геокодирование)
+          if (item.lat === 0 && item.lon === 0) return false;
 
-          // Дедупликация по title — "Джаганнат" одинаковый для всех филиалов
+          // Дедупликация по названию
           if (seenPlaces.has(item.title)) return false;
           seenPlaces.add(item.title);
           return true;

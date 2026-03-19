@@ -370,7 +370,26 @@ export function usePlanner() {
       .catch((e) => {
         console.error('Failed to load points:', e);
         const message = e instanceof Error ? e.message : '';
+        const status = (e as any)?.status;
+
+        // Trip not found (404) — clear stale cache
+        if (status === 404 || message.includes('Trip not found')) {
+          console.warn(
+            `⚠️  [usePlanner] Trip ${currentTrip.id} not found in DB (404). Clearing stale cache...`
+          );
+          Object.keys(localStorage).forEach(key => {
+            if (key.includes('trip') || key.includes('planner') || key.includes('zustand')) {
+              localStorage.removeItem(key);
+            }
+          });
+          console.log('✓ Cache cleared. You can now create a new route.');
+          setCurrentTrip(null as unknown as Trip);
+          loadedTripIdsRef.current.clear();
+          return;
+        }
+
         if (message.includes('Access denied') || message.includes('403')) {
+          console.warn(`⚠️  [usePlanner] Access denied to trip ${currentTrip.id}`);
           setCurrentTrip(null as unknown as Trip);
           loadedTripIdsRef.current.clear();
           return;
@@ -571,7 +590,8 @@ export function usePlanner() {
   const dailyBudgets = useMemo(() => {
     const map = new Map<string, number>();
     points.forEach((p) => {
-      const d = p.visitDate ? format(new Date(p.visitDate), 'yyyy-MM-dd') : 'no-date';
+      const dateObj = p.visitDate ? new Date(p.visitDate) : null;
+      const d = dateObj && !isNaN(dateObj.getTime()) ? format(dateObj, 'yyyy-MM-dd') : 'no-date';
       map.set(d, (map.get(d) ?? 0) + (p.budget ?? 0));
     });
     return Array.from(map.entries());
@@ -596,16 +616,14 @@ export function usePlanner() {
   }, []);
 
   const geocode = useCallback(async (query: string) => {
-    if (query.length < 3) {
+    if (!query.trim() || query.length < 3) {
       setSuggestions([]);
       setShowDropdown(false);
       return;
     }
     setIsSearching(true);
     try {
-      const loc = userLocationRef.current;
-      const locSuffix = loc ? `&lat=${loc.lat}&lon=${loc.lon}` : '';
-      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}${locSuffix}`;
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
       const res = await fetch(url);
 
       if (!res.ok) {
@@ -637,7 +655,7 @@ export function usePlanner() {
       setShowDropdown(false);
     }
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => geocode(value), 1000);
+    searchDebounceRef.current = setTimeout(() => geocode(value), 700);
   };
 
   const addPoint_ = useCallback(
@@ -650,7 +668,9 @@ export function usePlanner() {
         const lastLeg = routeInfo.legs[routeInfo.legs.length - 1];
         const travelDurationMs = (lastLeg?.duration ?? 0) * 1000;
         const nextMs = new Date(lastPoint.visitDate).getTime() + stayDurationMs + travelDurationMs;
-        visitDate = new Date(nextMs).toISOString();
+        const nextDateIso = new Date(nextMs).toISOString();
+        // Храним только дату без времени, если исходная была только дата
+        visitDate = hasTime(lastPoint.visitDate) ? nextDateIso : nextDateIso.split('T')[0]!;
       } else if (lastPoint?.visitDate) {
         visitDate = lastPoint.visitDate;
       }
@@ -780,39 +800,8 @@ export function usePlanner() {
     try {
       const tripId = await ensureTripId();
 
-      const pointsByDay = points.reduce<Record<string, RoutePoint[]>>((acc, p) => {
-        const dayStr = p.visitDate ? format(new Date(p.visitDate), 'dd.MM.yyyy') : 'Без даты';
-        if (!acc[dayStr]) acc[dayStr] = [];
-        acc[dayStr].push(p);
-        return acc;
-      }, {});
-
-      const pointsContext = Object.entries(pointsByDay)
-        .map(([day, dayPoints]) => {
-          const dayLines = dayPoints.map((p) => {
-            const timeStr =
-              p.visitDate && p.visitDate.includes('T')
-                ? ` (Время: ${format(new Date(p.visitDate), 'HH:mm')})`
-                : '';
-            return `- ${p.title}${p.budget ? ` — ${p.budget} ₽` : ''}${timeStr} [${p.lat}, ${p.lon}]`;
-          });
-          return `**День: ${day}**\n${dayLines.join('\n')}`;
-        })
-        .join('\n\n');
-
-      const routeTitle = currentTrip?.title || 'Мой маршрут';
-      const query = `Маршрут: ${routeTitle}\n\nСейчас список мест разбит по дням и выглядит так:\n\n${pointsContext}\n\nЯ обновил маршрут. Спроси у меня, нужна ли мне помощь с анализом, оптимизацией или изменением мест. Не делай подробный анализ сразу, просто предложи варианты помощи.`;
-
-      const sessionId = await openOrCreateSessionFromTrip(tripId);
-
-      if (sessionId) {
-        sessionStorage.setItem(
-          'ai:pending-handoff',
-          JSON.stringify({ query, targetSessionId: sessionId }),
-        );
-      } else {
-        sessionStorage.setItem('ai:pending-query', query);
-      }
+      // Просто открываем/создаём сессию и переходим в чат — без отправки сообщений
+      await openOrCreateSessionFromTrip(tripId);
 
       router.push('/ai-assistant');
     } catch (error) {

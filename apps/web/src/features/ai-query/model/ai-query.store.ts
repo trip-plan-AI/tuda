@@ -27,6 +27,7 @@ interface AiSessionDetailsResponse {
   messages: Array<{
     role: 'user' | 'assistant';
     content: string;
+    created_at?: string;
   }>;
 }
 
@@ -109,8 +110,12 @@ interface AiQueryStore {
   clearChat: (keepLastPlan?: boolean) => void;
   // TRI-120: добавляет одно сообщение в активную сессию без вызова AI (сокет-транспорт).
   addLocalMessage: (message: ChatMessage) => void;
+  // TRI-120: добавляет сообщение в сессию по tripId (не зависит от activeSessionId).
+  addLocalMessageForTrip: (tripId: string, message: ChatMessage) => void;
   // TRI-120: добавляет массив сообщений истории чата (chat:history) без дубликатов.
   addChatHistory: (messages: ChatMessage[]) => void;
+  // TRI-120: мержит chat:history по tripId, всегда (даже если сессия уже имеет сообщения).
+  addChatHistoryForTrip: (tripId: string, messages: ChatMessage[]) => void;
   // Удаляет точку по имени из routePlan последнего сообщения с планом (только внутри чата, не трогает конструктор).
   deletePointFromLatestRoutePlan: (pointName: string) => void;
   // Очищает все точки из routePlan последнего сообщения с планом (только внутри чата, не трогает конструктор).
@@ -147,6 +152,8 @@ function mapErrorToUserMessage(error: HttpError) {
   if (error.status === 401) return 'Сессия истекла. Выполните вход повторно.';
   if (error.code === 'NEED_CITY')
     return 'Понял идею. Уточните, пожалуйста, город, для которого построить маршрут.';
+  if (error.code === 'OFF_TOPIC')
+    return error.message ?? 'Я специализируюсь на путешествиях и маршрутах. Давай спланируем твой путеводитель по городу! 🙂';
   if (error.status === 422)
     return 'Не удалось построить маршрут по запросу. Уточните город и предпочтения.';
   if (error.status === 429) return 'Слишком много запросов. Подождите немного и повторите.';
@@ -222,9 +229,12 @@ function tryParseRoutePlan(content: string): ChatRoutePlan | null {
 }
 
 function mapStoredMessagesToChatMessages(
-  messages: Array<{ role: 'user' | 'assistant'; content: string; route_plan?: unknown }>,
+  messages: Array<{ role: 'user' | 'assistant'; content: string; route_plan?: unknown; created_at?: string }>,
 ): ChatMessage[] {
   return messages.map((message, index) => {
+    // Используем оригинальный timestamp из БД, fallback на текущее время если отсутствует
+    const timestamp = message.created_at ?? new Date().toISOString();
+
     if (message.role === 'assistant') {
       // Сначала проверяем структурное поле route_plan (новый формат),
       // потом fallback на JSON в content (legacy формат)
@@ -238,7 +248,7 @@ function mapStoredMessagesToChatMessages(
           role: 'assistant',
           content: `Маршрут по городу ${routePlan.city} на ${routePlan.days.length} дн.`,
           routePlan,
-          timestamp: new Date().toISOString(),
+          timestamp,
         } satisfies ChatMessage;
       }
     }
@@ -247,9 +257,7 @@ function mapStoredMessagesToChatMessages(
       id: crypto.randomUUID(),
       role: message.role,
       content: message.content,
-      // Используем текущее время без смещения на index
-      // (раньше было Date.now() + index, что сдвигало время в будущее)
-      timestamp: new Date().toISOString(),
+      timestamp,
     } satisfies ChatMessage;
   });
 }
@@ -322,6 +330,9 @@ export const useAiQueryStore = create<AiQueryStore>()(
           sessionId: item.id,
           messages: existing?.messages ?? [],
           lastAppliedPlanMessageId: existing?.lastAppliedPlanMessageId ?? null,
+          // Сохраняем isLoading из in-memory стора — если пользователь переключился
+          // на другую вкладку пока AI строил маршрут, при возврате индикатор продолжит показываться.
+          isLoading: existing?.isLoading ?? false,
           createdAt: item.created_at,
           // TRI-106: Сохраняем более свежий updatedAt из локального стейта,
           // чтобы чат не "прыгал" вниз при фоновом обновлении списка.
@@ -902,22 +913,8 @@ export const useAiQueryStore = create<AiQueryStore>()(
         // no-op
       }
     } else if (target.sessionId && target.messages.length > 0) {
-      // Если сессия уже имеет сообщения, убедиться что isLoading = false
-      // (может остаться true из-за persist при возврате на страницу)
-      set((currentState) => {
-        const session = currentState.sessions[nextSessionId];
-        if (!session || !session.isLoading) return {};
-        return {
-          sessions: {
-            ...currentState.sessions,
-            [nextSessionId]: { ...session, isLoading: false },
-          },
-          ...syncLegacyFields(
-            { ...currentState.sessions, [nextSessionId]: { ...session, isLoading: false } },
-            currentState.activeSessionId,
-          ),
-        };
-      });
+      // isLoading управляется только через sendQuery — здесь не сбрасываем,
+      // чтобы не прерывать индикатор если пользователь переключился на другую вкладку.
     } else if (target.justCleared) {
       // Если была очистка, убираем флаг после активации сессии
       set((state) => {
@@ -937,11 +934,15 @@ export const useAiQueryStore = create<AiQueryStore>()(
     const target = get().sessions[targetSessionId];
     if (!target) return;
 
+    // Пытаемся удалить с бэкенда, но если сессия не существует (404) или ошибка сети —
+    // всё равно удаляем из локального стейта (optimistic delete)
     if (target.sessionId) {
       try {
         await api.del<{ ok: boolean }>(`/ai/sessions/${target.sessionId}`);
-      } catch {
-        return;
+      } catch (err) {
+        // 404 = сессия не существует в БД, удаляем из локального стейта всё равно
+        // Другие ошибки тоже игнорируем — локальное удаление всё равно нужно выполнить
+        console.warn(`Failed to delete session ${target.sessionId}:`, err);
       }
     }
 
@@ -1078,6 +1079,33 @@ export const useAiQueryStore = create<AiQueryStore>()(
     });
   },
 
+  // TRI-120: добавляет сообщение в сессию по tripId (не зависит от activeSessionId).
+  addLocalMessageForTrip: (tripId, message) => {
+    set((state) => {
+      const sessionEntry = Object.entries(state.sessions).find(
+        ([, s]) => s.tripId === tripId,
+      );
+      if (!sessionEntry) return state;
+      const [sessionId, session] = sessionEntry;
+
+      if (session.messages.some((m) => m.id === message.id)) return state;
+
+      const nextSessions = {
+        ...state.sessions,
+        [sessionId]: {
+          ...session,
+          messages: [...session.messages, message],
+          updatedAt: new Date().toISOString(),
+        },
+      };
+
+      return {
+        sessions: nextSessions,
+        ...syncLegacyFields(nextSessions, state.activeSessionId),
+      };
+    });
+  },
+
   // TRI-120: добавляет массив сообщений истории чата (chat:history) без дубликатов.
   addChatHistory: (messages) => {
     set((state) => {
@@ -1126,6 +1154,43 @@ export const useAiQueryStore = create<AiQueryStore>()(
       return {
         sessions: nextSessions,
         ...syncLegacyFields(nextSessions, activeId),
+      };
+    });
+  },
+
+  // TRI-120: мержит chat:history по tripId, всегда (даже если сессия уже имеет сообщения).
+  addChatHistoryForTrip: (tripId, messages) => {
+    if (!messages.length) return;
+    set((state) => {
+      const sessionEntry = Object.entries(state.sessions).find(
+        ([, s]) => s.tripId === tripId,
+      );
+      if (!sessionEntry) return state;
+      const [sessionId, session] = sessionEntry;
+
+      const existingMap = new Map(session.messages.map((m) => [m.id, m]));
+      const merged = [...session.messages];
+
+      for (const msg of messages) {
+        if (!existingMap.has(msg.id)) {
+          merged.push(msg);
+          existingMap.set(msg.id, msg);
+        } else {
+          const existing = existingMap.get(msg.id)!;
+          if (msg.routePlan && !existing.routePlan) existing.routePlan = msg.routePlan;
+        }
+      }
+
+      merged.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+      const nextSessions = {
+        ...state.sessions,
+        [sessionId]: { ...session, messages: merged, isLoading: false },
+      };
+
+      return {
+        sessions: nextSessions,
+        ...syncLegacyFields(nextSessions, state.activeSessionId),
       };
     });
   },
@@ -1208,9 +1273,16 @@ export const useAiQueryStore = create<AiQueryStore>()(
     {
       name: 'ai-query-sessions',
       storage: createJSONStorage(() => localStorage),
-      // Сохраняем только сессии и активную сессию — не сохраняем isLoading и т.п.
+      // Сохраняем только сессии и активную сессию.
+      // isLoading всегда сохраняем как false — чтобы при возврате в чат не показывался
+      // стейт "AI ищет маршрут" от предыдущей сессии загрузки.
       partialize: (state) => ({
-        sessions: state.sessions,
+        sessions: Object.fromEntries(
+          Object.entries(state.sessions).map(([id, session]) => [
+            id,
+            { ...session, isLoading: false },
+          ]),
+        ),
         activeSessionId: state.activeSessionId,
       }),
     },

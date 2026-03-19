@@ -6,6 +6,7 @@ set -Eeuo pipefail
 LOG_FILE="${LOG_FILE:-/tmp/db_migrate.log}"
 MAX_RETRIES="${MAX_RETRIES:-2}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
+RECONCILIATION_MANIFEST="${RECONCILIATION_MANIFEST:-./scripts/ci/migration-reconciliation-manifest.json}"
 
 log() {
   echo "[migrate] $(date -u +"%Y-%m-%dT%H:%M:%SZ") $*" | tee -a "$LOG_FILE"
@@ -109,6 +110,115 @@ run_migrate() {
 
   log_error "all migrate attempts failed"
   return 1
+}
+
+db_applied_tags() {
+  docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -t -A -c "
+      SELECT tag
+      FROM public.__drizzle_migrations
+      WHERE tag IS NOT NULL
+      ORDER BY idx_serial NULLS LAST, id;
+    "
+  ' 2>&1 | sed '/^$/d'
+}
+
+repair_forward_journal_drift_if_needed() {
+  log "checking forward journal drift via reconciliation manifest..."
+
+  if [ ! -f "$RECONCILIATION_MANIFEST" ]; then
+    log "reconciliation manifest not found, skipping history reconciliation"
+    return 0
+  fi
+
+  local db_tags reconciliation_plan
+  db_tags="$(db_applied_tags || true)"
+
+  reconciliation_plan=$(python3 - "$RECONCILIATION_MANIFEST" <<'PY'
+import json
+import sys
+
+manifest_path = sys.argv[1]
+with open('./apps/api/src/db/migrations/meta/_journal.json', 'r', encoding='utf-8') as fh:
+    journal = json.load(fh)
+
+with open(manifest_path, 'r', encoding='utf-8') as fh:
+    manifest = json.load(fh)
+
+journal_entries = {
+    str(entry.get('tag', '')).strip(): entry
+    for entry in journal.get('entries', [])
+    if str(entry.get('tag', '')).strip()
+}
+
+for mapping in manifest.get('mappings', []):
+    canonical_tag = str(mapping.get('canonicalTag', '')).strip()
+    if not canonical_tag:
+        continue
+    entry = journal_entries.get(canonical_tag)
+    if not entry:
+        raise SystemExit(f'[migrate][error] canonical tag from manifest is absent in journal: {canonical_tag}')
+
+    idx = int(entry.get('idx', 0))
+    when_ms = int(entry.get('when', 0))
+    breakpoints = 'true' if bool(entry.get('breakpoints', False)) else 'false'
+    required_legacy = ','.join(str(tag).strip() for tag in mapping.get('requiredLegacyTags', []) if str(tag).strip())
+    reconcile_mode = str(mapping.get('reconcileMode', 'insert-history-only')).strip()
+    print(f'{canonical_tag}\t{idx}\t{when_ms}\t{breakpoints}\t{reconcile_mode}\t{required_legacy}')
+PY
+  )
+
+  while IFS=$'\t' read -r canonical_tag idx when_ms breakpoints reconcile_mode required_legacy_csv; do
+    [ -n "$canonical_tag" ] || continue
+
+    if echo "$db_tags" | grep -Fx "$canonical_tag" >/dev/null 2>&1; then
+      continue
+    fi
+
+    local missing_legacy=""
+    IFS=',' read -r -a legacy_tags <<< "$required_legacy_csv"
+    for legacy_tag in "${legacy_tags[@]}"; do
+      [ -n "$legacy_tag" ] || continue
+      if ! echo "$db_tags" | grep -Fx "$legacy_tag" >/dev/null 2>&1; then
+        missing_legacy="${missing_legacy}${missing_legacy:+,}${legacy_tag}"
+      fi
+    done
+
+    if [ -n "$missing_legacy" ]; then
+      log "reconciliation mapping for canonical tag=$canonical_tag is not applicable: missing legacy tags [$missing_legacy]"
+      continue
+    fi
+
+    if [ "$reconcile_mode" != "insert-history-only" ]; then
+      log_error "unsupported reconcile mode for tag=$canonical_tag: $reconcile_mode"
+      return 1
+    fi
+
+    local file hash
+    file="./apps/api/src/db/migrations/${canonical_tag}.sql"
+    if [ ! -f "$file" ]; then
+      log_error "canonical migration file from manifest not found: $file"
+      return 1
+    fi
+
+    hash=$(sha256sum "$file" | awk '{print $1}')
+
+    log "reconciling legacy history -> canonical tag=$canonical_tag via manifest"
+    docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc "
+      psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 -c \"
+        INSERT INTO public.__drizzle_migrations (hash, created_at, idx_serial, \\\"when\\\", tag, breakpoints)
+        SELECT '$hash', $when_ms, $idx, $when_ms, '$canonical_tag', $breakpoints
+        WHERE NOT EXISTS (
+          SELECT 1 FROM public.__drizzle_migrations WHERE tag = '$canonical_tag'
+        );
+      \"
+    " 2>&1 | tee -a "$LOG_FILE"
+
+    db_tags="$(printf '%s\n%s\n' "$db_tags" "$canonical_tag" | sed '/^$/d')"
+    log "history reconciliation completed for canonical tag=$canonical_tag"
+  done <<< "$reconciliation_plan"
+
+  log "forward journal drift check finished"
 }
 
 # Единый registry runtime-контракта БД.
@@ -375,6 +485,13 @@ main() {
   # Шаг 2: Проверяем/восстанавливаем историю drizzle миграций для существующей схемы
   if ! bootstrap_drizzle_history_if_needed; then
     log_error "failed to bootstrap drizzle migration baseline"
+    exit 1
+  fi
+
+  # Шаг 2.5: Если схема уже содержит объекты текущей миграции,
+  # безопасно восстанавливаем запись в drizzle history до запуска migrate.
+  if ! repair_forward_journal_drift_if_needed; then
+    log_error "failed to repair forward journal drift"
     exit 1
   fi
 

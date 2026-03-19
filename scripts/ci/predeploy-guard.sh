@@ -81,6 +81,13 @@ report_deleted_files() {
   echo "::endgroup::"
 }
 
+verify_migration_ledger() {
+  echo "::group::[guard] Migration ledger checks"
+  chmod +x ./scripts/ci/verify-migration-ledger.sh
+  ./scripts/ci/verify-migration-ledger.sh
+  echo "::endgroup::"
+}
+
 run_builds() {
   echo "::group::[guard] Build checks"
 
@@ -95,6 +102,7 @@ run_builds() {
 
 require_clean_architecture
 report_deleted_files
+verify_migration_ledger
 run_builds
 
 echo "[guard] completed successfully"

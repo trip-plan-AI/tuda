@@ -122,15 +122,14 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
   };
 
   const getSuggestions = async (query: string) => {
-    if (query.length < 3) {
+    if (!query.trim() || query.length < 3) {
       setSuggestions([]);
       setShowDropdownState(false);
       return;
     }
     setIsSearching(true);
     try {
-      const locSuffix = userLocation ? `&lat=${userLocation.lat}&lon=${userLocation.lon}` : '';
-      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}${locSuffix}`;
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
       const res = await fetch(url);
 
       if (!res.ok) {
@@ -229,7 +228,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
     >
       <div
         className={cn(
-          'flex flex-row items-center lg:items-start justify-start gap-3 md:gap-4 group/row bg-slate-50 p-4 rounded-2xl border border-transparent hover:border-slate-200 transition-all shadow-sm hover:shadow-md relative z-0',
+          'flex flex-row items-center lg:items-start justify-start gap-3 md:gap-4 group/row bg-slate-50 p-4 rounded-2xl border border-transparent hover:border-slate-200 transition-all shadow-sm hover:shadow-md relative',
           isDragging && 'invisible',
         )}
       >
@@ -282,7 +281,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
               Прибытие
             </span>
             <span className="text-sm font-bold text-slate-700">
-              {hasTime(point.visitDate) ? format(new Date(point.visitDate!), 'HH:mm') : '--:--'}
+              {(() => { const _d = point.visitDate ? new Date(point.visitDate) : null; return _d && !isNaN(_d.getTime()) && hasTime(point.visitDate) ? format(_d, 'HH:mm') : '--:--'; })()}
             </span>
           </div>
         </div>
@@ -366,7 +365,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                   Прибытие
                 </span>
                 <span className="text-xs font-bold text-slate-700">
-                  {hasTime(point.visitDate) ? format(new Date(point.visitDate!), 'HH:mm') : '--:--'}
+                  {(() => { const _d = point.visitDate ? new Date(point.visitDate) : null; return _d && !isNaN(_d.getTime()) && hasTime(point.visitDate) ? format(_d, 'HH:mm') : '--:--'; })()}
                 </span>
               </div>
             </div>
@@ -377,18 +376,16 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                   <Button
                     variant="outline"
                     className={cn(
-                      'w-full lg:w-48 px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-500 justify-start text-left text-sm hover:bg-slate-50 transition-all',
+                      'w-full lg:w-48 px-3 py-2 pr-4 bg-white border border-slate-200 rounded-xl font-bold text-slate-500 justify-start text-left text-sm hover:bg-slate-50 transition-all',
                       !point.visitDate && 'text-slate-300',
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                    {point.visitDate
-                      ? format(
-                          new Date(point.visitDate),
-                          hasTime(point.visitDate) ? 'd MMM yyyy, HH:mm' : 'd MMM yyyy',
-                          { locale: ru },
-                        )
-                      : 'Дата'}
+                    {(() => {
+                      const _d = point.visitDate ? new Date(point.visitDate) : null;
+                      if (!_d || isNaN(_d.getTime())) return 'Дата';
+                      return format(_d, hasTime(point.visitDate) ? 'd MMM yyyy, HH:mm' : 'd MMM yyyy', { locale: ru });
+                    })()}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent
@@ -397,11 +394,12 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                 >
                   <Calendar
                     mode="single"
-                    selected={point.visitDate ? new Date(point.visitDate) : undefined}
+                    selected={(() => { const _d = point.visitDate ? new Date(point.visitDate) : null; return _d && !isNaN(_d.getTime()) ? _d : undefined; })()}
                     onSelect={(date) => {
                       if (!date) return;
                       const newDate = new Date(date);
-                      const oldDate = point.visitDate ? new Date(point.visitDate) : null;
+                      const _od = point.visitDate ? new Date(point.visitDate) : null;
+                      const oldDate = _od && !isNaN(_od.getTime()) ? _od : null;
                       if (oldDate && hasTime(point.visitDate)) {
                         newDate.setHours(oldDate.getHours(), oldDate.getMinutes(), 0, 0);
                         handlePointUpdateExtended(point.id, { visitDate: newDate.toISOString() });
@@ -437,7 +435,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                           <div className="flex items-center gap-2">
                             <input
                               type="time"
-                              value={format(new Date(point.visitDate), 'HH:mm')}
+                              value={(() => { const _d = point.visitDate ? new Date(point.visitDate) : null; return _d && !isNaN(_d.getTime()) ? format(_d, 'HH:mm') : ''; })()}
                               onChange={(e) => {
                                 const parts = e.target.value.split(':');
                                 if (parts.length !== 2) return;
@@ -559,7 +557,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
               </div>
             </div>
             {showDropdownState && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl border border-slate-100 shadow-2xl overflow-hidden z-40 animate-in fade-in zoom-in-95 duration-200">
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl border border-slate-100 shadow-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
                 <div className="flex flex-col max-h-60 overflow-y-auto no-scrollbar">
                   {suggestions.length > 0 ? (
                     suggestions.map((s, idx) => (

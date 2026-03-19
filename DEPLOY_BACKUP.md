@@ -56,3 +56,40 @@ docker compose -f docker-compose.prod.yml exec -T db sh -lc 'psql -U "$POSTGRES_
 docker compose -f docker-compose.prod.yml logs --no-color --tail=200 api
 docker compose -f docker-compose.prod.yml logs --no-color --tail=200 nginx
 ```
+
+## 7) Migration ledger policy
+
+Migration history in [`apps/api/src/db/migrations`](apps/api/src/db/migrations) is **append-only**:
+
+- do not delete old `*.sql` files
+- do not edit already committed old `*.sql` files
+- do not rewrite old entries in [`apps/api/src/db/migrations/meta/_journal.json`](apps/api/src/db/migrations/meta/_journal.json)
+- only append new migration files and new journal entries at the end
+
+CI now validates this policy through [`scripts/ci/verify-migration-ledger.sh`](scripts/ci/verify-migration-ledger.sh).
+
+## 8) Recovery philosophy
+
+Production deploy must not guess whether a migration was applied by looking at a few tables or columns.
+
+Instead, history repair is now driven by an explicit reconciliation manifest:
+
+- [`scripts/ci/migration-reconciliation-manifest.json`](scripts/ci/migration-reconciliation-manifest.json)
+
+This file maps legacy production tags to the current canonical ledger.
+
+Current registered reconciliation:
+
+- canonical tag [`0010_pale_magma`](apps/api/src/db/migrations/0010_pale_magma.sql)
+- required legacy tags:
+  - `0004_add_trip_distance_km`
+  - `0007_ai_tables_shotgun`
+  - `0008_bright_wolf_cub`
+
+Deploy behavior:
+
+- if canonical tag already exists in `__drizzle_migrations`, deploy proceeds normally
+- if canonical tag is absent, but all required legacy tags are present, deploy performs `insert-history-only`
+- if required legacy tags are missing, deploy does **not** guess from schema shape and proceeds only with normal forward migrations
+
+This makes reconciliation deterministic and auditable, instead of relying on fragile schema heuristics.
