@@ -272,7 +272,10 @@ export class AiController {
   private buildRoutePlanFromPoints(city: string, points: any[]): RoutePlan {
     const daysMap = new Map<string, any[]>();
     points.forEach((p) => {
-      const dateKey = p.visitDate || 'default';
+      // Extract just the date part (YYYY-MM-DD) to avoid timezone parsing issues
+      const dateKey = p.visitDate
+        ? p.visitDate.split('T')[0]
+        : 'default';
       if (!daysMap.has(dateKey)) daysMap.set(dateKey, []);
       daysMap.get(dateKey)!.push({
         poi_id: p.id,
@@ -2105,8 +2108,12 @@ ${JSON.stringify(points)}
       dateMap.set(new Date().toISOString().split('T')[0], []);
     } else {
       points.forEach((point) => {
-        const date = point.visitDate || new Date().toISOString().split('T')[0];
-        const bucket = dateMap.get(date) ?? [];
+        // Extract date part from visitDate (handles both "YYYY-MM-DD" and "YYYY-MM-DDTHH:mm:ss" formats)
+        // Always use just the date portion to avoid timezone parsing issues
+        const datePart = point.visitDate
+          ? point.visitDate.split('T')[0]
+          : new Date().toISOString().split('T')[0];
+        const bucket = dateMap.get(datePart) ?? [];
         const description =
           enriched.find((item) => item.title === point.title)?.description ??
           `Интересное место: ${point.title}.`;
@@ -2121,7 +2128,7 @@ ${JSON.stringify(points)}
           lat: point.lat,
           lon: point.lon,
         });
-        dateMap.set(date, bucket);
+        dateMap.set(datePart, bucket);
       });
     }
 

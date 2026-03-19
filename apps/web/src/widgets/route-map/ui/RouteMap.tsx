@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import { format } from 'date-fns';
 import { loadYandexMaps } from '@/shared/lib/yandex-maps';
 import { env } from '@/shared/config/env';
+import { safeParseDateString } from '@/shared/lib/formatters';
 import type { RoutePoint } from '@/entities/route-point/model/route-point.types';
 import { ROUTE_PROFILE_COLORS, resolveTransportMode } from '@/shared/lib/route-utils';
 
@@ -702,7 +703,7 @@ export function RouteMap({
 
     const isPointVisible = (p: RoutePoint) => {
       if (!selectedDays || selectedDays.length === 0) return true;
-      const dayKey = p.visitDate ? format(new Date(p.visitDate), 'yyyy-MM-dd') : 'no-date';
+      const dayKey = p.visitDate ? format(safeParseDateString(p.visitDate), 'yyyy-MM-dd') : 'no-date';
       return selectedDays.includes(dayKey);
     };
 
@@ -1038,7 +1039,7 @@ export function RouteMap({
 
     const visiblePoints = points.filter((p) => {
       if (!selectedDays || selectedDays.length === 0) return true;
-      const dayKey = p.visitDate ? format(new Date(p.visitDate), 'yyyy-MM-dd') : 'no-date';
+      const dayKey = p.visitDate ? format(safeParseDateString(p.visitDate), 'yyyy-MM-dd') : 'no-date';
       return selectedDays.includes(dayKey);
     });
 

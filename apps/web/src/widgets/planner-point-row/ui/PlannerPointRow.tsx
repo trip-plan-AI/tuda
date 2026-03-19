@@ -20,6 +20,7 @@ import { ru } from 'date-fns/locale';
 import type { RoutePoint } from '@/entities/route-point';
 import { env } from '@/shared/config/env';
 import { cn } from '@/shared/lib/utils';
+import { safeParseDateString } from '@/shared/lib/formatters';
 import { Button } from '@/shared/ui/button';
 import { Popover, PopoverContent, PopoverTrigger, Calendar } from '@/shared/ui';
 import {
@@ -281,7 +282,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
               Прибытие
             </span>
             <span className="text-sm font-bold text-slate-700">
-              {hasTime(point.visitDate) ? format(new Date(point.visitDate!), 'HH:mm') : '--:--'}
+              {hasTime(point.visitDate) ? format(safeParseDateString(point.visitDate!), 'HH:mm') : '--:--'}
             </span>
           </div>
         </div>
@@ -365,7 +366,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                   Прибытие
                 </span>
                 <span className="text-xs font-bold text-slate-700">
-                  {hasTime(point.visitDate) ? format(new Date(point.visitDate!), 'HH:mm') : '--:--'}
+                  {hasTime(point.visitDate) ? format(safeParseDateString(point.visitDate!), 'HH:mm') : '--:--'}
                 </span>
               </div>
             </div>
@@ -383,7 +384,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                     <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
                     {point.visitDate
                       ? format(
-                          new Date(point.visitDate),
+                          safeParseDateString(point.visitDate),
                           hasTime(point.visitDate) ? 'd MMM yyyy, HH:mm' : 'd MMM yyyy',
                           { locale: ru },
                         )
@@ -396,11 +397,11 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                 >
                   <Calendar
                     mode="single"
-                    selected={point.visitDate ? new Date(point.visitDate) : undefined}
+                    selected={point.visitDate ? safeParseDateString(point.visitDate) : undefined}
                     onSelect={(date) => {
                       if (!date) return;
                       const newDate = new Date(date);
-                      const oldDate = point.visitDate ? new Date(point.visitDate) : null;
+                      const oldDate = point.visitDate ? safeParseDateString(point.visitDate) : null;
                       if (oldDate && hasTime(point.visitDate)) {
                         newDate.setHours(oldDate.getHours(), oldDate.getMinutes(), 0, 0);
                         handlePointUpdateExtended(point.id, { visitDate: newDate.toISOString() });
@@ -436,14 +437,14 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                           <div className="flex items-center gap-2">
                             <input
                               type="time"
-                              value={format(new Date(point.visitDate), 'HH:mm')}
+                              value={format(safeParseDateString(point.visitDate), 'HH:mm')}
                               onChange={(e) => {
                                 const parts = e.target.value.split(':');
                                 if (parts.length !== 2) return;
                                 const h = parseInt(parts[0] || '0', 10);
                                 const m = parseInt(parts[1] || '0', 10);
                                 if (isNaN(h) || isNaN(m)) return;
-                                const newDate = new Date(point.visitDate!);
+                                const newDate = safeParseDateString(point.visitDate!);
                                 newDate.setHours(h, m, 0, 0);
                                 handlePointUpdateExtended(point.id, {
                                   visitDate: newDate.toISOString(),
@@ -471,7 +472,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                             size="sm"
                             className="text-[10px] font-bold uppercase h-8"
                             onClick={() => {
-                              const d = new Date(point.visitDate!);
+                              const d = safeParseDateString(point.visitDate!);
                               d.setHours(Math.max(10, minVisitDate.getHours() + 1), 0, 0, 0);
                               handlePointUpdateExtended(point.id, { visitDate: d.toISOString() });
                             }}

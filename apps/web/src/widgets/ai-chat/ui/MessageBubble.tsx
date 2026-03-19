@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { X, MapPin } from 'lucide-react';
+import { safeParseDateString } from '@/shared/lib/formatters';
 import type { ChatMessage } from '@/shared/types/ai-chat';
 
 interface MessageBubbleProps {
@@ -138,7 +139,7 @@ export function MessageBubble({
                 className="rounded-xl border border-slate-100 bg-slate-50 p-3"
               >
                 <p className="text-xs font-semibold text-slate-700">
-                  День {day.day_number} · {new Date(day.date).toLocaleDateString('ru-RU')}
+                  День {day.day_number} · {safeParseDateString(day.date).toLocaleDateString('ru-RU')}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
                   Бюджет дня: <span className="bg-brand-yellow/20 text-brand-yellow font-semibold px-1.5 py-0.5 rounded inline-block">
