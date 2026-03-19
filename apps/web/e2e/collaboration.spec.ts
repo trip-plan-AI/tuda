@@ -39,8 +39,8 @@ test.describe('Collaboration E2E Tests', () => {
       await user2Page.goto(`${baseUrl}/profile`);
 
       // User 1: добавляет новую точку
-      await user1Page.click('[data-testid="add-point-button"]');
       await user1Page.fill('[data-testid="point-search"]', 'Кафе Пушкин');
+      await user1Page.waitForTimeout(500); // Wait for suggestions to load
       await user1Page.click('[data-testid="poi-item-0"]');
 
       // User 2: должен видеть новую точку в профиле в реальном времени
@@ -290,8 +290,8 @@ test.describe('Collaboration E2E Tests', () => {
     test('should sync changes between Planner, Profile, and AI Chat', async () => {
       // User 1 на Planner добавляет точку
       await user1Page.goto(`${baseUrl}/planner/${tripId}`);
-      await user1Page.click('[data-testid="add-point-button"]');
       await user1Page.fill('[data-testid="point-search"]', 'Тестовая точка');
+      await user1Page.waitForTimeout(500); // Wait for suggestions to load
       await user1Page.click('[data-testid="poi-item-0"]');
 
       // User 2 одновременно открывает разные страницы
@@ -321,8 +321,8 @@ test.describe('Collaboration E2E Tests', () => {
     test('should maintain consistency with rapid changes', async () => {
       // User 1: быстро добавляет несколько точек подряд
       for (let i = 0; i < 3; i++) {
-        await user1Page.click('[data-testid="add-point-button"]');
         await user1Page.fill('[data-testid="point-search"]', `Точка ${i + 1}`);
+        await user1Page.waitForTimeout(500); // Wait for suggestions to load
         await user1Page.click('[data-testid="poi-item-0"]');
         await user1Page.waitForTimeout(500);
       }

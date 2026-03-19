@@ -141,6 +141,7 @@ export function ConstructorTab(props: ConstructorTabProps) {
             </div>
             <input
               type="text"
+              data-testid="point-search"
               value={searchInput}
               onChange={(e) => handleSearchChange(e.target.value)}
               onFocus={() => {
@@ -161,6 +162,7 @@ export function ConstructorTab(props: ConstructorTabProps) {
                   suggestions.map((s, idx) => (
                     <button
                       key={idx}
+                      data-testid={`poi-item-${idx}`}
                       onClick={() => handleSelectSuggestion(s)}
                       className="flex items-center gap-3 w-full text-left px-5 py-4 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 group"
                     >
@@ -352,6 +354,7 @@ export function ConstructorTab(props: ConstructorTabProps) {
           </Button>
 
           <Button
+            data-testid="edit-with-ai-button"
             onClick={handleEditWithAi}
             disabled={points.length === 0}
             variant="brand-purple"
@@ -361,6 +364,7 @@ export function ConstructorTab(props: ConstructorTabProps) {
           </Button>
 
           <Button
+            data-testid="optimize-route-button"
             onClick={handleOptimize}
             disabled={points.length < 3 || isOptimizing || isAlreadyOptimal}
             variant="brand-yellow"
@@ -370,6 +374,7 @@ export function ConstructorTab(props: ConstructorTabProps) {
           </Button>
 
           <Button
+            data-testid="save-route-button"
             onClick={handleSave}
             disabled={points.length === 0}
             variant="brand-indigo"

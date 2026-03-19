@@ -223,7 +223,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
     <div
       ref={setNodeRef}
       style={style}
-      data-testid="planner-point-row"
+      data-testid={`trip-point-${index}`}
       data-point-id={point.id}
       className={cn('flex flex-col gap-3 group', showDropdownState && 'z-50')}
     >
@@ -234,6 +234,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
         )}
       >
         <button
+          data-testid={`point-delete-${index}`}
           onClick={() => onRemove(point.id)}
           className="absolute top-3 right-3 w-7 h-7 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all active:scale-95 z-10"
         >
@@ -318,6 +319,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                 {point.title}
               </span>
               <Button
+                data-testid={`point-edit-${index}`}
                 variant="ghost"
                 size="icon-xs"
                 onClick={() => {
