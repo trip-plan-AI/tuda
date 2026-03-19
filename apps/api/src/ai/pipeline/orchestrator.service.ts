@@ -123,6 +123,11 @@ export class OrchestratorService {
       : null;
 
     const intent = this.normalizeIntent(parsed, countryCode);
+    // Fallback: extract POI count from raw query if LLM didn't capture it in preferences_text
+    if (intent.poi_count_requested === null) {
+      const rawQueryCount = this.extractPoiCount(normalizedQuery);
+      if (rawQueryCount !== null) intent.poi_count_requested = rawQueryCount;
+    }
     this.logger.log(
       `Intent parsed in ${duration}ms. City: "${intent.city}", Country: ${intent.country_code}, budget: ${intent.budget_total}`,
     );
@@ -356,11 +361,41 @@ export class OrchestratorService {
 
   // Quantity extraction from user preferences
   private extractPoiCount(text: string): number | null {
-    // Match patterns like "3 места", "3 интересных места", "find 5 places", "3 лучших", "5 достопримечательностей"
-    const matches = text.match(
+    const TEXT_NUMBERS: Record<string, number> = {
+      один: 1, одно: 1, одну: 1, одна: 1,
+      два: 2, две: 2, двух: 2,
+      три: 3, трёх: 3, трех: 3,
+      четыре: 4, четырёх: 4, четырех: 4,
+      пять: 5, пяти: 5,
+      шесть: 6, шести: 6,
+      семь: 7, семи: 7,
+      восемь: 8, восьми: 8,
+      девять: 9, девяти: 9,
+      десять: 10, десяти: 10,
+      one: 1, two: 2, three: 3, four: 4, five: 5,
+      six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+    };
+
+    // Match digit patterns like "3 места", "3 интересных места", "5 достопримечательностей"
+    const digitMatch = text.match(
       /(\d+)\s+(?:[а-яёa-z]+\s+)*(мест|место|places?|достопримечательностей?|points?|point)/i,
     );
-    return matches ? Math.max(1, Math.min(20, parseInt(matches[1], 10))) : null;
+    if (digitMatch) return Math.max(1, Math.min(20, parseInt(digitMatch[1], 10)));
+
+    // Match text number patterns like "три места", "пять лучших мест"
+    const words = text.toLowerCase().split(/\s+/);
+    for (let i = 0; i < words.length; i++) {
+      const num = TEXT_NUMBERS[words[i]];
+      if (num !== undefined) {
+        // Look for quantity-related words in next 4 words
+        const nextWords = words.slice(i + 1, i + 5).join(' ');
+        if (/мест|место|places?|достопримечательн|points?|лучших|самых|топ/.test(nextWords)) {
+          return Math.max(1, Math.min(20, num));
+        }
+      }
+    }
+
+    return null;
   }
 
   private extractMinRestaurants(text: string): number | null {

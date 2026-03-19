@@ -1452,6 +1452,22 @@ export class SchedulerService {
       onDayReady?.(builtDay);
     }
 
+    // Apply hard POI count limit if user requested a specific number
+    const poiCountLimit = intent.poi_count_requested;
+    if (poiCountLimit !== null && poiCountLimit !== undefined && poiCountLimit > 0) {
+      let totalPoints = 0;
+      for (const day of days) {
+        const remaining = poiCountLimit - totalPoints;
+        if (remaining <= 0) {
+          day.points = [];
+        } else if (day.points.length > remaining) {
+          day.points = day.points.slice(0, remaining);
+        }
+        totalPoints += day.points.length;
+      }
+      this.logger.log(`[Scheduler] Trimmed plan to ${totalPoints} points (requested: ${poiCountLimit})`);
+    }
+
     // Если маршрут мульти-городской, склеиваем название
     const finalCity =
       intent.cities && intent.cities.length > 1
