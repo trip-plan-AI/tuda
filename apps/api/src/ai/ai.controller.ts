@@ -2190,29 +2190,10 @@ ${JSON.stringify(points)}
       currentTitles.size !== lastTitles.size ||
       [...currentTitles].some((t) => !lastTitles.has(t));
 
-    if (!lastRoutePlan) {
-      await this.aiSessionsService.appendMessages(session.id, [
-        {
-          role: 'assistant',
-          content:
-            `Привет! 👋 Я AI-помощник по путешествиям. Я проанализировал маршрут «${trip.title}». ` +
-            'Напиши, что хочешь изменить.',
-        },
-        {
-          role: 'assistant',
-          content: 'Маршрут готов',
-          route_plan: routePlan,
-        },
-      ]);
-    } else if (routeChanged) {
-      await this.aiSessionsService.appendMessages(session.id, [
-        {
-          role: 'assistant',
-          content: `Маршрут обновлён в Planner. Актуальный состав точек:`,
-          route_plan: routePlan,
-        },
-      ]);
-    }
+    // TRI-104: при загрузке из конструктора — добавляем ТОЛЬКО маршрут без текстовых сообщений.
+    // Очищаем все старые сообщения и оставляем только свежий route_plan с пустым content.
+    // Результат: пользователь видит только маршрут на карте, без "привета", "маршрут обновлён" и других текстов.
+    await this.aiSessionsService.replaceMessagesWithRoutePlan(session.id, routePlan);
 
     this.eventsService.emitTripRefresh(tripId);
     this.eventsService.emitAiUpdate(tripId, session.id);

@@ -414,7 +414,7 @@ export function ProfilePage() {
     : (displayedActiveRoute ?? travelTrips[0] ?? null);
 
   // Feed points to PersistentMapShell (right aside in layout).
-  // Priority: selected card → tab-based (routes=current+past, saved=all saved)
+  // Priority: selected card → tab-based (routes=current+past, saved=all saved, shared=all shared)
   useEffect(() => {
     const now = new Date();
     let mapPoints: any[];
@@ -424,6 +424,9 @@ export function ProfilePage() {
       const trip = allTrips.find((t) => t.id === selectedTripId);
       mapPoints = trip?.points || [];
       fitKey = `profile-trip-${selectedTripId}`;
+    } else if (activeTab === 'shared') {
+      mapPoints = sharedTrips.flatMap((t) => t.points || []);
+      fitKey = 'profile-shared-trips';
     } else if (activeTab === 'saved') {
       mapPoints = allTrips.filter((t) => !t.startDate || !t.endDate).flatMap((t) => t.points || []);
       fitKey = 'profile-saved-trips';

@@ -37,13 +37,16 @@ export function computeDateCascade(
     const prevDate = dates[j - 1];
     if (!prevDate) break;
 
+    const prevDateMs = new Date(prevDate).getTime();
+    if (isNaN(prevDateMs)) break;
+
     const leg = legs[j - 1];
     if (!leg) break;
 
     const stayDurationSec = durations[j - 1] ?? 0;
     const stayDurationMs = stayDurationSec * 60 * 1000;
     const travelDurationMs = (leg.duration || 0) * 1000;
-    const minMs = new Date(prevDate).getTime() + stayDurationMs + travelDurationMs;
+    const minMs = prevDateMs + stayDurationMs + travelDurationMs;
 
     const originalDate = points[j]?.visitDate;
     const newDateIso = new Date(minMs).toISOString();

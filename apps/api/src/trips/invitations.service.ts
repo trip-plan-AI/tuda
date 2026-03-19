@@ -90,6 +90,25 @@ export class InvitationsService {
     return { declined: true };
   }
 
+  /** GET /invitations — all pending invitations for the current user */
+  async findAllForUser(userId: string) {
+    const rows = await this.db.query.invitations.findMany({
+      where: eq(schema.invitations.invitedUserId, userId),
+      with: {
+        trip: { columns: { id: true, title: true } },
+        inviter: { columns: { id: true, name: true, email: true } },
+      },
+    });
+
+    return rows.map((r) => ({
+      id: r.id,
+      tripId: r.tripId,
+      tripTitle: r.trip?.title ?? '',
+      inviterName: r.inviter?.name ?? r.inviter?.email ?? 'Пользователь',
+      createdAt: r.createdAt,
+    }));
+  }
+
   async getInviterName(inviterId: string): Promise<string> {
     const user = await this.db.query.users.findFirst({
       where: eq(schema.users.id, inviterId),
