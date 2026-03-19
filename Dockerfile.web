@@ -19,7 +19,10 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN if [ -f apps/web/.env.local ]; then set -a && . apps/web/.env.local && set +a; fi && pnpm install --frozen-lockfile && pnpm --filter web build
+# Подхватываем web env перед build, чтобы Next.js встроил публичные переменные в образ.
+RUN if [ -f apps/web/.env.local ]; then set -a && . apps/web/.env.local && set +a; fi \
+  && pnpm install --frozen-lockfile \
+  && pnpm --filter web build
 
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app
