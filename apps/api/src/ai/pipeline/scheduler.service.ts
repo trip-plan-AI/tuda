@@ -1374,10 +1374,12 @@ export class SchedulerService {
     // Если маршрут мульти-городской, склеиваем название
     const finalCity =
       intent.cities && intent.cities.length > 1
-        ? intent.cities.join(' - ')
-        : intent.city_from && intent.city_to
-          ? `${intent.city_from} - ${intent.city_to}`
-          : intent.city;
+        ? // Только уникальные города
+          [...new Set(intent.cities)].join(' - ')
+        : intent.city_from && intent.city_to && intent.city_from !== intent.city_to
+          ? // Только если города разные
+            `${intent.city_from} - ${intent.city_to}`
+          : intent.city || intent.city_from || intent.city_to || 'Unknown';
 
     const totalBudget = days.reduce(
       (acc, d) => acc + d.day_budget_estimated,
