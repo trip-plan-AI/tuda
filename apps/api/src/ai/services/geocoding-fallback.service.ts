@@ -244,17 +244,21 @@ export class GeocodingFallbackService {
         if (!geocoded) {
           if (point.isProtected && cityCenter) {
             this.logger.warn(
-              `[GEOCODING] ⚠️ FAILED all strategies for protected point "${point.name}". Using city center with offset.`,
+              `[GEOCODING] ⚠️ FAILED all strategies for protected point "${point.name}". Using city center as fallback.`,
             );
-            const offset = (Math.random() - 0.5) * 0.002; // ~ +/- 100m
+            // Стратегия: если город на берегу (риск offset -> вода), используем центр без смещения
+            // Это менее точно, но лучше чем парк в Волге
             const coords = {
-              lat: cityCenter.lat + offset,
-              lon: cityCenter.lon + offset,
+              lat: cityCenter.lat,
+              lon: cityCenter.lon,
             };
             geocodedPoints.set(point.id, coords);
             geocodedIds.add(point.id);
             nameToCoords.set(point.name, coords);
             geocoded = true;
+            this.logger.log(
+              `[GEOCODING] Using city center (${coords.lat}, ${coords.lon}) for "${point.name}" (no random offset to avoid water).`,
+            );
           } else {
             this.logger.warn(
               `[GEOCODING] ❌ FAILED all strategies for "${point.name}". This point will be excluded.`,
@@ -376,9 +380,10 @@ export class GeocodingFallbackService {
 ПРАВИЛА:
 1. Сократи длинные названия до 2-3 ключевых слов (e.g. "Хвалынский парк культуры и отдыха" → "Городской парк, Хвалынск").
 2. Убирай описательные части (культуры и отдыха, имени Ленина и т.д.).
-3. Поле searchQuery ДОЛЖНО заканчиваться городом через запятую.
-4. Для объектов Сириуса ВСЕГДА пиши "Сириус" вместо "Сочи".
-5. Ответ СТРОГО JSON: {"isValid": boolean, "searchQuery": "Название, Город", "city": "Город"}`;
+3. Если для объекта не найдется точный адрес, используй описание типа "парк Хвалынска", "набережная города", "центральная площадь".
+4. Поле searchQuery ДОЛЖНО заканчиваться городом через запятую.
+5. Для объектов Сириуса ВСЕГДА пиши "Сириус" вместо "Сочи".
+6. Ответ СТРОГО JSON: {"isValid": boolean, "searchQuery": "Название, Город", "city": "Город"}`;
 
       if (process.env.YANDEX_GPT_API_KEY && process.env.YANDEX_FOLDER_ID) {
         const response = await fetch(
