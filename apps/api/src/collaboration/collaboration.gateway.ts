@@ -14,7 +14,8 @@ import { JwtService } from '@nestjs/jwt';
 import { CollaborationService } from './collaboration.service';
 import { PointsService } from '../points/points.service';
 import { TripsService } from '../trips/trips.service';
-import { ForbiddenException } from '@nestjs/common';
+import { AiSessionsService } from '../ai/ai-sessions.service';
+import { ForbiddenException, Logger } from '@nestjs/common';
 import { CreatePointDto } from '../points/dto/create-point.dto';
 import { CollaborationEventsService } from './collaboration-events.service';
 
@@ -38,12 +39,15 @@ export class CollaborationGateway
 {
   @WebSocketServer() server: Server;
 
+  private readonly logger = new Logger('CollaborationGateway');
+
   constructor(
     private collabService: CollaborationService,
     private jwtService: JwtService,
     private pointsService: PointsService,
     private tripsService: TripsService,
     private eventsService: CollaborationEventsService,
+    private aiSessionsService: AiSessionsService,
   ) {}
 
   onModuleInit() {
@@ -360,7 +364,7 @@ export class CollaborationGateway
     @MessageBody()
     data: { trip_id: string; id: string; content: string; timestamp: string },
   ) {
-    // Persist before broadcast so history is available on rejoin.
+    // TRI-COLLAB: Persist message to trip chat history
     // Use the frontend-generated id so chat:history returns the same id
     // that the sender already stored locally — enabling deduplication.
     await this.collabService.saveMessage({
@@ -370,6 +374,34 @@ export class CollaborationGateway
       userEmail: client.data.email,
       content: data.content,
     });
+
+    // TRI-COLLAB: Also add to AI session so ИИ sees messages from all collaborators
+    // This ensures the AI has full context when processing future requests
+    try {
+      const aiSession = await this.aiSessionsService.getOrCreateByTrip(
+        client.data.userId,
+        data.trip_id,
+      );
+      if (aiSession) {
+        const currentMessages = this.aiSessionsService.normalizeMessages(aiSession.messages) || [];
+        // Check if message already exists (avoid duplicates)
+        if (!currentMessages.some((m) => m.id === data.id)) {
+          const updatedMessages = [
+            ...currentMessages,
+            {
+              id: data.id,
+              role: 'user' as const,
+              content: data.content,
+              created_at: data.timestamp,
+            },
+          ];
+          await this.aiSessionsService.saveMessages(aiSession.id, updatedMessages);
+        }
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to add message to AI session: ${error}`);
+      // Don't block chat message if AI session update fails
+    }
 
     client.to(`trip_${data.trip_id}`).emit('message:receive', {
       trip_id: data.trip_id,
@@ -382,7 +414,7 @@ export class CollaborationGateway
   }
 
   @SubscribeMessage('agent:response')
-  handleAgentResponse(
+  async handleAgentResponse(
     @ConnectedSocket() client: TypedSocket,
     @MessageBody()
     data: {
@@ -393,6 +425,34 @@ export class CollaborationGateway
       route_plan: unknown | null;
     },
   ) {
+    // TRI-COLLAB: Also save AI response to AI session for context
+    try {
+      const aiSession = await this.aiSessionsService.getOrCreateByTrip(
+        client.data.userId,
+        data.trip_id,
+      );
+      if (aiSession) {
+        const currentMessages = this.aiSessionsService.normalizeMessages(aiSession.messages) || [];
+        // Check if message already exists (avoid duplicates)
+        if (!currentMessages.some((m) => m.id === data.id)) {
+          const updatedMessages = [
+            ...currentMessages,
+            {
+              id: data.id,
+              role: 'assistant' as const,
+              content: data.content,
+              created_at: data.timestamp,
+              route_plan: data.route_plan,
+            },
+          ];
+          await this.aiSessionsService.saveMessages(aiSession.id, updatedMessages);
+        }
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to add AI response to session: ${error}`);
+      // Don't block agent response if session update fails
+    }
+
     client.to(`trip_${data.trip_id}`).emit('agent:receive', {
       trip_id: data.trip_id,
       id: data.id,
