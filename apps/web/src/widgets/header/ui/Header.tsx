@@ -278,7 +278,7 @@ export function Header() {
                         className={cn(
                           'relative p-2 rounded-lg transition-all duration-200 shrink-0',
                           isHome
-                            ? 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'
+                            ? 'bg-white/10 text-white hover:bg-white/20 hover:text-white'
                             : 'bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-brand-indigo',
                         )}
                         title="Приглашения"
