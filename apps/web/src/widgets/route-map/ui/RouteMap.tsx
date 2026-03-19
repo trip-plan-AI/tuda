@@ -164,7 +164,10 @@ function clearOldCacheEntries() {
       entries.sort((a, b) => a.time - b.time);
       const toDelete = Math.ceil(entries.length * 0.25);
       for (let i = 0; i < toDelete; i++) {
-        localStorage.removeItem(entries[i].key);
+        const entry = entries[i];
+        if (entry) {
+          localStorage.removeItem(entry.key);
+        }
       }
     }
   } catch (e) {
