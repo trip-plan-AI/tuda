@@ -724,6 +724,7 @@ export function ConstructorTab(props: ConstructorTabProps) {
                             point={point}
                             index={i}
                             isLast={i === points.length - 1}
+                            nextPoint={points[i + 1]}
                             nextPointId={points[i + 1]?.id}
                             nextTransportMode={points[i + 1]?.transportMode}
                             editingPointId={editingPointId}
