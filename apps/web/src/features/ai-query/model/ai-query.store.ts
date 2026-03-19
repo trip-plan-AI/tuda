@@ -800,7 +800,19 @@ export const useAiQueryStore = create<AiQueryStore>()(
       const sessionDetails = await api.get<AiSessionDetailsResponse>(
         `/ai/sessions/${response.session_id}`,
       );
-      const mappedMessages = mapStoredMessagesToChatMessages(sessionDetails.messages);
+      // Filter messages: keep only assistant messages with route plans
+      // Skip user context messages to show clean route view without conversation history
+      const filteredMessages = sessionDetails.messages.filter((msg) => {
+        if (msg.role === 'assistant') {
+          // Keep assistant messages that contain route plans
+          const hasRoutePlan = (msg as any).route_plan !== undefined ||
+                              (typeof msg.content === 'string' && tryParseRoutePlan(msg.content) !== null);
+          return hasRoutePlan;
+        }
+        // Skip all user messages - route context should be loaded but not displayed as chat
+        return false;
+      });
+      const mappedMessages = mapStoredMessagesToChatMessages(filteredMessages);
 
       set((state) => {
         // Удаляем все пустые сессии, чтобы они не дублировались и не "висели" рядом
