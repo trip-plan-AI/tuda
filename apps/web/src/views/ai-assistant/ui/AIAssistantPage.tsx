@@ -702,12 +702,16 @@ export function AIAssistantPage() {
                         {session.title}
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
-                        {new Date(session.updatedAt).toLocaleString('ru-RU', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                        {(() => {
+                          const date = new Date(session.updatedAt);
+                          // Явная конвертация в локальный timezone
+                          const localDate = new Date(date.getTime() + new Date().getTimezoneOffset() * 60000);
+                          const day = String(localDate.getDate()).padStart(2, '0');
+                          const month = String(localDate.getMonth() + 1).padStart(2, '0');
+                          const hour = String(localDate.getHours()).padStart(2, '0');
+                          const minute = String(localDate.getMinutes()).padStart(2, '0');
+                          return `${day}.${month}, ${hour}:${minute}`;
+                        })()}
                       </p>
                     </button>
                   )}

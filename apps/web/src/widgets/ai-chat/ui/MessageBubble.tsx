@@ -40,8 +40,14 @@ export function MessageBubble({
   // Чужое сообщение — если заполнен userName (пришло через сокет от другого участника)
   const isRemoteUser = !isAssistant && !!message.userName;
 
-  const formatTime = (timestamp: string) =>
-    new Date(timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    // Явная конвертация в локальный timezone
+    const localDate = new Date(date.getTime() + date.getTimezoneOffset() * 60000);
+    const hour = String(localDate.getHours()).padStart(2, '0');
+    const minute = String(localDate.getMinutes()).padStart(2, '0');
+    return `${hour}:${minute}`;
+  };
 
   const getFallbackPoi = (point: {
     poi_id?: string;
