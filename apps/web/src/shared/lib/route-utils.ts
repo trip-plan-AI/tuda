@@ -68,3 +68,23 @@ export function formatDistance(meters: number): string {
   if (meters < 1000) return `${Math.round(meters)} м`;
   return `${(meters / 1000).toFixed(1)} км`;
 }
+
+export type TransportMode = 'driving' | 'foot' | 'bike' | 'direct';
+
+export const ROUTE_PROFILE_COLORS: Record<TransportMode, string> = {
+  driving: '#0ea5e9',
+  foot: '#f59e0b',
+  bike: '#10b981',
+  direct: '#6366f1',
+};
+
+export function resolveTransportMode(mode?: string | null): TransportMode {
+  switch (mode) {
+    case 'foot':
+    case 'bike':
+    case 'direct':
+      return mode;
+    default:
+      return 'driving';
+  }
+}
