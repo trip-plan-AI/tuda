@@ -434,6 +434,14 @@ export function Header() {
             })
             .catch(() => toast.error('Не удалось отклонить приглашение'));
         }}
+        onOpenInConstructor={(tripId) => {
+          setIsInvitationsOpen(false);
+          router.push(`/planner?applyTripId=${tripId}`);
+        }}
+        onOpenInChat={(tripId) => {
+          setIsInvitationsOpen(false);
+          router.push(`/ai-assistant?tripId=${tripId}`);
+        }}
       />
     </>
   );

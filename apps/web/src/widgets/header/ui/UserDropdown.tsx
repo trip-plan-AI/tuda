@@ -17,6 +17,8 @@ interface UserDropdownProps {
   }>;
   onAccept?: (id: string) => void;
   onDecline?: (id: string) => void;
+  onOpenInConstructor?: (tripId: string) => void;
+  onOpenInChat?: (tripId: string) => void;
   onLogout?: () => void;
   onSettings?: () => void;
 }
@@ -28,6 +30,8 @@ export function UserDropdown({
   invitations = [],
   onAccept,
   onDecline,
+  onOpenInConstructor,
+  onOpenInChat,
   onLogout,
   onSettings,
 }: UserDropdownProps) {
@@ -151,13 +155,17 @@ export function UserDropdown({
         invitations={invitations}
         onAccept={(id) => {
           onAccept?.(id);
-          // Remove from list after accepting
-          // setInvitations(prev => prev.filter(i => i.id !== id))
         }}
         onDecline={(id) => {
           onDecline?.(id);
-          // Remove from list after declining
-          // setInvitations(prev => prev.filter(i => i.id !== id))
+        }}
+        onOpenInConstructor={(tripId) => {
+          setIsInvitationsOpen(false);
+          onOpenInConstructor?.(tripId);
+        }}
+        onOpenInChat={(tripId) => {
+          setIsInvitationsOpen(false);
+          onOpenInChat?.(tripId);
         }}
       />
     </>

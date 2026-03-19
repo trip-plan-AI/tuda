@@ -1,8 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { Dialog, DialogContent } from '@/shared/ui/dialog';
 import { Button } from '@/shared/ui/button';
-import { MapIcon, Mail } from 'lucide-react';
+import { MapIcon, Mail, Zap, MessageCircle } from 'lucide-react';
 
 export interface Invitation {
   id: string;
@@ -17,9 +18,25 @@ interface Props {
   invitations: Invitation[];
   onAccept: (id: string) => void;
   onDecline: (id: string) => void;
+  onOpenInConstructor: (tripId: string) => void;
+  onOpenInChat: (tripId: string) => void;
 }
 
-export function InvitationsModal({ open, onClose, invitations, onAccept, onDecline }: Props) {
+export function InvitationsModal({
+  open,
+  onClose,
+  invitations,
+  onAccept,
+  onDecline,
+  onOpenInConstructor,
+  onOpenInChat,
+}: Props) {
+  const [acceptedInvites, setAcceptedInvites] = useState<Set<string>>(new Set());
+
+  const handleAccept = (id: string) => {
+    setAcceptedInvites((prev) => new Set([...prev, id]));
+    onAccept(id);
+  };
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
@@ -73,22 +90,47 @@ export function InvitationsModal({ open, onClose, invitations, onAccept, onDecli
                   </div>
                 </div>
                 <div className="flex gap-2 pt-1">
-                  <Button
-                    variant="brand"
-                    size="sm"
-                    className="flex-1 h-8 text-xs font-bold rounded-xl"
-                    onClick={() => onAccept(invite.id)}
-                  >
-                    Принять
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 h-8 text-xs font-bold rounded-xl text-red-500 hover:text-red-600 hover:bg-red-50 border-red-100 transition-colors"
-                    onClick={() => onDecline(invite.id)}
-                  >
-                    Отклонить
-                  </Button>
+                  {acceptedInvites.has(invite.id) ? (
+                    <>
+                      <Button
+                        variant="brand"
+                        size="sm"
+                        className="flex-1 h-8 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5"
+                        onClick={() => onOpenInConstructor(invite.tripId)}
+                      >
+                        <Zap size={14} />
+                        В конструктор
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 h-8 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5"
+                        onClick={() => onOpenInChat(invite.tripId)}
+                      >
+                        <MessageCircle size={14} />
+                        В чат
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        variant="brand"
+                        size="sm"
+                        className="flex-1 h-8 text-xs font-bold rounded-xl"
+                        onClick={() => handleAccept(invite.id)}
+                      >
+                        Принять
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 h-8 text-xs font-bold rounded-xl text-red-500 hover:text-red-600 hover:bg-red-50 border-red-100 transition-colors"
+                        onClick={() => onDecline(invite.id)}
+                      >
+                        Отклонить
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             ))
