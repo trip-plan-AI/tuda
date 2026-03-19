@@ -482,7 +482,7 @@ export function TripCard({
       </div>
 
       {/* ── Card body ── */}
-      <div className="px-3 pt-2 pb-2 flex flex-col gap-1">
+      <div className="px-3 pt-3 pb-3 flex flex-col gap-2.5">
         {/* Title */}
         <p className="font-bold text-[14px] leading-snug text-brand-indigo line-clamp-2">
           {trip.title}
@@ -605,12 +605,12 @@ export function TripCard({
         </div>
 
         {/* Budget summary */}
-        <div className="pt-1.5 border-t border-slate-100">
+        <div className="pt-2.5 border-t border-slate-100">
           <BudgetSummary plannedBudget={trip.budget} totalBudget={pointsBudgetTotal} />
         </div>
 
         {/* Bottom row: delete button (left) + go to planner button (right) */}
-        <div className="flex items-center justify-between mt-0.5 gap-2">
+        <div className="flex items-center justify-between mt-2 gap-2">
           {/* Delete button - left side */}
           {onDelete && (
             <button
