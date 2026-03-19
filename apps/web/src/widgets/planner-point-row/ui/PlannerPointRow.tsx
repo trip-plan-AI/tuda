@@ -282,7 +282,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
               Прибытие
             </span>
             <span className="text-sm font-bold text-slate-700">
-              {hasTime(point.visitDate) ? format(new Date(point.visitDate!), 'HH:mm') : '--:--'}
+              {(() => { const _d = point.visitDate ? new Date(point.visitDate) : null; return _d && !isNaN(_d.getTime()) && hasTime(point.visitDate) ? format(_d, 'HH:mm') : '--:--'; })()}
             </span>
           </div>
         </div>
@@ -366,7 +366,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                   Прибытие
                 </span>
                 <span className="text-xs font-bold text-slate-700">
-                  {hasTime(point.visitDate) ? format(new Date(point.visitDate!), 'HH:mm') : '--:--'}
+                  {(() => { const _d = point.visitDate ? new Date(point.visitDate) : null; return _d && !isNaN(_d.getTime()) && hasTime(point.visitDate) ? format(_d, 'HH:mm') : '--:--'; })()}
                 </span>
               </div>
             </div>
@@ -437,7 +437,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                           <div className="flex items-center gap-2">
                             <input
                               type="time"
-                              value={format(new Date(point.visitDate), 'HH:mm')}
+                              value={(() => { const _d = point.visitDate ? new Date(point.visitDate) : null; return _d && !isNaN(_d.getTime()) ? format(_d, 'HH:mm') : ''; })()}
                               onChange={(e) => {
                                 const parts = e.target.value.split(':');
                                 if (parts.length !== 2) return;
