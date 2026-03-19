@@ -246,7 +246,9 @@ function mapStoredMessagesToChatMessages(
       id: crypto.randomUUID(),
       role: message.role,
       content: message.content,
-      timestamp: new Date(Date.now() + index).toISOString(),
+      // Используем текущее время без смещения на index
+      // (раньше было Date.now() + index, что сдвигало время в будущее)
+      timestamp: new Date().toISOString(),
     } satisfies ChatMessage;
   });
 }
@@ -818,9 +820,9 @@ export const useAiQueryStore = create<AiQueryStore>()(
           tripId: response.trip_id,
           sessionId: response.session_id,
           messages: mappedMessages,
-          // updatedAt обновляем только если сообщения действительно изменились
+          // Всегда обновляем updatedAt если есть новые сообщения
           updatedAt:
-            JSON.stringify(baseSession.messages) !== JSON.stringify(mappedMessages)
+            mappedMessages.length > baseSession.messages.length
               ? new Date().toISOString()
               : baseSession.updatedAt,
         };
