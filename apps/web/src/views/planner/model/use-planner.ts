@@ -590,7 +590,8 @@ export function usePlanner() {
   const dailyBudgets = useMemo(() => {
     const map = new Map<string, number>();
     points.forEach((p) => {
-      const d = p.visitDate ? format(new Date(p.visitDate), 'yyyy-MM-dd') : 'no-date';
+      const dateObj = p.visitDate ? new Date(p.visitDate) : null;
+      const d = dateObj && !isNaN(dateObj.getTime()) ? format(dateObj, 'yyyy-MM-dd') : 'no-date';
       map.set(d, (map.get(d) ?? 0) + (p.budget ?? 0));
     });
     return Array.from(map.entries());
