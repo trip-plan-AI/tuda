@@ -557,22 +557,51 @@ export function AIAssistantPage() {
     };
   }, [socketTripId]);
 
+  // Точки из стриминг-дней: показываются на карте по мере того как AI генерирует маршрут
+  const streamingPoints = useMemo(() => {
+    if (streamingDays.length === 0) return null; // null = не в режиме стриминга
+    let idx = 0;
+    return streamingDays.flatMap((day: any) =>
+      (day.points ?? []).flatMap((point: any) => {
+        const poi = point?.poi;
+        const lat = poi?.coordinates?.lat;
+        const lon = poi?.coordinates?.lon;
+        if (!poi || typeof lat !== 'number' || typeof lon !== 'number') return [];
+        return [{
+          id: poi.id || `stream-${idx++}`,
+          tripId: 'temp',
+          title: poi.name || `Точка #${idx}`,
+          lat, lon,
+          budget: point.estimated_cost ?? null,
+          visitDate: day.date || null,
+          duration: point.visit_duration_min ?? 0,
+          imageUrl: poi.image_url ?? null,
+          address: poi.address || '',
+          order: idx,
+        }];
+      }),
+    );
+  }, [streamingDays]);
+
   useEffect(() => {
     // Карта на AI-странице только для просмотра: нельзя перетаскивать точки и добавлять новые.
     // Редактирование доступно только в конструкторе (PlannerPage).
+    // Во время стриминга показываем накапливаемые точки из streamingDays.
+    const mapPoints = streamingPoints ?? displayPoints;
     setConfig({
       source: 'ai-assistant-page',
       priority: 40,
-      points: [...displayPoints],
+      points: [...mapPoints],
       readonly: true,
       draggable: false,
       routeProfile: 'driving',
+      fitKey: streamingPoints ? `stream-${streamingPoints.length}` : undefined,
     });
 
     return () => {
       clearConfig('ai-assistant-page');
     };
-  }, [displayPoints]);
+  }, [displayPoints, streamingPoints]);
 
   return (
     <div className="min-h-full w-full">
