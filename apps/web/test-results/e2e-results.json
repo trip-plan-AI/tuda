@@ -93,7 +93,7 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "timedOut",
-                      "duration": 60061,
+                      "duration": 60054,
                       "error": {
                         "message": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m",
                         "stack": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m"
@@ -105,27 +105,27 @@
                         {
                           "location": {
                             "file": "/home/dmitriy/projects/trip/travel-planner/apps/web/tests/e2e/conflict-resolution.spec.ts",
-                            "column": 5,
-                            "line": 35
+                            "column": 19,
+                            "line": 49
                           },
-                          "message": "Error: browserContext.close: Test ended.\nBrowser logs:\n\n<launching> /home/dmitriy/.cache/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-linux64/chrome-headless-shell --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,Translate,AutoDeElevate,RenderDocument,OptimizationHints --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --enable-automation --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=/tmp/playwright_chromiumdev_profile-LvBa9b --remote-debugging-pipe --no-startup-window\n<launched> pid=246284\n[pid=246284][err] [0319/101257.883733:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.\n[pid=246284][err] [0319/101302.532322:INFO:CONSOLE:2298] \"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold\", source: http://localhost:3000/_next/static/chunks/87686_next_dist_e4e36eae._.js (2298)\n[pid=246284][err] [0319/101302.676393:INFO:CONSOLE:2298] \"[HMR] connected\", source: http://localhost:3000/_next/static/chunks/87686_next_dist_e4e36eae._.js (2298)\n[pid=246284][err] [0319/101302.864983:INFO:CONSOLE:2298] \"[Fast Refresh] rebuilding\", source: http://localhost:3000/_next/static/chunks/87686_next_dist_e4e36eae._.js (2298)\n[pid=246284][err] [0319/101302.972318:INFO:CONSOLE:2298] \"[Fast Refresh] done in 207ms\", source: http://localhost:3000/_next/static/chunks/87686_next_dist_e4e36eae._.js (2298)\n[pid=246284][err] [0319/101303.033827:INFO:CONSOLE:2298] \"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold\", source: http://localhost:3000/_next/static/chunks/87686_next_dist_e4e36eae._.js (2298)\n[pid=246284][err] [0319/101303.131595:INFO:CONSOLE:2298] \"[HMR] connected\", source: http://localhost:3000/_next/static/chunks/87686_next_dist_e4e36eae._.js (2298)\n[pid=246284] <gracefully close start>\n\n\u001b[0m \u001b[90m 33 |\u001b[39m     \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mclose()\u001b[33m;\u001b[39m\n \u001b[90m 34 |\u001b[39m     \u001b[36mawait\u001b[39m user2\u001b[33m.\u001b[39mclose()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 35 |\u001b[39m     \u001b[36mawait\u001b[39m context1\u001b[33m.\u001b[39mclose()\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m     \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 36 |\u001b[39m     \u001b[36mawait\u001b[39m context2\u001b[33m.\u001b[39mclose()\u001b[33m;\u001b[39m\n \u001b[90m 37 |\u001b[39m   }\n \u001b[90m 38 |\u001b[39m\u001b[0m\n\u001b[2m    at cleanupUsers (/home/dmitriy/projects/trip/travel-planner/apps/web/tests/e2e/conflict-resolution.spec.ts:35:5)\u001b[22m\n\u001b[2m    at /home/dmitriy/projects/trip/travel-planner/apps/web/tests/e2e/conflict-resolution.spec.ts:108:7\u001b[22m"
+                          "message": "Error: page.click: Test ended.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"add-point-button\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m 47 |\u001b[39m\n \u001b[90m 48 |\u001b[39m       \u001b[90m// Add initial point\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 49 |\u001b[39m       \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mclick(\u001b[32m'[data-testid=\"add-point-button\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                   \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 50 |\u001b[39m       \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mfill(\u001b[32m'[data-testid=\"point-search\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'Москва'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 51 |\u001b[39m       \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mwaitForSelector(\u001b[32m'[data-testid=\"poi-item-0\"]'\u001b[39m\u001b[33m,\u001b[39m { timeout\u001b[33m:\u001b[39m \u001b[35m5000\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m 52 |\u001b[39m       \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mclick(\u001b[32m'[data-testid=\"poi-item-0\"]'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dmitriy/projects/trip/travel-planner/apps/web/tests/e2e/conflict-resolution.spec.ts:49:19\u001b[22m"
                         }
                       ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-03-19T07:12:55.246Z",
+                      "startTime": "2026-03-19T07:49:38.560Z",
                       "annotations": [],
                       "attachments": [
                         {
                           "name": "screenshot",
                           "contentType": "image/png",
-                          "path": "/home/dmitriy/projects/trip/travel-planner/apps/web/test-results/conflict-resolution-Last-W-96606-r-with-newer-timestamp-wins-chromium/test-failed-1.png"
+                          "path": "/home/dmitriy/projects/trip/travel-planner/apps/web/test-results/conflict-resolution-Last-W-96606-r-with-newer-timestamp-wins-chromium/test-failed-2.png"
                         },
                         {
                           "name": "screenshot",
                           "contentType": "image/png",
-                          "path": "/home/dmitriy/projects/trip/travel-planner/apps/web/test-results/conflict-resolution-Last-W-96606-r-with-newer-timestamp-wins-chromium/test-failed-2.png"
+                          "path": "/home/dmitriy/projects/trip/travel-planner/apps/web/test-results/conflict-resolution-Last-W-96606-r-with-newer-timestamp-wins-chromium/test-failed-1.png"
                         },
                         {
                           "name": "error-context",
@@ -159,7 +159,7 @@
                       "workerIndex": 1,
                       "parallelIndex": 0,
                       "status": "timedOut",
-                      "duration": 60046,
+                      "duration": 60039,
                       "error": {
                         "message": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m",
                         "stack": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m"
@@ -171,27 +171,27 @@
                         {
                           "location": {
                             "file": "/home/dmitriy/projects/trip/travel-planner/apps/web/tests/e2e/conflict-resolution.spec.ts",
-                            "column": 5,
-                            "line": 35
+                            "column": 19,
+                            "line": 121
                           },
-                          "message": "Error: browserContext.close: Test ended.\nBrowser logs:\n\n<launching> /home/dmitriy/.cache/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-linux64/chrome-headless-shell --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,Translate,AutoDeElevate,RenderDocument,OptimizationHints --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --enable-automation --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=/tmp/playwright_chromiumdev_profile-h0hQj2 --remote-debugging-pipe --no-startup-window\n<launched> pid=246880\n[pid=246880][err] [0319/101358.575658:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.\n[pid=246880][err] [0319/101358.747289:INFO:CONSOLE:2298] \"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold\", source: http://localhost:3000/_next/static/chunks/87686_next_dist_e4e36eae._.js (2298)\n[pid=246880][err] [0319/101358.836575:INFO:CONSOLE:2298] \"[HMR] connected\", source: http://localhost:3000/_next/static/chunks/87686_next_dist_e4e36eae._.js (2298)\n[pid=246880][err] [0319/101359.033086:INFO:CONSOLE:2298] \"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold\", source: http://localhost:3000/_next/static/chunks/87686_next_dist_e4e36eae._.js (2298)\n[pid=246880][err] [0319/101359.130426:INFO:CONSOLE:2298] \"[HMR] connected\", source: http://localhost:3000/_next/static/chunks/87686_next_dist_e4e36eae._.js (2298)\n[pid=246880] <gracefully close start>\n\n\u001b[0m \u001b[90m 33 |\u001b[39m     \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mclose()\u001b[33m;\u001b[39m\n \u001b[90m 34 |\u001b[39m     \u001b[36mawait\u001b[39m user2\u001b[33m.\u001b[39mclose()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 35 |\u001b[39m     \u001b[36mawait\u001b[39m context1\u001b[33m.\u001b[39mclose()\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m     \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 36 |\u001b[39m     \u001b[36mawait\u001b[39m context2\u001b[33m.\u001b[39mclose()\u001b[33m;\u001b[39m\n \u001b[90m 37 |\u001b[39m   }\n \u001b[90m 38 |\u001b[39m\u001b[0m\n\u001b[2m    at cleanupUsers (/home/dmitriy/projects/trip/travel-planner/apps/web/tests/e2e/conflict-resolution.spec.ts:35:5)\u001b[22m\n\u001b[2m    at /home/dmitriy/projects/trip/travel-planner/apps/web/tests/e2e/conflict-resolution.spec.ts:163:7\u001b[22m"
+                          "message": "Error: page.click: Test ended.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"add-point-button\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m 119 |\u001b[39m\n \u001b[90m 120 |\u001b[39m       \u001b[90m// Add point\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 121 |\u001b[39m       \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mclick(\u001b[32m'[data-testid=\"add-point-button\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                   \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 122 |\u001b[39m       \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mfill(\u001b[32m'[data-testid=\"point-search\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'Санкт-Петербург'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 123 |\u001b[39m       \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mwaitForSelector(\u001b[32m'[data-testid=\"poi-item-0\"]'\u001b[39m\u001b[33m,\u001b[39m { timeout\u001b[33m:\u001b[39m \u001b[35m5000\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m 124 |\u001b[39m       \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mclick(\u001b[32m'[data-testid=\"poi-item-0\"]'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dmitriy/projects/trip/travel-planner/apps/web/tests/e2e/conflict-resolution.spec.ts:121:19\u001b[22m"
                         }
                       ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-03-19T07:13:58.434Z",
+                      "startTime": "2026-03-19T07:50:40.458Z",
                       "annotations": [],
                       "attachments": [
                         {
                           "name": "screenshot",
                           "contentType": "image/png",
-                          "path": "/home/dmitriy/projects/trip/travel-planner/apps/web/test-results/conflict-resolution-Last-W-008f5-concurrent-updates-converge-chromium/test-failed-2.png"
+                          "path": "/home/dmitriy/projects/trip/travel-planner/apps/web/test-results/conflict-resolution-Last-W-008f5-concurrent-updates-converge-chromium/test-failed-1.png"
                         },
                         {
                           "name": "screenshot",
                           "contentType": "image/png",
-                          "path": "/home/dmitriy/projects/trip/travel-planner/apps/web/test-results/conflict-resolution-Last-W-008f5-concurrent-updates-converge-chromium/test-failed-1.png"
+                          "path": "/home/dmitriy/projects/trip/travel-planner/apps/web/test-results/conflict-resolution-Last-W-008f5-concurrent-updates-converge-chromium/test-failed-2.png"
                         },
                         {
                           "name": "error-context",
@@ -225,7 +225,7 @@
                       "workerIndex": 2,
                       "parallelIndex": 0,
                       "status": "timedOut",
-                      "duration": 60037,
+                      "duration": 60040,
                       "error": {
                         "message": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m",
                         "stack": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m"
@@ -237,16 +237,16 @@
                         {
                           "location": {
                             "file": "/home/dmitriy/projects/trip/travel-planner/apps/web/tests/e2e/conflict-resolution.spec.ts",
-                            "column": 5,
-                            "line": 35
+                            "column": 19,
+                            "line": 176
                           },
-                          "message": "Error: browserContext.close: Target page, context or browser has been closed\n\n\u001b[0m \u001b[90m 33 |\u001b[39m     \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mclose()\u001b[33m;\u001b[39m\n \u001b[90m 34 |\u001b[39m     \u001b[36mawait\u001b[39m user2\u001b[33m.\u001b[39mclose()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 35 |\u001b[39m     \u001b[36mawait\u001b[39m context1\u001b[33m.\u001b[39mclose()\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m     \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 36 |\u001b[39m     \u001b[36mawait\u001b[39m context2\u001b[33m.\u001b[39mclose()\u001b[33m;\u001b[39m\n \u001b[90m 37 |\u001b[39m   }\n \u001b[90m 38 |\u001b[39m\u001b[0m\n\u001b[2m    at cleanupUsers (/home/dmitriy/projects/trip/travel-planner/apps/web/tests/e2e/conflict-resolution.spec.ts:35:5)\u001b[22m\n\u001b[2m    at /home/dmitriy/projects/trip/travel-planner/apps/web/tests/e2e/conflict-resolution.spec.ts:214:7\u001b[22m"
+                          "message": "Error: page.click: Test ended.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"add-point-button\"]')\u001b[22m\n\n\n\u001b[0m \u001b[90m 174 |\u001b[39m\n \u001b[90m 175 |\u001b[39m       \u001b[90m// Add point\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 176 |\u001b[39m       \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mclick(\u001b[32m'[data-testid=\"add-point-button\"]'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                   \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 177 |\u001b[39m       \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mfill(\u001b[32m'[data-testid=\"point-search\"]'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'Казань'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 178 |\u001b[39m       \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mwaitForSelector(\u001b[32m'[data-testid=\"poi-item-0\"]'\u001b[39m\u001b[33m,\u001b[39m { timeout\u001b[33m:\u001b[39m \u001b[35m5000\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m 179 |\u001b[39m       \u001b[36mawait\u001b[39m user1\u001b[33m.\u001b[39mclick(\u001b[32m'[data-testid=\"poi-item-0\"]'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/dmitriy/projects/trip/travel-planner/apps/web/tests/e2e/conflict-resolution.spec.ts:176:19\u001b[22m"
                         }
                       ],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-03-19T07:14:59.563Z",
+                      "startTime": "2026-03-19T07:51:41.486Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -282,8 +282,8 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-03-19T07:12:51.800Z",
-    "duration": 187945.26700000002,
+    "startTime": "2026-03-19T07:49:36.709Z",
+    "duration": 184960.254,
     "expected": 0,
     "skipped": 0,
     "unexpected": 3,

@@ -318,7 +318,7 @@ export const useAiQueryStore = create<AiQueryStore>()(
       const remoteSessions = list.reduce<Record<string, ChatSession>>((acc, item) => {
         const id = item.id;
         const existing = get().sessions[id];
-        const serverUpdatedAt = item.updated_at ?? item.created_at;
+        const serverUpdatedAt = item.updated_at ?? item.created_at ?? new Date().toISOString();
 
         acc[id] = {
           id,
@@ -327,11 +327,11 @@ export const useAiQueryStore = create<AiQueryStore>()(
           sessionId: item.id,
           messages: existing?.messages ?? [],
           lastAppliedPlanMessageId: existing?.lastAppliedPlanMessageId ?? null,
-          createdAt: item.created_at,
+          createdAt: item.created_at ?? new Date().toISOString(),
           // TRI-106: Сохраняем более свежий updatedAt из локального стейта,
           // чтобы чат не "прыгал" вниз при фоновом обновлении списка.
           updatedAt:
-            existing && new Date(existing.updatedAt) > new Date(serverUpdatedAt)
+            existing && serverUpdatedAt && new Date(existing.updatedAt).getTime() > new Date(serverUpdatedAt).getTime()
               ? existing.updatedAt
               : serverUpdatedAt,
         };
