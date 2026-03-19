@@ -9,6 +9,57 @@ export class LlmBatchRefinementService {
 
   constructor(private readonly llmClientService: LlmClientService) {}
 
+  private async enrichPoiNameViaReverseGeocoding(
+    poi: FilteredPoi,
+  ): Promise<string | null> {
+    try {
+      // Skip if name is already detailed (more than 3 words or contains proper nouns)
+      const words = poi.name.split(/\s+/).length;
+      if (words > 3) return null;
+
+      // Skip if no coordinates
+      if (!poi.coordinates?.lat || !poi.coordinates?.lon) return null;
+
+      const { lat, lon } = poi.coordinates;
+
+      // Try Nominatim reverse geocoding (open-source, no API key needed)
+      const nominatimResponse = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
+        {
+          headers: {
+            'User-Agent': 'TravelPlanner/1.0',
+          },
+        },
+      );
+
+      if (nominatimResponse.ok) {
+        const data = await nominatimResponse.json();
+
+        // Try to extract business/place name from address
+        const address = data.address || {};
+        const poiName =
+          address.amenity ||
+          address.shop ||
+          address.tourism ||
+          address.leisure ||
+          address.restaurant ||
+          address.cafe ||
+          address.pub;
+
+        if (poiName && typeof poiName === 'string' && poiName.length > 0) {
+          this.logger.debug(
+            `[REVERSE_GEOCODING] Enriched "${poi.name}" → "${poiName}"`,
+          );
+          return poiName;
+        }
+      }
+    } catch (error) {
+      this.logger.debug(`[REVERSE_GEOCODING] Failed for ${poi.name}: ${error}`);
+    }
+
+    return null;
+  }
+
   async refineSelectedInBatches(
     selected: FilteredPoi[],
     personaSummary: string,
@@ -36,15 +87,25 @@ export class LlmBatchRefinementService {
       );
 
       const parsed = JSON.parse(content || '{}');
-      const refined = selected.map((poi) => {
+      let refined = selected.map((poi) => {
         const match = (parsed.refinedPois || []).find(
           (r: any) => r.id === poi.id,
         );
         return match ? { ...poi, description: match.description } : poi;
       });
 
+      // Enrich POI names via reverse geocoding for generic names
+      const enrichedPois: FilteredPoi[] = [];
+      for (const poi of refined) {
+        const enrichedName = await this.enrichPoiNameViaReverseGeocoding(poi);
+        enrichedPois.push({
+          ...poi,
+          name: enrichedName || poi.name,
+        });
+      }
+
       return {
-        refined,
+        refined: enrichedPois,
         diagnostics: {
           provider: isCis ? 'yandex-preferred' : 'openrouter-preferred',
         },
