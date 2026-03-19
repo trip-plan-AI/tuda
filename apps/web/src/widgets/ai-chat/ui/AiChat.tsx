@@ -232,7 +232,7 @@ export function AiChat({
                 type="button"
                 onClick={() => onSend(action)}
                 disabled={isLoading}
-                className="rounded-full border border-brand-sky/40 bg-brand-sky/10 px-3 py-1 text-xs text-brand-sky transition hover:border-brand-sky hover:bg-brand-sky/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 title="Улучшить текущий маршрут"
               >
                 {action}
@@ -295,7 +295,7 @@ export function AiChat({
           />
           <Button
             type="button"
-            variant="brand-purple"
+            variant="brand-yellow"
             size="icon"
             onClick={handleSubmit}
             disabled={isLoading}
