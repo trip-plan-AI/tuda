@@ -68,17 +68,29 @@ export class CollaborationGateway
           session_id: event.payload?.session_id,
         });
       } else if (event.type === 'ai:thinking') {
-        this.server.to(`trip_${event.tripId}`).emit('ai:thinking', {
+        const payload = {
           trip_id: event.tripId,
           session_id: event.payload?.session_id,
           stage: event.payload?.stage,
-        });
+        };
+        if (event.tripId) {
+          this.server.to(`trip_${event.tripId}`).emit('ai:thinking', payload);
+        }
+        if (event.userId) {
+          this.server.to(`user_${event.userId}`).emit('ai:thinking', payload);
+        }
       } else if (event.type === 'ai:day_ready') {
-        this.server.to(`trip_${event.tripId}`).emit('ai:day_ready', {
+        const payload = {
           trip_id: event.tripId,
           session_id: event.payload?.session_id,
           day: event.payload?.day,
-        });
+        };
+        if (event.tripId) {
+          this.server.to(`trip_${event.tripId}`).emit('ai:day_ready', payload);
+        }
+        if (event.userId) {
+          this.server.to(`user_${event.userId}`).emit('ai:day_ready', payload);
+        }
       }
     });
   }

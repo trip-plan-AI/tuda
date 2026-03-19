@@ -822,8 +822,8 @@ ${JSON.stringify(points)}
       const allSuccessfullyGeocoded: FilteredPoi[] = [];
 
       // Progress: Stage 1 — searching all sources
-      if (session.tripId && session.id) {
-        this.eventsService.emitAiThinking(session.tripId, session.id, 'collecting');
+      if (session.id) {
+        this.eventsService.emitAiThinking(session.tripId, session.id, 'collecting', user.id);
       }
 
       const cityPromises = citiesToSearch.map(async (cityName) => {
@@ -853,8 +853,8 @@ ${JSON.stringify(points)}
         );
 
         // Progress: Stage 1.5 — diving into local data
-        if (session.tripId && session.id) {
-          this.eventsService.emitAiThinking(session.tripId, session.id, 'hidden_gems');
+        if (session.id) {
+          this.eventsService.emitAiThinking(session.tripId, session.id, 'hidden_gems', user.id);
         }
 
         // 3. Logical Selection
@@ -881,8 +881,8 @@ ${JSON.stringify(points)}
         );
 
         // Progress: Stage 2 — AI choosing top N
-        if (session.tripId && session.id) {
-          this.eventsService.emitAiThinking(session.tripId, session.id, 'selecting');
+        if (session.id) {
+          this.eventsService.emitAiThinking(session.tripId, session.id, 'selecting', user.id);
         }
 
         // 4. Semantic Selection
@@ -893,8 +893,8 @@ ${JSON.stringify(points)}
         );
 
         // Progress: Stage 2.5 — validating coordinates
-        if (session.tripId && session.id) {
-          this.eventsService.emitAiThinking(session.tripId, session.id, 'geocoding');
+        if (session.id) {
+          this.eventsService.emitAiThinking(session.tripId, session.id, 'geocoding', user.id);
         }
 
         // 5. Geocoding
@@ -1003,8 +1003,8 @@ ${JSON.stringify(points)}
       selectedForScheduler = dedupedForRefinement;
 
       // Progress: Stage 3 — enriching with YandexGPT scoring
-      if (session.tripId && session.id) {
-        this.eventsService.emitAiThinking(session.tripId, session.id, 'enrichment');
+      if (session.id) {
+        this.eventsService.emitAiThinking(session.tripId, session.id, 'enrichment', user.id);
       }
 
       try {
@@ -1087,12 +1087,18 @@ ${JSON.stringify(points)}
 
     const schedulerStart = Date.now();
 
+    const finalCities = intent.cities && intent.cities.length > 0
+      ? intent.cities
+      : intent.city_to && intent.city_from && intent.city_from !== intent.city_to
+        ? [intent.city_from, intent.city_to]
+        : [intent.city || 'unknown'];
+
     const buildRoutePlanFromDays = (
       city: string,
       days: RoutePlan['days'],
     ): RoutePlan => ({
       city,
-      cities: intent.cities,
+      cities: finalCities,
       route_type: intent.route_type,
       days,
       total_budget_estimated: days.reduce(
@@ -1107,14 +1113,14 @@ ${JSON.stringify(points)}
       intentRouterDecision.action_type === 'NEW_ROUTE' || !existingRoutePlan;
 
     if (isNewRouteRequested) {
-      if (session.tripId && session.id) {
-        this.eventsService.emitAiThinking(session.tripId, session.id, 'scheduling');
+      if (session.id) {
+        this.eventsService.emitAiThinking(session.tripId, session.id, 'scheduling', user.id);
       }
       routePlan = this.schedulerService.buildPlan(
         selectedForScheduler,
         intent,
-        session.tripId && session.id
-          ? (day) => this.eventsService.emitAiDayReady(session.tripId!, session.id, day)
+        session.id
+          ? (day) => this.eventsService.emitAiDayReady(session.tripId, session.id, day, user.id)
           : undefined,
       );
 
