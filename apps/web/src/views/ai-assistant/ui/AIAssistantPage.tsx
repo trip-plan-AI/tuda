@@ -23,8 +23,6 @@ import { pointsApi } from '@/entities/route-point';
 import { clearConfig, setConfig } from '@/features/persistent-map';
 import { getSocket } from '@/shared/socket/socket-client';
 
-const AI_QUICK_ACTIONS = ['Сделать дешевле', 'Добавить больше музеев'];
-
 export function AIAssistantPage() {
   const router = useRouter();
   const [showPlannerConflictModal, setShowPlannerConflictModal] = useState(false);
@@ -765,7 +763,6 @@ export function AIAssistantPage() {
             lastAppliedPlanMessageId={lastAppliedPlanMessageId}
             lastPlanMessageId={lastPlanMessage?.id ?? null}
             chatKey={activeSessionId ?? 'chat-empty'}
-            quickActions={AI_QUICK_ACTIONS}
             hasLinkedTrip={Boolean(activeSession?.tripId)}
             appliedTripId={activeSession?.tripId ?? null}
             hasCollaborators={hasCollaborators}
