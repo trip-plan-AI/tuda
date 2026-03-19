@@ -2204,6 +2204,12 @@ ${JSON.stringify(points)}
         routeContextMessage,
       ];
 
+      console.log('[createSessionFromTrip] Saving route context:', {
+        hasRoutePlan: !!routeContextMessage.route_plan,
+        hasDays: !!routeContextMessage.route_plan?.days,
+        daysCount: routeContextMessage.route_plan?.days?.length,
+      });
+
       await this.aiSessionsService.saveMessages(session.id, updatedMessages);
       messagesUpdated = true;
     }

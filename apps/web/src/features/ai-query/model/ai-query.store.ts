@@ -802,6 +802,15 @@ export const useAiQueryStore = create<AiQueryStore>()(
       );
       // Filter messages: keep only assistant messages with route plans
       // Skip user context messages to show clean route view without conversation history
+      console.log('[openOrCreateSessionFromTrip] Session messages:', {
+        totalMessages: sessionDetails.messages.length,
+        messages: sessionDetails.messages.map((m) => ({
+          role: m.role,
+          hasRoutePlan: !!(m as any).route_plan,
+          contentPreview: m.content.substring(0, 50),
+        })),
+      });
+
       const filteredMessages = sessionDetails.messages.filter((msg) => {
         if (msg.role === 'assistant') {
           // Keep assistant messages that contain route plans
@@ -812,6 +821,12 @@ export const useAiQueryStore = create<AiQueryStore>()(
         // Skip all user messages - route context should be loaded but not displayed as chat
         return false;
       });
+
+      console.log('[openOrCreateSessionFromTrip] Filtered messages:', {
+        filteredCount: filteredMessages.length,
+        originalCount: sessionDetails.messages.length,
+      });
+
       const mappedMessages = mapStoredMessagesToChatMessages(filteredMessages);
 
       set((state) => {
