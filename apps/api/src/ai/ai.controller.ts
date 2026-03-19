@@ -2194,13 +2194,7 @@ ${JSON.stringify(points)}
       await this.aiSessionsService.appendMessages(session.id, [
         {
           role: 'assistant',
-          content:
-            `Привет! 👋 Я AI-помощник по путешествиям. Я проанализировал маршрут «${trip.title}». ` +
-            'Напиши, что хочешь изменить.',
-        },
-        {
-          role: 'assistant',
-          content: 'Маршрут готов',
+          content: 'Что вы хотите изменить в вашем маршруте?',
           route_plan: routePlan,
         },
       ]);
@@ -2208,7 +2202,7 @@ ${JSON.stringify(points)}
       await this.aiSessionsService.appendMessages(session.id, [
         {
           role: 'assistant',
-          content: `Маршрут обновлён в Planner. Актуальный состав точек:`,
+          content: `Маршрут обновлён. Что дальше?`,
           route_plan: routePlan,
         },
       ]);

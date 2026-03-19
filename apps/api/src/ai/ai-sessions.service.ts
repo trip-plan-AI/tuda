@@ -17,6 +17,7 @@ interface AiSessionEntity {
   tripId: string | null;
   userId: string;
   messages: SessionMessage[];
+  title?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -202,13 +203,36 @@ export class AiSessionsService {
   }
 
   async getOrCreateByTrip(userId: string, tripId: string) {
-    // TRI-104: гарантирует инвариант "один маршрут -> один AI-чат" для пользователя.
-    // MERGE-NOTE: при изменении уникальности/индексов ai_sessions по tripId обновить эту выборку.
+    // TRI-COLLAB: Trip-scoped AI sessions for collaborators.
+    // One session per trip, accessible to all collaborators.
+    // Access control: must be trip owner or collaborator.
+
+    // Verify user is collaborator or owner
+    const trip = await this.db.query.trips.findFirst({
+      where: eq(schema.trips.id, tripId),
+    });
+
+    if (!trip) {
+      throw new NotFoundException('Trip not found');
+    }
+
+    const isOwner = trip.ownerId === userId;
+    const isCollaborator = isOwner
+      ? true
+      : await this.db.query.tripCollaborators.findFirst({
+          where: and(
+            eq(schema.tripCollaborators.tripId, tripId),
+            eq(schema.tripCollaborators.userId, userId),
+          ),
+        });
+
+    if (!isOwner && !isCollaborator) {
+      throw new ForbiddenException('Not a collaborator on this trip');
+    }
+
+    // Find or create trip-scoped session (not user-scoped)
     const existing = await this.db.query.aiSessions.findFirst({
-      where: and(
-        eq(schema.aiSessions.userId, userId),
-        eq(schema.aiSessions.tripId, tripId),
-      ),
+      where: eq(schema.aiSessions.tripId, tripId),
     });
 
     if (existing) {
@@ -224,7 +248,7 @@ export class AiSessionsService {
     const [created] = await this.db
       .insert(schema.aiSessions)
       .values({
-        userId,
+        userId, // Store creator's ID for audit purposes
         tripId,
         messages: [],
         updatedAt: new Date(),
@@ -296,60 +320,98 @@ export class AiSessionsService {
     sessionId: string,
     userId: string,
   ): Promise<AiSessionEntity | null> {
+    // TRI-COLLAB: Load session with access control for trip-scoped sessions.
+    // Allowed if: session owner OR trip collaborator (or trip owner).
     const row = await this.db.query.aiSessions.findFirst({
-      where: and(
-        eq(schema.aiSessions.id, sessionId),
-        eq(schema.aiSessions.userId, userId),
-      ),
+      where: eq(schema.aiSessions.id, sessionId),
     });
 
     if (!row) return null;
 
+    // Access control: session creator, trip owner, or collaborator
+    if (row.userId === userId) {
+      // Original session creator
+      return this.mapRowToEntity(row);
+    }
+
+    if (row.tripId) {
+      // Check if user is collaborator or trip owner
+      const trip = await this.db.query.trips.findFirst({
+        where: eq(schema.trips.id, row.tripId),
+      });
+
+      if (!trip) return null;
+
+      const isOwner = trip.ownerId === userId;
+      if (isOwner) {
+        return this.mapRowToEntity(row);
+      }
+
+      const isCollaborator = await this.db.query.tripCollaborators.findFirst({
+        where: and(
+          eq(schema.tripCollaborators.tripId, row.tripId),
+          eq(schema.tripCollaborators.userId, userId),
+        ),
+      });
+
+      if (isCollaborator) {
+        return this.mapRowToEntity(row);
+      }
+    }
+
+    return null;
+  }
+
+  private mapRowToEntity(row: any): AiSessionEntity {
     return {
       id: row.id,
       tripId: row.tripId,
       userId: row.userId,
       messages: this.normalizeMessages(row.messages),
+      title: row.title,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
   }
 
   async deleteByIdForUser(sessionId: string, userId: string) {
+    // TRI-COLLAB: Delete with access control (session creator only).
+    // Only the user who created the session (or trip owner) can delete it.
+    const session = await this.getByIdForUser(sessionId, userId);
+    if (!session) return false;
+
+    // Allow deletion if: session creator OR trip owner
+    if (session.userId !== userId && session.tripId) {
+      const trip = await this.db.query.trips.findFirst({
+        where: eq(schema.trips.id, session.tripId),
+      });
+      if (!trip || trip.ownerId !== userId) {
+        // Only trip owner can delete; creator always can
+        if (session.userId !== userId) return false;
+      }
+    }
+
     const result = await this.db
       .delete(schema.aiSessions)
-      .where(
-        and(
-          eq(schema.aiSessions.id, sessionId),
-          eq(schema.aiSessions.userId, userId),
-        ),
-      )
+      .where(eq(schema.aiSessions.id, sessionId))
       .returning({ id: schema.aiSessions.id });
 
     return result.length > 0;
   }
 
   async renameSession(sessionId: string, userId: string, title: string) {
-    const current = await this.db.query.aiSessions.findFirst({
-      where: and(
-        eq(schema.aiSessions.id, sessionId),
-        eq(schema.aiSessions.userId, userId),
-      ),
-    });
+    // TRI-COLLAB: Rename with access control (collaborators allowed).
+    const session = await this.getByIdForUser(sessionId, userId);
+    if (!session) return false;
 
-    if (current?.title === title) {
+    if (session.title === title) {
       return true;
     }
 
     const result = await this.db
       .update(schema.aiSessions)
       .set({ title, updatedAt: new Date() })
-      .where(
-        and(
-          eq(schema.aiSessions.id, sessionId),
-          eq(schema.aiSessions.userId, userId),
-        ),
-      )
+      .where(eq(schema.aiSessions.id, sessionId))
       .returning({ id: schema.aiSessions.id });
 
     return result.length > 0;
