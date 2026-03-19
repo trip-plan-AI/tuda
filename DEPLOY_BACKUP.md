@@ -70,10 +70,26 @@ CI now validates this policy through [`scripts/ci/verify-migration-ledger.sh`](s
 
 ## 8) Recovery philosophy
 
-If production schema already contains objects from a migration, but drizzle history is missing the corresponding tag, [`scripts/ci/migrate-db.sh`](scripts/ci/migrate-db.sh) may perform **safe history repair** only for explicitly registered migrations.
+Production deploy must not guess whether a migration was applied by looking at a few tables or columns.
 
-Current registered repair contract:
+Instead, history repair is now driven by an explicit reconciliation manifest:
 
-- [`0010_pale_magma`](apps/api/src/db/migrations/0010_pale_magma.sql)
+- [`scripts/ci/migration-reconciliation-manifest.json`](scripts/ci/migration-reconciliation-manifest.json)
 
-The repair is allowed only when all expected runtime objects already exist. Otherwise deploy must stop and be investigated manually.
+This file maps legacy production tags to the current canonical ledger.
+
+Current registered reconciliation:
+
+- canonical tag [`0010_pale_magma`](apps/api/src/db/migrations/0010_pale_magma.sql)
+- required legacy tags:
+  - `0004_add_trip_distance_km`
+  - `0007_ai_tables_shotgun`
+  - `0008_bright_wolf_cub`
+
+Deploy behavior:
+
+- if canonical tag already exists in `__drizzle_migrations`, deploy proceeds normally
+- if canonical tag is absent, but all required legacy tags are present, deploy performs `insert-history-only`
+- if required legacy tags are missing, deploy does **not** guess from schema shape and proceeds only with normal forward migrations
+
+This makes reconciliation deterministic and auditable, instead of relying on fragile schema heuristics.
