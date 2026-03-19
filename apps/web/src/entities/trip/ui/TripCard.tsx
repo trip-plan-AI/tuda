@@ -420,16 +420,6 @@ export function TripCard({
         {/* gradient scrim */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/40" />
 
-        {/* active badge */}
-        {trip.isActive && (
-          <span
-            className="absolute top-3 right-3 px-2.5 py-1 rounded-full
-                           bg-emerald-500 text-white text-[11px] font-bold tracking-wide"
-          >
-            ACTIVE
-          </span>
-        )}
-
         {/* ── BOTTOM OVERLAY: night / point tags ── */}
         <div className="absolute bottom-3 left-3 flex gap-1.5 flex-wrap">
           {nights != null && nights > 0 && (
