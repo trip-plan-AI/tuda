@@ -955,12 +955,9 @@ export function RouteMap({
     const pointsToFit = visiblePoints.length > 0 ? visiblePoints : points;
 
     const shouldFitInitial = !hasInitialFitPerformed.current;
-    const shouldFitAfterPointAdd = points.length > previousPointsLengthRef.current;
 
-    if (!shouldFitInitial && !shouldFitAfterPointAdd) {
-      previousPointsLengthRef.current = points.length;
-      return;
-    }
+    previousPointsLengthRef.current = points.length;
+    if (!shouldFitInitial) return;
 
     const lons = pointsToFit.map(p => p.lon);
     const lats = pointsToFit.map(p => p.lat);
