@@ -51,12 +51,12 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 <Sidebar />
               </div>
               <main
-                className="min-w-0 bg-white pb-16 md:pb-0"
+                className="min-w-0 bg-white"
                 style={{ height: 'calc(100vh - 64px)' }}
                 data-testid="desktop-profile-pane"
               >
                 <OverlayScrollbarsComponent className="h-full w-full">
-                  {children}
+                  <div className="pb-12 md:pb-16">{children}</div>
                 </OverlayScrollbarsComponent>
               </main>
               <aside className="min-w-0 border-l border-slate-200 bg-slate-50 h-[calc(100vh-64px)] sticky top-16 self-start">
@@ -86,11 +86,11 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             </div>
             <div className="flex flex-1 w-full">
               <main
-                className="flex-1 bg-white min-w-0 pb-16 md:pb-0"
+                className="flex-1 bg-white min-w-0"
                 style={{ height: 'calc(100vh - 64px)' }}
               >
                 <OverlayScrollbarsComponent className="h-full w-full">
-                  {children}
+                  <div className="pb-12 md:pb-16">{children}</div>
                 </OverlayScrollbarsComponent>
               </main>
             </div>
@@ -114,12 +114,12 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
                 {/* Main Scrolling Content */}
                 <main
-                  className="min-w-0 bg-white pb-16 md:pb-0"
+                  className="min-w-0 bg-white"
                   style={{ height: 'calc(100vh - 64px)' }}
                   data-testid="desktop-content-pane"
                 >
                   <OverlayScrollbarsComponent className="h-full w-full">
-                    {children}
+                    <div className="pb-12 md:pb-16">{children}</div>
                   </OverlayScrollbarsComponent>
                 </main>
 
