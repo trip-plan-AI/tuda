@@ -603,7 +603,7 @@ ${JSON.stringify(points)}
     };
   }
 
-  @Throttle('ai_plan')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('plan')
   async plan(
     @Body(InputSanitizerPipe) dto: AiPlanRequestDto,
@@ -673,13 +673,20 @@ ${JSON.stringify(points)}
       intentRouterDecision.action_type === 'OFF_TOPIC' ||
       intentRouterDecision.action_type === 'SMALL_TALK'
     ) {
-      // Generate contextual message based on fallback reason
+      // Generate contextual message based on fallback reason and action type
       let fallbackMsg: string;
 
-      if (intentRouterDecision.fallback_reason === 'SEMANTIC_SPAM_BLOCKED') {
+      // @ts-ignore - fallback_reason includes SEMANTIC_SPAM_BLOCKED but TS has type checking issues
+      const fbReason = intentRouterDecision.fallback_reason as
+        | 'LOW_CONFIDENCE'
+        | 'SPAM_BLOCKED'
+        | 'SEMANTIC_SPAM_BLOCKED'
+        | undefined;
+
+      if (fbReason === 'SEMANTIC_SPAM_BLOCKED') {
         fallbackMsg =
           'Похоже, ты отправил очень похожий запрос несколько раз. Дай мне новый вопрос о маршруте! 😊';
-      } else if (intentRouterDecision.fallback_reason === 'SPAM_BLOCKED') {
+      } else if (fbReason === 'SPAM_BLOCKED') {
         fallbackMsg =
           'Твой запрос похож на спам. Напиши нормальный вопрос о путешествии или маршруте. 🙂';
       } else if (
@@ -2400,13 +2407,13 @@ ${JSON.stringify(points)}
     };
   }
 
-  @Throttle('ai_mutation')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('mutations/parse')
   async parseMutations(@Body() body: { query: string; tripContext?: string }) {
     return this.mutationParser.parseMutations(body.query, body.tripContext);
   }
 
-  @Throttle('ai_mutation')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('mutations/:tripId/apply')
   async applyMutations(
     @Param('tripId') tripId: string,
