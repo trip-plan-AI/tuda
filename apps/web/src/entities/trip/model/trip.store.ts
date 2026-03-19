@@ -172,8 +172,9 @@ export const useTripStore = create<TripStore>()(
         currentTrip: state.currentTrip,
         isDirty: state.isDirty,
         optimizationResults: state.optimizationResults,
-        // Don't persist previousPoints/lastOptimizedPoints — they're UI-only state
-        // and can cause QuotaExceededError with large point arrays
+        previousPoints: state.previousPoints,
+        lastOptimizedPoints: state.lastOptimizedPoints,
+        lastOptimizedProfile: state.lastOptimizedProfile,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
