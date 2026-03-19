@@ -55,19 +55,28 @@ function cleanupOldInstances() {
     // Сортируем по времени (старые в начале) и удаляем лишние
     _activeInstances.sort((a, b) => a.timestamp - b.timestamp);
     const toDestroy = _activeInstances.slice(0, _activeInstances.length - MAX_WEBGL_CONTEXTS + 1);
-    
+
     toDestroy.forEach(item => {
       try {
+        // Сначала очищаем HTML чтобы избежать removeChild ошибок при destroy
+        if (item.container.parentElement) {
+          item.container.innerHTML = '';
+        }
         item.instance.destroy();
         _mapRegistry.delete(item.container);
         const timer = _destroyTimers.get(item.container);
         if (timer) clearTimeout(timer);
         _destroyTimers.delete(item.container);
       } catch (e) {
-        console.warn('[RouteMap] Force destroy failed:', e);
+        // Игнорируем removeChild ошибки — контекст все равно будет очищен
+        if (!(e instanceof Error && e.message.includes('removeChild'))) {
+          console.warn('[RouteMap] Force destroy failed:', e);
+        }
+        _mapRegistry.delete(item.container);
+        _destroyTimers.delete(item.container);
       }
     });
-    
+
     _activeInstances = _activeInstances.filter(item => !toDestroy.includes(item));
   }
 }
@@ -316,9 +325,17 @@ export function RouteMap({
         const instance = _mapRegistry.get(c);
         if (instance) {
           try {
+            // Сначала очищаем весь HTML контейнера чтобы избежать "removeChild" ошибок
+            // когда Yandex Maps пытается удалить DOM-узлы которые React уже удалил
+            if (c.parentElement) {
+              c.innerHTML = '';
+            }
             instance.destroy();
           } catch (e) {
-            console.warn('[RouteMap] Destroy failed:', e);
+            // Игнорируем ошибки cleanup — это не критично, контекст будет переиспользован
+            if (!(e instanceof Error && e.message.includes('removeChild'))) {
+              console.warn('[RouteMap] Destroy failed:', e);
+            }
           }
           _mapRegistry.delete(c);
           _activeInstances = _activeInstances.filter(i => i.container !== c);
