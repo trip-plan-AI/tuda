@@ -1109,8 +1109,17 @@ ${JSON.stringify(points)}
 
     let routePlan: RoutePlan;
 
+    // Check for explicit "new route" keywords even if route exists
+    const newRouteKeywords = ['новый маршрут', 'перестроить', 'заново', 'с нуля', 'весь маршрут', 'полностью переделай'];
+    const queryLowerForNewRoute = dto.user_query.toLowerCase();
+    const hasNewRouteKeywords = newRouteKeywords.some((kw) =>
+      queryLowerForNewRoute.includes(kw),
+    );
+
     const isNewRouteRequested =
-      intentRouterDecision.action_type === 'NEW_ROUTE' || !existingRoutePlan;
+      intentRouterDecision.action_type === 'NEW_ROUTE' ||
+      !existingRoutePlan ||
+      hasNewRouteKeywords;
 
     if (isNewRouteRequested) {
       if (session.id) {
@@ -1497,6 +1506,198 @@ ${JSON.stringify(points)}
             routePlan = buildRoutePlanFromDays(
               existingRoutePlan.city,
               mergedDays,
+            );
+            mutationMeta.mutation_applied = true;
+            break;
+          }
+
+          case 'REDUCE_BUDGET': {
+            // Identify expensive POIs and remove them to reduce total budget
+            // Sort all points by cost descending, remove the most expensive ones
+            const allDayPoints = existingRoutePlan.days.flatMap((day, dayIdx) =>
+              day.points.map((point) => ({ ...point, dayIdx })),
+            );
+
+            const pointsByCost = [...allDayPoints]
+              .sort((a, b) => (b.estimated_cost ?? 0) - (a.estimated_cost ?? 0))
+              .slice(0, Math.max(1, Math.ceil(allDayPoints.length * 0.2))); // Remove top 20% most expensive
+
+            const removePoiIds = new Set(pointsByCost.map((p) => p.poi_id));
+
+            const rebuiltDays = existingRoutePlan.days.map((day) => {
+              const filteredPoints = day.points.filter(
+                (point) => !removePoiIds.has(point.poi_id),
+              );
+
+              if (filteredPoints.length === 0) {
+                return { ...day, points: [] };
+              }
+
+              // Reschedule remaining points
+              let currentTime = this.schedulerService.timeToMinutes(
+                day.day_start_time,
+              );
+              const rescheduledPoints = filteredPoints.map((point) => {
+                const durationMinutes =
+                  this.schedulerService.timeToMinutes(point.departure_time) -
+                  this.schedulerService.timeToMinutes(point.arrival_time);
+                const arrival =
+                  this.schedulerService.minutesToTime(currentTime);
+                const departure = this.schedulerService.minutesToTime(
+                  currentTime + durationMinutes,
+                );
+                currentTime += durationMinutes;
+
+                return {
+                  ...point,
+                  arrival_time: arrival,
+                  departure_time: departure,
+                };
+              });
+
+              return {
+                ...day,
+                points: rescheduledPoints,
+                day_budget_estimated: rescheduledPoints.reduce(
+                  (sum, p) => sum + (p.estimated_cost ?? 0),
+                  0,
+                ),
+              };
+            });
+
+            routePlan = buildRoutePlanFromDays(
+              existingRoutePlan.city,
+              rebuiltDays.filter((d) => d.points.length > 0),
+            );
+            mutationMeta.mutation_applied = true;
+            break;
+          }
+
+          case 'ADD_CATEGORY': {
+            // Extract category from query (e.g. "добавь больше музеев" → "museum")
+            const queryLower = dto.user_query.toLowerCase();
+            const categoryKeywords: Record<string, string> = {
+              музе: 'museum',
+              'музей': 'museum',
+              ресторан: 'restaurant',
+              кафе: 'cafe',
+              парк: 'park',
+              магазин: 'shopping',
+              развлечен: 'entertainment',
+              аттракцион: 'attraction',
+            };
+
+            let targetCategory = 'museum'; // Default fallback
+            for (const [keyword, category] of Object.entries(categoryKeywords)) {
+              if (queryLower.includes(keyword)) {
+                targetCategory = category as any;
+                break;
+              }
+            }
+
+            const usedPoiIds = new Set(
+              existingRoutePlan.days.flatMap((day) =>
+                day.points.map((point) => point.poi_id),
+              ),
+            );
+
+            const candidatesToAdd = selectedForScheduler
+              .filter(
+                (poi) =>
+                  !usedPoiIds.has(poi.id) &&
+                  poi.category === targetCategory,
+              )
+              .slice(0, 3); // Add up to 3 new POIs
+
+            if (candidatesToAdd.length === 0) {
+              mutationMeta.mutation_fallback_reason = 'NO_CANDIDATES';
+              fallbacks.push('ADD_CATEGORY_FALLBACK:NO_CANDIDATES');
+              routePlan = existingRoutePlan;
+              break;
+            }
+
+            // Inject new POIs into the existing plan
+            routePlan = this.schedulerService.injectPoints(
+              existingRoutePlan,
+              candidatesToAdd,
+              {
+                ...intent,
+                days: Math.max(intent.days, existingRoutePlan.days.length),
+              },
+            );
+            mutationMeta.mutation_applied = true;
+            break;
+          }
+
+          case 'REMOVE_BORING': {
+            // Remove lowest-rated POIs from the route
+            // Collect all points with their ratings
+            const allDayPoints = existingRoutePlan.days.flatMap((day, dayIdx) =>
+              day.points.map((point) => ({
+                ...point,
+                dayIdx,
+                rating: (point.poi as any)?.rating ?? 0,
+              })),
+            );
+
+            // Sort by rating ascending (lowest first)
+            const pointsByRating = [...allDayPoints].sort(
+              (a, b) => a.rating - b.rating,
+            );
+
+            // Remove bottom 30% lowest-rated points
+            const removeCount = Math.max(
+              1,
+              Math.ceil(allDayPoints.length * 0.3),
+            );
+            const removePoiIds = new Set(
+              pointsByRating.slice(0, removeCount).map((p) => p.poi_id),
+            );
+
+            const rebuiltDays = existingRoutePlan.days.map((day) => {
+              const filteredPoints = day.points.filter(
+                (point) => !removePoiIds.has(point.poi_id),
+              );
+
+              if (filteredPoints.length === 0) {
+                return { ...day, points: [] };
+              }
+
+              // Reschedule remaining points
+              let currentTime = this.schedulerService.timeToMinutes(
+                day.day_start_time,
+              );
+              const rescheduledPoints = filteredPoints.map((point) => {
+                const durationMinutes =
+                  this.schedulerService.timeToMinutes(point.departure_time) -
+                  this.schedulerService.timeToMinutes(point.arrival_time);
+                const arrival =
+                  this.schedulerService.minutesToTime(currentTime);
+                const departure = this.schedulerService.minutesToTime(
+                  currentTime + durationMinutes,
+                );
+                currentTime += durationMinutes;
+
+                return {
+                  ...point,
+                  arrival_time: arrival,
+                  departure_time: departure,
+                };
+              });
+
+              return {
+                ...day,
+                points: rescheduledPoints,
+                day_budget_estimated: rescheduledPoints.reduce(
+                  (sum, p) => sum + (p.estimated_cost ?? 0),
+                  0,
+                ),
+              };
+            });
+
+            routePlan = buildRoutePlanFromDays(
+              existingRoutePlan.city,
+              rebuiltDays.filter((d) => d.points.length > 0),
             );
             mutationMeta.mutation_applied = true;
             break;
@@ -2284,7 +2485,18 @@ ${JSON.stringify(points)}
           updatedDays.length === 0 ||
           updatedDays.every((d) => d.points.length === 0)
         ) {
-          // Маршрут очищен — просто отправляем текстовое сообщение без карточки
+          // Маршрут очищен — удаляем контекст маршрута и отправляем только текст
+          // Находим последнее сообщение с route_plan и удаляем его из истории
+          const messagesWithoutRoutePlan = (session?.messages ?? [])
+            .map((msg) => ({
+              ...msg,
+              route_plan: undefined,
+            }));
+
+          await this.aiSessionsService.saveMessages(
+            body.sessionId,
+            messagesWithoutRoutePlan,
+          );
           await this.aiSessionsService.appendMessages(body.sessionId, [
             { role: 'assistant', content: messageContent },
           ]);
