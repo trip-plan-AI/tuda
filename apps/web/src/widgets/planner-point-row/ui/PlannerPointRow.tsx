@@ -122,15 +122,14 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
   };
 
   const getSuggestions = async (query: string) => {
-    if (query.length < 3) {
+    if (!query.trim() || query.length < 2) {
       setSuggestions([]);
       setShowDropdownState(false);
       return;
     }
     setIsSearching(true);
     try {
-      const locSuffix = userLocation ? `&lat=${userLocation.lat}&lon=${userLocation.lon}` : '';
-      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}${locSuffix}`;
+      const url = `${env.apiUrl}/geosearch/suggest?q=${encodeURIComponent(query)}`;
       const res = await fetch(url);
 
       if (!res.ok) {
@@ -153,7 +152,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
 
   const handleAddressChange = (val: string) => {
     setAddressVal(val);
-    if (val.length > 2) {
+    if (val.length > 1) {
       setIsSearching(true);
     } else {
       setIsSearching(false);
