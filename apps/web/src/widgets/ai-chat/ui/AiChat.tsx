@@ -24,6 +24,8 @@ interface AiChatProps {
   onDeletePoint?: (pointName: string) => Promise<void>;
   hasCollaborators?: boolean;
   onSendToAi?: (query: string) => void | Promise<void>;
+  activePreviewMessageId?: string | null;
+  onTogglePreview?: (messageId: string) => void;
   /** Progressive streaming: thinking stage label ('collecting' | 'selecting' | 'scheduling') */
   thinkingStage?: string | null;
   /** Progressive streaming: days received so far via ai:day_ready */
@@ -139,6 +141,8 @@ export function AiChat({
   onSendToAi,
   thinkingStage = null,
   streamingDays = [],
+  activePreviewMessageId = null,
+  onTogglePreview,
 }: AiChatProps) {
   const [query, setQuery] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -209,6 +213,8 @@ export function AiChat({
                 onOpenPlanner={onOpenPlanner}
                 onDeletePoint={onDeletePoint}
                 isLatestRoutePlan={lastPlanMessageId === message.id}
+                isPreviewActive={activePreviewMessageId === message.id}
+                onTogglePreview={message.routePlan && message.role === 'assistant' ? onTogglePreview : undefined}
               />
             ))}
 

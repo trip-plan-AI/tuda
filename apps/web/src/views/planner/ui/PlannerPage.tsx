@@ -69,11 +69,12 @@ export function PlannerPage() {
         </div>
 
         <div className="flex-1">
-          {activeTab === 'my' ? (
+          <div className={activeTab === 'my' ? undefined : 'hidden'}>
             <ConstructorTab {...planner} />
-          ) : (
+          </div>
+          <div className={activeTab === 'popular' ? undefined : 'hidden'}>
             <PopularRoutes />
-          )}
+          </div>
         </div>
       </div>
 

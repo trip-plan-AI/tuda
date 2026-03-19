@@ -146,9 +146,14 @@ export function Header() {
     });
   }, [hydrated, isAuthenticated, pathname]);
 
-  // ── Real-time: listen for incoming invitations ──
+  // ── Load pending invitations on mount + real-time updates ──
   useEffect(() => {
     if (!isAuthenticated) return;
+
+    // Load existing pending invitations from backend
+    collaborateApi.getPendingInvitations().then((list) => {
+      setInvitations(list);
+    }).catch(() => {/* ignore */});
 
     const socket = getSocket();
 
@@ -285,12 +290,7 @@ export function Header() {
                       >
                         <Mail size={16} stroke={isHome ? '#fff' : 'currentColor'} strokeWidth={2} />
                         {invitations.length > 0 && (
-                          <span
-                            className={cn(
-                              'absolute -top-1 -right-1 text-[10px] font-black px-1 py-0.5 rounded-full',
-                              isHome ? 'bg-brand-sky text-white' : 'bg-brand-sky text-white',
-                            )}
-                          >
+                          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 flex items-center justify-center text-[9px] font-black rounded-full bg-brand-sky text-white leading-none">
                             {invitations.length}
                           </span>
                         )}
@@ -420,8 +420,7 @@ export function Header() {
           collaborateApi
             .acceptInvitation(id)
             .then(() => {
-              setInvitations((prev) => prev.filter((i) => i.id !== id));
-              toast.success('Приглашение принято! Маршрут добавлен в ваш список.');
+              toast.success('Приглашение принято! Выберите действие ниже.');
             })
             .catch(() => toast.error('Не удалось принять приглашение'));
         }}
@@ -433,6 +432,24 @@ export function Header() {
               toast('Приглашение отклонено');
             })
             .catch(() => toast.error('Не удалось отклонить приглашение'));
+        }}
+        onOpenInConstructor={(tripId) => {
+          // Find and remove the invitation
+          const invitation = invitations.find((i) => i.tripId === tripId);
+          if (invitation) {
+            setInvitations((prev) => prev.filter((i) => i.id !== invitation.id));
+          }
+          setIsInvitationsOpen(false);
+          router.push(`/planner?applyTripId=${tripId}`);
+        }}
+        onOpenInChat={(tripId) => {
+          // Find and remove the invitation
+          const invitation = invitations.find((i) => i.tripId === tripId);
+          if (invitation) {
+            setInvitations((prev) => prev.filter((i) => i.id !== invitation.id));
+          }
+          setIsInvitationsOpen(false);
+          router.push(`/ai-assistant?tripId=${tripId}`);
         }}
       />
     </>

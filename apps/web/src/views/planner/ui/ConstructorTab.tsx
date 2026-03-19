@@ -667,8 +667,9 @@ export function ConstructorTab(props: ConstructorTabProps) {
                             )}
                           >
                             {(() => {
-                              const dayKey = point.visitDate
-                                ? format(new Date(point.visitDate), 'yyyy-MM-dd')
+                              const _vd = point.visitDate ? new Date(point.visitDate) : null;
+                              const dayKey = _vd && !isNaN(_vd.getTime())
+                                ? format(_vd, 'yyyy-MM-dd')
                                 : 'no-date';
                               const isSelected = selectedDays.includes(dayKey);
                               return (
@@ -686,11 +687,12 @@ export function ConstructorTab(props: ConstructorTabProps) {
                                     className={isSelected ? 'text-white' : 'text-brand-indigo'}
                                   />
                                   <span className="text-[11px] font-black uppercase tracking-wider">
-                                    {point.visitDate
-                                      ? format(new Date(point.visitDate), 'd MMMM, EEEE', {
-                                          locale: ru,
-                                        })
-                                      : 'Без даты'}
+                                    {(() => {
+                                        const _d = point.visitDate ? new Date(point.visitDate) : null;
+                                        return _d && !isNaN(_d.getTime())
+                                          ? format(_d, 'd MMMM, EEEE', { locale: ru })
+                                          : 'Без даты';
+                                      })()}
                                   </span>
                                 </button>
                               );

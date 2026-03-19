@@ -270,6 +270,35 @@ export class AiSessionsService {
     );
   }
 
+  // TRI-104: очищает все сообщения сессии и добавляет одно свежее с маршрутом (без текста)
+  async replaceMessagesWithRoutePlan(sessionId: string, routePlan: any) {
+    const current = await this.db.query.aiSessions.findFirst({
+      where: eq(schema.aiSessions.id, sessionId),
+    });
+    if (!current) {
+      throw new NotFoundException('Session not found');
+    }
+
+    const freshMessage: SessionMessage = {
+      role: 'assistant',
+      content: '', // Пустой контент - только маршрут видна на карте
+      route_plan: routePlan,
+    };
+
+    await this.saveMessages(sessionId, [freshMessage]);
+
+    // Обновляем название сессии если его еще нет
+    if (!current.title) {
+      const derivedTitle = this.deriveSessionTitleFromRoute([freshMessage]);
+      if (derivedTitle !== 'Новый чат') {
+        await this.db
+          .update(schema.aiSessions)
+          .set({ title: derivedTitle })
+          .where(eq(schema.aiSessions.id, sessionId));
+      }
+    }
+  }
+
   async listByUser(userId: string) {
     const rows = await this.db
       .select()

@@ -42,7 +42,10 @@ export class TripsService {
     const ownTrips = await this.db.query.trips.findMany({
       where: eq(schema.trips.ownerId, userId),
       orderBy: [desc(schema.trips.createdAt)],
-      with: { points: { orderBy: [schema.routePoints.order] } },
+      with: {
+        points: { orderBy: [schema.routePoints.order] },
+        collaborators: true,
+      },
     });
 
     // 2. Trips where user is a collaborator — isActive from tripCollaborators
@@ -90,7 +93,10 @@ export class TripsService {
     if (collabIds.length > 0) {
       const trips = await this.db.query.trips.findMany({
         where: inArray(schema.trips.id, collabIds),
-        with: { points: { orderBy: [schema.routePoints.order] } },
+        with: {
+          points: { orderBy: [schema.routePoints.order] },
+          collaborators: true,
+        },
       });
       // Override isActive with the per-user value from tripCollaborators
       // ownerIsActive = global trips.isActive (the owner's activation state)

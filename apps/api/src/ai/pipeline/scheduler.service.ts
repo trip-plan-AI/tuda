@@ -51,25 +51,93 @@ export class SchedulerService {
     intent: ParsedIntent,
   ): RoutePlan {
     this.logger.log(
-      `Injecting ${pointsToAdd.length} new points into existing plan.`,
-    );
-    const existingPois = existingPlan.days.flatMap((day) =>
-      day.points.map((p) => p.poi as FilteredPoi),
+      `Injecting ${pointsToAdd.length} new points into existing plan (preserving order).`,
     );
 
-    const combinedPois = [...existingPois, ...pointsToAdd];
+    // Filter out duplicates — skip POIs already in the route
+    const existingPoiIds = new Set(
+      existingPlan.days.flatMap((d) => d.points.map((p) => p.poi_id)),
+    );
+    const newPois = pointsToAdd.filter((p) => p.id && !existingPoiIds.has(p.id));
 
-    const seen = new Set<string>();
-    const uniquePois = combinedPois.filter((p) => {
-      if (!p || !p.id) return false;
-      if (seen.has(p.id)) {
-        return false;
+    if (newPois.length === 0) return existingPlan;
+
+    // Deep-clone days so we don't mutate the existing plan
+    const days: RoutePlan['days'] = existingPlan.days.map((day) => ({
+      ...day,
+      points: [...day.points],
+    }));
+
+    for (const poi of newPois) {
+      // Find the best day to append to: the one whose last point is geographically closest
+      let bestDayIdx = days.length - 1;
+      let bestDist = Infinity;
+      for (let i = 0; i < days.length; i++) {
+        const lastPt = days[i].points[days[i].points.length - 1];
+        const lastPoiCoords = (lastPt?.poi as FilteredPoi | undefined)?.coordinates;
+        if (lastPoiCoords && poi.coordinates) {
+          const dist = this.haversineKm(
+            lastPoiCoords.lat,
+            lastPoiCoords.lon,
+            poi.coordinates.lat,
+            poi.coordinates.lon,
+          );
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestDayIdx = i;
+          }
+        }
       }
-      seen.add(p.id);
-      return true;
-    });
 
-    return this.buildPlan(uniquePois, intent);
+      const day = days[bestDayIdx];
+      const lastPt = day.points[day.points.length - 1];
+      const lastDepartureMins = this.timeToMinutes(
+        lastPt?.departure_time ?? day.day_start_time,
+      );
+
+      // Calculate transit time from the last point to the new one
+      let transitMins = 15;
+      const lastPoiCoords = (lastPt?.poi as FilteredPoi | undefined)?.coordinates;
+      if (lastPoiCoords && poi.coordinates) {
+        const dist = this.haversineKm(
+          lastPoiCoords.lat,
+          lastPoiCoords.lon,
+          poi.coordinates.lat,
+          poi.coordinates.lon,
+        );
+        transitMins = Math.max(5, Math.min(60, Math.round((dist / 5) * 60)));
+      }
+
+      const arrival = lastDepartureMins + transitMins;
+      const visitDuration = VISIT_DURATION[poi.category ?? ''] ?? 60;
+      const departure = arrival + visitDuration;
+
+      const newPoint: PlanDayPoint = {
+        poi_id: poi.id,
+        poi: poi as any,
+        order: day.points.length,
+        arrival_time: this.minutesToTime(arrival),
+        departure_time: this.minutesToTime(departure),
+        visit_duration_min: visitDuration,
+        travel_from_prev_min: transitMins,
+        estimated_cost: (poi as any).estimatedCost ?? 0,
+      };
+
+      day.points.push(newPoint);
+      day.day_budget_estimated =
+        (day.day_budget_estimated ?? 0) + (newPoint.estimated_cost ?? 0);
+    }
+
+    return {
+      city: existingPlan.city,
+      cities: existingPlan.cities ?? intent.cities,
+      route_type: existingPlan.route_type ?? intent.route_type,
+      days,
+      total_budget_estimated: days.reduce(
+        (sum, d) => sum + (d.day_budget_estimated ?? 0),
+        0,
+      ),
+    };
   }
 
   private clusterizeByCentroid(
@@ -232,9 +300,16 @@ export class SchedulerService {
       const isHeavy =
         poi.category === 'museum' || ((poi as any).duration || 0) > 90;
 
-      if (!relaxAll) {
-        if (lastPoi && this.isFoodCategory(lastPoi.category) && isFood)
+      // Жёсткие food-ограничения — применяются ВСЕГДА, независимо от relaxAll.
+      if (isFood) {
+        // Нельзя ставить food-точку если предыдущая тоже food (нет промежуточного POI)
+        if (lastPoi && this.isFoodCategory(lastPoi.category)) return false;
+        // Нельзя ставить food-точку если прошло меньше RESTAURANT_MIN_GAP_MIN с последнего приёма пищи
+        if (lastFoodTime !== null && arrival - lastFoodTime < RESTAURANT_MIN_GAP_MIN)
           return false;
+      }
+
+      if (!relaxAll) {
         if (energyLevel < 35 && isHeavy && !isFood) return false;
         if (
           lastPoi &&
@@ -766,10 +841,16 @@ export class SchedulerService {
         const isHeavy =
           poi.category === 'museum' || ((poi as any).duration || 0) > 90;
 
-        if (!relaxAll) {
-          if (lastPoi && this.isFoodCategory(lastPoi.category) && isFood)
+        // Жёсткие food-ограничения — применяются ВСЕГДА, независимо от relaxAll.
+        if (isFood) {
+          // Нельзя ставить food-точку если предыдущая тоже food (нет промежуточного POI)
+          if (lastPoi && this.isFoodCategory(lastPoi.category)) return false;
+          // Нельзя ставить food-точку если прошло меньше RESTAURANT_MIN_GAP_MIN с последнего приёма пищи
+          if (lastFoodTime !== null && arrival - lastFoodTime < RESTAURANT_MIN_GAP_MIN)
             return false;
+        }
 
+        if (!relaxAll) {
           // ENERGY GUARD
           if (energyLevel < 35 && isHeavy && !isFood) return false;
 
@@ -1369,6 +1450,22 @@ export class SchedulerService {
       };
       days.push(builtDay);
       onDayReady?.(builtDay);
+    }
+
+    // Apply hard POI count limit if user requested a specific number
+    const poiCountLimit = intent.poi_count_requested;
+    if (poiCountLimit !== null && poiCountLimit !== undefined && poiCountLimit > 0) {
+      let totalPoints = 0;
+      for (const day of days) {
+        const remaining = poiCountLimit - totalPoints;
+        if (remaining <= 0) {
+          day.points = [];
+        } else if (day.points.length > remaining) {
+          day.points = day.points.slice(0, remaining);
+        }
+        totalPoints += day.points.length;
+      }
+      this.logger.log(`[Scheduler] Trimmed plan to ${totalPoints} points (requested: ${poiCountLimit})`);
     }
 
     // Если маршрут мульти-городской, склеиваем название

@@ -34,6 +34,9 @@ export function filterUniqueSuggestions(results: any[]): GeoSuggestion[] {
       }
     }
 
+    // Reject results with invalid 0,0 coordinates - they can't be placed on map
+    if (coordsKey === '0.00000,0.00000') continue;
+
     if (coordsKey) {
       if (seenCoords.has(coordsKey)) continue;
       seenCoords.add(coordsKey);

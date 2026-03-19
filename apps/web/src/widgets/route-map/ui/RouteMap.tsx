@@ -702,7 +702,8 @@ export function RouteMap({
 
     const isPointVisible = (p: RoutePoint) => {
       if (!selectedDays || selectedDays.length === 0) return true;
-      const dayKey = p.visitDate ? format(new Date(p.visitDate), 'yyyy-MM-dd') : 'no-date';
+      const _d = p.visitDate ? new Date(p.visitDate) : null;
+      const dayKey = _d && !isNaN(_d.getTime()) ? format(_d, 'yyyy-MM-dd') : 'no-date';
       return selectedDays.includes(dayKey);
     };
 
@@ -1038,19 +1039,17 @@ export function RouteMap({
 
     const visiblePoints = points.filter((p) => {
       if (!selectedDays || selectedDays.length === 0) return true;
-      const dayKey = p.visitDate ? format(new Date(p.visitDate), 'yyyy-MM-dd') : 'no-date';
+      const _d = p.visitDate ? new Date(p.visitDate) : null;
+      const dayKey = _d && !isNaN(_d.getTime()) ? format(_d, 'yyyy-MM-dd') : 'no-date';
       return selectedDays.includes(dayKey);
     });
 
     const pointsToFit = visiblePoints.length > 0 ? visiblePoints : points;
 
     const shouldFitInitial = !hasInitialFitPerformed.current;
-    const shouldFitAfterPointAdd = points.length > previousPointsLengthRef.current;
 
-    if (!shouldFitInitial && !shouldFitAfterPointAdd) {
-      previousPointsLengthRef.current = points.length;
-      return;
-    }
+    previousPointsLengthRef.current = points.length;
+    if (!shouldFitInitial) return;
 
     const lons = pointsToFit.map(p => p.lon);
     const lats = pointsToFit.map(p => p.lat);
