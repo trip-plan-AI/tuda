@@ -9,12 +9,12 @@ import {
   OnGatewayInit,
 } from '@nestjs/websockets';
 import { OnModuleInit } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { CollaborationService } from './collaboration.service';
 import { PointsService } from '../points/points.service';
 import { TripsService } from '../trips/trips.service';
-import { AiSessionsService } from '../ai/ai-sessions.service';
 import { ForbiddenException, Logger } from '@nestjs/common';
 import { CreatePointDto } from '../points/dto/create-point.dto';
 import { CollaborationEventsService } from './collaboration-events.service';
@@ -40,6 +40,7 @@ export class CollaborationGateway
   @WebSocketServer() server: Server;
 
   private readonly logger = new Logger('CollaborationGateway');
+  private aiSessionsService: any; // Lazily injected to avoid circular dependency
 
   constructor(
     private collabService: CollaborationService,
@@ -47,10 +48,14 @@ export class CollaborationGateway
     private pointsService: PointsService,
     private tripsService: TripsService,
     private eventsService: CollaborationEventsService,
-    private aiSessionsService: AiSessionsService,
+    private moduleRef: ModuleRef,
   ) {}
 
   onModuleInit() {
+    // Lazy load AiSessionsService to break circular dependency
+    const { AiSessionsService } = require('../ai/ai-sessions.service');
+    this.aiSessionsService = this.moduleRef.get(AiSessionsService, { strict: false });
+
     this.eventsService.events$.subscribe((event) => {
       console.log(
         `[CollaborationGateway] Received internal event: ${event.type} for trip ${event.tripId}`,
