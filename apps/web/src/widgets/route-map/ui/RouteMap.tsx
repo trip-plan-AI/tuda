@@ -86,6 +86,92 @@ function getOsrmCacheKey(fromLon: number, fromLat: number, toLon: number, toLat:
   return `${fromLon},${fromLat};${toLon},${toLat}|${profile}`;
 }
 
+// localStorage кэширование OSRM результатов
+const OSRM_CACHE_PREFIX = 'osrm_cache_';
+const OSRM_CACHE_SIZE_LIMIT = 50 * 1024 * 1024; // 50MB limit
+
+function saveToLocalStorageCache(key: string, data: { geometry: any; duration: number; distance: number } | null) {
+  try {
+    const cacheKey = OSRM_CACHE_PREFIX + key;
+    const cacheData = JSON.stringify(data);
+
+    // Проверяем размер перед сохранением
+    const estimatedSize = new Blob([cacheData]).size;
+    const totalUsed = getTotalCacheSize();
+
+    if (totalUsed + estimatedSize > OSRM_CACHE_SIZE_LIMIT) {
+      // Очищаем старые записи если превышен лимит
+      clearOldCacheEntries();
+    }
+
+    localStorage.setItem(cacheKey, cacheData);
+  } catch (e) {
+    // Игнорируем ошибки localStorage (quota exceeded, etc)
+    console.warn('[RouteMap] Failed to save to localStorage cache:', e);
+  }
+}
+
+function loadFromLocalStorageCache(key: string): { geometry: any; duration: number; distance: number } | null | undefined {
+  try {
+    const cacheKey = OSRM_CACHE_PREFIX + key;
+    const cached = localStorage.getItem(cacheKey);
+    if (!cached) return undefined;
+    return JSON.parse(cached);
+  } catch (e) {
+    console.warn('[RouteMap] Failed to load from localStorage cache:', e);
+    return undefined;
+  }
+}
+
+function getTotalCacheSize(): number {
+  try {
+    let total = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(OSRM_CACHE_PREFIX)) {
+        const value = localStorage.getItem(key);
+        if (value) total += new Blob([value]).size;
+      }
+    }
+    return total;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function clearOldCacheEntries() {
+  try {
+    const entries: Array<{ key: string; time: number }> = [];
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(OSRM_CACHE_PREFIX)) {
+        const item = localStorage.getItem(key);
+        if (item) {
+          try {
+            const parsed = JSON.parse(item);
+            // Используем время создания если оно есть, иначе текущее время
+            entries.push({ key, time: parsed.cachedAt || Date.now() });
+          } catch {
+            // Пропускаем некорректные записи
+          }
+        }
+      }
+    }
+
+    // Удаляем 25% старых записей когда превышен лимит
+    if (entries.length > 0) {
+      entries.sort((a, b) => a.time - b.time);
+      const toDelete = Math.ceil(entries.length * 0.25);
+      for (let i = 0; i < toDelete; i++) {
+        localStorage.removeItem(entries[i].key);
+      }
+    }
+  } catch (e) {
+    console.warn('[RouteMap] Failed to clear old cache entries:', e);
+  }
+}
+
 export function RouteMap({
   points,
   focusCoords,
@@ -482,23 +568,42 @@ export function RouteMap({
         }
 
         const cacheKey = getOsrmCacheKey(from.lon, from.lat, to.lon, to.lat, profile);
-        const cached = osrmCache.get(cacheKey);
-        if (cached !== undefined) {
+
+        // 1. Проверяем in-memory cache
+        const inMemoryCached = osrmCache.get(cacheKey);
+        if (inMemoryCached !== undefined) {
           return {
             index: segmentIndex,
-            data: cached
-              ? { geometry: cached.geometry, info: { duration: cached.duration, distance: cached.distance }, profile }
+            data: inMemoryCached
+              ? { geometry: inMemoryCached.geometry, info: { duration: inMemoryCached.duration, distance: inMemoryCached.distance }, profile }
               : { geometry: { type: 'LineString' as const, coordinates: [[from.lon, from.lat], [to.lon, to.lat]] }, info: null, profile },
           };
         }
 
+        // 2. Проверяем localStorage cache
+        const localStorageCached = loadFromLocalStorageCache(cacheKey);
+        if (localStorageCached !== undefined) {
+          // Восстанавливаем в in-memory cache
+          osrmCache.set(cacheKey, localStorageCached);
+          return {
+            index: segmentIndex,
+            data: localStorageCached
+              ? { geometry: localStorageCached.geometry, info: { duration: localStorageCached.duration, distance: localStorageCached.distance }, profile }
+              : { geometry: { type: 'LineString' as const, coordinates: [[from.lon, from.lat], [to.lon, to.lat]] }, info: null, profile },
+          };
+        }
+
+        // 3. Загружаем с OSRM API
         try {
           const coordsString = `${from.lon},${from.lat};${to.lon},${to.lat}`;
           const res = await fetch(`${env.apiUrl}/geosearch/route?profile=${profile}&coords=${coordsString}`);
           const data = await res.json();
           if (data.code === 'Ok' && data.routes?.[0]) {
             const r = data.routes[0];
-            osrmCache.set(cacheKey, { geometry: r.geometry, duration: r.duration, distance: r.distance });
+            const cacheData = { geometry: r.geometry, duration: r.duration, distance: r.distance };
+            // Сохраняем в оба кэша
+            osrmCache.set(cacheKey, cacheData);
+            saveToLocalStorageCache(cacheKey, cacheData);
             return {
               index: segmentIndex,
               data: {
@@ -510,7 +615,9 @@ export function RouteMap({
           }
         } catch {}
         // fallback: straight line
-        osrmCache.set(cacheKey, null);
+        const fallbackData = null;
+        osrmCache.set(cacheKey, fallbackData);
+        saveToLocalStorageCache(cacheKey, fallbackData);
         return {
           index: segmentIndex,
           data: {
