@@ -20,6 +20,7 @@ import { pointsApi } from '@/entities/route-point';
 import { tripsApi } from '@/entities/trip';
 import { toast } from 'sonner';
 import { cn } from '@/shared/lib/utils';
+import { useIntersectionObserver } from '@/shared/lib/useIntersectionObserver';
 import { Button } from '@/shared/ui/button';
 import {
   useCollaborateStore,
@@ -69,6 +70,13 @@ export function ProfilePage() {
   const [collaboratorsTripId, setCollaboratorsTripId] = useState<string | null>(null);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [highlightedTripId, setHighlightedTripId] = useState<string | null>(null);
+
+  // ── Pagination ──
+  const PAGE_SIZE = 20;
+  const [pastPage, setPastPage] = useState(1);
+  const [savedPage, setSavedPage] = useState(1);
+  const [sharedPage, setSharedPage] = useState(1);
+
   const { setCollaborators } = useCollaborateStore();
 
   // Sync local allTrips into the Zustand store so selectors/filtered arrays stay up-to-date
@@ -94,6 +102,11 @@ export function ProfilePage() {
   const pastTrips = travelTrips
     .filter((t) => new Date(t.endDate!) < now)
     .sort((a, b) => new Date(b.endDate!).getTime() - new Date(a.endDate!).getTime());
+
+  // ── Pagination slices ──
+  const visiblePastTrips = pastTrips.slice(0, pastPage * PAGE_SIZE);
+  const visibleSavedTrips = savedTrips.slice(0, savedPage * PAGE_SIZE);
+  const visibleSharedTrips = sharedTrips.slice(0, sharedPage * PAGE_SIZE);
 
   const toRad = (value: number) => (value * Math.PI) / 180;
   const getDistanceKmBetweenPoints = (
@@ -153,6 +166,20 @@ export function ProfilePage() {
   const scrollRafRef = useRef<number | null>(null);
   const highlightTimeoutRef = useRef<number | null>(null);
   const tripCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // ── Intersection Observer for infinite scroll ──
+  const pastSentinelRef = useIntersectionObserver(
+    () => setPastPage((p) => p + 1),
+    activeTab === 'routes' && visiblePastTrips.length < pastTrips.length
+  );
+  const savedSentinelRef = useIntersectionObserver(
+    () => setSavedPage((p) => p + 1),
+    activeTab === 'saved' && visibleSavedTrips.length < savedTrips.length
+  );
+  const sharedSentinelRef = useIntersectionObserver(
+    () => setSharedPage((p) => p + 1),
+    activeTab === 'shared' && visibleSharedTrips.length < sharedTrips.length
+  );
 
   const getTripTab = useCallback((trip?: Pick<Trip, 'startDate' | 'endDate'> | null): TabKey => {
     return trip?.startDate && trip?.endDate ? 'routes' : 'saved';
@@ -308,6 +335,10 @@ export function ProfilePage() {
   const handleTabChange = useCallback((tab: TabKey) => {
     setActiveTab(tab);
     setSelectedTripId(null);
+    // Reset pagination for the new tab
+    if (tab === 'routes') setPastPage(1);
+    if (tab === 'saved') setSavedPage(1);
+    if (tab === 'shared') setSharedPage(1);
   }, []);
 
   // Toggle: clicking same card deselects it
@@ -1204,7 +1235,7 @@ export function ProfilePage() {
                       <hr className="flex-1 border-gray-200" />
                     </div>
                     <div className="space-y-3">
-                      {pastTrips.map((trip) => (
+                      {visiblePastTrips.map((trip) => (
                         <TripCard
                           key={trip.id}
                           trip={trip}
@@ -1226,6 +1257,18 @@ export function ProfilePage() {
                         />
                       ))}
                     </div>
+
+                    {/* Infinite scroll sentinel + "Show more" button */}
+                    {visiblePastTrips.length < pastTrips.length && (
+                      <div ref={pastSentinelRef} className="mt-4 flex justify-center">
+                        <button
+                          onClick={() => setPastPage((p) => p + 1)}
+                          className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+                        >
+                          Показать ещё {Math.min(PAGE_SIZE, pastTrips.length - visiblePastTrips.length)}
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -1238,7 +1281,7 @@ export function ProfilePage() {
             )
           ) : activeTab === 'shared' && sharedTrips.length > 0 ? (
             <div ref={savedListScrollRef} className="px-4 space-y-3 pb-4 pt-3 w-full">
-              {sharedTrips.map((trip) => (
+              {visibleSharedTrips.map((trip) => (
                 <TripCard
                   key={trip.id}
                   trip={trip}
@@ -1259,10 +1302,22 @@ export function ProfilePage() {
                   }}
                 />
               ))}
+
+              {/* Infinite scroll sentinel + "Show more" button for shared trips */}
+              {visibleSharedTrips.length < sharedTrips.length && (
+                <div ref={sharedSentinelRef} className="mt-4 flex justify-center">
+                  <button
+                    onClick={() => setSharedPage((p) => p + 1)}
+                    className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+                  >
+                    Показать ещё {Math.min(PAGE_SIZE, sharedTrips.length - visibleSharedTrips.length)}
+                  </button>
+                </div>
+              )}
             </div>
           ) : activeTab === 'saved' && savedTrips.length > 0 ? (
             <div ref={savedListScrollRef} className="px-4 space-y-3 pb-4 pt-3 w-full">
-              {savedTrips.map((trip) => (
+              {visibleSavedTrips.map((trip) => (
                 <TripCard
                   key={trip.id}
                   trip={trip}
@@ -1283,6 +1338,18 @@ export function ProfilePage() {
                   }}
                 />
               ))}
+
+              {/* Infinite scroll sentinel + "Show more" button for saved trips */}
+              {visibleSavedTrips.length < savedTrips.length && (
+                <div ref={savedSentinelRef} className="mt-4 flex justify-center">
+                  <button
+                    onClick={() => setSavedPage((p) => p + 1)}
+                    className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+                  >
+                    Показать ещё {Math.min(PAGE_SIZE, savedTrips.length - visibleSavedTrips.length)}
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center text-slate-300 text-center px-4 py-10 flex-1">

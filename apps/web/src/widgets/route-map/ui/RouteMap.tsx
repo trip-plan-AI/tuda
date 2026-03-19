@@ -623,7 +623,7 @@ export function RouteMap({
           position: 'relative',
           border: '2px solid white',
           boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-          cursor: 'pointer',
+          cursor: readonly ? 'default' : 'pointer',
           transform: 'translate(-50%, -50%)',
           display: 'flex',
         });
@@ -680,7 +680,7 @@ export function RouteMap({
           fontSize: '12px',
           border: '2px solid white',
           boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-          cursor: 'pointer',
+          cursor: readonly ? 'default' : 'pointer',
           transform: 'translate(-50%, -50%)',
         });
         el.textContent = String(index + 1);
