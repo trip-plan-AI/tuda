@@ -669,7 +669,9 @@ export function usePlanner() {
         const lastLeg = routeInfo.legs[routeInfo.legs.length - 1];
         const travelDurationMs = (lastLeg?.duration ?? 0) * 1000;
         const nextMs = new Date(lastPoint.visitDate).getTime() + stayDurationMs + travelDurationMs;
-        visitDate = new Date(nextMs).toISOString();
+        const nextDateIso = new Date(nextMs).toISOString();
+        // Храним только дату без времени, если исходная была только дата
+        visitDate = hasTime(lastPoint.visitDate) ? nextDateIso : nextDateIso.split('T')[0]!;
       } else if (lastPoint?.visitDate) {
         visitDate = lastPoint.visitDate;
       }
