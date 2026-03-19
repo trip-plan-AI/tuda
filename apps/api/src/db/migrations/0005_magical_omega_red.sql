@@ -1,1 +1,0 @@
-ALTER TABLE "trips" ADD COLUMN "distance_km" double precision;

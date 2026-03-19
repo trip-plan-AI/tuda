@@ -110,6 +110,7 @@ export class TripsService {
     try {
       return await this.db.query.trips.findMany({
         where: eq(schema.trips.isPredefined, true),
+        with: { points: { orderBy: [schema.routePoints.order] } },
       });
     } catch (error) {
       this.logger.error(
