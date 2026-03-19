@@ -427,6 +427,10 @@ export function AIAssistantPage() {
             getSocket().emit('point:delete', { trip_id: tripId, point_id: p.id });
           }),
         );
+
+        // Обновляем сессию на бэкенде чтобы route plan синхронизировался с текущим состоянием БД
+        // Это гарантирует, что при перезагрузке чата не появятся старые точки
+        await openOrCreateSessionFromTrip(tripId);
       }
     }
 
