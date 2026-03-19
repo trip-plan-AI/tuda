@@ -38,6 +38,13 @@ const DEFAULT_QUICK_ACTIONS = [
   'Смени город',
 ];
 
+// Кнопки для улучшения существующего маршрута (появляются только если уже есть routePlan)
+const ROUTE_MUTATION_ACTIONS = [
+  'Сделай дешевле',
+  'Добавь больше музеев',
+  'Удали самое скучное',
+];
+
 const THINKING_STAGE_TEXT: Record<string, string> = {
   collecting:   '🔍 Ищем лучшие места в городе...',
   hidden_gems:  '💎 Ищем локации, о которых знают только местные...',
@@ -237,6 +244,24 @@ export function AiChat({
               {action}
             </button>
           ))}
+
+          {/* Кнопки для улучшения существующего маршрута */}
+          {messages.some((m) => m.routePlan) && (
+            <>
+              {ROUTE_MUTATION_ACTIONS.map((action) => (
+                <button
+                  key={action}
+                  type="button"
+                  onClick={() => onSend(action)}
+                  disabled={isLoading}
+                  className="rounded-full border border-brand-sky/40 bg-brand-sky/10 px-3 py-1 text-xs text-brand-sky transition hover:border-brand-sky hover:bg-brand-sky/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Улучшить текущий маршрут"
+                >
+                  {action}
+                </button>
+              ))}
+            </>
+          )}
         </div>
 
         {hasCollaborators && (

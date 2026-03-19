@@ -199,6 +199,9 @@ export type IntentRouterActionType =
   | 'ADD_POI'
   | 'ADD_DAYS'
   | 'APPLY_GLOBAL_FILTER'
+  | 'REDUCE_BUDGET'        // "Сделай дешевле" → снизить стоимость маршрута
+  | 'ADD_CATEGORY'         // "Добавь музеев" → добавить больше точек категории
+  | 'REMOVE_BORING'        // "Удали скучное" → удалить низкорейтинговые точки
   | 'NEW_ROUTE'
   | 'OFF_TOPIC'
   | 'SMALL_TALK';
