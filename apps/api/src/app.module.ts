@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { DbModule } from './db/db.module';
 import { AuthModule } from './auth/auth.module';
 import { TripsModule } from './trips/trips.module';
@@ -14,6 +15,18 @@ import { RedisModule } from './redis/redis.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '../../.env' }),
+    ThrottlerModule.forRoot([
+      {
+        name: 'ai_plan',
+        ttl: 60000, // 1 minute
+        limit: 10, // 10 requests per minute per user
+      },
+      {
+        name: 'ai_mutation',
+        ttl: 60000,
+        limit: 20, // 20 mutation requests per minute
+      },
+    ]),
     RedisModule,
     DbModule,
     AuthModule,
