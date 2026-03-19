@@ -734,7 +734,11 @@ export function LandingPage() {
                             type="text"
                             placeholder="100 000 ₽"
                             value={manualForm.budget}
-                            onChange={(e) => setManualForm((p) => ({ ...p, budget: e.target.value }))}
+                            onChange={(e) => {
+                              const digits = e.target.value.replace(/\D/g, '');
+                              const formatted = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+                              setManualForm((p) => ({ ...p, budget: formatted }));
+                            }}
                             className="w-full px-5 py-4 bg-slate-50 rounded-2xl shadow-sm border-none outline-none font-bold text-slate-700 transition-none placeholder:text-slate-400 focus:ring-2 focus:ring-brand-blue/20"
                           />
                         </div>
