@@ -45,7 +45,7 @@ const THINKING_STAGE_TEXT: Record<string, string> = {
   selecting:    '🧠 Нейросеть выбирает лучшие варианты из найденных...',
   geocoding:    '📍 Проверяем координаты и строим карту...',
   enrichment:   '✨ Уточняем детали и проверяем рейтинги...',
-  scheduling:   '📅 Составляем оптимальный график по дням...',
+  scheduling:   '📅 Маршрут распределяется по дням...',
 };
 
 function AiResponseSkeleton({ stage }: { stage?: string | null }) {
@@ -86,43 +86,8 @@ function AiResponseSkeleton({ stage }: { stage?: string | null }) {
   );
 }
 
-function StreamingDayPreview({ days }: { days: ChatRoutePlanDay[] }) {
-  const [dots, setDots] = useState('');
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setDots((prev) => (prev.length < 3 ? prev + '.' : ''));
-    }, 500);
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <div className="flex justify-start">
-      <div className="w-full max-w-[85%] rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center gap-1.5">
-          <span className="text-sm font-medium text-brand-indigo">📅 Маршрут формируется{dots}</span>
-        </div>
-        <div className="flex flex-col gap-2">
-          {days.map((day) => (
-            <div key={day.day_number} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-              <p className="text-xs font-semibold text-slate-700">
-                День {day.day_number}
-                {day.date ? ` · ${day.date}` : ''}
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500 line-clamp-2">
-                {day.points
-                  .slice(0, 5)
-                  .map((pt) => pt.poi.name)
-                  .join(' · ')}
-                {day.points.length > 5 ? ` +${day.points.length - 5}` : ''}
-              </p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 h-3 w-24 animate-pulse rounded bg-slate-100" />
-      </div>
-    </div>
-  );
+function StreamingDayPreview({ days: _days }: { days: ChatRoutePlanDay[] }) {
+  return <AiResponseSkeleton stage="scheduling" />;
 }
 
 export function AiChat({
