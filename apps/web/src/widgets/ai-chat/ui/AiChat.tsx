@@ -61,7 +61,7 @@ function AiResponseSkeleton({ stage }: { stage?: string | null }) {
   return (
     <div className="flex justify-start">
       <div className="w-full max-w-[85%] rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-        <div className="mb-4 flex items-center gap-1.5">
+        <div className="mb-4 h-5 flex items-center gap-1.5">
           <span className="text-sm font-medium text-brand-indigo">
             {labelText}{dots}
           </span>
@@ -72,7 +72,7 @@ function AiResponseSkeleton({ stage }: { stage?: string | null }) {
         <div className="mt-1 h-3 w-4/5 animate-pulse rounded bg-slate-100" />
 
         <div className="mt-4 flex flex-col gap-2">
-          {Array.from({ length: 2 }).map((_, index) => (
+          {Array.from({ length: 3 }).map((_, index) => (
             <div key={index} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
               <div className="h-3 w-3/5 animate-pulse rounded bg-slate-200" />
               <div className="mt-2 h-3 w-full animate-pulse rounded bg-slate-100" />
@@ -232,7 +232,7 @@ export function AiChat({
                 type="button"
                 onClick={() => onSend(action)}
                 disabled={isLoading}
-                className="rounded-full border border-brand-sky/40 bg-brand-sky/10 px-3 py-1 text-xs text-brand-sky transition hover:border-brand-sky hover:bg-brand-sky/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 title="Улучшить текущий маршрут"
               >
                 {action}
@@ -295,7 +295,7 @@ export function AiChat({
           />
           <Button
             type="button"
-            variant="brand-purple"
+            variant="brand-blue"
             size="icon"
             onClick={handleSubmit}
             disabled={isLoading}
