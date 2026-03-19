@@ -261,7 +261,6 @@ export function TripCard({
   const MAX_SLOTS = 3;
   const visibleOthers = others.slice(0, MAX_SLOTS);
   const hasMore = others.length > MAX_SLOTS;
-  const emptySlotsCount = Math.max(0, MAX_SLOTS - visibleOthers.length);
 
   return (
     <div
@@ -352,10 +351,7 @@ export function TripCard({
 
           {/* Separator */}
           {owner && <div className="w-px h-5 bg-slate-200" />}
-        </div>
 
-        {/* Group: Others + More details button */}
-        <div className="group flex items-center gap-4">
           {/* Others with overlay effect — clickable to open collaborators modal */}
           <div
             className="flex items-center cursor-pointer"
@@ -393,43 +389,24 @@ export function TripCard({
                 ...
               </div>
             )}
-
-            {/* Empty slots with add button */}
-            {!hasMore &&
-              Array.from({ length: emptySlotsCount }).map((_, i) => (
-                <button
-                  key={`empty-${i}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onInvite?.(trip.id);
-                  }}
-                  title="Добавить участника"
-                  className={cn(
-                    'relative flex items-center justify-center w-8 h-8 rounded-full bg-slate-50 border-2 border-white text-slate-400 group-hover:text-brand-sky group-hover:bg-brand-sky/10 transition-colors shadow-sm',
-                    (visibleOthers.length > 0 || i > 0) && '-ml-4',
-                  )}
-                >
-                  <Plus size={14} />
-                </button>
-              ))}
           </div>
-
-          {/* More details button */}
-          {participants.length > 0 && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onCollaboratorsClick?.(trip.id);
-              }}
-              className="flex items-center justify-center w-8 h-8 rounded-lg
-                         bg-slate-100 text-slate-500 group-hover:bg-slate-200
-                         transition-colors shrink-0"
-              title="Все участники"
-            >
-              <MoreVertical size={16} />
-            </button>
-          )}
         </div>
+
+        {/* More details button */}
+        {participants.length > 0 && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCollaboratorsClick?.(trip.id);
+            }}
+            className="ml-auto flex items-center justify-center w-8 h-8 rounded-lg
+                       bg-slate-100 text-slate-500 hover:bg-slate-200
+                       transition-colors shrink-0"
+            title="Все участники"
+          >
+            <MoreVertical size={16} />
+          </button>
+        )}
       </div>
 
       {/* ── Cover image ── */}
