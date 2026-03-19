@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatRoutePlanDay } from '@/shared/types/ai-chat';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useAiQueryStore } from '@/features/ai-query';
 import { useShallow } from 'zustand/react/shallow';
@@ -25,6 +25,7 @@ import { getSocket } from '@/shared/socket/socket-client';
 
 export function AIAssistantPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [showPlannerConflictModal, setShowPlannerConflictModal] = useState(false);
   const [pendingPlannerTripId, setPendingPlannerTripId] = useState<string | null>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
@@ -120,6 +121,21 @@ export function AIAssistantPage() {
       useTripStore.getState().setCurrentTrip(trip);
     }).catch(() => {});
   }, [activeSession?.tripId]);
+
+  // Обработка tripId из query параметра (когда пользователь открывает чат с маршрутом из приглашения)
+  useEffect(() => {
+    const tripIdParam = searchParams.get('tripId');
+    if (!tripIdParam) return;
+
+    // Открыть или создать сессию для этого маршрута
+    void openOrCreateSessionFromTrip(tripIdParam);
+
+    // Очистить параметр из URL
+    const newParams = new URLSearchParams(searchParams);
+    newParams.delete('tripId');
+    const newUrl = newParams.toString() ? `?${newParams.toString()}` : '';
+    router.replace(`/ai-assistant${newUrl}`);
+  }, [searchParams, openOrCreateSessionFromTrip, router]);
 
   const sessionsList = useMemo(
     () =>
