@@ -66,11 +66,12 @@ services:
       dockerfile: Dockerfile.web
     container_name: travel-planner-web
     restart: unless-stopped
+    env_file:
+      - ./apps/web/.env.local
     environment:
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: 0.0.0.0
-      NEXT_PUBLIC_YANDEX_TILES_API_KEY: ${NEXT_PUBLIC_YANDEX_TILES_API_KEY}
     expose:
       - '3000'
     healthcheck:

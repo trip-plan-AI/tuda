@@ -111,6 +111,128 @@ run_migrate() {
   return 1
 }
 
+journal_tags() {
+  python3 - <<'PY'
+import json
+with open('./apps/api/src/db/migrations/meta/_journal.json', 'r', encoding='utf-8') as fh:
+    for entry in json.load(fh).get('entries', []):
+        tag = str(entry.get('tag', '')).strip()
+        if tag:
+            print(tag)
+PY
+}
+
+db_applied_tags() {
+  docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc '
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -t -A -c "
+      SELECT tag
+      FROM public.__drizzle_migrations
+      WHERE tag IS NOT NULL
+      ORDER BY idx_serial NULLS LAST, id;
+    "
+  ' 2>&1 | sed '/^$/d'
+}
+
+repair_contract_query_for_tag() {
+  case "$1" in
+    0010_pale_magma)
+      cat <<'EOF'
+SELECT CASE
+  WHEN to_regclass('public.ai_cities') IS NOT NULL
+   AND to_regclass('public.ai_city_dataset_meta') IS NOT NULL
+   AND to_regclass('public.ai_clusters') IS NOT NULL
+   AND to_regclass('public.ai_explanation_cache') IS NOT NULL
+   AND to_regclass('public.ai_overpass_cache') IS NOT NULL
+   AND to_regclass('public.ai_pois') IS NOT NULL
+   AND EXISTS (
+     SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'trips' AND column_name = 'distance_km'
+   )
+   AND EXISTS (
+     SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'ai_sessions' AND column_name = 'updated_at'
+   )
+  THEN 1 ELSE 0
+END;
+EOF
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+repair_missing_journal_entry_if_safe() {
+  local idx="$1"
+  local when_ms="$2"
+  local tag="$3"
+  local breakpoints="$4"
+  local contract_sql file hash contract_ok
+
+  if ! contract_sql="$(repair_contract_query_for_tag "$tag")"; then
+    return 1
+  fi
+
+  contract_ok=$(docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc "
+    psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 -t -A -c \"$contract_sql\"
+  " 2>&1 | tr -d '[:space:]')
+
+  if [ "$contract_ok" != "1" ]; then
+    log_error "safe history repair is not possible for tag=$tag: runtime contract is not satisfied"
+    return 1
+  fi
+
+  file="./apps/api/src/db/migrations/${tag}.sql"
+  hash=$(sha256sum "$file" | awk '{print $1}')
+
+  log "detected already-applied schema for tag=$tag, repairing drizzle history entry"
+  docker compose -f "$COMPOSE_FILE" exec --interactive=false -T db sh -lc "
+    psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 -c \"
+      INSERT INTO public.__drizzle_migrations (hash, created_at, idx_serial, \\\"when\\\", tag, breakpoints)
+      SELECT '$hash', $when_ms, $idx, $when_ms, '$tag', $breakpoints
+      WHERE NOT EXISTS (
+        SELECT 1 FROM public.__drizzle_migrations WHERE tag = '$tag'
+      );
+    \"
+  " 2>&1 | tee -a "$LOG_FILE"
+}
+
+repair_forward_journal_drift_if_needed() {
+  log "checking forward journal drift..."
+
+  local db_tags
+  db_tags="$(db_applied_tags || true)"
+
+  while IFS=$'\t' read -r idx when_ms tag breakpoints; do
+    [ -n "$tag" ] || continue
+
+    if echo "$db_tags" | grep -Fx "$tag" >/dev/null 2>&1; then
+      continue
+    fi
+
+    if repair_missing_journal_entry_if_safe "$idx" "$when_ms" "$tag" "$breakpoints"; then
+      log "history repaired for missing tag=$tag"
+      db_tags="$(printf '%s\n%s\n' "$db_tags" "$tag" | sed '/^$/d')"
+      continue
+    fi
+
+    log "tag=$tag is not present in drizzle history and will be applied normally"
+  done < <(python3 - <<'PY'
+import json
+with open('./apps/api/src/db/migrations/meta/_journal.json', 'r', encoding='utf-8') as f:
+    data = json.load(f)
+for e in data.get('entries', []):
+    idx = int(e.get('idx', 0))
+    when_ms = int(e.get('when', 0))
+    tag = str(e.get('tag', '')).strip()
+    breakpoints = 'true' if bool(e.get('breakpoints', False)) else 'false'
+    print(f"{idx}\t{when_ms}\t{tag}\t{breakpoints}")
+PY
+  )
+
+  log "forward journal drift check finished"
+}
+
 # Единый registry runtime-контракта БД.
 # Формат строки: table|column|sql_to_apply
 # Разрешаем только additive, идемпотентные reconciliation-операции.
@@ -375,6 +497,13 @@ main() {
   # Шаг 2: Проверяем/восстанавливаем историю drizzle миграций для существующей схемы
   if ! bootstrap_drizzle_history_if_needed; then
     log_error "failed to bootstrap drizzle migration baseline"
+    exit 1
+  fi
+
+  # Шаг 2.5: Если схема уже содержит объекты текущей миграции,
+  # безопасно восстанавливаем запись в drizzle history до запуска migrate.
+  if ! repair_forward_journal_drift_if_needed; then
+    log_error "failed to repair forward journal drift"
     exit 1
   fi
 
