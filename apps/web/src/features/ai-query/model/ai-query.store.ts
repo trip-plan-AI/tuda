@@ -937,11 +937,15 @@ export const useAiQueryStore = create<AiQueryStore>()(
     const target = get().sessions[targetSessionId];
     if (!target) return;
 
+    // Пытаемся удалить с бэкенда, но если сессия не существует (404) или ошибка сети —
+    // всё равно удаляем из локального стейта (optimistic delete)
     if (target.sessionId) {
       try {
         await api.del<{ ok: boolean }>(`/ai/sessions/${target.sessionId}`);
-      } catch {
-        return;
+      } catch (err) {
+        // 404 = сессия не существует в БД, удаляем из локального стейта всё равно
+        // Другие ошибки тоже игнорируем — локальное удаление всё равно нужно выполнить
+        console.warn(`Failed to delete session ${target.sessionId}:`, err);
       }
     }
 
