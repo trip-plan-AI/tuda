@@ -609,24 +609,25 @@ export function TripCard({
           <BudgetSummary plannedBudget={trip.budget} totalBudget={pointsBudgetTotal} />
         </div>
 
-        {/* Bottom row: delete + arrow buttons */}
-        <div className="flex items-center justify-end gap-1.5 mt-0.5">
-          {/* Delete button */}
+        {/* Bottom row: delete button (left) + go to planner button (right) */}
+        <div className="flex items-center justify-between mt-0.5 gap-2">
+          {/* Delete button - left side */}
           {onDelete && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 void onDelete(trip.id);
               }}
-              className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center
-                         text-slate-400 hover:bg-red-100 hover:text-red-500
-                         transition-colors duration-150"
+              className="px-2 py-1.5 rounded-lg bg-slate-50 flex items-center justify-center gap-1.5
+                         text-slate-400 hover:bg-red-50 hover:text-red-500
+                         transition-colors duration-150 text-xs font-semibold"
               title="Удалить маршрут"
             >
-              <Trash2 size={15} />
+              <Trash2 size={14} />
+              Удалить
             </button>
           )}
-          {/* Arrow → go to planner */}
+          {/* Go to planner button - right side */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -642,14 +643,15 @@ export function TripCard({
                 router.push('/planner');
               }
             }}
-            className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center
-                       text-slate-400 hover:bg-brand-sky hover:text-white
-                       transition-colors duration-150"
+            className="ml-auto px-2.5 py-1.5 rounded-lg bg-brand-sky/10 flex items-center justify-center gap-1
+                       text-brand-sky hover:bg-brand-sky hover:text-white
+                       transition-colors duration-150 text-xs font-semibold"
             title="Открыть в планнере"
           >
-            <ArrowRight size={15} />
-          </button>
-        </div>
+              в конструктор
+              <ArrowRight size={14} />
+            </button>
+          </div>
       </div>
     </div>
   );
