@@ -108,7 +108,9 @@ export function MessageBubble({
               </p>
               <p>
                 <span className="font-semibold text-slate-700">Бюджет:</span>{' '}
-                {Math.round(message.routePlan.total_budget_estimated).toLocaleString('ru-RU')} ₽
+                <span className="bg-brand-yellow/20 text-brand-yellow font-semibold px-2 py-0.5 rounded">
+                  {Math.round(message.routePlan.total_budget_estimated).toLocaleString('ru-RU')} ₽
+                </span>
               </p>
             </div>
 
@@ -121,7 +123,9 @@ export function MessageBubble({
                   День {day.day_number} · {new Date(day.date).toLocaleDateString('ru-RU')}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Бюджет дня: {Math.round(day.day_budget_estimated).toLocaleString('ru-RU')} ₽
+                  Бюджет дня: <span className="bg-brand-yellow/20 text-brand-yellow font-semibold px-1.5 py-0.5 rounded inline-block">
+                    {Math.round(day.day_budget_estimated).toLocaleString('ru-RU')} ₽
+                  </span>
                 </p>
 
                 <div className="mt-2 flex flex-col gap-2">
@@ -166,7 +170,9 @@ export function MessageBubble({
                           </p>
                           {typeof point.estimated_cost === 'number' && (
                             <p className="text-xs text-slate-600 font-medium">
-                              Стоимость: {Math.round(point.estimated_cost).toLocaleString('ru-RU')} ₽
+                              Стоимость: <span className="bg-brand-yellow/20 text-brand-yellow font-semibold px-1.5 py-0.5 rounded inline-block">
+                                {Math.round(point.estimated_cost).toLocaleString('ru-RU')} ₽
+                              </span>
                             </p>
                           )}
                         </div>
