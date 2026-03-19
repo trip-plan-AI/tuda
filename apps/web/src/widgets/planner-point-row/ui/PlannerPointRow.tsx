@@ -223,7 +223,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
     <div
       ref={setNodeRef}
       style={style}
-      data-testid={`trip-point-${index}`}
+      data-testid={`trip-point trip-point-${index}`}
       data-point-id={point.id}
       className={cn('flex flex-col gap-3 group', showDropdownState && 'z-50')}
     >

@@ -30,9 +30,9 @@ export function CollaboratorsAvatarGroup({ tripId }: Props) {
   return (
     <div className="flex items-center gap-2">
       {onlineCollabs.length > 0 && (
-        <AvatarGroup>
+        <AvatarGroup data-testid="collaborators-online">
           {visible.map((c) => (
-            <Avatar key={c.userId} size="sm" title={c.name}>
+            <Avatar key={c.userId} data-testid={`collaborator-online-${c.userId}`} size="sm" title={c.name}>
               {c.photo ? (
                 <AvatarImage src={c.photo} alt={c.name} />
               ) : null}

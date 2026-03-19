@@ -723,7 +723,7 @@ export function RouteMap({
       const isSplit = leftColor && rightColor && leftColor !== rightColor;
 
       const el = document.createElement('div');
-      el.setAttribute('data-testid', `map-marker-${index}`);
+      el.setAttribute('data-testid', `map-marker map-marker-${index}`);
       el.setAttribute('data-marker-index', String(index));
 
       if (isSplit) {
