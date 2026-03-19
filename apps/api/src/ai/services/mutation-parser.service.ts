@@ -13,8 +13,18 @@ type PointMutation =
   | { type: 'MOVE'; pointId: string; afterPointId: string | null }
   | { type: 'OPTIMIZE_ROUTE' };
 
-If the user wants to remove something and you don't know the ID, use REMOVE_BY_QUERY with a search query.
-If the user wants to add something, use ADD.
+IMPORTANT RULES:
+- If user wants to REMOVE/DELETE/УДАЛИТЬ a place, use REMOVE_BY_QUERY with the place name as query
+- If user wants to ADD/ДОБАВИТЬ a place, use ADD with the place name
+- If user wants to REPLACE a place, use REPLACE
+- If user mentions optimization, use OPTIMIZE_ROUTE
+- The query parameter for REMOVE_BY_QUERY should be the exact place name or searchable text
+
+EXAMPLES:
+- User: "Delete Moscow" / "Удали Москву" → { "type": "REMOVE_BY_QUERY", "query": "Moscow" }
+- User: "Add café" / "Добавь кафе" → { "type": "ADD", "name": "café" }
+- User: "Remove the museum" / "Удали музей" → { "type": "REMOVE_BY_QUERY", "query": "museum" }
+
 Only output valid JSON matching { "mutations": PointMutation[] }`;
 
 @Injectable()
