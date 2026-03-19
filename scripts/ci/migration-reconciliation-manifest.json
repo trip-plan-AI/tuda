@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "notes": [
+    "Manifest описывает явное соответствие legacy drizzle history текущему canonical ledger.",
+    "Обычный deploy не должен угадывать applied-state по схеме. Источником истины служит этот manifest + __drizzle_migrations."
+  ],
+  "mappings": [
+    {
+      "canonicalTag": "0010_pale_magma",
+      "requiredLegacyTags": [
+        "0004_add_trip_distance_km",
+        "0007_ai_tables_shotgun",
+        "0008_bright_wolf_cub"
+      ],
+      "reconcileMode": "insert-history-only",
+      "reason": "Legacy prod already contains AI schema and distance_km from old split migrations; current git ledger represents the same milestone as a single canonical tag."
+    }
+  ]
+}
