@@ -8,6 +8,7 @@ import {
   MoreVertical,
   Crown,
   CalendarIcon,
+  Trash2,
 } from 'lucide-react';
 import { format, startOfToday, startOfMonth } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -109,6 +110,7 @@ interface TripCardProps {
   onInvite?: (tripId: string) => void;
   onCollaboratorsClick?: (tripId: string) => void;
   onDatesUpdate?: (tripId: string, dates: { startDate: string; endDate: string }) => void;
+  onDelete?: (tripId: string) => void | Promise<void>;
 }
 
 const COVER_FALLBACK = 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=800&q=80';
@@ -132,6 +134,7 @@ export function TripCard({
   onInvite,
   onCollaboratorsClick,
   onDatesUpdate,
+  onDelete,
 }: TripCardProps) {
   const router = useRouter();
   const nights = calcNights(trip.startDate, trip.endDate);
@@ -606,8 +609,23 @@ export function TripCard({
           <BudgetSummary plannedBudget={trip.budget} totalBudget={pointsBudgetTotal} />
         </div>
 
-        {/* Bottom row: arrow button */}
-        <div className="flex items-center justify-end mt-0.5">
+        {/* Bottom row: delete + arrow buttons */}
+        <div className="flex items-center justify-end gap-1.5 mt-0.5">
+          {/* Delete button */}
+          {onDelete && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                void onDelete(trip.id);
+              }}
+              className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center
+                         text-slate-400 hover:bg-red-100 hover:text-red-500
+                         transition-colors duration-150"
+              title="Удалить маршрут"
+            >
+              <Trash2 size={15} />
+            </button>
+          )}
           {/* Arrow → go to planner */}
           <button
             onClick={(e) => {
