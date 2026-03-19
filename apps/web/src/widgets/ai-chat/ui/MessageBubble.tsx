@@ -42,11 +42,8 @@ export function MessageBubble({
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
-    // Явная конвертация в локальный timezone (UTC → локальное время)
-    // Правильная формула: вычитаем offset (он отрицательный для UTC+X)
-    const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-    const hour = String(localDate.getHours()).padStart(2, '0');
-    const minute = String(localDate.getMinutes()).padStart(2, '0');
+    const hour = String(date.getHours()).padStart(2, '0');
+    const minute = String(date.getMinutes()).padStart(2, '0');
     return `${hour}:${minute}`;
   };
 
