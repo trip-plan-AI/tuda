@@ -908,7 +908,22 @@ export const useAiQueryStore = create<AiQueryStore>()(
     if (target.sessionId && target.messages.length === 0 && !target.justCleared) {
       try {
         const details = await api.get<AiSessionDetailsResponse>(`/ai/sessions/${target.sessionId}`);
-        const mappedMessages = mapStoredMessagesToChatMessages(details.messages);
+
+        // Filter trip-scoped sessions: keep only assistant messages with route plans
+        // This ensures route context is shown as visualization, not text
+        let sessionsMessages = details.messages;
+        if (target.tripId) {
+          sessionsMessages = details.messages.filter((msg) => {
+            if (msg.role === 'assistant') {
+              const hasRoutePlan = (msg as any).route_plan !== undefined ||
+                                  (typeof msg.content === 'string' && tryParseRoutePlan(msg.content) !== null);
+              return hasRoutePlan;
+            }
+            return false;
+          });
+        }
+
+        const mappedMessages = mapStoredMessagesToChatMessages(sessionsMessages);
 
         set((currentState) => {
           const freshTarget = currentState.sessions[nextSessionId];
