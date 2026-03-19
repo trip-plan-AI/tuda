@@ -643,8 +643,8 @@ export function TripCard({
                 router.push('/planner');
               }
             }}
-            className="ml-auto px-2.5 py-1.5 rounded-lg bg-brand-sky/10 flex items-center justify-center gap-1
-                       text-brand-sky hover:bg-brand-sky hover:text-white
+            className="ml-auto px-2.5 py-1.5 rounded-lg bg-brand-yellow/10 flex items-center justify-center gap-1
+                       text-brand-yellow hover:bg-brand-yellow hover:text-white
                        transition-colors duration-150 text-xs font-semibold"
             title="Открыть в планнере"
           >
