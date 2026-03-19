@@ -47,11 +47,11 @@ export function CollaboratorsAvatarGroup({ tripId }: Props) {
 
       <Button
         variant="outline"
-        size="icon-xs"
+        size="icon"
         title="Пригласить участника"
         onClick={() => setIsInviteOpen(true)}
       >
-        <UserPlus className="size-3.5" />
+        <UserPlus className="size-4" />
       </Button>
 
       <InviteModal
