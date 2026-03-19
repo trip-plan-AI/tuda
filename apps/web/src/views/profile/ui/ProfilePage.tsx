@@ -992,7 +992,7 @@ export function ProfilePage() {
           <div className="grid grid-cols-3 gap-2">
             <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5 sm:p-3.5">
               <div className="flex items-center gap-1.5 text-slate-500">
-                <MapPin size={12} className="sm:w-3.5 sm:h-3.5" />
+                <MapPin size={12} className="sm:w-3.5 sm:h-3.5 text-brand-sky" />
                 <p className="text-[10px] sm:text-xs font-semibold leading-none">Точки</p>
               </div>
               <p className="text-lg sm:text-2xl font-black text-brand-indigo leading-none mt-2">
@@ -1002,7 +1002,7 @@ export function ProfilePage() {
 
             <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5 sm:p-3.5">
               <div className="flex items-center gap-1.5 text-slate-500">
-                <Route size={12} className="sm:w-3.5 sm:h-3.5" />
+                <Route size={12} className="sm:w-3.5 sm:h-3.5 text-emerald-500" />
                 <p className="text-[10px] sm:text-xs font-semibold leading-none">Поездки</p>
               </div>
               <p className="text-lg sm:text-2xl font-black text-brand-indigo leading-none mt-2">
@@ -1012,7 +1012,7 @@ export function ProfilePage() {
 
             <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5 sm:p-3.5">
               <div className="flex items-center gap-1.5 text-slate-500">
-                <Ruler size={12} className="sm:w-3.5 sm:h-3.5" />
+                <Ruler size={12} className="sm:w-3.5 sm:h-3.5 text-brand-yellow" />
                 <p className="text-[10px] sm:text-xs font-semibold leading-none">Километры</p>
               </div>
               <p className="text-lg sm:text-2xl font-black text-brand-indigo leading-none mt-2">
