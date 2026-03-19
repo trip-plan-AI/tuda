@@ -49,7 +49,7 @@ function BudgetSummary({
     <div className="space-y-1.5">
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col min-w-0">
-          <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">
+          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
             Планируемый
           </span>
           <span className="text-sm font-black text-brand-indigo leading-tight">
@@ -57,7 +57,7 @@ function BudgetSummary({
           </span>
         </div>
         <div className="flex flex-col min-w-0 text-right">
-          <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">
+          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
             Итого по точкам
           </span>
           <span
@@ -81,7 +81,7 @@ function BudgetSummary({
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-[9px] font-bold text-slate-400">
+      <div className="grid grid-cols-2 gap-2 text-xs font-bold text-slate-400">
         <span>{plan > 0 ? `Использовано ${progressPercent}%` : 'Лимит не задан'}</span>
         <span
           className={cn(
@@ -261,7 +261,6 @@ export function TripCard({
   const MAX_SLOTS = 3;
   const visibleOthers = others.slice(0, MAX_SLOTS);
   const hasMore = others.length > MAX_SLOTS;
-  const emptySlotsCount = Math.max(0, MAX_SLOTS - visibleOthers.length);
 
   return (
     <div
@@ -390,25 +389,6 @@ export function TripCard({
                 ...
               </div>
             )}
-
-            {/* Empty slots with add button */}
-            {!hasMore &&
-              Array.from({ length: emptySlotsCount }).map((_, i) => (
-                <button
-                  key={`empty-${i}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onInvite?.(trip.id);
-                  }}
-                  title="Добавить участника"
-                  className={cn(
-                    'relative flex items-center justify-center w-8 h-8 rounded-full bg-slate-50 border-2 border-white text-slate-400 hover:text-brand-sky hover:bg-brand-sky/10 transition-colors shadow-sm',
-                    (visibleOthers.length > 0 || i > 0) && '-ml-4',
-                  )}
-                >
-                  <Plus size={14} />
-                </button>
-              ))}
           </div>
         </div>
 
@@ -643,8 +623,8 @@ export function TripCard({
                 router.push('/planner');
               }
             }}
-            className="ml-auto px-2.5 py-1.5 rounded-lg bg-brand-sky/10 flex items-center justify-center gap-1
-                       text-brand-sky hover:bg-brand-sky hover:text-white
+            className="ml-auto px-2.5 py-1.5 rounded-lg bg-brand-yellow/10 flex items-center justify-center gap-1
+                       text-brand-yellow hover:bg-brand-yellow hover:text-white
                        transition-colors duration-150 text-xs font-semibold"
             title="Открыть в планнере"
           >
