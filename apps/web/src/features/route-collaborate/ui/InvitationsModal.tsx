@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Dialog, DialogContent } from '@/shared/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/shared/ui/dialog';
 import { Button } from '@/shared/ui/button';
 import { MapIcon, Mail, Zap, MessageCircle } from 'lucide-react';
 
@@ -46,7 +46,7 @@ export function InvitationsModal({
             <Mail size={20} className="text-brand-sky" />
           </div>
           <div>
-            <h2 className="text-lg font-black text-brand-indigo">Приглашения в маршруты</h2>
+            <DialogTitle className="text-lg font-black text-brand-indigo">Приглашения в маршруты</DialogTitle>
             {invitations.length > 0 && (
               <p className="text-xs text-slate-400 font-medium mt-0.5">
                 {invitations.length} новых приглашений
