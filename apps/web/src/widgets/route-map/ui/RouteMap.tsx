@@ -46,9 +46,9 @@ const _mapRegistry = new WeakMap<HTMLElement, any>();
 // Таймеры отложенного destroy — отменяются если компонент ремаунтится до истечения
 const _destroyTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
 
-// Глобальный список всех активных инстансов для контроля лимита WebGL-контекстов (не более 6)
+// Глобальный список всех активных инстансов для контроля лимита WebGL-контекстов (не более 4)
 let _activeInstances: { container: HTMLElement; instance: any; timestamp: number }[] = [];
-const MAX_WEBGL_CONTEXTS = 6;
+const MAX_WEBGL_CONTEXTS = 4;
 
 function cleanupOldInstances() {
   if (_activeInstances.length >= MAX_WEBGL_CONTEXTS) {
@@ -310,7 +310,7 @@ export function RouteMap({
       const c = container;
       // Откладываем destroy — если это Fast Refresh remount, следующий mount
       // отменит таймер и переиспользует инстанс без создания нового WebGL-контекста.
-      // Сокращаем до 100мс для более быстрой очистки при навигации.
+      // Сокращаем до 50мс для быстрой очистки при навигации (предотвращает WebGL warning).
       const timer = setTimeout(() => {
         _destroyTimers.delete(c);
         const instance = _mapRegistry.get(c);
@@ -323,7 +323,7 @@ export function RouteMap({
           _mapRegistry.delete(c);
           _activeInstances = _activeInstances.filter(i => i.container !== c);
         }
-      }, 100);
+      }, 50);
       _destroyTimers.set(c, timer);
       mapRef.current = null;
     };
