@@ -32,22 +32,30 @@ const SYSTEM_PROMPT = `You are an intent router for travel route edits.
 Analyze the user message with optional history and current route POIs.
 Return ONLY valid JSON with this exact structure:
 { "action_type": "REMOVE_POI"|"REPLACE_POI"|"ADD_POI"|"ADD_DAYS"|"APPLY_GLOBAL_FILTER"|"REDUCE_BUDGET"|"ADD_CATEGORY"|"REMOVE_BORING"|"NEW_ROUTE"|"OFF_TOPIC"|"SMALL_TALK", "confidence": number, "target_poi_id": string|null }
-Rules:
-- action_type must be one of allowed values.
-- confidence must be a number between 0 and 1.
-- target_poi_id must be a string ID or null.
-- If the user request is not related to travel, routes, places, food, or cities, return OFF_TOPIC.
-- If the user is just greeting or chatting without requesting travel plans, return SMALL_TALK.
-- Use NEW_ROUTE when user wants to create a COMPLETELY new trip, start over, or requests a route for a city.
-- Use REMOVE_POI when user wants to delete a specific place from the CURRENT route.
-- Use ADD_POI when user wants to add a new place or category (e.g. "add a cafe", "find a museum") to the CURRENT route.
-- Use REDUCE_BUDGET when user wants to make the route cheaper, reduce costs, or spend less (e.g. "сделай дешевле", "снизь бюджет").
-- Use ADD_CATEGORY when user wants to add more items of a category (e.g. "добавь больше музеев", "найди кино").
-- Use REMOVE_BORING when user wants to remove dull or low-rated POIs (e.g. "удали скучное", "убери неинтересное").
-- If the user says "Удали точку X" or "Убери X", and X is in currentRoutePois, it is ALWAYS REMOVE_POI.
-- If currentRoutePois is empty (no existing route in this session) and the request is travel-related, treat it as NEW_ROUTE.
+
+CRITICAL RULES FOR EXISTING ROUTES:
+- When currentRoutePois is NOT empty (there is an existing route), you MUST use targeted mutations (ADD_POI, REMOVE_POI, REPLACE_POI) for any request that targets a specific point or adds/removes points.
+- Targeted mutations PRESERVE the existing route order and structure. They NEVER rebuild the route from scratch.
+- NEVER return NEW_ROUTE if the user only wants to add, remove, or change a specific point in an existing route.
+- NEW_ROUTE is ONLY for: explicit "start over", "build a completely new route", "I want a new trip to [city]" with no existing context.
+
+Action type rules:
+- REMOVE_POI: user wants to delete a specific place (e.g. "удали X", "убери X", "удали точку X", "исключи X"). Always REMOVE_POI if X is in currentRoutePois.
+- ADD_POI: user wants to add a new place to the CURRENT route (e.g. "добавь кафе", "включи музей", "добавь X"). The new point is appended to the existing route without changing other points.
+- REPLACE_POI: user wants to swap/change a specific point (e.g. "замени X", "поменяй X на что-то другое", "вместо X поставь Y").
+- ADD_DAYS: user wants to extend the trip with more days.
+- REDUCE_BUDGET: user wants a cheaper route (e.g. "сделай дешевле", "снизь бюджет").
+- ADD_CATEGORY: user wants more items of a category (e.g. "добавь больше музеев", "найди кино").
+- REMOVE_BORING: user wants to remove dull or low-rated POIs (e.g. "удали скучное", "убери неинтересное").
+- NEW_ROUTE: ONLY when user explicitly wants to start over or build a completely different route.
+- OFF_TOPIC: request is not related to travel, routes, places, food, or cities.
+- SMALL_TALK: user is just greeting or chatting without requesting travel actions.
+
+Other rules:
+- If currentRoutePois is empty (no existing route) and the request is travel-related, treat it as NEW_ROUTE.
 - For REMOVE_POI/REPLACE_POI, target_poi_id is the ID from currentRoutePois that best matches the user's request.
-- Be biased towards mutations (REMOVE/REPLACE/ADD_POI) if there is an existing route.`;
+- confidence must be a number between 0 and 1.
+- target_poi_id must be a string ID or null.`;
 
 @Injectable()
 export class IntentRouterService {
