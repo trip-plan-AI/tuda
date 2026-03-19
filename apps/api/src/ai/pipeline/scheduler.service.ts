@@ -300,9 +300,16 @@ export class SchedulerService {
       const isHeavy =
         poi.category === 'museum' || ((poi as any).duration || 0) > 90;
 
-      if (!relaxAll) {
-        if (lastPoi && this.isFoodCategory(lastPoi.category) && isFood)
+      // Жёсткие food-ограничения — применяются ВСЕГДА, независимо от relaxAll.
+      if (isFood) {
+        // Нельзя ставить food-точку если предыдущая тоже food (нет промежуточного POI)
+        if (lastPoi && this.isFoodCategory(lastPoi.category)) return false;
+        // Нельзя ставить food-точку если прошло меньше RESTAURANT_MIN_GAP_MIN с последнего приёма пищи
+        if (lastFoodTime !== null && arrival - lastFoodTime < RESTAURANT_MIN_GAP_MIN)
           return false;
+      }
+
+      if (!relaxAll) {
         if (energyLevel < 35 && isHeavy && !isFood) return false;
         if (
           lastPoi &&
@@ -834,10 +841,16 @@ export class SchedulerService {
         const isHeavy =
           poi.category === 'museum' || ((poi as any).duration || 0) > 90;
 
-        if (!relaxAll) {
-          if (lastPoi && this.isFoodCategory(lastPoi.category) && isFood)
+        // Жёсткие food-ограничения — применяются ВСЕГДА, независимо от relaxAll.
+        if (isFood) {
+          // Нельзя ставить food-точку если предыдущая тоже food (нет промежуточного POI)
+          if (lastPoi && this.isFoodCategory(lastPoi.category)) return false;
+          // Нельзя ставить food-точку если прошло меньше RESTAURANT_MIN_GAP_MIN с последнего приёма пищи
+          if (lastFoodTime !== null && arrival - lastFoodTime < RESTAURANT_MIN_GAP_MIN)
             return false;
+        }
 
+        if (!relaxAll) {
           // ENERGY GUARD
           if (energyLevel < 35 && isHeavy && !isFood) return false;
 
