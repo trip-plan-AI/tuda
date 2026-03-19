@@ -112,7 +112,7 @@ export function MessageBubble({
               </p>
             </div>
 
-            {message.routePlan.days.map((day) => (
+            {message.routePlan.days.map((day, dayIndex) => (
               <div
                 key={`${day.day_number}-${day.date}`}
                 className="rounded-xl border border-slate-100 bg-slate-50 p-3"
@@ -125,8 +125,15 @@ export function MessageBubble({
                 </p>
 
                 <div className="mt-2 flex flex-col gap-2">
-                  {day.points.map((point) => {
+                  {day.points.map((point, pointIndex) => {
                     const poi = getFallbackPoi(point);
+                    // Глобальный номер точки: сумма всех точек в предыдущих днях + текущий индекс + 1
+                    const globalPointNumber =
+                      (message.routePlan?.days ?? [])
+                        .slice(0, dayIndex)
+                        .reduce((sum, d) => sum + (d.points?.length ?? 0), 0) +
+                      pointIndex +
+                      1;
 
                     return (
                       <div
@@ -143,7 +150,12 @@ export function MessageBubble({
                             <X size={14} strokeWidth={2.5} />
                           </button>
                         )}
-                        <p className="text-sm font-medium text-slate-800 pr-5">{poi.name}</p>
+                        <div className="flex items-start gap-2 pr-5">
+                          <div className="mt-0.5 flex-shrink-0 flex items-center justify-center w-5 h-5 rounded-full bg-brand-sky text-white text-xs font-semibold">
+                            {globalPointNumber}
+                          </div>
+                          <p className="text-sm font-medium text-slate-800">{poi.name}</p>
+                        </div>
                         <p className="mt-0.5 text-xs text-slate-500">{poi.address}</p>
                         {poi.description && (
                           <p className="mt-1 text-xs text-slate-500">{poi.description}</p>
