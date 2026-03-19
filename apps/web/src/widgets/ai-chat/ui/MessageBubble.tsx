@@ -42,10 +42,8 @@ export function MessageBubble({
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
-    // Явная конвертация в локальный timezone
-    const localDate = new Date(date.getTime() + date.getTimezoneOffset() * 60000);
-    const hour = String(localDate.getHours()).padStart(2, '0');
-    const minute = String(localDate.getMinutes()).padStart(2, '0');
+    const hour = String(date.getHours()).padStart(2, '0');
+    const minute = String(date.getMinutes()).padStart(2, '0');
     return `${hour}:${minute}`;
   };
 
@@ -94,7 +92,21 @@ export function MessageBubble({
                 : 'bg-brand-indigo text-white',
           ].join(' ')}
         >
-        <p className="whitespace-pre-wrap">{message.content}</p>
+        {/* Выделяем жирным заголовок маршрута если есть */}
+        {message.content?.startsWith('Маршрут по городу') ? (
+          <div className="whitespace-pre-wrap">
+            <p className="font-bold text-slate-800 mb-2">
+              {message.content.split('\n')[0]}
+            </p>
+            {message.content.split('\n').slice(1).join('\n').trim() && (
+              <p className="text-slate-600">
+                {message.content.split('\n').slice(1).join('\n').trim()}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="whitespace-pre-wrap">{message.content}</p>
+        )}
 
         {/* Время в правом нижнем углу */}
         <p className="text-[10px] text-slate-400/80 float-right ml-3 mt-1">

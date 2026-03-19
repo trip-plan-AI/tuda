@@ -33,7 +33,7 @@ import { setConfig, clearConfig } from '@/features/persistent-map';
 import { TripCard } from '@/entities/trip/ui/TripCard';
 import { PlannerConflictModal } from '@/widgets/planner-conflict-modal';
 
-type TabKey = 'routes' | 'saved';
+type TabKey = 'routes' | 'saved' | 'shared';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function ProfilePage() {
@@ -78,6 +78,11 @@ export function ProfilePage() {
 
   const travelTrips = trips.filter((t) => t.startDate && t.endDate);
   const savedTrips = trips.filter((t) => !t.startDate || !t.endDate);
+  const sharedTrips = trips.filter((t) => {
+    // Trips with 2+ participants (including owner)
+    const participantCount = (t.collaborators?.length ?? 0) + 1;
+    return participantCount >= 2;
+  });
 
   const now = new Date();
   const currentTrips = travelTrips
@@ -156,6 +161,15 @@ export function ProfilePage() {
   const getTripIdsByTab = useCallback((tripsList: Trip[], tab: TabKey): string[] => {
     if (tab === 'saved') {
       return tripsList.filter((t) => !t.startDate || !t.endDate).map((t) => t.id);
+    }
+
+    if (tab === 'shared') {
+      return tripsList
+        .filter((t) => {
+          const participantCount = (t.collaborators?.length ?? 0) + 1;
+          return participantCount >= 2;
+        })
+        .map((t) => t.id);
     }
 
     const currentTime = new Date();
@@ -840,6 +854,16 @@ export function ProfilePage() {
     }
   };
 
+  const deleteTrip = async (tripId: string) => {
+    try {
+      await tripsApi.remove(tripId);
+      setAllTrips(allTrips.filter((t) => t.id !== tripId));
+      toast.success('Маршрут удален');
+    } catch {
+      toast.error('Не удалось удалить маршрут');
+    }
+  };
+
   // Open create conflict modal when creating a new trip with unsaved changes
   const handleCreateTrip = () => {
     if (currentTrip && isDirty) {
@@ -1026,6 +1050,18 @@ export function ProfilePage() {
             Сохранено
             <span className="ml-1.5 text-[10px] font-black opacity-60">{savedTrips.length}</span>
           </button>
+          <button
+            onClick={() => handleTabChange('shared')}
+            className={cn(
+              'pb-2 text-[12px] font-bold tracking-wide border-b-2 transition-all',
+              activeTab === 'shared'
+                ? 'border-brand-sky text-brand-sky'
+                : 'border-transparent text-slate-400 hover:text-slate-600',
+            )}
+          >
+            Совместные
+            <span className="ml-1.5 text-[10px] font-black opacity-60">{sharedTrips.length}</span>
+          </button>
         </div>
       </div>
 
@@ -1036,7 +1072,9 @@ export function ProfilePage() {
           <span className="text-[13px] font-bold text-slate-500">
             {activeTab === 'routes'
               ? `${travelTrips.length} путешествий`
-              : `${savedTrips.length} сохранено`}
+              : activeTab === 'saved'
+                ? `${savedTrips.length} сохранено`
+                : `${sharedTrips.length} совместных`}
           </span>
           <Button
             onClick={handleCreateTrip}
@@ -1077,14 +1115,14 @@ export function ProfilePage() {
             </button>
           </div>
 
-          {activeTab === 'routes' ? (
-            isLoadingTrips ? (
-              <div className="px-4 space-y-3 pb-4 pt-3 w-full">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
-                ))}
-              </div>
-            ) : travelTrips.length > 0 ? (
+          {isLoadingTrips ? (
+            <div className="px-4 space-y-3 pb-4 pt-3 w-full">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
+              ))}
+            </div>
+          ) : activeTab === 'routes' ? (
+            travelTrips.length > 0 ? (
               <div ref={routePointsScrollRef} className="px-4 pb-4 pt-3 w-full">
                 {currentTrips.length > 0 && (
                   <>
@@ -1106,6 +1144,7 @@ export function ProfilePage() {
                           cardRef={(node) => registerTripCardRef(trip.id, node)}
                           onOpenPlanner={handleEditRoute}
                           onDatesUpdate={handleDatesUpdate}
+                          onDelete={deleteTrip}
                           onInvite={() => {
                             setInviteTripId(trip.id);
                             setInviteModalOpen(true);
@@ -1140,6 +1179,7 @@ export function ProfilePage() {
                           cardRef={(node) => registerTripCardRef(trip.id, node)}
                           onOpenPlanner={handleEditRoute}
                           onDatesUpdate={handleDatesUpdate}
+                          onDelete={deleteTrip}
                           onInvite={() => {
                             setInviteTripId(trip.id);
                             setInviteModalOpen(true);
@@ -1174,6 +1214,7 @@ export function ProfilePage() {
                           cardRef={(node) => registerTripCardRef(trip.id, node)}
                           onOpenPlanner={handleEditRoute}
                           onDatesUpdate={handleDatesUpdate}
+                          onDelete={deleteTrip}
                           onInvite={() => {
                             setInviteTripId(trip.id);
                             setInviteModalOpen(true);
@@ -1195,13 +1236,31 @@ export function ProfilePage() {
                 <p className="text-xs text-slate-300 mt-1">Создайте первую поездку с датами</p>
               </div>
             )
-          ) : isLoadingTrips ? (
-            <div className="px-4 space-y-3 pb-4 pt-3 w-full">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="aspect-[4/3] bg-slate-100 animate-pulse rounded-2xl" />
+          ) : activeTab === 'shared' && sharedTrips.length > 0 ? (
+            <div ref={savedListScrollRef} className="px-4 space-y-3 pb-4 pt-3 w-full">
+              {sharedTrips.map((trip) => (
+                <TripCard
+                  key={trip.id}
+                  trip={trip}
+                  isSelected={selectedTripId === trip.id}
+                  onCardClick={handleCardClick}
+                  highlighted={highlightedTripId === trip.id}
+                  cardRef={(node) => registerTripCardRef(trip.id, node)}
+                  onOpenPlanner={handleEditRoute}
+                  onDatesUpdate={handleDatesUpdate}
+                  onDelete={deleteTrip}
+                  onInvite={() => {
+                    setInviteTripId(trip.id);
+                    setInviteModalOpen(true);
+                  }}
+                  onCollaboratorsClick={() => {
+                    setCollaboratorsTripId(trip.id);
+                    setCollaboratorsModalOpen(true);
+                  }}
+                />
               ))}
             </div>
-          ) : savedTrips.length > 0 ? (
+          ) : activeTab === 'saved' && savedTrips.length > 0 ? (
             <div ref={savedListScrollRef} className="px-4 space-y-3 pb-4 pt-3 w-full">
               {savedTrips.map((trip) => (
                 <TripCard
@@ -1213,6 +1272,7 @@ export function ProfilePage() {
                   cardRef={(node) => registerTripCardRef(trip.id, node)}
                   onOpenPlanner={handleEditRoute}
                   onDatesUpdate={handleDatesUpdate}
+                  onDelete={deleteTrip}
                   onInvite={() => {
                     setInviteTripId(trip.id);
                     setInviteModalOpen(true);
@@ -1227,7 +1287,9 @@ export function ProfilePage() {
           ) : (
             <div className="flex flex-col items-center justify-center text-slate-300 text-center px-4 py-10 flex-1">
               <MapIcon size={40} className="mb-3 opacity-20" />
-              <p className="text-sm font-semibold text-slate-400">Список пуст</p>
+              <p className="text-sm font-semibold text-slate-400">
+                {activeTab === 'shared' ? 'Совместных маршрутов нет' : 'Список пуст'}
+              </p>
             </div>
           )}
         </div>

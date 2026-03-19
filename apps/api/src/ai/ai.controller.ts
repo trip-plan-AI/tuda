@@ -17,6 +17,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { SetMetadata } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { randomUUID } from 'node:crypto';
 import type { Request } from 'express';
 import { Observable } from 'rxjs';
@@ -602,6 +603,7 @@ ${JSON.stringify(points)}
     };
   }
 
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('plan')
   async plan(
     @Body(InputSanitizerPipe) dto: AiPlanRequestDto,
@@ -666,13 +668,36 @@ ${JSON.stringify(points)}
       });
     }
 
-    // Guard Layer: Off-topic / Small talk
+    // Guard Layer: Off-topic / Small talk / Spam
     if (
       intentRouterDecision.action_type === 'OFF_TOPIC' ||
       intentRouterDecision.action_type === 'SMALL_TALK'
     ) {
-      const fallbackMsg =
-        'Я помогаю с планированием маршрутов и поездок. Можешь уточнить, в каком городе ты хочешь маршрут или какие места найти? 🙂';
+      // Generate contextual message based on fallback reason and action type
+      let fallbackMsg: string;
+
+      // @ts-ignore - fallback_reason includes SEMANTIC_SPAM_BLOCKED but TS has type checking issues
+      const fbReason = intentRouterDecision.fallback_reason as
+        | 'LOW_CONFIDENCE'
+        | 'SPAM_BLOCKED'
+        | 'SEMANTIC_SPAM_BLOCKED'
+        | undefined;
+
+      if (fbReason === 'SEMANTIC_SPAM_BLOCKED') {
+        fallbackMsg =
+          'Похоже, ты отправил очень похожий запрос несколько раз. Дай мне новый вопрос о маршруте! 😊';
+      } else if (fbReason === 'SPAM_BLOCKED') {
+        fallbackMsg =
+          'Твой запрос похож на спам. Напиши нормальный вопрос о путешествии или маршруте. 🙂';
+      } else if (
+        intentRouterDecision.action_type === 'SMALL_TALK'
+      ) {
+        fallbackMsg =
+          'Я помощник для планирования маршрутов и путешествий. Давай спланируем твоё путешествие! Например, спроси про маршрут на 3 дня в Казани или найди кафе в городе. 🙂';
+      } else {
+        fallbackMsg =
+          'Я помогаю с планированием маршрутов и поездок. Можешь уточнить, в каком городе ты хочешь маршрут или какие места найти? 🙂';
+      }
 
       const clarificationMessages: SessionMessage[] = [
         ...history,
@@ -695,6 +720,8 @@ ${JSON.stringify(points)}
       throw new UnprocessableEntityException({
         code: 'OFF_TOPIC',
         message: fallbackMsg,
+        is_out_of_scope: true,
+        fallback_reason: intentRouterDecision.fallback_reason || 'UNKNOWN',
         session_id: session.id,
       });
     }
@@ -2380,11 +2407,13 @@ ${JSON.stringify(points)}
     };
   }
 
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('mutations/parse')
   async parseMutations(@Body() body: { query: string; tripContext?: string }) {
     return this.mutationParser.parseMutations(body.query, body.tripContext);
   }
 
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('mutations/:tripId/apply')
   async applyMutations(
     @Param('tripId') tripId: string,

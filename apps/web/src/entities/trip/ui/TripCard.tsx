@@ -8,6 +8,7 @@ import {
   MoreVertical,
   Crown,
   CalendarIcon,
+  Trash2,
 } from 'lucide-react';
 import { format, startOfToday, startOfMonth } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -109,6 +110,7 @@ interface TripCardProps {
   onInvite?: (tripId: string) => void;
   onCollaboratorsClick?: (tripId: string) => void;
   onDatesUpdate?: (tripId: string, dates: { startDate: string; endDate: string }) => void;
+  onDelete?: (tripId: string) => void | Promise<void>;
 }
 
 const COVER_FALLBACK = 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=800&q=80';
@@ -132,6 +134,7 @@ export function TripCard({
   onInvite,
   onCollaboratorsClick,
   onDatesUpdate,
+  onDelete,
 }: TripCardProps) {
   const router = useRouter();
   const nights = calcNights(trip.startDate, trip.endDate);
@@ -479,7 +482,7 @@ export function TripCard({
       </div>
 
       {/* ── Card body ── */}
-      <div className="px-3 pt-2 pb-2 flex flex-col gap-1">
+      <div className="px-3 pt-3 pb-3 flex flex-col gap-2.5">
         {/* Title */}
         <p className="font-bold text-[14px] leading-snug text-brand-indigo line-clamp-2">
           {trip.title}
@@ -602,13 +605,29 @@ export function TripCard({
         </div>
 
         {/* Budget summary */}
-        <div className="pt-1.5 border-t border-slate-100">
+        <div className="pt-2.5 border-t border-slate-100">
           <BudgetSummary plannedBudget={trip.budget} totalBudget={pointsBudgetTotal} />
         </div>
 
-        {/* Bottom row: arrow button */}
-        <div className="flex items-center justify-end mt-0.5">
-          {/* Arrow → go to planner */}
+        {/* Bottom row: delete button (left) + go to planner button (right) */}
+        <div className="flex items-center justify-between mt-2 gap-2">
+          {/* Delete button - left side */}
+          {onDelete && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                void onDelete(trip.id);
+              }}
+              className="px-2 py-1.5 rounded-lg bg-slate-50 flex items-center justify-center gap-1.5
+                         text-slate-400 hover:bg-red-50 hover:text-red-500
+                         transition-colors duration-150 text-xs font-semibold"
+              title="Удалить маршрут"
+            >
+              <Trash2 size={14} />
+              Удалить
+            </button>
+          )}
+          {/* Go to planner button - right side */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -624,14 +643,15 @@ export function TripCard({
                 router.push('/planner');
               }
             }}
-            className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center
-                       text-slate-400 hover:bg-brand-sky hover:text-white
-                       transition-colors duration-150"
+            className="ml-auto px-2.5 py-1.5 rounded-lg bg-brand-sky/10 flex items-center justify-center gap-1
+                       text-brand-sky hover:bg-brand-sky hover:text-white
+                       transition-colors duration-150 text-xs font-semibold"
             title="Открыть в планнере"
           >
-            <ArrowRight size={15} />
-          </button>
-        </div>
+              в конструктор
+              <ArrowRight size={14} />
+            </button>
+          </div>
       </div>
     </div>
   );

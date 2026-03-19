@@ -213,5 +213,5 @@ export interface IntentRouterDecision {
   confidence: number;
   target_poi_id: string | null;
   route_mode: IntentRouterRouteMode;
-  fallback_reason?: 'LOW_CONFIDENCE' | 'SPAM_BLOCKED';
+  fallback_reason?: 'LOW_CONFIDENCE' | 'SPAM_BLOCKED' | 'SEMANTIC_SPAM_BLOCKED';
 }

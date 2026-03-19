@@ -52,8 +52,61 @@ Rules:
 @Injectable()
 export class IntentRouterService {
   private readonly logger = new Logger('AI_PIPELINE:IntentRouter');
+  private recentQueries: string[] = [];
+  private readonly MAX_RECENT_QUERIES = 10;
 
   constructor(private readonly llmClientService: LlmClientService) {}
+
+  private calculateLevenshteinDistance(str1: string, str2: string): number {
+    const len1 = str1.length;
+    const len2 = str2.length;
+    const matrix: number[][] = Array(len2 + 1)
+      .fill(null)
+      .map(() => Array(len1 + 1).fill(0));
+
+    for (let i = 0; i <= len1; i++) matrix[0][i] = i;
+    for (let j = 0; j <= len2; j++) matrix[j][0] = j;
+
+    for (let j = 1; j <= len2; j++) {
+      for (let i = 1; i <= len1; i++) {
+        const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[j][i] = Math.min(
+          matrix[j][i - 1] + 1,
+          matrix[j - 1][i] + 1,
+          matrix[j - 1][i - 1] + cost,
+        );
+      }
+    }
+
+    return matrix[len2][len1];
+  }
+
+  private isSemanticSpam(text: string): boolean {
+    const normalized = text.toLowerCase().trim();
+    const threshold = Math.max(3, Math.floor(normalized.length * 0.2)); // 20% difference threshold
+
+    for (const recentQuery of this.recentQueries) {
+      const distance = this.calculateLevenshteinDistance(
+        normalized,
+        recentQuery.toLowerCase(),
+      );
+      if (distance <= threshold) {
+        this.logger.warn(
+          `Semantic spam detected: "${text}" is similar to recent query (distance: ${distance})`,
+        );
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private recordQuery(text: string): void {
+    this.recentQueries.push(text);
+    if (this.recentQueries.length > this.MAX_RECENT_QUERIES) {
+      this.recentQueries.shift();
+    }
+  }
 
   private getSpamScore(text: string): number {
     let score = 0;
@@ -61,6 +114,8 @@ export class IntentRouterService {
     if (/^[a-zA-Z0-9]+$/.test(text)) score += 1;
     if (/(.)\1{5,}/.test(text)) score += 2;
     if (/https?:\/\//.test(text)) score += 2;
+    // Add semantic spam detection to score
+    if (this.isSemanticSpam(text)) score += 3;
     return score;
   }
 
@@ -100,16 +155,23 @@ export class IntentRouterService {
     const query = message.trim();
 
     // 1. Anti-Spam Check
-    if (this.getSpamScore(query) >= 3) {
-      this.logger.warn(`Spam detected for query: "${query}"`);
+    const spamScore = this.getSpamScore(query);
+    if (spamScore >= 3) {
+      this.logger.warn(
+        `Spam detected for query: "${query}" (spam score: ${spamScore})`,
+      );
       return {
         action_type: 'OFF_TOPIC',
         confidence: 1,
         target_poi_id: null,
         route_mode: 'full_rebuild',
-        fallback_reason: 'SPAM_BLOCKED',
+        fallback_reason:
+          spamScore >= 5 ? 'SEMANTIC_SPAM_BLOCKED' : 'SPAM_BLOCKED',
       };
     }
+
+    // Record query for future semantic spam detection
+    this.recordQuery(query);
 
     const llmPayload = {
       message: query,
