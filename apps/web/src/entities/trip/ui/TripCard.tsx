@@ -49,7 +49,7 @@ function BudgetSummary({
     <div className="space-y-1.5">
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col min-w-0">
-          <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">
+          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
             Планируемый
           </span>
           <span className="text-sm font-black text-brand-indigo leading-tight">
@@ -57,7 +57,7 @@ function BudgetSummary({
           </span>
         </div>
         <div className="flex flex-col min-w-0 text-right">
-          <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">
+          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
             Итого по точкам
           </span>
           <span
@@ -81,7 +81,7 @@ function BudgetSummary({
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-[9px] font-bold text-slate-400">
+      <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-400">
         <span>{plan > 0 ? `Использовано ${progressPercent}%` : 'Лимит не задан'}</span>
         <span
           className={cn(
