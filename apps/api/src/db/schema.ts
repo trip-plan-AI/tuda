@@ -69,8 +69,9 @@ export const trips = pgTable('trips', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
-export const tripsRelations = relations(trips, ({ many }) => ({
+export const tripsRelations = relations(trips, ({ many, one }) => ({
   points: many(routePoints),
+  collaborators: many(tripCollaborators),
 }));
 
 // trip_collaborators

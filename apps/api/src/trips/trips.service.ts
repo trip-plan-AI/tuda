@@ -42,7 +42,10 @@ export class TripsService {
     const ownTrips = await this.db.query.trips.findMany({
       where: eq(schema.trips.ownerId, userId),
       orderBy: [desc(schema.trips.createdAt)],
-      with: { points: { orderBy: [schema.routePoints.order] } },
+      with: {
+        points: { orderBy: [schema.routePoints.order] },
+        collaborators: true,
+      },
     });
 
     // 2. Trips where user is a collaborator — isActive from tripCollaborators
@@ -90,8 +93,33 @@ export class TripsService {
     if (collabIds.length > 0) {
       const trips = await this.db.query.trips.findMany({
         where: inArray(schema.trips.id, collabIds),
-        with: { points: { orderBy: [schema.routePoints.order] } },
+        with: {
+          points: { orderBy: [schema.routePoints.order] },
+          collaborators: true,
+        },
       });
+
+      // Enrich collaborators with user details
+      for (const trip of trips) {
+        if (trip.collaborators && trip.collaborators.length > 0) {
+          const userIds = trip.collaborators.map((c) => c.userId);
+          const users = await this.db.query.users.findMany({
+            where: inArray(schema.users.id, userIds),
+          });
+
+          const userMap = new Map(users.map((u) => [u.id, u]));
+          (trip as any).collaborators = trip.collaborators.map((c) => {
+            const user = userMap.get(c.userId);
+            return {
+              id: c.userId,
+              email: user?.email || '',
+              name: user?.name,
+              role: c.role as 'owner' | 'editor' | 'viewer',
+            };
+          });
+        }
+      }
+
       // Override isActive with the per-user value from tripCollaborators
       // ownerIsActive = global trips.isActive (the owner's activation state)
       collabTrips = trips.map((t) => ({
