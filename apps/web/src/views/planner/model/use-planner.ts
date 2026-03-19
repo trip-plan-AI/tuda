@@ -801,39 +801,8 @@ export function usePlanner() {
     try {
       const tripId = await ensureTripId();
 
-      const pointsByDay = points.reduce<Record<string, RoutePoint[]>>((acc, p) => {
-        const dayStr = p.visitDate ? format(new Date(p.visitDate), 'dd.MM.yyyy') : 'Без даты';
-        if (!acc[dayStr]) acc[dayStr] = [];
-        acc[dayStr].push(p);
-        return acc;
-      }, {});
-
-      const pointsContext = Object.entries(pointsByDay)
-        .map(([day, dayPoints]) => {
-          const dayLines = dayPoints.map((p) => {
-            const timeStr =
-              p.visitDate && p.visitDate.includes('T')
-                ? ` (Время: ${format(new Date(p.visitDate), 'HH:mm')})`
-                : '';
-            return `- ${p.title}${p.budget ? ` — ${p.budget} ₽` : ''}${timeStr} [${p.lat}, ${p.lon}]`;
-          });
-          return `**День: ${day}**\n${dayLines.join('\n')}`;
-        })
-        .join('\n\n');
-
-      const routeTitle = currentTrip?.title || 'Мой маршрут';
-      const query = `Маршрут: ${routeTitle}\n\nСейчас список мест разбит по дням и выглядит так:\n\n${pointsContext}\n\nЯ обновил маршрут. Спроси у меня, нужна ли мне помощь с анализом, оптимизацией или изменением мест. Не делай подробный анализ сразу, просто предложи варианты помощи.`;
-
-      const sessionId = await openOrCreateSessionFromTrip(tripId);
-
-      if (sessionId) {
-        sessionStorage.setItem(
-          'ai:pending-handoff',
-          JSON.stringify({ query, targetSessionId: sessionId }),
-        );
-      } else {
-        sessionStorage.setItem('ai:pending-query', query);
-      }
+      // Просто открываем/создаём сессию и переходим в чат — без отправки сообщений
+      await openOrCreateSessionFromTrip(tripId);
 
       router.push('/ai-assistant');
     } catch (error) {
