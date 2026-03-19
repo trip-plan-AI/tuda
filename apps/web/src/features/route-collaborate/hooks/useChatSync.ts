@@ -85,7 +85,7 @@ export function useChatSync(tripId: string) {
         buildChatMessage(data, currentUserId),
       );
 
-      useAiQueryStore.getState().addChatHistory(mappedHistory);
+      useAiQueryStore.getState().addChatHistoryForTrip(tripId, mappedHistory);
     };
 
     socket.on('chat:history', handleChatHistory);

@@ -113,6 +113,8 @@ interface AiQueryStore {
   addLocalMessageForTrip: (tripId: string, message: ChatMessage) => void;
   // TRI-120: добавляет массив сообщений истории чата (chat:history) без дубликатов.
   addChatHistory: (messages: ChatMessage[]) => void;
+  // TRI-120: мержит chat:history по tripId, всегда (даже если сессия уже имеет сообщения).
+  addChatHistoryForTrip: (tripId: string, messages: ChatMessage[]) => void;
   // Удаляет точку по имени из routePlan последнего сообщения с планом (только внутри чата, не трогает конструктор).
   deletePointFromLatestRoutePlan: (pointName: string) => void;
   // Очищает все точки из routePlan последнего сообщения с планом (только внутри чата, не трогает конструктор).
@@ -1148,6 +1150,43 @@ export const useAiQueryStore = create<AiQueryStore>()(
       return {
         sessions: nextSessions,
         ...syncLegacyFields(nextSessions, activeId),
+      };
+    });
+  },
+
+  // TRI-120: мержит chat:history по tripId, всегда (даже если сессия уже имеет сообщения).
+  addChatHistoryForTrip: (tripId, messages) => {
+    if (!messages.length) return;
+    set((state) => {
+      const sessionEntry = Object.entries(state.sessions).find(
+        ([, s]) => s.tripId === tripId,
+      );
+      if (!sessionEntry) return state;
+      const [sessionId, session] = sessionEntry;
+
+      const existingMap = new Map(session.messages.map((m) => [m.id, m]));
+      const merged = [...session.messages];
+
+      for (const msg of messages) {
+        if (!existingMap.has(msg.id)) {
+          merged.push(msg);
+          existingMap.set(msg.id, msg);
+        } else {
+          const existing = existingMap.get(msg.id)!;
+          if (msg.routePlan && !existing.routePlan) existing.routePlan = msg.routePlan;
+        }
+      }
+
+      merged.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+      const nextSessions = {
+        ...state.sessions,
+        [sessionId]: { ...session, messages: merged },
+      };
+
+      return {
+        sessions: nextSessions,
+        ...syncLegacyFields(nextSessions, state.activeSessionId),
       };
     });
   },
