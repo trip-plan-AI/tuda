@@ -2178,10 +2178,33 @@ ${JSON.stringify(points)}
       tripId,
     );
 
-    // TRI-104: Load route context but don't send automatic greeting.
-    // User should start conversation themselves. Route context is available
-    // via session for AI to understand when user sends first message.
-    // No automatic messages are appended - just load the session.
+    // TRI-104: Load route context as initial assistant message.
+    // Save the routePlan as an assistant message so it's visualized on the frontend
+    // as a structured route card rather than plain text.
+    const existingMessages = this.aiSessionsService.normalizeMessages(
+      session.messages,
+    ) || [];
+
+    // Check if route context is already in session (avoid duplication)
+    const hasRouteContext = existingMessages.some(
+      (msg) =>
+        msg.role === 'assistant' && msg.route_plan !== undefined,
+    );
+
+    if (!hasRouteContext) {
+      const routeContextMessage: SessionMessage = {
+        role: 'assistant',
+        content: `📍 Маршрут: ${trip.title}`,
+        route_plan: routePlan,
+      };
+
+      const updatedMessages = [
+        ...existingMessages,
+        routeContextMessage,
+      ];
+
+      await this.aiSessionsService.saveMessages(session.id, updatedMessages);
+    }
 
     this.eventsService.emitTripRefresh(tripId);
     this.eventsService.emitAiUpdate(tripId, session.id);

@@ -442,10 +442,10 @@ export class CollaborationGateway
               role: 'assistant' as const,
               content: data.content,
               created_at: data.timestamp,
-              route_plan: data.route_plan,
+              route_plan: data.route_plan as any,
             },
           ];
-          await this.aiSessionsService.saveMessages(aiSession.id, updatedMessages);
+          await this.aiSessionsService.saveMessages(aiSession.id, updatedMessages as any);
         }
       }
     } catch (error) {

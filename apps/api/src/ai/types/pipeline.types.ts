@@ -6,6 +6,8 @@ export interface SessionMessage {
   role: ChatRole;
   content: string;
   route_plan?: RoutePlan;
+  id?: string; // Message ID for deduplication
+  created_at?: string; // ISO timestamp for message ordering
 }
 
 export type PoiCategory =
