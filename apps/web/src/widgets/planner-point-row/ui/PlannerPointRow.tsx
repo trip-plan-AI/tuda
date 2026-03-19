@@ -139,7 +139,23 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
       }
 
       const data = await res.json();
+      console.log('[Geosearch] Raw suggestions response:', {
+        query,
+        count: data.results?.length ?? 0,
+        firstResult: data.results?.[0],
+      });
+
       const found = filterUniqueSuggestions(data.results ?? []);
+      console.log('[Geosearch] Filtered suggestions:', {
+        count: found.length,
+        suggestions: found.map((s) => ({
+          displayName: s.displayName,
+          uri: s.uri,
+          lat: (s as any).lat,
+          lon: (s as any).lon,
+        })),
+      });
+
       setSuggestions(found);
       setShowDropdownState(true);
     } catch (e) {
@@ -152,6 +168,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
   };
 
   const handleAddressChange = (val: string) => {
+    console.log('[PlannerPointRow] Address changed:', { val, length: val.length });
     setAddressVal(val);
     if (val.length > 2) {
       setIsSearching(true);
@@ -161,7 +178,10 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
       setShowDropdownState(false);
     }
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => getSuggestions(val), 700);
+    debounceRef.current = setTimeout(() => {
+      console.log('[PlannerPointRow] Triggering getSuggestions for:', val);
+      getSuggestions(val);
+    }, 700);
   };
 
   const handleSelectSuggestion = async (s: GeoSuggestion) => {
@@ -170,6 +190,8 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
     setIsSearching(true);
     try {
       let coords: { lat: number; lon: number } | null = null;
+
+      // Try to extract coordinates from URI (e.g., "...?ll=37.6173,55.7558&...")
       if (s.uri) {
         const match = s.uri.match(/[?&]ll=([^&]+)/);
         if (match) {
@@ -177,9 +199,27 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
             number,
             number,
           ];
-          if (Number.isFinite(lon) && Number.isFinite(lat)) coords = { lat, lon };
+          if (Number.isFinite(lon) && Number.isFinite(lat)) {
+            coords = { lat, lon };
+          }
         }
       }
+
+      // If coordinates not found in URI, try to get them from geosearch
+      if (!coords && (s as any).lat !== undefined && (s as any).lon !== undefined) {
+        const lat = (s as any).lat;
+        const lon = (s as any).lon;
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          coords = { lat, lon };
+        }
+      }
+
+      console.log('[PlannerPointRow] Selected suggestion:', {
+        displayName: s.displayName,
+        hasUri: !!s.uri,
+        hasCoords: !!coords,
+        coords,
+      });
 
       if (coords) {
         const cityName = s.displayName.split(/[,.]/).shift()?.trim() || s.displayName;
@@ -189,6 +229,8 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
           lon: coords.lon,
           title: cityName,
         });
+      } else {
+        console.warn('[PlannerPointRow] Could not extract coordinates from suggestion:', s);
       }
     } finally {
       setIsSearching(false);
