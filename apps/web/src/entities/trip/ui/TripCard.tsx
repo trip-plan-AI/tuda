@@ -81,7 +81,7 @@ function BudgetSummary({
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-400">
+      <div className="grid grid-cols-2 gap-2 text-xs font-bold text-slate-400">
         <span>{plan > 0 ? `Использовано ${progressPercent}%` : 'Лимит не задан'}</span>
         <span
           className={cn(
