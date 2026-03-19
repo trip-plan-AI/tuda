@@ -490,6 +490,139 @@ test.describe('Collaboration E2E Tests', () => {
     });
   });
 
+  test.describe('Concurrent Edit Conflicts', () => {
+    test('should handle two users editing same point simultaneously (COLLISION TEST)', async ({
+      browser,
+    }) => {
+      const { user1, user2, context1, context2 } = await setupTwoUsers(browser);
+      const tripId = 'test-trip-collision-' + Date.now();
+
+      try {
+        // Setup: оба пользователя открывают конструктор одного маршрута
+        await user1.goto(`${baseUrl}/planner/${tripId}`);
+        await user2.goto(`${baseUrl}/planner/${tripId}`);
+
+        // Добавляем начальную точку через user1
+        await user1.click('[data-testid="add-point-button"]');
+        await user1.fill('[data-testid="point-search"]', 'Москва');
+        await user1.waitForSelector('[data-testid="poi-item-0"]', {
+          timeout: 5000,
+        });
+        await user1.click('[data-testid="poi-item-0"]');
+
+        // Ждём синхронизации до user2
+        await user2.waitForTimeout(1000);
+
+        // ⚠️ КОЛЛИЗИЯ: Оба редактируют одну точку одновременно
+        // User 1: меняет название на "Красная площадь"
+        const editBtn1 = await user1.$('[data-testid="trip-point-edit-0"]');
+        if (editBtn1) {
+          await editBtn1.click();
+          const nameInput1 = await user1.waitForSelector(
+            '[data-testid="point-name-input"]',
+            { timeout: 3000 }
+          );
+          if (nameInput1) {
+            await user1.fill('[data-testid="point-name-input"]', 'Красная площадь');
+            await user1.click('[data-testid="confirm-edit"]');
+          }
+        }
+
+        // User 2: ОДНОВРЕМЕННО меняет название на "Кремль" (не дожидаясь синка)
+        const editBtn2 = await user2.$('[data-testid="trip-point-edit-0"]');
+        if (editBtn2) {
+          await editBtn2.click();
+          const nameInput2 = await user2.waitForSelector(
+            '[data-testid="point-name-input"]',
+            { timeout: 3000 }
+          );
+          if (nameInput2) {
+            await user2.fill('[data-testid="point-name-input"]', 'Кремль');
+            await user2.click('[data-testid="confirm-edit"]');
+          }
+        }
+
+        // ⚠️ ПРОВЕРКА КОЛЛИЗИИ: кто выиграет?
+        await user1.waitForTimeout(1500);
+        await user2.waitForTimeout(1500);
+
+        const name1 = await user1.textContent('[data-testid="trip-point-0"]');
+        const name2 = await user2.textContent('[data-testid="trip-point-0"]');
+
+        console.log('🔴 COLLISION DETECTED:');
+        console.log(`  User 1 видит: "${name1}"`);
+        console.log(`  User 2 видит: "${name2}"`);
+        console.log(`  Разные значения? ${name1 !== name2}`);
+
+        // ⚠️ ПРОБЛЕМА: Вероятно, видят разные значения или одно переписывает другое
+        // Это означает отсутствие конфликт-резолюции
+        // Идеально: должна быть версионирование или Last-Write-Wins с timestamp
+      } finally {
+        await cleanupUsers(user1, user2, context1, context2);
+      }
+    });
+
+    test('should handle concurrent budget and title changes on same point', async ({
+      browser,
+    }) => {
+      const { user1, user2, context1, context2 } = await setupTwoUsers(browser);
+      const tripId = 'test-trip-partial-collision-' + Date.now();
+
+      try {
+        await user1.goto(`${baseUrl}/planner/${tripId}`);
+        await user2.goto(`${baseUrl}/planner/${tripId}`);
+
+        // Добавляем точку
+        await user1.click('[data-testid="add-point-button"]');
+        await user1.fill('[data-testid="point-search"]', 'Санкт-Петербург');
+        await user1.waitForSelector('[data-testid="poi-item-0"]', {
+          timeout: 5000,
+        });
+        await user1.click('[data-testid="poi-item-0"]');
+
+        await user2.waitForTimeout(1000);
+
+        // ⚠️ ЧАСТИЧНАЯ КОЛЛИЗИЯ
+        // User 1: меняет ТОЛЬКО название
+        const editBtn1 = await user1.$('[data-testid="trip-point-edit-0"]');
+        if (editBtn1) {
+          await editBtn1.click();
+          const nameInput1 = await user1.waitForSelector(
+            '[data-testid="point-name-input"]',
+            { timeout: 3000 }
+          );
+          if (nameInput1) {
+            await user1.fill('[data-testid="point-name-input"]', 'Эрмитаж');
+            // Не нажимаем confirm сразу, даём User2 начать редактировать
+          }
+        }
+
+        // User 2: меняет ТОЛЬКО бюджет (если есть поле)
+        const budgetInput2 = await user2.$('[data-testid="point-budget-0"]');
+        if (budgetInput2) {
+          await budgetInput2.click();
+          await user2.fill('[data-testid="point-budget-0"]', '5000');
+        }
+
+        // Теперь оба закрывают редактирование
+        if (editBtn1) {
+          await user1.click('[data-testid="confirm-edit"]');
+        }
+        await user2.waitForTimeout(500);
+
+        const finalName = await user1.textContent('[data-testid="trip-point-0"]');
+        const finalBudget = await user1.textContent('[data-testid="point-budget-0"]');
+
+        console.log('🟡 PARTIAL COLLISION:');
+        console.log(`  Final name: "${finalName}"`);
+        console.log(`  Final budget: "${finalBudget}"`);
+        console.log(`  ⚠️ Потеряны ли изменения User 2?`);
+      } finally {
+        await cleanupUsers(user1, user2, context1, context2);
+      }
+    });
+  });
+
   test.describe('Multi-User Scenarios (3+ users)', () => {
     test('should sync AI chat and Planner changes across three collaborators', async ({ browser }) => {
       const { user1, user2, user3, context1, context2, context3 } = await setupThreeUsers(browser);
