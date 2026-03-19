@@ -885,6 +885,7 @@ export const useAiQueryStore = create<AiQueryStore>()(
           const nextSession: ChatSession = {
             ...freshTarget,
             messages: mappedMessages,
+            isLoading: false, // Сброс флага загрузки после загрузки сообщений
           };
 
           const nextSessions = {
@@ -900,6 +901,23 @@ export const useAiQueryStore = create<AiQueryStore>()(
       } catch {
         // no-op
       }
+    } else if (target.sessionId && target.messages.length > 0) {
+      // Если сессия уже имеет сообщения, убедиться что isLoading = false
+      // (может остаться true из-за persist при возврате на страницу)
+      set((currentState) => {
+        const session = currentState.sessions[nextSessionId];
+        if (!session || !session.isLoading) return {};
+        return {
+          sessions: {
+            ...currentState.sessions,
+            [nextSessionId]: { ...session, isLoading: false },
+          },
+          ...syncLegacyFields(
+            { ...currentState.sessions, [nextSessionId]: { ...session, isLoading: false } },
+            currentState.activeSessionId,
+          ),
+        };
+      });
     } else if (target.justCleared) {
       // Если была очистка, убираем флаг после активации сессии
       set((state) => {
