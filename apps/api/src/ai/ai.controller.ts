@@ -1116,9 +1116,14 @@ ${JSON.stringify(points)}
       queryLowerForNewRoute.includes(kw),
     );
 
+    // Check if route plan has become empty (all days/points deleted)
+    const hasPointsInRoutePlan =
+      existingRoutePlan &&
+      existingRoutePlan.days.some((day) => day.points && day.points.length > 0);
+
     const isNewRouteRequested =
       intentRouterDecision.action_type === 'NEW_ROUTE' ||
-      !existingRoutePlan ||
+      !hasPointsInRoutePlan ||
       hasNewRouteKeywords;
 
     if (isNewRouteRequested) {
