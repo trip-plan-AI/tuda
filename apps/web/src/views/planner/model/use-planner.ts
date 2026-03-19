@@ -200,6 +200,20 @@ export function usePlanner() {
     return null;
   }, []);
 
+  // Validate that coordinates are not dummy/invalid values
+  const isValidCoords = (coords: { lat: number; lon: number } | null) => {
+    if (!coords) return false;
+    // Reject (0, 0) - dummy coordinates (ocean in Atlantic)
+    if (coords.lat === 0 && coords.lon === 0) {
+      console.warn('[isValidCoords] Rejected (0, 0) coordinates');
+      return false;
+    }
+    // Validate latitude is in range [-90, 90] and longitude in [-180, 180]
+    const latValid = Math.abs(coords.lat) <= 90;
+    const lonValid = Math.abs(coords.lon) <= 180;
+    return latValid && lonValid;
+  };
+
   const resolveMapCoords = useCallback(async (coords: { lon: number; lat: number }) => {
     try {
       const url = `${env.apiUrl}/geosearch/reverse?lat=${coords.lat}&lon=${coords.lon}`;
@@ -911,8 +925,12 @@ export function usePlanner() {
         coords = await resolveCoords(s.displayName);
       }
 
-      if (!coords) {
-        console.warn('[handleSelectSuggestion] Could not get coordinates for:', s.displayName);
+      if (!coords || !isValidCoords(coords)) {
+        console.warn('[handleSelectSuggestion] Invalid or missing coordinates for:', {
+          displayName: s.displayName,
+          coords,
+          isValid: coords ? isValidCoords(coords) : false,
+        });
         return;
       }
 
@@ -938,6 +956,13 @@ export function usePlanner() {
 
       setIsSearching(true);
       try {
+        // Validate click coordinates
+        if (!isValidCoords(coords)) {
+          console.warn('[handleMapClick] Invalid coordinates from map click:', coords);
+          setIsSearching(false);
+          return;
+        }
+
         const geoData = await resolveMapCoords(coords);
         const payload = {
           title: geoData?.title || `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`,
