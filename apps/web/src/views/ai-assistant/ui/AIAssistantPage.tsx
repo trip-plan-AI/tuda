@@ -96,8 +96,17 @@ export function AIAssistantPage() {
     })),
   );
   const currentTrip = useTripStore((state) => state.currentTrip);
+  const clearPlanner = useTripStore((state) => state.clearPlanner);
 
   const activeSession = activeSessionId ? sessions[activeSessionId] : null;
+
+  // TRI-120: Сбрасываем трип в конструкторе, если сессия с ним не связана,
+  // чтобы не видеть старые точки на карте при создании или переключении в новый чат.
+  useEffect(() => {
+    if (activeSession && !activeSession.tripId) {
+      clearPlanner();
+    }
+  }, [activeSession?.id, activeSession?.tripId, clearPlanner]);
 
   useEffect(() => {
     void loadSessions();
@@ -196,6 +205,10 @@ export function AIAssistantPage() {
     const isAiRequest = !hasCollaborators || query.startsWith('/ai');
 
     if (isAiRequest) {
+      // Очищаем стриминговые данные от предыдущих или оборванных запросов перед началом нового
+      setStreamingDays([]);
+      setThinkingStage(null);
+
       const cleanQuery = query.replace(/^\/ai\s*/, '').trim() || query;
       const messageId = crypto.randomUUID();
 
@@ -521,6 +534,13 @@ export function AIAssistantPage() {
   const [streamingDays, setStreamingDays] = useState<ChatRoutePlanDay[]>([]);
   const prevIsLoadingRef = useRef(false);
 
+  // Сбрасываем стриминговые данные при смене чата или получении серверного sessionId,
+  // чтобы не видеть "хвосты" недогруженных/прерванных стримингов из других сессий.
+  useEffect(() => {
+    setStreamingDays([]);
+    setThinkingStage(null);
+  }, [activeSession?.id, activeSession?.sessionId]);
+
   // Clear streaming state when the HTTP request completes
   useEffect(() => {
     if (prevIsLoadingRef.current && !isLoading) {
@@ -531,16 +551,30 @@ export function AIAssistantPage() {
   }, [isLoading]);
 
   // Subscribe to AI streaming socket events
+  // TRI-120: Использование ref для доступа к актуальному sessionId внутри замыканий сокета
+  const activeSessionRef = useRef(activeSession);
   useEffect(() => {
-    if (!socketTripId || socketTripId.startsWith('guest-')) return;
+    activeSessionRef.current = activeSession;
+  }, [activeSession]);
 
+  useEffect(() => {
     const socket = getSocket();
 
     const handleThinking = (data: { trip_id: string; session_id: string; stage: string }) => {
+      // Игнорируем события, если они не относятся к текущей активной сессии
+      const current = activeSessionRef.current;
+      if (current?.sessionId && data.session_id && data.session_id !== current.sessionId) {
+        return;
+      }
       setThinkingStage(data.stage);
     };
 
     const handleDayReady = (data: { trip_id: string; session_id: string; day: ChatRoutePlanDay }) => {
+      const current = activeSessionRef.current;
+      if (current?.sessionId && data.session_id && data.session_id !== current.sessionId) {
+        return;
+      }
+
       setStreamingDays((prev) => {
         if (prev.some((d) => d.day_number === data.day.day_number)) return prev;
         return [...prev, data.day];
@@ -555,7 +589,7 @@ export function AIAssistantPage() {
       socket.off('ai:thinking', handleThinking);
       socket.off('ai:day_ready', handleDayReady);
     };
-  }, [socketTripId]);
+  }, []);
 
   useEffect(() => {
     // Карта на AI-странице только для просмотра: нельзя перетаскивать точки и добавлять новые.
