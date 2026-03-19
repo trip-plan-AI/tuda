@@ -1181,7 +1181,7 @@ export const useAiQueryStore = create<AiQueryStore>()(
 
       const nextSessions = {
         ...state.sessions,
-        [sessionId]: { ...session, messages: merged },
+        [sessionId]: { ...session, messages: merged, isLoading: false },
       };
 
       return {
