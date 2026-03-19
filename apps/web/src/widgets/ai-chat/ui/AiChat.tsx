@@ -295,7 +295,7 @@ export function AiChat({
           />
           <Button
             type="button"
-            variant="brand-yellow"
+            variant="brand-blue"
             size="icon"
             onClick={handleSubmit}
             disabled={isLoading}
