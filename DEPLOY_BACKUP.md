@@ -56,3 +56,24 @@ docker compose -f docker-compose.prod.yml exec -T db sh -lc 'psql -U "$POSTGRES_
 docker compose -f docker-compose.prod.yml logs --no-color --tail=200 api
 docker compose -f docker-compose.prod.yml logs --no-color --tail=200 nginx
 ```
+
+## 7) Migration ledger policy
+
+Migration history in [`apps/api/src/db/migrations`](apps/api/src/db/migrations) is **append-only**:
+
+- do not delete old `*.sql` files
+- do not edit already committed old `*.sql` files
+- do not rewrite old entries in [`apps/api/src/db/migrations/meta/_journal.json`](apps/api/src/db/migrations/meta/_journal.json)
+- only append new migration files and new journal entries at the end
+
+CI now validates this policy through [`scripts/ci/verify-migration-ledger.sh`](scripts/ci/verify-migration-ledger.sh).
+
+## 8) Recovery philosophy
+
+If production schema already contains objects from a migration, but drizzle history is missing the corresponding tag, [`scripts/ci/migrate-db.sh`](scripts/ci/migrate-db.sh) may perform **safe history repair** only for explicitly registered migrations.
+
+Current registered repair contract:
+
+- [`0010_pale_magma`](apps/api/src/db/migrations/0010_pale_magma.sql)
+
+The repair is allowed only when all expected runtime objects already exist. Otherwise deploy must stop and be investigated manually.
