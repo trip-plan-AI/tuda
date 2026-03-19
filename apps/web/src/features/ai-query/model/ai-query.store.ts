@@ -1212,9 +1212,16 @@ export const useAiQueryStore = create<AiQueryStore>()(
     {
       name: 'ai-query-sessions',
       storage: createJSONStorage(() => localStorage),
-      // Сохраняем только сессии и активную сессию — не сохраняем isLoading и т.п.
+      // Сохраняем только сессии и активную сессию.
+      // isLoading всегда сохраняем как false — чтобы при возврате в чат не показывался
+      // стейт "AI ищет маршрут" от предыдущей сессии загрузки.
       partialize: (state) => ({
-        sessions: state.sessions,
+        sessions: Object.fromEntries(
+          Object.entries(state.sessions).map(([id, session]) => [
+            id,
+            { ...session, isLoading: false },
+          ]),
+        ),
         activeSessionId: state.activeSessionId,
       }),
     },
