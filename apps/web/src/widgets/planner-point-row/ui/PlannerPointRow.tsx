@@ -377,7 +377,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                   <Button
                     variant="outline"
                     className={cn(
-                      'w-full lg:w-48 px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-500 justify-start text-left text-sm hover:bg-slate-50 transition-all',
+                      'w-full lg:w-48 px-3 py-2 pr-4 bg-white border border-slate-200 rounded-xl font-bold text-slate-500 justify-start text-left text-sm hover:bg-slate-50 transition-all',
                       !point.visitDate && 'text-slate-300',
                     )}
                   >
