@@ -42,11 +42,36 @@ export class TripsService {
     const ownTrips = await this.db.query.trips.findMany({
       where: eq(schema.trips.ownerId, userId),
       orderBy: [desc(schema.trips.createdAt)],
-      with: {
-        points: { orderBy: [schema.routePoints.order] },
-        collaborators: true,
-      },
+      with: { points: { orderBy: [schema.routePoints.order] } },
     });
+
+    // Load collaborators for own trips
+    for (const trip of ownTrips) {
+      const tripCollabs = await this.db
+        .select()
+        .from(schema.tripCollaborators)
+        .where(eq(schema.tripCollaborators.tripId, trip.id));
+
+      if (tripCollabs.length > 0) {
+        const userIds = tripCollabs.map((c) => c.userId);
+        const users = await this.db.query.users.findMany({
+          where: inArray(schema.users.id, userIds),
+        });
+
+        const userMap = new Map(users.map((u) => [u.id, u]));
+        (trip as any).collaborators = tripCollabs.map((c) => {
+          const user = userMap.get(c.userId);
+          return {
+            id: c.userId,
+            email: user?.email || '',
+            name: user?.name,
+            role: c.role as 'owner' | 'editor' | 'viewer',
+          };
+        });
+      } else {
+        (trip as any).collaborators = [];
+      }
+    }
 
     // 2. Trips where user is a collaborator — isActive from tripCollaborators
     let collabRows: { tripId: string; isActive: boolean }[] = [];
@@ -93,22 +118,25 @@ export class TripsService {
     if (collabIds.length > 0) {
       const trips = await this.db.query.trips.findMany({
         where: inArray(schema.trips.id, collabIds),
-        with: {
-          points: { orderBy: [schema.routePoints.order] },
-          collaborators: true,
-        },
+        with: { points: { orderBy: [schema.routePoints.order] } },
       });
 
-      // Enrich collaborators with user details
+      // Enrich each trip with collaborator details
       for (const trip of trips) {
-        if (trip.collaborators && trip.collaborators.length > 0) {
-          const userIds = trip.collaborators.map((c) => c.userId);
+        // Fetch collaborators for this trip
+        const tripCollabs = await this.db
+          .select()
+          .from(schema.tripCollaborators)
+          .where(eq(schema.tripCollaborators.tripId, trip.id));
+
+        if (tripCollabs.length > 0) {
+          const userIds = tripCollabs.map((c) => c.userId);
           const users = await this.db.query.users.findMany({
             where: inArray(schema.users.id, userIds),
           });
 
           const userMap = new Map(users.map((u) => [u.id, u]));
-          (trip as any).collaborators = trip.collaborators.map((c) => {
+          (trip as any).collaborators = tripCollabs.map((c) => {
             const user = userMap.get(c.userId);
             return {
               id: c.userId,
@@ -117,6 +145,8 @@ export class TripsService {
               role: c.role as 'owner' | 'editor' | 'viewer',
             };
           });
+        } else {
+          (trip as any).collaborators = [];
         }
       }
 
