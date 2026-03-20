@@ -2958,188 +2958,28 @@ ${JSON.stringify(points)}
         ? this.extractCurrentRoutePlan(session.messages)
         : null;
 
-      this.logger.debug(
-        `applyMutations chat-only START: sessionId=${body.sessionId}, ` +
-          `messages.length=${session?.messages.length ?? 0}, mutations=${JSON.stringify(body.mutations.map((m: any) => m.type))}`,
-      );
-
       if (lastRoutePlan) {
-        // Работаем напрямую с route_plan в чате (без конвертации в DB points)
-        // Применяем мутации к структуре route_plan, сохраняя времена и порядок
-
-        // Парсим mutations (они могут быть REMOVE_BY_QUERY или REMOVE_BY_ID)
-        const removeQueries = body.mutations
-          .filter((m: any) => m.type === 'REMOVE_BY_QUERY')
-          .map((m: any) => m.query.toLowerCase());
-
         this.logger.log(
-          `[MUTATION] Mutations to apply: ${JSON.stringify(body.mutations)}`,
-        );
-        this.logger.log(
-          `[MUTATION] Parsed removeQueries: [${removeQueries.map((q) => `"${q}"`).join(', ')}]`,
-        );
-        this.logger.log(
-          `[MUTATION] Current points: ${JSON.stringify(
-            lastRoutePlan.days.map((d, idx) => ({
-              day: idx,
-              points: d.points.map((p) => ({
-                name: p.poi?.name,
-                lower: (p.poi?.name ?? '').toLowerCase(),
-              })),
-            })),
-          )}`,
+          `[MUTATION] chat-only: routing through RouteMutatorService (${body.mutations.map((m: any) => m.type).join(', ')})`,
         );
 
-        // Удаляем точки по названию
-        const updatedDays = lastRoutePlan.days
-          .map((day, dayIdx) => {
-            const filteredPoints = day.points.filter((point) => {
-              const poiName = (point.poi?.name ?? '').toLowerCase();
-              const shouldKeep = !removeQueries.some((q) => {
-                if (typeof q !== 'string') return false;
-                const matches =
-                  poiName.includes(q) || q.includes(poiName.split(' ')[0]);
-                if (matches) {
-                  this.logger.debug(
-                    `FILTER[${dayIdx}]: poi="${point.poi?.name}" (lower="${poiName}") ` +
-                      `matches query="${q}" → REMOVE`,
-                  );
-                }
-                return matches;
-              });
-              if (!shouldKeep) {
-                this.logger.debug(`  → Removed: "${point.poi?.name}"`);
-              }
-              return shouldKeep;
-            });
-
-            this.logger.debug(
-              `Day ${dayIdx}: kept ${filteredPoints.length}/${day.points.length} points`,
-            );
-
-            // Пересчитываем времена оставшихся точек
-            let currentTime = this.schedulerService.timeToMinutes(
-              day.day_start_time,
-            );
-            const rescheduledPoints = filteredPoints.map((point) => {
-              const durationMinutes =
-                this.schedulerService.timeToMinutes(point.departure_time) -
-                this.schedulerService.timeToMinutes(point.arrival_time);
-              const arrival = this.schedulerService.minutesToTime(currentTime);
-              const departure = this.schedulerService.minutesToTime(
-                currentTime + durationMinutes,
-              );
-              currentTime += durationMinutes;
-
-              return {
-                ...point,
-                arrival_time: arrival,
-                departure_time: departure,
-              };
-            });
-
-            return {
-              ...day,
-              points: rescheduledPoints,
-              day_budget_estimated: rescheduledPoints.reduce(
-                (sum, p) => sum + (p.estimated_cost ?? 0),
-                0,
-              ),
-            };
-          })
-          .filter((day) => day.points.length > 0);
-
-        // Добавляем новые точки
-        const addMutations = body.mutations.filter(
-          (m: any) => m.type === 'ADD',
+        // Single pipeline call — replaces 150 lines of manual parsing
+        const updatedRoutePlan = await this.routeMutatorService.applyMutations(
+          lastRoutePlan,
+          body.mutations,
+          { city: lastRoutePlan.city } as any, // minimal intent — city is enough for POI lookup
+          [], // no pre-fetched candidates in this context
         );
-        if (addMutations.length > 0 && updatedDays.length > 0) {
-          let dayToInsert = updatedDays[0];
-          let insertIdx = dayToInsert.points.length;
 
-          for (const addMutation of addMutations) {
-            // Ищем после какой точки вставлять
-            if (addMutation.afterPointId) {
-              for (const day of updatedDays) {
-                const idx = day.points.findIndex(
-                  (p) => p.poi?.id === addMutation.afterPointId,
-                );
-                if (idx !== -1) {
-                  dayToInsert = day;
-                  insertIdx = idx + 1;
-                  break;
-                }
-              }
-            } else if (addMutation.timeContext === 'evening') {
-              // Просто эвристика, если надо
-              insertIdx = dayToInsert.points.length;
-            } else if (addMutation.timeContext === 'morning') {
-              insertIdx = 0;
-            }
+        const isEmpty =
+          updatedRoutePlan.days.length === 0 ||
+          updatedRoutePlan.days.every((d) => d.points.length === 0);
+        const messageContent = isEmpty ? 'Маршрут удален.' : 'Я обновил маршрут.';
 
-            const newPoiId = randomUUID();
-            const newPoint = {
-              poi_id: newPoiId,
-              order: 0,
-              estimated_cost: 0,
-              arrival_time: '10:00',
-              departure_time: '11:00',
-              visit_duration_min: 60,
-              poi: {
-                id: newPoiId,
-                name: addMutation.name,
-                address: '',
-                coordinates: { lat: 0, lon: 0 },
-                image_url: '',
-                score: 0,
-                category: addMutation.category || 'other',
-              },
-            };
-
-            dayToInsert.points.splice(insertIdx, 0, newPoint);
-            insertIdx++;
-          }
-
-          // Пересчитываем времена заново для измененных дней
-          for (const day of updatedDays) {
-            let currentTime = this.schedulerService.timeToMinutes(
-              day.day_start_time,
-            );
-            day.points = day.points.map((point) => {
-              const arrival = this.schedulerService.minutesToTime(currentTime);
-              const departure = this.schedulerService.minutesToTime(
-                currentTime + (point.visit_duration_min || 60),
-              );
-              currentTime += point.visit_duration_min || 60;
-
-              return {
-                ...point,
-                arrival_time: arrival,
-                departure_time: departure,
-              };
-            });
-          }
-        }
-
-        const messageContent =
-          updatedDays.length === 0 ||
-          updatedDays.every((d) => d.points.length === 0)
-            ? 'Маршрут удален.'
-            : 'Я обновил маршрут.';
-
-        if (
-          updatedDays.length === 0 ||
-          updatedDays.every((d) => d.points.length === 0)
-        ) {
-          // Маршрут очищен — удаляем контекст маршрута и отправляем только текст
-          // Находим последнее сообщение с route_plan и удаляем его из истории
+        if (isEmpty) {
           const messagesWithoutRoutePlan = (session?.messages ?? []).map(
-            (msg) => ({
-              ...msg,
-              route_plan: undefined,
-            }),
+            (msg) => ({ ...msg, route_plan: undefined }),
           );
-
           await this.aiSessionsService.saveMessages(
             body.sessionId,
             messagesWithoutRoutePlan,
@@ -3147,51 +2987,17 @@ ${JSON.stringify(points)}
           await this.aiSessionsService.appendMessages(body.sessionId, [
             { role: 'assistant', content: messageContent },
           ]);
-          return {
-            success: true,
-            route_plan: undefined,
-            points: [],
-            version: 0,
-          };
+          return { success: true, route_plan: undefined, points: [], version: 0 };
         }
 
-        const updatedRoutePlan: RoutePlan = {
-          ...lastRoutePlan,
-          days: updatedDays,
-          total_budget_estimated: updatedDays.reduce(
-            (sum, d) => sum + (d.day_budget_estimated ?? 0),
-            0,
-          ),
-        };
-
-        const finalPointsList = updatedRoutePlan.days
-          .flatMap((d) => d.points.map((p) => p.poi?.name))
-          .join(', ');
-        this.logger.log(
-          `[MUTATION] Final updatedRoutePlan points: [${finalPointsList}]`,
-        );
-
         await this.aiSessionsService.appendMessages(body.sessionId, [
-          {
-            role: 'assistant',
-            content: messageContent,
-            route_plan: updatedRoutePlan,
-          },
+          { role: 'assistant', content: messageContent, route_plan: updatedRoutePlan },
         ]);
-
-        this.logger.log(
-          `[MUTATION] ✓ appendMessages completed for session ${body.sessionId}`,
-        );
 
         this.eventsService.emitTripRefresh(tripId);
         this.eventsService.emitAiUpdate(tripId, body.sessionId);
 
-        return {
-          success: true,
-          route_plan: updatedRoutePlan,
-          points: [],
-          version: 0,
-        };
+        return { success: true, route_plan: updatedRoutePlan, points: [], version: 0 };
       }
     }
 
