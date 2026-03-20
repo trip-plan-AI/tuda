@@ -86,22 +86,20 @@ export function MessageBubble({
           className={[
             'rounded-2xl px-4 py-3 text-sm shadow-sm',
             isAssistant
-              ? 'bg-white text-slate-800 border border-slate-100'
+              ? 'bg-white text-brand-indigo font-medium border border-slate-100'
               : isRemoteUser
-                ? 'bg-white border border-slate-200 text-slate-800'
+                ? 'bg-white border border-slate-200 text-brand-indigo font-medium'
                 : 'bg-brand-indigo text-white',
           ].join(' ')}
         >
         {/* Выделяем жирным заголовок маршрута если есть */}
         {message.content?.startsWith('Маршрут по городу') ? (
           <div className="whitespace-pre-wrap">
-            <p className="font-bold text-slate-800 mb-2">
+            <p className="font-bold mb-2">
               {message.content.split('\n')[0]}
             </p>
             {message.content.split('\n').slice(1).join('\n').trim() && (
-              <p className="text-slate-600">
-                {message.content.split('\n').slice(1).join('\n').trim()}
-              </p>
+              <p>{message.content.split('\n').slice(1).join('\n').trim()}</p>
             )}
           </div>
         ) : (
@@ -112,12 +110,6 @@ export function MessageBubble({
         <p className="text-[10px] text-slate-400/80 float-right ml-3 mt-1">
           {formatTime(message.timestamp)}
         </p>
-
-        {message.routePlan && message.routePlan.days.length === 0 && isAssistant && (
-          <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-500">
-            Маршрут удалён.
-          </div>
-        )}
 
         {message.routePlan && message.routePlan.days.length > 0 && isAssistant && (
           <div className="mt-3 flex flex-col gap-3">
