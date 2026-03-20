@@ -113,6 +113,12 @@ export function MessageBubble({
           {formatTime(message.timestamp)}
         </p>
 
+        {message.routePlan && message.routePlan.days.length === 0 && isAssistant && (
+          <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+            Маршрут удалён.
+          </div>
+        )}
+
         {message.routePlan && message.routePlan.days.length > 0 && isAssistant && (
           <div className="mt-3 flex flex-col gap-3">
             <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600">
