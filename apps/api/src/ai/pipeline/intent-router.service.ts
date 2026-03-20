@@ -45,7 +45,7 @@ Return ONLY valid JSON with this exact structure:
 { "action_type": "REMOVE_POI"|"REMOVE_POSITIONAL"|"REPLACE_POI"|"ADD_POI"|"ADD_DAYS"|"APPLY_GLOBAL_FILTER"|"REDUCE_BUDGET"|"ADD_CATEGORY"|"REMOVE_BORING"|"NEW_ROUTE"|"TRAVEL_CHAT"|"OFF_TOPIC"|"SMALL_TALK", "confidence": number, "target_poi_id": string|null }
 
 For REMOVE_POSITIONAL only, also include:
-{ ..., "positional_count": number, "positional_direction": "start"|"end"|"keep_start"|"keep_end" }
+{ ..., "positional_count": number, "positional_direction": "start"|"end"|"keep_start"|"keep_end"|"exact" }
 
 Action type rules:
 - NEW_ROUTE: use when (a) currentRoutePois is empty and user asks about a city/destination/trip with enough specifics to build a route, OR (b) user explicitly wants to start over / build a completely new route ("заново", "с нуля", "новый маршрут"). NEVER use NEW_ROUTE for deletion requests ("удали", "убери", "очисти", "сотри") even if currentRoutePois is empty.
@@ -56,6 +56,8 @@ Action type rules:
   - "убери N первых"    → direction="start", count=N
   - "оставь первые N"   → direction="keep_start", count=N (delete all others)
   - "оставь последние N"→ direction="keep_end", count=N (delete all others)
+  - "удали 3 точку", "убери второе место", "удали первую", "удали пятую точку" → direction="exact", count=N (1-based index: "3-ю" → 3, "вторую" → 2, "первую" → 1, "пятую" → 5)
+  HOW TO DISTINGUISH: "удали 3 точки" (количественное = DELETE 3 POINTS) vs "удали 3-ю точку" / "удали 3 точку" (порядковое = DELETE THE 3rd POINT). When the number is used as an ordinal (refers to a specific position), always use direction="exact".
   ALWAYS use REMOVE_POSITIONAL for positional requests — never REMOVE_POI or TRAVEL_CHAT.
 - REMOVE_POI: user wants to delete a SINGLE specific named place from the CURRENT route ("удали X", "убери X", "исключи X") — set target_poi_id to the matching ID. OR all places at once ("удали весь маршрут", "очисти маршрут", "убери все точки", "сотри всё", "удали все места") — set target_poi_id to "ALL". IMPORTANT: "удали все кафе/рестораны/музеи/памятники" is NOT "ALL" — this is category-based removal → use TRAVEL_CHAT. target_poi_id="ALL" means DELETE THE ENTIRE ROUTE, not a category. For multi-point positional requests ("удали первые 3 точки", "оставь только последние 2", "убери 2 первых") use TRAVEL_CHAT instead — it can handle complex route edits.
 - ADD_POI: user wants to add a new place to the CURRENT route (e.g. "добавь кафе", "включи музей", "добавь X", "добавь 1 точку", "добавь ещё одно место", "добавь 2 места", "добавь точку"). ALWAYS use ADD_POI when user says "добавь [число] точку/точки/место/места" — even if category is unspecified. The new point is appended without changing existing points order.
@@ -276,7 +278,7 @@ export class IntentRouterService {
     confidence: number;
     target_poi_id: string | null;
     positional_count?: number;
-    positional_direction?: 'start' | 'end' | 'keep_start' | 'keep_end';
+    positional_direction?: 'start' | 'end' | 'keep_start' | 'keep_end' | 'exact';
   } {
     const parsed = JSON.parse(payload) as IntentRouterLlmResponse;
 
@@ -307,7 +309,7 @@ export class IntentRouterService {
       confidence: number;
       target_poi_id: string | null;
       positional_count?: number;
-      positional_direction?: 'start' | 'end' | 'keep_start' | 'keep_end';
+      positional_direction?: 'start' | 'end' | 'keep_start' | 'keep_end' | 'exact';
     } = {
       action_type: parsed.action_type as IntentRouterActionType,
       confidence: Math.max(0, Math.min(1, parsed.confidence)),
@@ -320,10 +322,10 @@ export class IntentRouterService {
           ? Math.floor(parsed.positional_count)
           : parseInt(String(parsed.positional_count ?? '0'), 10);
       const direction = parsed.positional_direction as string;
-      const validDirections = ['start', 'end', 'keep_start', 'keep_end'];
+      const validDirections = ['start', 'end', 'keep_start', 'keep_end', 'exact'];
       result.positional_count = count > 0 ? count : 1;
       result.positional_direction = validDirections.includes(direction)
-        ? (direction as 'start' | 'end' | 'keep_start' | 'keep_end')
+        ? (direction as 'start' | 'end' | 'keep_start' | 'keep_end' | 'exact')
         : 'end';
     }
 

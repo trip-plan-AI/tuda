@@ -1614,22 +1614,36 @@ ${JSON.stringify(points)}
               d.points.map((p) => p.poi_id),
             );
             const total = allPoiIds.length;
-            const n = Math.min(
-              intentRouterDecision.positional_count ?? 1,
-              total - 1, // always keep at least 1
-            );
             const dir = intentRouterDecision.positional_direction ?? 'end';
 
             let keepIds: string[];
-            if (dir === 'end') {
-              keepIds = allPoiIds.slice(0, total - n);
-            } else if (dir === 'start') {
-              keepIds = allPoiIds.slice(n);
-            } else if (dir === 'keep_start') {
-              keepIds = allPoiIds.slice(0, n);
+
+            if (dir === 'exact') {
+              // Ordinal removal: "удали 3-ю точку" → remove point at 1-based index
+              const targetIndex = (intentRouterDecision.positional_count ?? 1) - 1;
+              keepIds = allPoiIds.filter((_, idx) => idx !== targetIndex);
+              this.logger.log(
+                `[REMOVE_POSITIONAL] EXACT: removing index ${targetIndex} of ${total}`,
+              );
             } else {
-              // keep_end
-              keepIds = allPoiIds.slice(total - n);
+              // Range removal: "удали последние 3", "оставь первые 5", etc.
+              const n = Math.min(
+                intentRouterDecision.positional_count ?? 1,
+                total - 1, // always keep at least 1
+              );
+              if (dir === 'end') {
+                keepIds = allPoiIds.slice(0, total - n);
+              } else if (dir === 'start') {
+                keepIds = allPoiIds.slice(n);
+              } else if (dir === 'keep_start') {
+                keepIds = allPoiIds.slice(0, n);
+              } else {
+                // keep_end
+                keepIds = allPoiIds.slice(total - n);
+              }
+              this.logger.log(
+                `[REMOVE_POSITIONAL] RANGE: dir=${dir} n=${n} total=${total} → kept ${keepIds.length}`,
+              );
             }
 
             const keepSet = new Set(keepIds);
@@ -1648,9 +1662,6 @@ ${JSON.stringify(points)}
             );
             mutationMeta.mutation_applied = true;
             mutationMeta.mutation_type = 'REMOVE_POSITIONAL';
-            this.logger.log(
-              `[REMOVE_POSITIONAL] dir=${dir} n=${n} total=${total} → kept ${keepIds.length}`,
-            );
             break;
           }
 
