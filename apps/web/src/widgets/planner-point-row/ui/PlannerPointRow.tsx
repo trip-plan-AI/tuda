@@ -622,7 +622,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
               className={cn(
                 'p-1.5 rounded-xl transition-all hover:scale-110',
                 nextTransportMode === 'foot'
-                  ? 'bg-brand-amber/10 shadow-sm'
+                  ? 'bg-[#eb5e34]/10 shadow-sm'
                   : 'grayscale opacity-50 hover:grayscale-0 hover:opacity-100',
               )}
               title="Пешком"

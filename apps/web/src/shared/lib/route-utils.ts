@@ -76,7 +76,7 @@ export type TransportMode = 'driving' | 'foot' | 'bike' | 'direct';
 
 export const ROUTE_PROFILE_COLORS: Record<TransportMode, string> = {
   driving: '#0ea5e9',
-  foot: '#f59e0b',
+  foot: '#eb5e34',
   bike: '#10b981',
   direct: '#6366f1',
 };
