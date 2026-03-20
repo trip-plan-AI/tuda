@@ -201,9 +201,9 @@ export function AiChat({
               <StreamingDayPreview days={streamingDays} />
             )}
             {isLoading && streamingDays.length === 0 && (
-              thinkingStage === 'chat'
-                ? <ChatTypingSkeleton />
-                : <AiResponseSkeleton stage={thinkingStage} />
+              (thinkingStage && thinkingStage !== 'chat')
+                ? <AiResponseSkeleton stage={thinkingStage} />
+                : <ChatTypingSkeleton />
             )}
           </div>
         )}
