@@ -152,6 +152,10 @@ function mapErrorToUserMessage(error: HttpError) {
   if (error.status === 401) return 'Сессия истекла. Выполните вход повторно.';
   if (error.code === 'NEED_CITY')
     return 'Понял идею. Уточните, пожалуйста, город, для которого построить маршрут.';
+  if (error.code === 'NEED_CITY_IN_COUNTRY')
+    return error.message ?? 'Уточните, пожалуйста, город для маршрута.';
+  if (error.code === 'TRAVEL_CHAT')
+    return error.message ?? 'Расскажи подробнее о своих предпочтениях.';
   if (error.code === 'OFF_TOPIC')
     return error.message ?? 'Я специализируюсь на путешествиях и маршрутах. Давай спланируем твой путеводитель по городу! 🙂';
   if (error.status === 422)
@@ -527,8 +531,9 @@ export const useAiQueryStore = create<AiQueryStore>()(
         id: crypto.randomUUID(),
         role: 'assistant',
         content:
-          `Маршрут по городу ${response.route_plan.city} ` +
-          `на ${response.route_plan.days.length} дн.`,
+          response.route_plan.days.length === 0
+            ? 'Маршрут удален.'
+            : `Маршрут по городу ${response.route_plan.city} на ${response.route_plan.days.length} дн.`,
         routePlan: response.route_plan,
         meta: response.meta,
         timestamp: new Date().toISOString(),
@@ -575,7 +580,10 @@ export const useAiQueryStore = create<AiQueryStore>()(
         }
 
         const serverSessionId =
-          error.code === 'NEED_CITY' && typeof error.session_id === 'string'
+          (error.code === 'NEED_CITY' ||
+            error.code === 'NEED_CITY_IN_COUNTRY' ||
+            error.code === 'TRAVEL_CHAT') &&
+          typeof error.session_id === 'string'
             ? error.session_id
             : null;
 
@@ -584,7 +592,10 @@ export const useAiQueryStore = create<AiQueryStore>()(
           role: 'assistant',
           content: mapErrorToUserMessage(error),
           timestamp: new Date().toISOString(),
-          isError: true,
+          isError:
+            error.code !== 'NEED_CITY_IN_COUNTRY' &&
+            error.code !== 'NEED_CITY' &&
+            error.code !== 'TRAVEL_CHAT',
         };
 
         const nextSession: ChatSession = {
@@ -670,7 +681,7 @@ export const useAiQueryStore = create<AiQueryStore>()(
         id: crypto.randomUUID(),
         role: 'assistant',
         content:
-          pointCount === 0 ? `Маршрут очищен.` : `Я обновил маршрут согласно вашему запросу.`,
+          pointCount === 0 ? `Маршрут удален.` : `Я обновил маршрут согласно вашему запросу.`,
         routePlan: pointCount > 0 ? response.route_plan : undefined,
         timestamp: new Date().toISOString(),
       };
@@ -1210,12 +1221,24 @@ export const useAiQueryStore = create<AiQueryStore>()(
       const msg = session.messages[msgIdx]!;
       if (!msg.routePlan) return state;
 
+      const daysWithFiltered = msg.routePlan.days.map((day) => {
+        const filteredPoints = day.points.filter((p) => p.poi?.name !== pointName);
+        const dayBudget = filteredPoints.reduce(
+          (sum, p) => sum + (typeof p.estimated_cost === 'number' ? p.estimated_cost : 0),
+          0,
+        );
+        return { ...day, points: filteredPoints, day_budget_estimated: dayBudget };
+      });
+      // Remove empty days and renumber
+      const updatedDays = daysWithFiltered
+        .filter((day) => day.points.length > 0)
+        .map((day, idx) => ({ ...day, day_number: idx + 1 }));
+      const totalBudget = updatedDays.reduce((sum, d) => sum + d.day_budget_estimated, 0);
+
       const updatedRoutePlan = {
         ...msg.routePlan,
-        days: msg.routePlan.days.map((day) => ({
-          ...day,
-          points: day.points.filter((p) => p.poi?.name !== pointName),
-        })),
+        days: updatedDays,
+        total_budget_estimated: totalBudget,
       };
 
       const updatedMessages = session.messages.map((m, i) =>

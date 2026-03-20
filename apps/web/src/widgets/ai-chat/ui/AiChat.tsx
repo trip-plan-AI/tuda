@@ -24,8 +24,6 @@ interface AiChatProps {
   onDeletePoint?: (pointName: string) => Promise<void>;
   hasCollaborators?: boolean;
   onSendToAi?: (query: string) => void | Promise<void>;
-  activePreviewMessageId?: string | null;
-  onTogglePreview?: (messageId: string) => void;
   /** Progressive streaming: thinking stage label ('collecting' | 'selecting' | 'scheduling') */
   thinkingStage?: string | null;
   /** Progressive streaming: days received so far via ai:day_ready */
@@ -40,13 +38,33 @@ const ROUTE_MUTATION_ACTIONS = [
 ];
 
 const THINKING_STAGE_TEXT: Record<string, string> = {
-  collecting:   '🔍 Ищем лучшие места в городе...',
+  collecting:   '🔍 Ищем лучшие места...',
   hidden_gems:  '💎 Ищем локации, о которых знают только местные...',
   selecting:    '🧠 Нейросеть выбирает лучшие варианты из найденных...',
   geocoding:    '📍 Проверяем координаты и строим карту...',
   enrichment:   '✨ Уточняем детали и проверяем рейтинги...',
   scheduling:   '📅 Составляем оптимальный график по дням...',
 };
+
+/** Simple typing indicator for TRAVEL_CHAT / conversational replies */
+function ChatTypingSkeleton() {
+  const [dots, setDots] = useState('');
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDots((prev) => (prev.length < 3 ? prev + '.' : ''));
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex justify-start">
+      <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
+        <span className="text-sm text-slate-500">Обрабатываю вашу просьбу{dots}</span>
+      </div>
+    </div>
+  );
+}
 
 function AiResponseSkeleton({ stage }: { stage?: string | null }) {
   const [dots, setDots] = useState('');
@@ -58,7 +76,7 @@ function AiResponseSkeleton({ stage }: { stage?: string | null }) {
     return () => clearInterval(interval);
   }, []);
 
-  const labelText = (stage && THINKING_STAGE_TEXT[stage]) ?? 'Подбираю лучший маршрут';
+  const labelText = (stage && THINKING_STAGE_TEXT[stage]) ?? 'Обрабатываю вашу просьбу';
 
   return (
     <div className="flex justify-start">
@@ -106,8 +124,6 @@ export function AiChat({
   onSendToAi,
   thinkingStage = null,
   streamingDays = [],
-  activePreviewMessageId = null,
-  onTogglePreview,
 }: AiChatProps) {
   const [query, setQuery] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -178,8 +194,6 @@ export function AiChat({
                 onOpenPlanner={onOpenPlanner}
                 onDeletePoint={onDeletePoint}
                 isLatestRoutePlan={lastPlanMessageId === message.id}
-                isPreviewActive={activePreviewMessageId === message.id}
-                onTogglePreview={message.routePlan && message.role === 'assistant' ? onTogglePreview : undefined}
               />
             ))}
 
@@ -187,7 +201,9 @@ export function AiChat({
               <StreamingDayPreview days={streamingDays} />
             )}
             {isLoading && streamingDays.length === 0 && (
-              <AiResponseSkeleton stage={thinkingStage} />
+              thinkingStage === 'chat'
+                ? <ChatTypingSkeleton />
+                : <AiResponseSkeleton stage={thinkingStage} />
             )}
           </div>
         )}

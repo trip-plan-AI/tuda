@@ -668,9 +668,10 @@ export function usePlanner() {
         const lastLeg = routeInfo.legs[routeInfo.legs.length - 1];
         const travelDurationMs = (lastLeg?.duration ?? 0) * 1000;
         const nextMs = new Date(lastPoint.visitDate).getTime() + stayDurationMs + travelDurationMs;
-        const nextDateIso = new Date(nextMs).toISOString();
-        // Храним только дату без времени, если исходная была только дата
-        visitDate = hasTime(lastPoint.visitDate) ? nextDateIso : nextDateIso.split('T')[0]!;
+        // Форматируем в ЛОКАЛЬНОЕ время (без UTC-сдвига через toISOString)
+        const nd = new Date(nextMs);
+        const localIso = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}-${String(nd.getDate()).padStart(2, '0')}T${String(nd.getHours()).padStart(2, '0')}:${String(nd.getMinutes()).padStart(2, '0')}:${String(nd.getSeconds()).padStart(2, '0')}`;
+        visitDate = hasTime(lastPoint.visitDate) ? localIso : localIso.split('T')[0]!;
       } else if (lastPoint?.visitDate) {
         visitDate = lastPoint.visitDate;
       }

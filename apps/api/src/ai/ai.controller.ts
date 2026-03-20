@@ -69,6 +69,7 @@ import { CollaborationEventsService } from '../collaboration/collaboration-event
 import { GeocodingFallbackService } from './services/geocoding-fallback.service';
 import { CityAnalyzerService } from './pipeline/city-analyzer.service';
 import { LlmExplainerService } from './pipeline/llm-explainer.service';
+import { TravelChatService } from './pipeline/travel-chat.service';
 import { PoiCacheWarmupService } from './pipeline/poi-cache-warmup.service';
 
 @Controller('ai')
@@ -129,6 +130,7 @@ export class AiController {
     private readonly analyzer: CityAnalyzerService,
     private readonly explainer: LlmExplainerService,
     private readonly cacheWarmup: PoiCacheWarmupService,
+    private readonly travelChatService: TravelChatService,
   ) {}
 
   private isLocationError(error: unknown): boolean {
@@ -142,6 +144,7 @@ export class AiController {
       typeof response === 'object' &&
       'code' in response &&
       ((response as { code?: unknown }).code === 'NEED_CITY' ||
+        (response as { code?: unknown }).code === 'NEED_CITY_IN_COUNTRY' ||
         (response as { code?: unknown }).code === 'LOCATION_NOT_FOUND')
     );
   }
@@ -272,14 +275,36 @@ export class AiController {
   private buildRoutePlanFromPoints(city: string, points: any[]): RoutePlan {
     const daysMap = new Map<string, any[]>();
     points.forEach((p) => {
-      const dateKey = p.visitDate || 'default';
+      // Извлекаем только дату для группировки
+      const rawKey = p.visitDate || 'default';
+      const dateKey = rawKey.includes('T') ? rawKey.split('T')[0] : rawKey;
       if (!daysMap.has(dateKey)) daysMap.set(dateKey, []);
+
+      // Извлекаем реальное время прибытия из visitDate
+      let arrivalTime = '10:00';
+      if (p.visitDate && p.visitDate.includes('T')) {
+        const timePart = p.visitDate.split('T')[1];
+        if (timePart) {
+          if (p.visitDate.includes('Z') || p.visitDate.includes('+')) {
+            const d = new Date(p.visitDate);
+            if (!isNaN(d.getTime())) {
+              arrivalTime = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            }
+          } else {
+            arrivalTime = timePart.slice(0, 5);
+          }
+        }
+      }
+      const [ah, am] = arrivalTime.split(':').map(Number);
+      const depMin = (ah ?? 10) * 60 + (am ?? 0) + 60;
+      const departureTime = `${String(Math.floor(depMin / 60) % 24).padStart(2, '0')}:${String(depMin % 60).padStart(2, '0')}`;
+
       daysMap.get(dateKey)!.push({
         poi_id: p.id,
         order: p.order,
         estimated_cost: Number(p.budget) || 0,
-        arrival_time: '10:00',
-        departure_time: '11:00',
+        arrival_time: arrivalTime,
+        departure_time: departureTime,
         visit_duration_min: 60,
         poi: {
           id: p.id,
@@ -664,6 +689,136 @@ ${JSON.stringify(points)}
       throw new UnprocessableEntityException({
         code: 'SPAM_BLOCKED',
         message: 'Сообщение заблокировано системой безопасности.',
+        session_id: session.id,
+      });
+    }
+
+    // Guard Layer: Conversational travel mode (TRAVEL_CHAT)
+    if (intentRouterDecision.action_type === 'TRAVEL_CHAT') {
+      this.eventsService.emitAiThinking(session.tripId, session.id, 'chat', user.id);
+
+      // Route restoration: если маршрут был удалён и пользователь просит восстановить
+      const restorePattern = /верни|восстанови|откат|отмени|назад|вернуть/i;
+      const hasNoCurrentRoute = !existingRoutePlan || !existingRoutePlan.days?.some((d) => d.points?.length > 0);
+      if (hasNoCurrentRoute && restorePattern.test(dto.user_query)) {
+        // Ищем предыдущий непустой маршрут в истории
+        const previousPlan = [...history].reverse()
+          .map((msg) => this.tryParseRoutePlan(msg))
+          .find((plan) => plan && plan.days?.some((d) => d.points?.length > 0));
+        if (previousPlan) {
+          const restoredMessages: SessionMessage[] = [
+            ...history,
+            { role: 'user' as const, content: dto.user_query },
+            { role: 'assistant' as const, content: 'Маршрут восстановлен.', route_plan: previousPlan },
+          ];
+          await this.aiSessionsService.saveMessages(session.id, restoredMessages);
+          if (session.tripId) {
+            this.eventsService.emitTripRefresh(session.tripId);
+            this.eventsService.emitAiUpdate(session.tripId, session.id);
+          }
+          return {
+            session_id: session.id,
+            route_plan: previousPlan,
+            meta: {
+              parsed_intent: null,
+              steps_duration_ms: { orchestrator: 0, yandex_fetch: 0, semantic_filter: 0, scheduler: 0, total: 0 },
+              poi_counts: { yandex_raw: 0, after_logical_selector: 0, after_semantic: 0 },
+              fallbacks_triggered: [],
+              mutation_type: 'TRAVEL_CHAT',
+              mutation_applied: true,
+            },
+          };
+        }
+      }
+
+      // If there's an existing route, try to interpret the request as a free-form route edit.
+      // This handles cases like "сделай поспортивнее", "убери скучное", "поставь музей первым" etc.
+      if (existingRoutePlan && existingRoutePlan.days?.some((d) => d.points?.length > 0)) {
+        const modifyResult = await this.travelChatService.modifyRoute(
+          dto.user_query,
+          existingRoutePlan,
+        );
+
+        if (modifyResult.type === 'modify') {
+          const modifiedPlan = this.travelChatService.reconstructPlan(
+            existingRoutePlan,
+            modifyResult.days,
+          );
+
+          const newMessages: SessionMessage[] = [
+            ...history,
+            { role: 'user' as const, content: dto.user_query },
+            {
+              role: 'assistant' as const,
+              content: modifyResult.message,
+              route_plan: modifiedPlan,
+            },
+          ];
+
+          await this.aiSessionsService.saveMessages(session.id, newMessages);
+
+          if (session.tripId) {
+            this.eventsService.emitTripRefresh(session.tripId);
+            this.eventsService.emitAiUpdate(session.tripId, session.id);
+          }
+
+          return {
+            session_id: session.id,
+            route_plan: modifiedPlan,
+            meta: {
+              parsed_intent: null,
+              steps_duration_ms: { orchestrator: 0, yandex_fetch: 0, semantic_filter: 0, scheduler: 0, total: 0 },
+              poi_counts: { yandex_raw: 0, after_logical_selector: 0, after_semantic: 0 },
+              fallbacks_triggered: [],
+              mutation_type: 'TRAVEL_CHAT',
+              mutation_applied: true,
+            },
+          };
+        }
+
+        // LLM said 'chat' (e.g. user wants to ADD new points) → fall through to text response
+        const travelChatMessages: SessionMessage[] = [
+          ...history,
+          { role: 'user' as const, content: dto.user_query },
+          { role: 'assistant' as const, content: modifyResult.message },
+        ];
+        await this.aiSessionsService.saveMessages(session.id, travelChatMessages);
+        throw new UnprocessableEntityException({
+          code: 'TRAVEL_CHAT',
+          message: modifyResult.message,
+          session_id: session.id,
+        });
+      }
+
+      // No existing route — pure conversation to gather route parameters
+      const routeContext = existingRoutePlan
+        ? {
+            city: existingRoutePlan.city,
+            days: existingRoutePlan.days?.length,
+            pointCount: existingRoutePlan.days?.reduce(
+              (s, d) => s + (d.points?.length ?? 0),
+              0,
+            ),
+          }
+        : undefined;
+
+      const chatResponse = await this.travelChatService.generateResponse(
+        dto.user_query,
+        history,
+        routeContext,
+      );
+
+      const travelChatMessages: SessionMessage[] = [
+        ...history,
+        { role: 'user' as const, content: dto.user_query },
+        { role: 'assistant' as const, content: chatResponse },
+      ];
+
+      await this.aiSessionsService.saveMessages(session.id, travelChatMessages);
+
+      throw new UnprocessableEntityException({
+        code: 'TRAVEL_CHAT',
+        message: chatResponse,
         session_id: session.id,
       });
     }
@@ -1249,6 +1404,24 @@ ${JSON.stringify(points)}
           }
 
           case 'REMOVE_POI': {
+            // ── Clear-all detection ──────────────────────────────────────────
+            const clearAllKeywords = /удали\s+(весь|все|всё)\s+маршрут|убери\s+(весь|все|всё|все\s+точки|все\s+места)|очисти\s+(маршрут|всё|все)|сотри\s+(маршрут|всё|все)/i;
+            const isRemoveAll =
+              intentRouterDecision.target_poi_id === 'ALL' ||
+              clearAllKeywords.test(dto.user_query);
+
+            if (isRemoveAll) {
+              // Return an empty route plan (no days, no points)
+              routePlan = {
+                ...existingRoutePlan,
+                days: [],
+                total_budget_estimated: 0,
+              };
+              mutationMeta.mutation_applied = true;
+              mutationMeta.mutation_type = 'REMOVE_POI';
+              break;
+            }
+
             const targetPoiId = intentRouterDecision.target_poi_id;
             const targetExists =
               !!targetPoiId &&
@@ -1571,53 +1744,102 @@ ${JSON.stringify(points)}
           }
 
           case 'REDUCE_BUDGET': {
-            // Identify expensive POIs and remove them to reduce total budget
-            // Sort all points by cost descending, remove the most expensive ones
-            const allDayPoints = existingRoutePlan.days.flatMap((day, dayIdx) =>
-              day.points.map((point) => ({ ...point, dayIdx })),
+            // Replace expensive points with cheaper alternatives (same count of activities).
+            // Priority: most expensive first, food venues (restaurant/cafe) prioritized.
+            // Never delete points — only swap to cheaper same-or-similar category.
+
+            const priceTier = (seg: string | undefined): number => {
+              if (seg === 'free') return 0;
+              if (seg === 'budget') return 1;
+              if (seg === 'mid') return 2;
+              if (seg === 'premium') return 3;
+              return 1;
+            };
+
+            const isFoodCategory = (cat: string | undefined) =>
+              cat === 'restaurant' || cat === 'cafe';
+
+            const usedIdsForBudget = new Set(
+              existingRoutePlan.days.flatMap((d) =>
+                d.points.map((p) => p.poi_id),
+              ),
             );
 
-            const pointsByCost = [...allDayPoints]
-              .sort((a, b) => (b.estimated_cost ?? 0) - (a.estimated_cost ?? 0))
-              .slice(0, Math.max(1, Math.ceil(allDayPoints.length * 0.2))); // Remove top 20% most expensive
+            // Collect paid points sorted: food first, then by cost desc
+            const paidPoints = existingRoutePlan.days
+              .flatMap((day, dayIdx) =>
+                day.points.map((point, pointIdx) => ({
+                  ...point,
+                  dayIdx,
+                  pointIdx,
+                })),
+              )
+              .filter((p) => (p.estimated_cost ?? 0) > 0)
+              .sort((a, b) => {
+                const aFood = isFoodCategory((a.poi as any)?.category) ? 1 : 0;
+                const bFood = isFoodCategory((b.poi as any)?.category) ? 1 : 0;
+                if (bFood !== aFood) return bFood - aFood; // food first
+                return (b.estimated_cost ?? 0) - (a.estimated_cost ?? 0); // then by cost desc
+              });
 
-            const removePoiIds = new Set(pointsByCost.map((p) => p.poi_id));
+            // Pool of cheaper alternatives not already in route
+            const alternativePool = selectedForScheduler.filter(
+              (poi) => !usedIdsForBudget.has(poi.id),
+            );
 
-            const rebuiltDays = existingRoutePlan.days.map((day) => {
-              const filteredPoints = day.points.filter(
-                (point) => !removePoiIds.has(point.poi_id),
-              );
+            // Build replacements: for each paid point find a cheaper alternative
+            const replacementMap = new Map<string, FilteredPoi>(); // poi_id → replacement FilteredPoi
+            const assignedAltIds = new Set<string>();
 
-              if (filteredPoints.length === 0) {
-                return { ...day, points: [] };
-              }
+            for (const point of paidPoints) {
+              const currentPoi = point.poi as any;
+              const currentTier = priceTier(currentPoi?.price_segment);
+              const currentCategory = currentPoi?.category as string | undefined;
 
-              // Reschedule remaining points
-              let currentTime = this.schedulerService.timeToMinutes(
-                day.day_start_time,
-              );
-              const rescheduledPoints = filteredPoints.map((point) => {
-                const durationMinutes =
-                  this.schedulerService.timeToMinutes(point.departure_time) -
-                  this.schedulerService.timeToMinutes(point.arrival_time);
-                const arrival =
-                  this.schedulerService.minutesToTime(currentTime);
-                const departure = this.schedulerService.minutesToTime(
-                  currentTime + durationMinutes,
+              // 1st preference: same category, strictly cheaper tier
+              // 2nd preference: any category, strictly cheaper tier
+              const findCandidate = (sameCategoryOnly: boolean) =>
+                alternativePool.find(
+                  (poi) =>
+                    !assignedAltIds.has(poi.id) &&
+                    priceTier(poi.price_segment) < currentTier &&
+                    (!sameCategoryOnly || poi.category === currentCategory),
                 );
-                currentTime += durationMinutes;
 
+              const candidate =
+                findCandidate(true) ?? findCandidate(false);
+
+              if (candidate) {
+                replacementMap.set(point.poi_id, candidate);
+                assignedAltIds.add(candidate.id);
+                usedIdsForBudget.add(candidate.id);
+              }
+            }
+
+            if (replacementMap.size === 0) {
+              // No cheaper alternatives found at all
+              mutationMeta.mutation_fallback_reason = 'CANNOT_REDUCE_BUDGET';
+              routePlan = existingRoutePlan;
+              break;
+            }
+
+            // Apply replacements keeping time slots intact
+            const rebuiltDays = existingRoutePlan.days.map((day) => {
+              const newPoints = day.points.map((point) => {
+                const alt = replacementMap.get(point.poi_id);
+                if (!alt) return point;
                 return {
                   ...point,
-                  arrival_time: arrival,
-                  departure_time: departure,
+                  poi_id: alt.id,
+                  poi: alt,
+                  estimated_cost: 0, // free replacement
                 };
               });
 
               return {
                 ...day,
-                points: rescheduledPoints,
-                day_budget_estimated: rescheduledPoints.reduce(
+                points: newPoints,
+                day_budget_estimated: newPoints.reduce(
                   (sum, p) => sum + (p.estimated_cost ?? 0),
                   0,
                 ),
@@ -1626,7 +1848,7 @@ ${JSON.stringify(points)}
 
             routePlan = buildRoutePlanFromDays(
               existingRoutePlan.city,
-              rebuiltDays.filter((d) => d.points.length > 0),
+              rebuiltDays,
             );
             mutationMeta.mutation_applied = true;
             break;
@@ -1824,6 +2046,71 @@ ${JSON.stringify(points)}
       };
     }
 
+    // ── Fallback to TRAVEL_CHAT if mutation failed ────────────────────────────
+    // Если стандартная мутация не смогла выполниться (точка не найдена, нет кандидатов и т.д.)
+    // → передаём запрос в TRAVEL_CHAT для свободной обработки вместо показа ошибки.
+    if (
+      !mutationMeta.mutation_applied &&
+      mutationMeta.mutation_fallback_reason &&
+      existingRoutePlan &&
+      existingRoutePlan.days?.some((d) => d.points?.length > 0)
+    ) {
+      this.logger.log(
+        `Mutation failed (${mutationMeta.mutation_fallback_reason}), falling back to TRAVEL_CHAT`,
+      );
+      this.eventsService.emitAiThinking(session.tripId, session.id, 'chat', user.id);
+      try {
+        const modifyResult = await this.travelChatService.modifyRoute(
+          dto.user_query,
+          existingRoutePlan,
+        );
+        if (modifyResult.type === 'modify') {
+          const modifiedPlan = this.travelChatService.reconstructPlan(
+            existingRoutePlan,
+            modifyResult.days,
+          );
+          const fallbackMessages: SessionMessage[] = [
+            ...history,
+            { role: 'user' as const, content: dto.user_query },
+            { role: 'assistant' as const, content: modifyResult.message, route_plan: modifiedPlan },
+          ];
+          await this.aiSessionsService.saveMessages(session.id, fallbackMessages);
+          if (session.tripId) {
+            this.eventsService.emitTripRefresh(session.tripId);
+            this.eventsService.emitAiUpdate(session.tripId, session.id);
+          }
+          return {
+            session_id: session.id,
+            route_plan: modifiedPlan,
+            meta: {
+              parsed_intent: null,
+              steps_duration_ms: { orchestrator: 0, yandex_fetch: 0, semantic_filter: 0, scheduler: 0, total: 0 },
+              poi_counts: { yandex_raw: 0, after_logical_selector: 0, after_semantic: 0 },
+              fallbacks_triggered: [...fallbacks, `MUTATION_FALLBACK_TO_TRAVEL_CHAT:${mutationMeta.mutation_fallback_reason}`],
+              mutation_type: 'TRAVEL_CHAT',
+              mutation_applied: true,
+            },
+          };
+        }
+        // type === 'chat' → LLM не смог применить, покажем текстовый ответ
+        const chatFallbackMessages: SessionMessage[] = [
+          ...history,
+          { role: 'user' as const, content: dto.user_query },
+          { role: 'assistant' as const, content: modifyResult.message },
+        ];
+        await this.aiSessionsService.saveMessages(session.id, chatFallbackMessages);
+        throw new UnprocessableEntityException({
+          code: 'TRAVEL_CHAT',
+          message: modifyResult.message,
+          session_id: session.id,
+        });
+      } catch (fallbackError) {
+        if (fallbackError instanceof UnprocessableEntityException) throw fallbackError;
+        this.logger.warn(`TRAVEL_CHAT fallback failed: ${String(fallbackError)}`);
+        // Продолжаем к стандартной обработке ошибки
+      }
+    }
+
     // Если точка не найдена, добавляем сообщение об ошибке
     const assistantMessages: SessionMessage[] = [
       { role: 'user' as const, content: dto.user_query },
@@ -1833,6 +2120,14 @@ ${JSON.stringify(points)}
       assistantMessages.push({
         role: 'assistant' as const,
         content: '⚠️ Такая точка в маршруте не найдена. Вот текущий маршрут:',
+      });
+    }
+
+    if (mutationMeta.mutation_fallback_reason === 'CANNOT_REDUCE_BUDGET') {
+      assistantMessages.push({
+        role: 'assistant' as const,
+        content:
+          'Сделать маршрут дешевле не получится — среди доступных мест не нашлось более бюджетных вариантов той же категории. Попробуйте указать конкретные точки, которые хотите заменить.',
       });
     }
 
@@ -1867,9 +2162,12 @@ ${JSON.stringify(points)}
       warningPrefix = `⚠️ В городе ${intent.city} мало известных мест, нашел только ${totalPointsGenerated}. Маршрут может быть короче.\n\n`;
     }
 
-    const assistantContent = statsSummary
-      ? `${warningPrefix}Маршрут готов (Источники: ${statsSummary})`
-      : `${warningPrefix}Маршрут готов`;
+    const assistantContent =
+      totalPointsGenerated === 0 && mutationMeta.mutation_applied
+        ? 'Маршрут удален.'
+        : statsSummary
+          ? `${warningPrefix}Маршрут готов (Источники: ${statsSummary})`
+          : `${warningPrefix}Маршрут готов`;
 
     assistantMessages.push({
       role: 'assistant' as const,
@@ -2125,6 +2423,7 @@ ${JSON.stringify(points)}
           budget: number;
           lat?: number | null;
           lon?: number | null;
+          arrivalTime: string;
         }
       >
     >();
@@ -2132,11 +2431,31 @@ ${JSON.stringify(points)}
       dateMap.set(new Date().toISOString().split('T')[0], []);
     } else {
       points.forEach((point) => {
-        const date = point.visitDate || new Date().toISOString().split('T')[0];
+        // Извлекаем только дату (без времени) для группировки по дням
+        const rawDate = point.visitDate || new Date().toISOString().split('T')[0];
+        const date = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
         const bucket = dateMap.get(date) ?? [];
         const description =
           enriched.find((item) => item.title === point.title)?.description ??
           `Интересное место: ${point.title}.`;
+
+        // Извлекаем время прибытия из visitDate (формат "2026-03-20T10:00:00" или "2026-03-20T07:00:00.000Z")
+        let arrivalTime = '10:00';
+        if (point.visitDate && point.visitDate.includes('T')) {
+          const timePart = point.visitDate.split('T')[1];
+          if (timePart) {
+            // Если строка содержит Z (UTC) — парсим через Date для получения локального времени
+            if (point.visitDate.includes('Z') || point.visitDate.includes('+')) {
+              const d = new Date(point.visitDate);
+              if (!isNaN(d.getTime())) {
+                arrivalTime = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+              }
+            } else {
+              // Локальное время без таймзоны — берём как есть
+              arrivalTime = timePart.slice(0, 5);
+            }
+          }
+        }
 
         bucket.push({
           id: point.id,
@@ -2147,6 +2466,7 @@ ${JSON.stringify(points)}
           budget: typeof point.budget === 'number' ? point.budget : 0,
           lat: point.lat,
           lon: point.lon,
+          arrivalTime,
         });
         dateMap.set(date, bucket);
       });
@@ -2165,23 +2485,29 @@ ${JSON.stringify(points)}
         day_end_time: '20:00',
         points: dayPoints
           .sort((a, b) => a.order - b.order)
-          .map((point) => ({
-            poi_id: point.id,
-            order: point.order,
-            arrival_time: '10:00',
-            departure_time: '12:00',
-            visit_duration_min: 90,
-            estimated_cost: point.budget || 0,
-            poi: {
-              id: point.id,
-              name: point.title,
-              address: point.address ?? 'Адрес не указан',
-              description: point.description,
-              coordinates: { lat: point.lat ?? 0, lon: point.lon ?? 0 },
-              category: 'attraction' as const,
-              score: 0.5, // Default score for trip points
-            },
-          })),
+          .map((point) => {
+            // Вычисляем departure_time: arrival + 90 мин
+            const [ah, am] = (point.arrivalTime ?? '10:00').split(':').map(Number);
+            const depMin = (ah ?? 10) * 60 + (am ?? 0) + 90;
+            const depTime = `${String(Math.floor(depMin / 60) % 24).padStart(2, '0')}:${String(depMin % 60).padStart(2, '0')}`;
+            return {
+              poi_id: point.id,
+              order: point.order,
+              arrival_time: point.arrivalTime ?? '10:00',
+              departure_time: depTime,
+              visit_duration_min: 90,
+              estimated_cost: point.budget || 0,
+              poi: {
+                id: point.id,
+                name: point.title,
+                address: point.address ?? 'Адрес не указан',
+                description: point.description,
+                coordinates: { lat: point.lat ?? 0, lon: point.lon ?? 0 },
+                category: 'attraction' as const,
+                score: 0.5,
+              },
+            };
+          }),
       }));
 
     const routePlan: RoutePlan = {
@@ -2217,10 +2543,11 @@ ${JSON.stringify(points)}
       currentTitles.size !== lastTitles.size ||
       [...currentTitles].some((t) => !lastTitles.has(t));
 
-    // TRI-104: при загрузке из конструктора — добавляем ТОЛЬКО маршрут без текстовых сообщений.
-    // Очищаем все старые сообщения и оставляем только свежий route_plan с пустым content.
-    // Результат: пользователь видит только маршрут на карте, без "привета", "маршрут обновлён" и других текстов.
-    await this.aiSessionsService.replaceMessagesWithRoutePlan(session.id, routePlan);
+    // TRI-104: синхронизируем сессию с конструктором ТОЛЬКО если маршрут реально изменился.
+    // Если маршрут не менялся — не трогаем сессию, чтобы сохранить оригинальные AI-сгенерированные времена.
+    if (routeChanged) {
+      await this.aiSessionsService.replaceMessagesWithRoutePlan(session.id, routePlan);
+    }
 
     this.eventsService.emitTripRefresh(tripId);
     this.eventsService.emitAiUpdate(tripId, session.id);
@@ -2535,7 +2862,7 @@ ${JSON.stringify(points)}
         const messageContent =
           updatedDays.length === 0 ||
           updatedDays.every((d) => d.points.length === 0)
-            ? 'Маршрут очищен.'
+            ? 'Маршрут удален.'
             : 'Я обновил маршрут.';
 
         if (
@@ -2616,7 +2943,7 @@ ${JSON.stringify(points)}
     if (result.success) {
       this.eventsService.emitTripRefresh(tripId);
       const messageContent =
-        result.points.length === 0 ? 'Маршрут очищен.' : 'Я обновил маршрут.';
+        result.points.length === 0 ? 'Маршрут удален.' : 'Я обновил маршрут.';
 
       if (result.points.length === 0) {
         // Маршрут очищен — только текстовое сообщение без карточки

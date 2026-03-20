@@ -24,6 +24,7 @@ const ALLOWED_ACTION_TYPES: IntentRouterActionType[] = [
   'ADD_CATEGORY',
   'REMOVE_BORING',
   'NEW_ROUTE',
+  'TRAVEL_CHAT',
   'OFF_TOPIC',
   'SMALL_TALK',
 ];
@@ -31,85 +32,45 @@ const ALLOWED_ACTION_TYPES: IntentRouterActionType[] = [
 const SYSTEM_PROMPT = `You are an intent router for travel route edits.
 Analyze the user message with optional history and current route POIs.
 Return ONLY valid JSON with this exact structure:
-{ "action_type": "REMOVE_POI"|"REPLACE_POI"|"ADD_POI"|"ADD_DAYS"|"APPLY_GLOBAL_FILTER"|"REDUCE_BUDGET"|"ADD_CATEGORY"|"REMOVE_BORING"|"NEW_ROUTE"|"OFF_TOPIC"|"SMALL_TALK", "confidence": number, "target_poi_id": string|null }
+{ "action_type": "REMOVE_POI"|"REPLACE_POI"|"ADD_POI"|"ADD_DAYS"|"APPLY_GLOBAL_FILTER"|"REDUCE_BUDGET"|"ADD_CATEGORY"|"REMOVE_BORING"|"NEW_ROUTE"|"TRAVEL_CHAT"|"OFF_TOPIC"|"SMALL_TALK", "confidence": number, "target_poi_id": string|null }
 
 Action type rules:
-- NEW_ROUTE: use when (a) currentRoutePois is empty and user asks about a city/destination/trip, OR (b) user explicitly wants to start over / build a completely new route ("заново", "с нуля", "новый маршрут"). This is the DEFAULT for travel requests when there is no existing route.
-- REMOVE_POI: user wants to delete a specific place from the CURRENT route (e.g. "удали X", "убери X", "исключи X"). Always REMOVE_POI if X is in currentRoutePois.
+- NEW_ROUTE: use when (a) currentRoutePois is empty and user asks about a city/destination/trip with enough specifics to build a route, OR (b) user explicitly wants to start over / build a completely new route ("заново", "с нуля", "новый маршрут"). NEVER use NEW_ROUTE for deletion requests ("удали", "убери", "очисти", "сотри") even if currentRoutePois is empty.
+- REMOVE_POI: user wants to delete a SINGLE specific named place from the CURRENT route ("удали X", "убери X", "исключи X") — set target_poi_id to the matching ID. OR all places at once ("удали весь маршрут", "очисти маршрут", "убери все точки", "сотри всё", "удали все места") — set target_poi_id to "ALL". For multi-point positional requests ("удали первые 3 точки", "оставь только последние 2", "убери 2 первых") use TRAVEL_CHAT instead — it can handle complex route edits.
 - ADD_POI: user wants to add a new place to the CURRENT route (e.g. "добавь кафе", "включи музей", "добавь X"). The new point is appended without changing existing points order.
 - REPLACE_POI: user wants to swap/change a specific point in the CURRENT route (e.g. "замени X", "поменяй X на что-то другое", "вместо X поставь Y").
 - ADD_DAYS: user wants to extend the trip with more days.
 - REDUCE_BUDGET: user wants a cheaper route (e.g. "сделай дешевле", "снизь бюджет").
 - ADD_CATEGORY: user wants more items of a category added to the CURRENT route (e.g. "добавь больше музеев", "найди кино").
 - REMOVE_BORING: user wants to remove dull or low-rated POIs from the CURRENT route (e.g. "удали скучное", "убери неинтересное").
-- OFF_TOPIC: request is NOT related to travel, routes, places, food, or cities at all.
-- SMALL_TALK: user is just greeting or chatting without any travel intent.
+- TRAVEL_CHAT: use for (a) conversational travel talk without a clear actionable request — vague preferences, general travel advice, comparing destinations; (b) when currentRoutePois is NOT empty and user asks general questions about the route; (c) multi-point positional edits like "удали первые 3 точки", "оставь только последние 2", "поменяй местами 1 и 3 точки" — complex operations that require understanding the route structure.
+- OFF_TOPIC: request is NOT related to travel, routes, places, food, or cities at all (e.g. math, coding, recipes unrelated to travel).
+- SMALL_TALK: user is just greeting or chatting without any travel intent ("привет", "как дела", "спасибо").
 
 Critical rules:
 - If currentRoutePois is NOT empty and the user asks to add/remove/change a specific point — use ADD_POI/REMOVE_POI/REPLACE_POI, NOT NEW_ROUTE. Mutations preserve existing route order.
-- If currentRoutePois is empty and the request mentions a city or destination — always NEW_ROUTE.
+- If currentRoutePois is empty and the request mentions a specific city clearly — use NEW_ROUTE.
+- If currentRoutePois is empty and the destination is vague/unclear — use TRAVEL_CHAT to gather more info.
 - For REMOVE_POI/REPLACE_POI, target_poi_id is the ID from currentRoutePois that best matches the user's request.
 - confidence must be a number between 0 and 1.
-- target_poi_id must be a string ID or null.`;
+- target_poi_id must be a string ID or null.
+
+When in doubt between a specific mutation and TRAVEL_CHAT — prefer TRAVEL_CHAT. It can handle any free-form route edit. Examples of TRAVEL_CHAT:
+- "сделай маршрут покороче" (ambiguous: remove points? shorten times?)
+- "мне не нравятся первые точки" (which ones exactly?)
+- "переставь местами" (reorder)
+- "удали половину" (positional)
+- "оставь только музеи" (filter by category across entire route)
+- "сделай маршрут поспортивнее" (subjective replacement)
+- "убери 2 первых" / "удали последнюю" (positional, not by name)
+- "можно без ресторанов?" (category removal across route)
+- Any request about multiple points by position, number, or category — not by specific POI name.`;
 
 @Injectable()
 export class IntentRouterService {
   private readonly logger = new Logger('AI_PIPELINE:IntentRouter');
-  private recentQueries: string[] = [];
-  private readonly MAX_RECENT_QUERIES = 10;
 
   constructor(private readonly llmClientService: LlmClientService) {}
-
-  private calculateLevenshteinDistance(str1: string, str2: string): number {
-    const len1 = str1.length;
-    const len2 = str2.length;
-    const matrix: number[][] = Array(len2 + 1)
-      .fill(null)
-      .map(() => Array(len1 + 1).fill(0));
-
-    for (let i = 0; i <= len1; i++) matrix[0][i] = i;
-    for (let j = 0; j <= len2; j++) matrix[j][0] = j;
-
-    for (let j = 1; j <= len2; j++) {
-      for (let i = 1; i <= len1; i++) {
-        const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
-        matrix[j][i] = Math.min(
-          matrix[j][i - 1] + 1,
-          matrix[j - 1][i] + 1,
-          matrix[j - 1][i - 1] + cost,
-        );
-      }
-    }
-
-    return matrix[len2][len1];
-  }
-
-  private isSemanticSpam(text: string): boolean {
-    const normalized = text.toLowerCase().trim();
-    const threshold = Math.max(3, Math.floor(normalized.length * 0.2)); // 20% difference threshold
-
-    for (const recentQuery of this.recentQueries) {
-      const distance = this.calculateLevenshteinDistance(
-        normalized,
-        recentQuery.toLowerCase(),
-      );
-      if (distance <= threshold) {
-        this.logger.warn(
-          `Semantic spam detected: "${text}" is similar to recent query (distance: ${distance})`,
-        );
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  private recordQuery(text: string): void {
-    this.recentQueries.push(text);
-    if (this.recentQueries.length > this.MAX_RECENT_QUERIES) {
-      this.recentQueries.shift();
-    }
-  }
 
   private getSpamScore(text: string): number {
     let score = 0;
@@ -117,8 +78,6 @@ export class IntentRouterService {
     if (/^[a-zA-Z0-9]+$/.test(text)) score += 1;
     if (/(.)\1{5,}/.test(text)) score += 2;
     if (/https?:\/\//.test(text)) score += 2;
-    // Add semantic spam detection to score
-    if (this.isSemanticSpam(text)) score += 3;
     return score;
   }
 
@@ -173,9 +132,6 @@ export class IntentRouterService {
       };
     }
 
-    // Record query for future semantic spam detection
-    this.recordQuery(query);
-
     const llmPayload = {
       message: query,
       history: history.slice(-10),
@@ -203,7 +159,8 @@ export class IntentRouterService {
         !isTravelRelated &&
         parsed.confidence < 0.7 &&
         parsed.action_type !== 'OFF_TOPIC' &&
-        parsed.action_type !== 'SMALL_TALK'
+        parsed.action_type !== 'SMALL_TALK' &&
+        parsed.action_type !== 'TRAVEL_CHAT'
       ) {
         parsed.action_type = 'OFF_TOPIC';
       }
@@ -290,7 +247,20 @@ export class IntentRouterService {
   private applyDeterministicPostProcessing(
     decision: IntentRouterDecision,
   ): IntentRouterDecision {
-    if (decision.action_type !== 'NEW_ROUTE' && decision.confidence < 0.4) {
+    // ADD_CATEGORY and REMOVE_BORING are always targeted mutations regardless of confidence:
+    // falling back to full_rebuild would rebuild the whole route with all POI categories,
+    // adding unrelated points (e.g. food + attractions when user only asked for museums).
+    const alwaysTargetedMutation: IntentRouterActionType[] = [
+      'ADD_CATEGORY',
+      'REMOVE_BORING',
+      'REDUCE_BUDGET',
+    ];
+
+    if (
+      decision.action_type !== 'NEW_ROUTE' &&
+      !alwaysTargetedMutation.includes(decision.action_type) &&
+      decision.confidence < 0.4
+    ) {
       return {
         ...decision,
         route_mode: 'full_rebuild',

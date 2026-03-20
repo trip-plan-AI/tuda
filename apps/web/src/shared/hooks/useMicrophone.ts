@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface UseMicrophoneOptions {
   onTranscript?: (text: string) => void;
   onTranscriptUpdate?: (text: string) => void;
   language?: string;
-  continuous?: boolean; // Непрерывное слушание (по умолчанию true)
+  continuous?: boolean;
 }
 
 interface UseMicrophoneReturn {
@@ -21,7 +21,7 @@ interface UseMicrophoneReturn {
 }
 
 export function useMicrophone(options: UseMicrophoneOptions = {}): UseMicrophoneReturn {
-  const { onTranscript, onTranscriptUpdate, language = 'ru-RU', continuous = true } = options;
+  const { language = 'ru-RU', continuous = true } = options;
 
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -30,9 +30,16 @@ export function useMicrophone(options: UseMicrophoneOptions = {}): UseMicrophone
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
 
   const recognitionRef = useRef<any>(null);
+  // Храним колбэки и transcript в ref, чтобы не пересоздавать recognition при их изменении
+  const transcriptRef = useRef(transcript);
+  const onTranscriptRef = useRef(options.onTranscript);
+  const onTranscriptUpdateRef = useRef(options.onTranscriptUpdate);
+
+  transcriptRef.current = transcript;
+  onTranscriptRef.current = options.onTranscript;
+  onTranscriptUpdateRef.current = options.onTranscriptUpdate;
 
   useEffect(() => {
-    // Проверяем поддержку Web Speech API
     const SpeechRecognition =
       typeof window !== 'undefined' &&
       ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
@@ -60,7 +67,6 @@ export function useMicrophone(options: UseMicrophoneOptions = {}): UseMicrophone
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript;
-
         if (event.results[i].isFinal) {
           final += text + ' ';
         } else {
@@ -69,22 +75,26 @@ export function useMicrophone(options: UseMicrophoneOptions = {}): UseMicrophone
       }
 
       if (final) {
-        const newTranscript = transcript + final;
+        const newTranscript = transcriptRef.current + final;
+        transcriptRef.current = newTranscript;
         setTranscript(newTranscript);
-        onTranscriptUpdate?.(newTranscript);
+        onTranscriptUpdateRef.current?.(newTranscript);
       }
 
       setInterimTranscript(interim);
     };
 
     recognition.onerror = (event: any) => {
-      console.error('Ошибка распознавания:', event.error);
+      // 'aborted' — нормальная ситуация при вызове stop()/abort(), не логируем
+      if (event.error !== 'aborted') {
+        console.error('Ошибка распознавания:', event.error);
+      }
     };
 
     recognition.onend = () => {
       setIsListening(false);
-      if (transcript) {
-        onTranscript?.(transcript);
+      if (transcriptRef.current) {
+        onTranscriptRef.current?.(transcriptRef.current);
       }
     };
 
@@ -93,38 +103,36 @@ export function useMicrophone(options: UseMicrophoneOptions = {}): UseMicrophone
     return () => {
       recognition.abort();
     };
-  }, [transcript, onTranscript, onTranscriptUpdate, language]);
+    // Пересоздаём recognition только при смене языка или режима continuous
+  }, [language, continuous]);
 
-  const startListening = async () => {
+  const startListening = useCallback(async () => {
     if (recognitionRef.current && !isListening) {
       try {
-        // Получаем аудиопоток для анализатора
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         setMediaStream(stream);
       } catch (err) {
         console.error('Ошибка доступа к микрофону:', err);
       }
       recognitionRef.current.start();
     }
-  };
+  }, [isListening]);
 
-  const stopListening = () => {
+  const stopListening = useCallback(() => {
     if (recognitionRef.current && isListening) {
       recognitionRef.current.stop();
     }
-    // Закрываем аудиопоток
     if (mediaStream) {
       mediaStream.getTracks().forEach((track) => track.stop());
       setMediaStream(null);
     }
-  };
+  }, [isListening, mediaStream]);
 
-  const clearTranscript = () => {
+  const clearTranscript = useCallback(() => {
+    transcriptRef.current = '';
     setTranscript('');
     setInterimTranscript('');
-  };
+  }, []);
 
   return {
     isListening,
