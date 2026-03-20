@@ -132,13 +132,19 @@ export class RouteMutatorService {
       const name = (point.poi?.name ?? '').toLowerCase();
       const category = ((point.poi as any)?.category ?? '').toLowerCase();
 
-      // Match if name contains query, or query contains first word of name,
-      // or category matches query
+      // Match strategies in order:
+      // 1. Full name match or contains
+      // 2. First word of name matches query start
+      // 3. Category exact match
+      // 4. Category contains query (for "музе*" matching "museum", etc)
       const matched =
         name.includes(q) ||
         (name.split(' ')[0] !== '' && q.includes(name.split(' ')[0]!)) ||
         category === q ||
-        category.includes(q);
+        category.includes(q) ||
+        q.includes(category) ||
+        // Map common Russian words to categories
+        this.matchesCategoryAlias(q, category);
 
       if (matched) {
         removedCount++;
@@ -147,6 +153,28 @@ export class RouteMutatorService {
       }
       return true;
     });
+  }
+
+  private matchesCategoryAlias(query: string, category: string): boolean {
+    // Map Russian/English aliases to categories
+    const aliases: Record<string, string[]> = {
+      museum: ['музей', 'выставка', 'галере'],
+      cafe: ['кафе', 'кофе'],
+      restaurant: ['ресторан', 'еда'],
+      monument: ['памятник', 'монумент', 'монумент'],
+      park: ['парк', 'сад'],
+      theater: ['театр', 'опера'],
+      gallery: ['галере', 'выставка'],
+      shopping: ['магазин', 'шоп', 'покуп'],
+      attraction: ['достопримечательн', 'интересн'],
+    };
+
+    for (const [cat, words] of Object.entries(aliases)) {
+      if (category.includes(cat)) {
+        return words.some((w) => query.includes(w));
+      }
+    }
+    return false;
   }
 
   private rebuildDayTimes(day: PlanDay): PlanDay {

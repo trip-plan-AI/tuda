@@ -58,6 +58,7 @@ Critical rules:
 PRIORITY RULE — mutations ALWAYS win over TRAVEL_CHAT:
 - If the message contains "добавь/добавить/включи" + any noun (кафе, музей, точку, место, парк, ресторан, or any count) → ALWAYS use ADD_POI or ADD_CATEGORY. NEVER TRAVEL_CHAT. TRAVEL_CHAT cannot add new points — only our pipeline can.
 - If the message contains "удали/убери/исключи" + a SPECIFIC place NAME from currentRoutePois → ALWAYS use REMOVE_POI. TRAVEL_CHAT is only for positional removal ("удали первые 3", "удали последнюю").
+- COMPOUND AND STRUCTURAL EXCEPTION: If the message requests MULTIPLE actions (like "удали X и добавь Y") or STRUCTURAL changes like removing a whole day ("удали второй день"), ALWAYS use TRAVEL_CHAT. TRAVEL_CHAT can process multiple intents and days simultaneously. Ignore the priority rules for ADD/REMOVE in these cases.
 - If the message contains "замени/поменяй/вместо" + a SPECIFIC place NAME → ALWAYS use REPLACE_POI.
 - If the message contains "дешевле/снизь бюджет" → ALWAYS use REDUCE_BUDGET.
 - If the message contains "больше музеев/ресторанов/кафе" → ALWAYS use ADD_CATEGORY.

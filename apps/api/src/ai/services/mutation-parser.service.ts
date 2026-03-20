@@ -15,6 +15,7 @@ type PointMutation =
 
 If the user wants to remove something and you don't know the ID, use REMOVE_BY_QUERY with a search query.
 If the user wants to add something, use ADD.
+If the user request contains multiple actions (like removing a point AND adding a new one), return multiple mutations in the array.
 Only output valid JSON matching { "mutations": PointMutation[] }`;
 
 @Injectable()
