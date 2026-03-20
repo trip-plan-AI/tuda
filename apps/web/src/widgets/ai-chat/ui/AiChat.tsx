@@ -60,7 +60,7 @@ function ChatTypingSkeleton() {
   return (
     <div className="flex justify-start">
       <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
-        <span className="text-sm text-slate-500">Обрабатываю вашу просьбу{dots}</span>
+        <span className="text-sm font-medium text-brand-indigo">Обрабатываю вашу просьбу{dots}</span>
       </div>
     </div>
   );
