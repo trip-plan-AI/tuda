@@ -340,6 +340,7 @@ export class IntentRouterService {
       'ADD_CATEGORY',
       'REMOVE_BORING',
       'REDUCE_BUDGET',
+      'REMOVE_POSITIONAL', // Positional ops are always deterministic — confidence is irrelevant
     ];
 
     if (
