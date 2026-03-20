@@ -1608,6 +1608,52 @@ ${JSON.stringify(points)}
             break;
           }
 
+          case 'REMOVE_POSITIONAL': {
+            // Deterministic positional delete — no LLM involved in counting
+            const allPoiIds = existingRoutePlan.days.flatMap((d) =>
+              d.points.map((p) => p.poi_id),
+            );
+            const total = allPoiIds.length;
+            const n = Math.min(
+              intentRouterDecision.positional_count ?? 1,
+              total - 1, // always keep at least 1
+            );
+            const dir = intentRouterDecision.positional_direction ?? 'end';
+
+            let keepIds: string[];
+            if (dir === 'end') {
+              keepIds = allPoiIds.slice(0, total - n);
+            } else if (dir === 'start') {
+              keepIds = allPoiIds.slice(n);
+            } else if (dir === 'keep_start') {
+              keepIds = allPoiIds.slice(0, n);
+            } else {
+              // keep_end
+              keepIds = allPoiIds.slice(total - n);
+            }
+
+            const keepSet = new Set(keepIds);
+            const filteredDays = existingRoutePlan.days
+              .map((day) => ({
+                day_number: day.day_number,
+                poi_ids: day.points
+                  .filter((p) => keepSet.has(p.poi_id))
+                  .map((p) => p.poi_id),
+              }))
+              .filter((d) => d.poi_ids.length > 0);
+
+            routePlan = this.travelChatService.reconstructPlan(
+              existingRoutePlan,
+              filteredDays,
+            );
+            mutationMeta.mutation_applied = true;
+            mutationMeta.mutation_type = 'REMOVE_POSITIONAL';
+            this.logger.log(
+              `[REMOVE_POSITIONAL] dir=${dir} n=${n} total=${total} → kept ${keepIds.length}`,
+            );
+            break;
+          }
+
           case 'REMOVE_POI': {
             // ── Clear-all detection ──────────────────────────────────────────
             // IMPORTANT: regex must require "маршрут/точки/места" after "все/всё" —

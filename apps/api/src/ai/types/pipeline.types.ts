@@ -195,6 +195,7 @@ export interface UserMemoryProfile {
 
 export type IntentRouterActionType =
   | 'REMOVE_POI'
+  | 'REMOVE_POSITIONAL'    // Positional removal: "удали последние 3", "удали первые 2"
   | 'REPLACE_POI'
   | 'ADD_POI'
   | 'ADD_DAYS'
@@ -215,4 +216,8 @@ export interface IntentRouterDecision {
   target_poi_id: string | null;
   route_mode: IntentRouterRouteMode;
   fallback_reason?: 'LOW_CONFIDENCE' | 'SPAM_BLOCKED' | 'SEMANTIC_SPAM_BLOCKED';
+  /** Populated only when action_type === 'REMOVE_POSITIONAL' */
+  positional_count?: number;
+  /** 'start' = удали первые N, 'end' = удали последние N, 'keep_start' = оставь первые N, 'keep_end' = оставь последние N */
+  positional_direction?: 'start' | 'end' | 'keep_start' | 'keep_end';
 }

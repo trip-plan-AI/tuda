@@ -11,6 +11,8 @@ interface IntentRouterLlmResponse {
   action_type: unknown;
   confidence: unknown;
   target_poi_id: unknown;
+  positional_count?: unknown;
+  positional_direction?: unknown;
 }
 
 export interface IntentRouterContext {
@@ -23,6 +25,7 @@ export interface IntentRouterContext {
 const INTENT_ROUTER_MODEL = 'openai/gpt-4o-mini';
 const ALLOWED_ACTION_TYPES: IntentRouterActionType[] = [
   'REMOVE_POI',
+  'REMOVE_POSITIONAL',
   'REPLACE_POI',
   'ADD_POI',
   'ADD_DAYS',
@@ -39,10 +42,21 @@ const ALLOWED_ACTION_TYPES: IntentRouterActionType[] = [
 const SYSTEM_PROMPT = `You are an intent router for travel route edits.
 Analyze the user message with optional history and current route POIs.
 Return ONLY valid JSON with this exact structure:
-{ "action_type": "REMOVE_POI"|"REPLACE_POI"|"ADD_POI"|"ADD_DAYS"|"APPLY_GLOBAL_FILTER"|"REDUCE_BUDGET"|"ADD_CATEGORY"|"REMOVE_BORING"|"NEW_ROUTE"|"TRAVEL_CHAT"|"OFF_TOPIC"|"SMALL_TALK", "confidence": number, "target_poi_id": string|null }
+{ "action_type": "REMOVE_POI"|"REMOVE_POSITIONAL"|"REPLACE_POI"|"ADD_POI"|"ADD_DAYS"|"APPLY_GLOBAL_FILTER"|"REDUCE_BUDGET"|"ADD_CATEGORY"|"REMOVE_BORING"|"NEW_ROUTE"|"TRAVEL_CHAT"|"OFF_TOPIC"|"SMALL_TALK", "confidence": number, "target_poi_id": string|null }
+
+For REMOVE_POSITIONAL only, also include:
+{ ..., "positional_count": number, "positional_direction": "start"|"end"|"keep_start"|"keep_end" }
 
 Action type rules:
 - NEW_ROUTE: use when (a) currentRoutePois is empty and user asks about a city/destination/trip with enough specifics to build a route, OR (b) user explicitly wants to start over / build a completely new route ("заново", "с нуля", "новый маршрут"). NEVER use NEW_ROUTE for deletion requests ("удали", "убери", "очисти", "сотри") even if currentRoutePois is empty.
+- REMOVE_POSITIONAL: user wants to delete points BY POSITION (not by name). Examples: "удали последние 3 точки", "убери первые 2 места", "удали 3 последних", "оставь только первые 5 точек", "оставь последние 2". Extract "positional_count" (the number) and "positional_direction":
+  - "удали последние N" → direction="end", count=N
+  - "удали первые N"    → direction="start", count=N
+  - "убери N последних" → direction="end", count=N
+  - "убери N первых"    → direction="start", count=N
+  - "оставь первые N"   → direction="keep_start", count=N (delete all others)
+  - "оставь последние N"→ direction="keep_end", count=N (delete all others)
+  ALWAYS use REMOVE_POSITIONAL for positional requests — never REMOVE_POI or TRAVEL_CHAT.
 - REMOVE_POI: user wants to delete a SINGLE specific named place from the CURRENT route ("удали X", "убери X", "исключи X") — set target_poi_id to the matching ID. OR all places at once ("удали весь маршрут", "очисти маршрут", "убери все точки", "сотри всё", "удали все места") — set target_poi_id to "ALL". IMPORTANT: "удали все кафе/рестораны/музеи/памятники" is NOT "ALL" — this is category-based removal → use TRAVEL_CHAT. target_poi_id="ALL" means DELETE THE ENTIRE ROUTE, not a category. For multi-point positional requests ("удали первые 3 точки", "оставь только последние 2", "убери 2 первых") use TRAVEL_CHAT instead — it can handle complex route edits.
 - ADD_POI: user wants to add a new place to the CURRENT route (e.g. "добавь кафе", "включи музей", "добавь X", "добавь 1 точку", "добавь ещё одно место", "добавь 2 места", "добавь точку"). ALWAYS use ADD_POI when user says "добавь [число] точку/точки/место/места" — even if category is unspecified. The new point is appended without changing existing points order.
 - REPLACE_POI: user wants to swap/change a specific point in the CURRENT route (e.g. "замени X", "поменяй X на что-то другое", "вместо X поставь Y").
@@ -217,7 +231,7 @@ export class IntentRouterService {
         query,
       );
 
-      return this.applyDeterministicPostProcessing({
+      const baseDecision: IntentRouterDecision = {
         action_type: normalizedActionType,
         confidence: parsed.confidence,
         target_poi_id:
@@ -228,12 +242,21 @@ export class IntentRouterService {
             : targetPoiId,
         route_mode:
           normalizedActionType === 'REMOVE_POI' ||
+          normalizedActionType === 'REMOVE_POSITIONAL' ||
           normalizedActionType === 'REPLACE_POI' ||
           normalizedActionType === 'ADD_POI' ||
           normalizedActionType === 'ADD_DAYS'
             ? 'targeted_mutation'
             : 'full_rebuild',
-      });
+      };
+
+      // Pass through positional fields for REMOVE_POSITIONAL
+      if (normalizedActionType === 'REMOVE_POSITIONAL') {
+        baseDecision.positional_count = parsed.positional_count;
+        baseDecision.positional_direction = parsed.positional_direction;
+      }
+
+      return this.applyDeterministicPostProcessing(baseDecision);
     } catch (error) {
       this.logger.warn(
         `Intent router LLM failed, fallback to NEW_ROUTE: ${String(error)}`,
@@ -252,6 +275,8 @@ export class IntentRouterService {
     action_type: IntentRouterActionType;
     confidence: number;
     target_poi_id: string | null;
+    positional_count?: number;
+    positional_direction?: 'start' | 'end' | 'keep_start' | 'keep_end';
   } {
     const parsed = JSON.parse(payload) as IntentRouterLlmResponse;
 
@@ -277,11 +302,32 @@ export class IntentRouterService {
       throw new Error('Intent router returned invalid target_poi_id');
     }
 
-    return {
+    const result: {
+      action_type: IntentRouterActionType;
+      confidence: number;
+      target_poi_id: string | null;
+      positional_count?: number;
+      positional_direction?: 'start' | 'end' | 'keep_start' | 'keep_end';
+    } = {
       action_type: parsed.action_type as IntentRouterActionType,
       confidence: Math.max(0, Math.min(1, parsed.confidence)),
       target_poi_id: parsed.target_poi_id,
     };
+
+    if (result.action_type === 'REMOVE_POSITIONAL') {
+      const count =
+        typeof parsed.positional_count === 'number'
+          ? Math.floor(parsed.positional_count)
+          : parseInt(String(parsed.positional_count ?? '0'), 10);
+      const direction = parsed.positional_direction as string;
+      const validDirections = ['start', 'end', 'keep_start', 'keep_end'];
+      result.positional_count = count > 0 ? count : 1;
+      result.positional_direction = validDirections.includes(direction)
+        ? (direction as 'start' | 'end' | 'keep_start' | 'keep_end')
+        : 'end';
+    }
+
+    return result;
   }
 
   private applyDeterministicPostProcessing(
@@ -327,6 +373,7 @@ export class IntentRouterService {
       // No route exists — mutation-type actions degrade to NEW_ROUTE
       if (
         actionType === 'REMOVE_POI' ||
+        actionType === 'REMOVE_POSITIONAL' ||
         actionType === 'REPLACE_POI' ||
         actionType === 'ADD_DAYS' ||
         actionType === 'APPLY_GLOBAL_FILTER'
