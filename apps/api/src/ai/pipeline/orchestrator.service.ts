@@ -395,9 +395,9 @@ export class OrchestratorService {
       six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
     };
 
-    // Match digit patterns like "3 места", "3 интересных места", "5 достопримечательностей"
+    // Match digit patterns like "3 места", "3 интересных места", "5 достопримечательностей", "1 точку"
     const digitMatch = text.match(
-      /(\d+)\s+(?:[а-яёa-z]+\s+)*(мест|место|places?|достопримечательностей?|points?|point)/i,
+      /(\d+)\s+(?:[а-яёa-z]+\s+)*(мест|место|точк[уиа]|точек|places?|достопримечательностей?|points?|point)/i,
     );
     if (digitMatch) return Math.max(1, Math.min(20, parseInt(digitMatch[1], 10)));
 
@@ -408,7 +408,7 @@ export class OrchestratorService {
       if (num !== undefined) {
         // Look for quantity-related words in next 4 words
         const nextWords = words.slice(i + 1, i + 5).join(' ');
-        if (/мест|место|places?|достопримечательн|points?|лучших|самых|топ/.test(nextWords)) {
+        if (/мест|место|точк[уиа]|точек|places?|достопримечательн|points?|лучших|самых|топ/.test(nextWords)) {
           return Math.max(1, Math.min(20, num));
         }
       }

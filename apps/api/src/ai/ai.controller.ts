@@ -674,7 +674,7 @@ ${JSON.stringify(points)}
     this.logger.log(
       `Current route POIs for router: ${JSON.stringify(currentRoutePois)}`,
     );
-    const intentRouterDecision: IntentRouterDecision =
+    let intentRouterDecision: IntentRouterDecision =
       await this.intentRouterService.route(
         dto.user_query,
         llmContext,
@@ -693,23 +693,55 @@ ${JSON.stringify(points)}
       });
     }
 
+    // ── Smart reclassification: last-resort override for actionable requests ──
+    // Intent router already applies overrideTravelChatIfActionable(), but this is
+    // an extra safety net in the controller. If a request is clearly actionable
+    // (add/remove/replace/budget) and somehow still reached TRAVEL_CHAT, redirect
+    // it to the mutation pipeline.
+    if (intentRouterDecision.action_type === 'TRAVEL_CHAT') {
+      const hasRoute = existingRoutePlan?.days?.some((d) => d.points?.length > 0);
+      if (hasRoute) {
+        const q = dto.user_query.toLowerCase();
+        const isAdd = /добав[ьи]|включи|добавить/.test(q);
+        const isCheaper = /дешевле|снизь.*бюджет|бюджет.*сниз/.test(q);
+        const isBoring = /(удали|убери)\s*(скучн|неинтересн)/.test(q);
+        const isAddCategory = /больше\s+(музе|рестора|кафе|парк|бар|театр|галере)/.test(q);
+        if (isAddCategory) {
+          intentRouterDecision = { ...intentRouterDecision, action_type: 'ADD_CATEGORY', route_mode: 'targeted_mutation' };
+        } else if (isAdd) {
+          intentRouterDecision = { ...intentRouterDecision, action_type: 'ADD_POI', route_mode: 'targeted_mutation' };
+        } else if (isCheaper) {
+          intentRouterDecision = { ...intentRouterDecision, action_type: 'REDUCE_BUDGET', route_mode: 'targeted_mutation' };
+        } else if (isBoring) {
+          intentRouterDecision = { ...intentRouterDecision, action_type: 'REMOVE_BORING', route_mode: 'targeted_mutation' };
+        }
+      }
+    }
+
     // Guard Layer: Conversational travel mode (TRAVEL_CHAT)
     if (intentRouterDecision.action_type === 'TRAVEL_CHAT') {
       this.eventsService.emitAiThinking(session.tripId, session.id, 'chat', user.id);
 
-      // Route restoration: если маршрут был удалён и пользователь просит восстановить
-      const restorePattern = /верни|восстанови|откат|отмени|назад|вернуть/i;
-      const hasNoCurrentRoute = !existingRoutePlan || !existingRoutePlan.days?.some((d) => d.points?.length > 0);
-      if (hasNoCurrentRoute && restorePattern.test(dto.user_query)) {
-        // Ищем предыдущий непустой маршрут в истории
-        const previousPlan = [...history].reverse()
+      // Route restoration: undo to previous state when user asks to restore / undo.
+      // Works both when route is empty (full deletion) AND when route has points (partial undo).
+      const restorePattern = /верни|восстанови|откат|отмени|назад|вернуть|отменить|undo/i;
+      if (restorePattern.test(dto.user_query)) {
+        const hasNoCurrentRoute = !existingRoutePlan || !existingRoutePlan.days?.some((d) => d.points?.length > 0);
+
+        // Collect all non-empty route plans from history (newest first)
+        const allPlans = [...history].reverse()
           .map((msg) => this.tryParseRoutePlan(msg))
-          .find((plan) => plan && plan.days?.some((d) => d.points?.length > 0));
+          .filter((plan): plan is RoutePlan => !!plan && plan.days?.some((d) => d.points?.length > 0));
+
+        // If route is empty → restore the most recent plan.
+        // If route exists → skip the current plan (allPlans[0]) and restore the PREVIOUS one.
+        const previousPlan = hasNoCurrentRoute ? allPlans[0] : allPlans[1];
+
         if (previousPlan) {
           const restoredMessages: SessionMessage[] = [
             ...history,
             { role: 'user' as const, content: dto.user_query },
-            { role: 'assistant' as const, content: 'Маршрут восстановлен.', route_plan: previousPlan },
+            { role: 'assistant' as const, content: 'Готово, вернул предыдущую версию маршрута.', route_plan: previousPlan },
           ];
           await this.aiSessionsService.saveMessages(session.id, restoredMessages);
           if (session.tripId) {
@@ -776,7 +808,7 @@ ${JSON.stringify(points)}
           };
         }
 
-        // LLM said 'chat' (e.g. user wants to ADD new points) → fall through to text response
+        // LLM said 'chat' — modifyRoute can't handle this request → text response
         const travelChatMessages: SessionMessage[] = [
           ...history,
           { role: 'user' as const, content: dto.user_query },
@@ -1391,9 +1423,12 @@ ${JSON.stringify(points)}
 
         switch (intentRouterDecision.action_type) {
           case 'ADD_POI': {
+            // Limit points to what user requested (default 1 if not specified)
+            const addPoiLimit = intent.poi_count_requested ?? 1;
+            const poisToInject = selectedForScheduler.slice(0, addPoiLimit);
             routePlan = this.schedulerService.injectPoints(
               existingRoutePlan,
-              selectedForScheduler,
+              poisToInject,
               {
                 ...intent,
                 days: Math.max(intent.days, existingRoutePlan.days.length),
@@ -1405,10 +1440,16 @@ ${JSON.stringify(points)}
 
           case 'REMOVE_POI': {
             // ── Clear-all detection ──────────────────────────────────────────
-            const clearAllKeywords = /удали\s+(весь|все|всё)\s+маршрут|убери\s+(весь|все|всё|все\s+точки|все\s+места)|очисти\s+(маршрут|всё|все)|сотри\s+(маршрут|всё|все)/i;
+            // IMPORTANT: regex must require "маршрут/точки/места" after "все/всё" —
+            // otherwise "убери все кафе" matches as clear-all and deletes the entire route.
+            const clearAllKeywords = /удали\s+(весь\s+маршрут|все\s+(точки|места|маршрут)|всё)|убери\s+(весь\s+маршрут|все\s+(точки|места|маршрут)|всё)|очисти\s+(маршрут|всё)|сотри\s+(маршрут|всё)/i;
+            // Safety: "удали все кафе/рестораны/музеи" is NOT clear-all — it's category removal.
+            // If query mentions a category after "все/всё", it's NOT a full route deletion.
+            const hasCategoryAfterAll = /все\s+(кафе|рестора|музе|памятник|парк|бар|театр|галере|церк|храм|собор|монумент|достопримечательн)/i.test(dto.user_query);
             const isRemoveAll =
-              intentRouterDecision.target_poi_id === 'ALL' ||
-              clearAllKeywords.test(dto.user_query);
+              !hasCategoryAfterAll &&
+              (intentRouterDecision.target_poi_id === 'ALL' ||
+              clearAllKeywords.test(dto.user_query));
 
             if (isRemoveAll) {
               // Return an empty route plan (no days, no points)
@@ -2064,7 +2105,7 @@ ${JSON.stringify(points)}
           dto.user_query,
           existingRoutePlan,
         );
-        if (modifyResult.type === 'modify') {
+        if (modifyResult.type === 'modify' && modifyResult.days.length > 0) {
           const modifiedPlan = this.travelChatService.reconstructPlan(
             existingRoutePlan,
             modifyResult.days,
@@ -2092,7 +2133,7 @@ ${JSON.stringify(points)}
             },
           };
         }
-        // type === 'chat' → LLM не смог применить, покажем текстовый ответ
+        // type === 'chat' OR empty days → LLM не смог применить, покажем текстовый ответ
         const chatFallbackMessages: SessionMessage[] = [
           ...history,
           { role: 'user' as const, content: dto.user_query },

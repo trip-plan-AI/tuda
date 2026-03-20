@@ -36,8 +36,8 @@ Return ONLY valid JSON with this exact structure:
 
 Action type rules:
 - NEW_ROUTE: use when (a) currentRoutePois is empty and user asks about a city/destination/trip with enough specifics to build a route, OR (b) user explicitly wants to start over / build a completely new route ("заново", "с нуля", "новый маршрут"). NEVER use NEW_ROUTE for deletion requests ("удали", "убери", "очисти", "сотри") even if currentRoutePois is empty.
-- REMOVE_POI: user wants to delete a SINGLE specific named place from the CURRENT route ("удали X", "убери X", "исключи X") — set target_poi_id to the matching ID. OR all places at once ("удали весь маршрут", "очисти маршрут", "убери все точки", "сотри всё", "удали все места") — set target_poi_id to "ALL". For multi-point positional requests ("удали первые 3 точки", "оставь только последние 2", "убери 2 первых") use TRAVEL_CHAT instead — it can handle complex route edits.
-- ADD_POI: user wants to add a new place to the CURRENT route (e.g. "добавь кафе", "включи музей", "добавь X"). The new point is appended without changing existing points order.
+- REMOVE_POI: user wants to delete a SINGLE specific named place from the CURRENT route ("удали X", "убери X", "исключи X") — set target_poi_id to the matching ID. OR all places at once ("удали весь маршрут", "очисти маршрут", "убери все точки", "сотри всё", "удали все места") — set target_poi_id to "ALL". IMPORTANT: "удали все кафе/рестораны/музеи/памятники" is NOT "ALL" — this is category-based removal → use TRAVEL_CHAT. target_poi_id="ALL" means DELETE THE ENTIRE ROUTE, not a category. For multi-point positional requests ("удали первые 3 точки", "оставь только последние 2", "убери 2 первых") use TRAVEL_CHAT instead — it can handle complex route edits.
+- ADD_POI: user wants to add a new place to the CURRENT route (e.g. "добавь кафе", "включи музей", "добавь X", "добавь 1 точку", "добавь ещё одно место", "добавь 2 места", "добавь точку"). ALWAYS use ADD_POI when user says "добавь [число] точку/точки/место/места" — even if category is unspecified. The new point is appended without changing existing points order.
 - REPLACE_POI: user wants to swap/change a specific point in the CURRENT route (e.g. "замени X", "поменяй X на что-то другое", "вместо X поставь Y").
 - ADD_DAYS: user wants to extend the trip with more days.
 - REDUCE_BUDGET: user wants a cheaper route (e.g. "сделай дешевле", "снизь бюджет").
@@ -55,16 +55,21 @@ Critical rules:
 - confidence must be a number between 0 and 1.
 - target_poi_id must be a string ID or null.
 
-When in doubt between a specific mutation and TRAVEL_CHAT — prefer TRAVEL_CHAT. It can handle any free-form route edit. Examples of TRAVEL_CHAT:
-- "сделай маршрут покороче" (ambiguous: remove points? shorten times?)
-- "мне не нравятся первые точки" (which ones exactly?)
-- "переставь местами" (reorder)
-- "удали половину" (positional)
-- "оставь только музеи" (filter by category across entire route)
-- "сделай маршрут поспортивнее" (subjective replacement)
-- "убери 2 первых" / "удали последнюю" (positional, not by name)
-- "можно без ресторанов?" (category removal across route)
-- Any request about multiple points by position, number, or category — not by specific POI name.`;
+PRIORITY RULE — mutations ALWAYS win over TRAVEL_CHAT:
+- If the message contains "добавь/добавить/включи" + any noun (кафе, музей, точку, место, парк, ресторан, or any count) → ALWAYS use ADD_POI or ADD_CATEGORY. NEVER TRAVEL_CHAT. TRAVEL_CHAT cannot add new points — only our pipeline can.
+- If the message contains "удали/убери/исключи" + a SPECIFIC place NAME from currentRoutePois → ALWAYS use REMOVE_POI. TRAVEL_CHAT is only for positional removal ("удали первые 3", "удали последнюю").
+- If the message contains "замени/поменяй/вместо" + a SPECIFIC place NAME → ALWAYS use REPLACE_POI.
+- If the message contains "дешевле/снизь бюджет" → ALWAYS use REDUCE_BUDGET.
+- If the message contains "больше музеев/ресторанов/кафе" → ALWAYS use ADD_CATEGORY.
+
+Use TRAVEL_CHAT ONLY for these cases (when no clear add/remove/replace/budget action):
+- Subjective edits without specific action: "сделай маршрут покороче", "сделай поспортивнее"
+- Positional multi-point edits: "удали первые 3 точки", "оставь только последние 2", "убери 2 первых", "удали последнюю"
+- Reordering: "переставь местами", "поменяй местами 1 и 3 точки"
+- Category filtering across route: "оставь только музеи", "можно без ресторанов?"
+- Vague dissatisfaction: "мне не нравятся первые точки"
+- General travel questions about the existing route
+- Any request about multiple points by POSITION — not by specific POI name.`;
 
 @Injectable()
 export class IntentRouterService {
@@ -165,13 +170,26 @@ export class IntentRouterService {
         parsed.action_type = 'OFF_TOPIC';
       }
 
+      const hasCurrentRoute = (currentRoutePois?.length ?? 0) > 0;
+
+      // ── Deterministic override: fix LLM misclassification ──────────────────
+      // ADD requests MUST use ADD_POI/ADD_CATEGORY — TRAVEL_CHAT cannot add new POIs.
+      if (
+        parsed.action_type === 'TRAVEL_CHAT' &&
+        hasCurrentRoute
+      ) {
+        parsed.action_type = this.overrideTravelChatIfActionable(
+          query,
+          parsed.action_type,
+        );
+      }
+
       const targetPoiId = this.resolveTargetPoiId(
         query,
         parsed.action_type,
         parsed.target_poi_id,
         currentRoutePois,
       );
-      const hasCurrentRoute = (currentRoutePois?.length ?? 0) > 0;
       const normalizedActionType = this.normalizeActionTypeForSessionState(
         parsed.action_type,
         hasCurrentRoute,
@@ -350,5 +368,62 @@ export class IntentRouterService {
     }
 
     return null;
+  }
+
+  /**
+   * Deterministic override: if LLM classified as TRAVEL_CHAT but
+   * the message is a clear actionable request (add/remove/replace/budget),
+   * reclassify to the correct mutation type.
+   *
+   * TRAVEL_CHAT cannot add new POIs — only the pipeline can.
+   * TRAVEL_CHAT is only correct for positional edits, reordering,
+   * category filtering, and subjective edits.
+   */
+  private overrideTravelChatIfActionable(
+    query: string,
+    currentAction: IntentRouterActionType,
+  ): IntentRouterActionType {
+    const q = query.toLowerCase();
+
+    // ── ADD detection ─────────────────────────────────────────────────────
+    // Any "добавь/включи" request needs the pipeline to search for new POIs.
+    // modifyRoute() cannot add — it only works with existing poi_ids.
+    const isAdd = /добав[ьи]|включи|добавить/.test(q);
+    if (isAdd) {
+      // "добавь больше музеев/ресторанов/кафе" → ADD_CATEGORY
+      if (/больше\s+(музе|рестора|кафе|парк|бар|театр|галере)/.test(q)) {
+        this.logger.log(
+          `Override TRAVEL_CHAT → ADD_CATEGORY (deterministic, query="${query}")`,
+        );
+        return 'ADD_CATEGORY';
+      }
+      // "добавь кафе", "добавь 1 точку", "добавь ещё место" → ADD_POI
+      this.logger.log(
+        `Override TRAVEL_CHAT → ADD_POI (deterministic, query="${query}")`,
+      );
+      return 'ADD_POI';
+    }
+
+    // ── REDUCE_BUDGET detection ───────────────────────────────────────────
+    if (/дешевле|снизь.*бюджет|бюджет.*сниз|cheaper/.test(q)) {
+      this.logger.log(
+        `Override TRAVEL_CHAT → REDUCE_BUDGET (deterministic, query="${query}")`,
+      );
+      return 'REDUCE_BUDGET';
+    }
+
+    // ── REMOVE_BORING detection ───────────────────────────────────────────
+    if (/(удали|убери)\s*(скучн|неинтересн|boring)/.test(q)) {
+      this.logger.log(
+        `Override TRAVEL_CHAT → REMOVE_BORING (deterministic, query="${query}")`,
+      );
+      return 'REMOVE_BORING';
+    }
+
+    // Positional removals ("удали первые 3", "убери последнюю") stay TRAVEL_CHAT —
+    // modifyRoute handles these correctly with poi_id lists.
+    // Named removals ("удали Красную площадь") should already be REMOVE_POI from LLM.
+
+    return currentAction;
   }
 }
