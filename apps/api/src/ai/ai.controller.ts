@@ -674,9 +674,19 @@ ${JSON.stringify(points)}
     } = {
       mutation_applied: false,
     };
-    const currentRoutePois = this.extractCurrentRoutePois(history);
+
+    // Use existingRoutePlan to form currentRoutePois (more reliable than extractCurrentRoutePois)
+    const currentRoutePois = existingRoutePlan
+      ? existingRoutePlan.days.flatMap((day) =>
+          day.points.map((point) => ({
+            poi_id: point.poi_id,
+            title: point.poi?.name ?? null,
+          })),
+        )
+      : [];
+
     this.logger.log(
-      `Current route POIs for router: ${JSON.stringify(currentRoutePois)}`,
+      `Current route POIs for router: ${JSON.stringify(currentRoutePois)} (from existingRoutePlan: ${!!existingRoutePlan})`,
     );
     let intentRouterDecision: IntentRouterDecision =
       await this.intentRouterService.route(
