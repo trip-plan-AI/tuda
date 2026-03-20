@@ -49,10 +49,18 @@ export function computeDateCascade(
     const minMs = prevDateMs + stayDurationMs + travelDurationMs;
 
     const originalDate = points[j]?.visitDate;
-    const newDateIso = new Date(minMs).toISOString();
+    // Форматируем в ЛОКАЛЬНОЕ время (без UTC-сдвига через toISOString)
+    const newDate = new Date(minMs);
+    const yyyy = newDate.getFullYear();
+    const MM = String(newDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(newDate.getDate()).padStart(2, '0');
+    const hh = String(newDate.getHours()).padStart(2, '0');
+    const mm = String(newDate.getMinutes()).padStart(2, '0');
+    const ss = String(newDate.getSeconds()).padStart(2, '0');
+    const localIso = `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`;
 
     const hasTimeBefore = hasTime(originalDate ?? null);
-    const finalDate = hasTimeBefore ? newDateIso : newDateIso.split('T')[0]!;
+    const finalDate = hasTimeBefore ? localIso : `${yyyy}-${MM}-${dd}`;
 
     const currentMs = originalDate ? new Date(originalDate).getTime() : null;
 

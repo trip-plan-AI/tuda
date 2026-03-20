@@ -203,6 +203,7 @@ export type IntentRouterActionType =
   | 'ADD_CATEGORY'         // "Добавь музеев" → добавить больше точек категории
   | 'REMOVE_BORING'        // "Удали скучное" → удалить низкорейтинговые точки
   | 'NEW_ROUTE'
+  | 'TRAVEL_CHAT'   // Conversational travel planning (clarifying questions, preferences, advice)
   | 'OFF_TOPIC'
   | 'SMALL_TALK';
 
