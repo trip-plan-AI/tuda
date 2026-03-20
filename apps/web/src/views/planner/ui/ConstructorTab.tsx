@@ -205,7 +205,7 @@ export function ConstructorTab(props: ConstructorTabProps) {
                   )}
                   {mixedModes.includes('foot') && (
                     <div
-                      className="w-7 h-7 rounded-lg bg-brand-amber/10 flex items-center justify-center shadow-xs"
+                      className="w-7 h-7 rounded-lg bg-[#eb5e34]/10 flex items-center justify-center shadow-xs"
                       title="Пешком"
                     >
                       <span className="text-sm">🚶</span>
@@ -258,8 +258,8 @@ export function ConstructorTab(props: ConstructorTabProps) {
                 className={cn(
                   'px-4 sm:px-6 py-3.5 rounded-[1rem] text-sm font-black transition-all flex items-center justify-center h-full disabled:opacity-40 disabled:cursor-default border border-transparent',
                   routeProfile === 'foot'
-                    ? 'bg-white text-brand-amber shadow-sm border-slate-100'
-                    : 'text-slate-500 hover:text-brand-amber hover:bg-white/50',
+                    ? 'bg-white text-[#eb5e34] shadow-sm border-slate-100'
+                    : 'text-slate-500 hover:text-[#eb5e34] hover:bg-white/50',
                 )}
               >
                 <span className="leading-none align-middle -translate-y-px mr-2 text-base">🚶</span>{' '}
