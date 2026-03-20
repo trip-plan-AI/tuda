@@ -13,6 +13,13 @@ interface IntentRouterLlmResponse {
   target_poi_id: unknown;
 }
 
+export interface IntentRouterContext {
+  has_existing_route: boolean;
+  current_poi_count: number;
+  current_city: string | null;
+  current_pois?: Array<{ poi_id: string; title?: string | null }>;
+}
+
 const INTENT_ROUTER_MODEL = 'openai/gpt-4o-mini';
 const ALLOWED_ACTION_TYPES: IntentRouterActionType[] = [
   'REMOVE_POI',
@@ -55,15 +62,19 @@ Critical rules:
 - confidence must be a number between 0 and 1.
 - target_poi_id must be a string ID or null.
 
-CRITICAL STATE CONTRACT:
-The payload includes "hasExistingRoute" boolean — this is authoritative truth from the database.
-If hasExistingRoute is TRUE:
-  - NEVER return NEW_ROUTE for any message containing "добавь", "удали", "убери", "замени", "включи", "добавить", "add", "remove"
-  - These are ALWAYS mutations (ADD_POI / REMOVE_POI / REPLACE_POI)
-  - Only return NEW_ROUTE if user EXPLICITLY says "заново", "с нуля", "новый маршрут", "начни заново"
-If hasExistingRoute is FALSE:
-  - Return NEW_ROUTE when user describes a destination with enough specifics to build a route
-  - Return TRAVEL_CHAT for vague requests without clear destination
+CRITICAL STATE RULES:
+The system state is passed to you as JSON: { "has_existing_route": boolean }.
+
+IF has_existing_route IS TRUE:
+  - The user ALREADY HAS a planned route.
+  - Any request to "add" / "добавь" / "включи", "remove" / "удали" / "убери" / "исключи", "change" / "замени" / "поменяй" MUST be classified as a mutation (ADD_POI / REMOVE_POI / REPLACE_POI).
+  - NEVER return NEW_ROUTE unless the user EXPLICITLY says "заново", "с нуля", "новый маршрут", "начни заново", "сбрось всё", or names a completely different city.
+
+IF has_existing_route IS FALSE:
+  - The user DOES NOT have a route yet.
+  - You CANNOT return any mutation type — there is nothing to mutate.
+  - Requests to find places, visit a city, or create a plan MUST be classified as NEW_ROUTE.
+  - Vague requests without a clear destination MUST be classified as TRAVEL_CHAT.
 
 PRIORITY RULE — mutations ALWAYS win over TRAVEL_CHAT:
 - If the message contains "добавь/добавить/включи" + any noun (кафе, музей, точку, место, парк, ресторан, or any count) → ALWAYS use ADD_POI or ADD_CATEGORY. NEVER TRAVEL_CHAT. TRAVEL_CHAT cannot add new points — only our pipeline can.
@@ -128,9 +139,11 @@ export class IntentRouterService {
   async route(
     message: string,
     history: SessionMessage[],
-    currentRoutePois?: Array<{ poi_id: string; title?: string | null }>,
+    context: IntentRouterContext,
   ): Promise<IntentRouterDecision> {
     const query = message.trim();
+    const currentRoutePois = context.current_pois ?? [];
+    const hasCurrentRoute = context.has_existing_route;
 
     // 1. Anti-Spam Check
     const spamScore = this.getSpamScore(query);
@@ -148,12 +161,12 @@ export class IntentRouterService {
       };
     }
 
-    const hasCurrentRoute = (currentRoutePois?.length ?? 0) > 0;
     const llmPayload = {
       message: query,
       history: history.slice(-10),
-      currentRoutePois: currentRoutePois ?? [],
-      hasExistingRoute: hasCurrentRoute,
+      has_existing_route: context.has_existing_route,
+      current_poi_count: context.current_poi_count,
+      current_city: context.current_city,
     };
 
     try {

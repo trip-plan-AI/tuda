@@ -675,7 +675,7 @@ ${JSON.stringify(points)}
       mutation_applied: false,
     };
 
-    // Use existingRoutePlan to form currentRoutePois (more reliable than extractCurrentRoutePois)
+    // Derive context from existingRoutePlan (authoritative DB state — never guess)
     const currentRoutePois = existingRoutePlan
       ? existingRoutePlan.days.flatMap((day) =>
           day.points.map((point) => ({
@@ -684,19 +684,59 @@ ${JSON.stringify(points)}
           })),
         )
       : [];
+    const hasRoute =
+      !!existingRoutePlan &&
+      existingRoutePlan.days.some((d) => d.points?.length > 0);
 
+    const intentRouterCtx = {
+      has_existing_route: hasRoute,
+      current_poi_count: currentRoutePois.length,
+      current_city: existingRoutePlan?.city ?? null,
+      current_pois: currentRoutePois,
+    };
     this.logger.log(
-      `Current route POIs for router: ${JSON.stringify(currentRoutePois)} (from existingRoutePlan: ${!!existingRoutePlan})`,
+      `IntentRouter context: hasRoute=${hasRoute}, pois=${currentRoutePois.length}, city=${intentRouterCtx.current_city}`,
     );
+
     let intentRouterDecision: IntentRouterDecision =
       await this.intentRouterService.route(
         dto.user_query,
         llmContext,
-        currentRoutePois,
+        intentRouterCtx,
       );
     this.logger.log(
       `Intent router decision: ${JSON.stringify(intentRouterDecision)}`,
     );
+
+    // 🛡️ GUARDRAIL A: route exists but LLM returned NEW_ROUTE
+    if (hasRoute && intentRouterDecision.action_type === 'NEW_ROUTE') {
+      const isExplicitReset =
+        /заново|с нуля|сбрось|перестрой полностью|начни заново/i.test(
+          dto.user_query,
+        );
+      if (!isExplicitReset) {
+        this.logger.warn(
+          `[GUARDRAIL] NEW_ROUTE overridden → ADD_POI (route exists, query="${dto.user_query}")`,
+        );
+        intentRouterDecision = {
+          ...intentRouterDecision,
+          action_type: 'ADD_POI',
+          route_mode: 'targeted_mutation',
+        };
+      }
+    }
+
+    // 🛡️ GUARDRAIL B: no route but LLM returned targeted_mutation
+    if (!hasRoute && intentRouterDecision.route_mode === 'targeted_mutation') {
+      this.logger.warn(
+        `[GUARDRAIL] targeted_mutation overridden → NEW_ROUTE (no route exists, query="${dto.user_query}")`,
+      );
+      intentRouterDecision = {
+        ...intentRouterDecision,
+        action_type: 'NEW_ROUTE',
+        route_mode: 'full_rebuild',
+      };
+    }
 
     // Guard Layer: Anti-Spam
     if (intentRouterDecision.fallback_reason === 'SPAM_BLOCKED') {
