@@ -65,6 +65,8 @@ import { PointsService } from '../points/points.service';
 import { MutationParserService } from './services/mutation-parser.service';
 import { PointMutationService } from './services/point-mutation.service';
 import { PointMutation } from './types/mutations';
+import { PoiResolverService } from './services/poi-resolver.service';
+import { RouteMutatorService } from './services/route-mutator.service';
 import { CollaborationEventsService } from '../collaboration/collaboration-events.service';
 import { GeocodingFallbackService } from './services/geocoding-fallback.service';
 import { CityAnalyzerService } from './pipeline/city-analyzer.service';
@@ -131,6 +133,8 @@ export class AiController {
     private readonly explainer: LlmExplainerService,
     private readonly cacheWarmup: PoiCacheWarmupService,
     private readonly travelChatService: TravelChatService,
+    private readonly poiResolverService: PoiResolverService,
+    private readonly routeMutatorService: RouteMutatorService,
   ) {}
 
   private isLocationError(error: unknown): boolean {
@@ -699,39 +703,70 @@ ${JSON.stringify(points)}
     // (add/remove/replace/budget) and somehow still reached TRAVEL_CHAT, redirect
     // it to the mutation pipeline.
     if (intentRouterDecision.action_type === 'TRAVEL_CHAT') {
-      const hasRoute = existingRoutePlan?.days?.some((d) => d.points?.length > 0);
+      const hasRoute = existingRoutePlan?.days?.some(
+        (d) => d.points?.length > 0,
+      );
       if (hasRoute) {
         const q = dto.user_query.toLowerCase();
         const isAdd = /добав[ьи]|включи|добавить/.test(q);
         const isCheaper = /дешевле|снизь.*бюджет|бюджет.*сниз/.test(q);
         const isBoring = /(удали|убери)\s*(скучн|неинтересн)/.test(q);
-        const isAddCategory = /больше\s+(музе|рестора|кафе|парк|бар|театр|галере)/.test(q);
+        const isAddCategory =
+          /больше\s+(музе|рестора|кафе|парк|бар|театр|галере)/.test(q);
         if (isAddCategory) {
-          intentRouterDecision = { ...intentRouterDecision, action_type: 'ADD_CATEGORY', route_mode: 'targeted_mutation' };
+          intentRouterDecision = {
+            ...intentRouterDecision,
+            action_type: 'ADD_CATEGORY',
+            route_mode: 'targeted_mutation',
+          };
         } else if (isAdd) {
-          intentRouterDecision = { ...intentRouterDecision, action_type: 'ADD_POI', route_mode: 'targeted_mutation' };
+          intentRouterDecision = {
+            ...intentRouterDecision,
+            action_type: 'ADD_POI',
+            route_mode: 'targeted_mutation',
+          };
         } else if (isCheaper) {
-          intentRouterDecision = { ...intentRouterDecision, action_type: 'REDUCE_BUDGET', route_mode: 'targeted_mutation' };
+          intentRouterDecision = {
+            ...intentRouterDecision,
+            action_type: 'REDUCE_BUDGET',
+            route_mode: 'targeted_mutation',
+          };
         } else if (isBoring) {
-          intentRouterDecision = { ...intentRouterDecision, action_type: 'REMOVE_BORING', route_mode: 'targeted_mutation' };
+          intentRouterDecision = {
+            ...intentRouterDecision,
+            action_type: 'REMOVE_BORING',
+            route_mode: 'targeted_mutation',
+          };
         }
       }
     }
 
     // Guard Layer: Conversational travel mode (TRAVEL_CHAT)
     if (intentRouterDecision.action_type === 'TRAVEL_CHAT') {
-      this.eventsService.emitAiThinking(session.tripId, session.id, 'chat', user.id);
+      this.eventsService.emitAiThinking(
+        session.tripId,
+        session.id,
+        'chat',
+        user.id,
+      );
 
       // Route restoration: undo to previous state when user asks to restore / undo.
       // Works both when route is empty (full deletion) AND when route has points (partial undo).
-      const restorePattern = /верни|восстанови|откат|отмени|назад|вернуть|отменить|undo/i;
+      const restorePattern =
+        /верни|восстанови|откат|отмени|назад|вернуть|отменить|undo/i;
       if (restorePattern.test(dto.user_query)) {
-        const hasNoCurrentRoute = !existingRoutePlan || !existingRoutePlan.days?.some((d) => d.points?.length > 0);
+        const hasNoCurrentRoute =
+          !existingRoutePlan ||
+          !existingRoutePlan.days?.some((d) => d.points?.length > 0);
 
         // Collect all non-empty route plans from history (newest first)
-        const allPlans = [...history].reverse()
+        const allPlans = [...history]
+          .reverse()
           .map((msg) => this.tryParseRoutePlan(msg))
-          .filter((plan): plan is RoutePlan => !!plan && plan.days?.some((d) => d.points?.length > 0));
+          .filter(
+            (plan): plan is RoutePlan =>
+              !!plan && plan.days?.some((d) => d.points?.length > 0),
+          );
 
         // If route is empty → restore the most recent plan.
         // If route exists → skip the current plan (allPlans[0]) and restore the PREVIOUS one.
@@ -741,9 +776,16 @@ ${JSON.stringify(points)}
           const restoredMessages: SessionMessage[] = [
             ...history,
             { role: 'user' as const, content: dto.user_query },
-            { role: 'assistant' as const, content: 'Готово, вернул предыдущую версию маршрута.', route_plan: previousPlan },
+            {
+              role: 'assistant' as const,
+              content: 'Готово, вернул предыдущую версию маршрута.',
+              route_plan: previousPlan,
+            },
           ];
-          await this.aiSessionsService.saveMessages(session.id, restoredMessages);
+          await this.aiSessionsService.saveMessages(
+            session.id,
+            restoredMessages,
+          );
           if (session.tripId) {
             this.eventsService.emitTripRefresh(session.tripId);
             this.eventsService.emitAiUpdate(session.tripId, session.id);
@@ -753,8 +795,18 @@ ${JSON.stringify(points)}
             route_plan: previousPlan,
             meta: {
               parsed_intent: null,
-              steps_duration_ms: { orchestrator: 0, yandex_fetch: 0, semantic_filter: 0, scheduler: 0, total: 0 },
-              poi_counts: { yandex_raw: 0, after_logical_selector: 0, after_semantic: 0 },
+              steps_duration_ms: {
+                orchestrator: 0,
+                yandex_fetch: 0,
+                semantic_filter: 0,
+                scheduler: 0,
+                total: 0,
+              },
+              poi_counts: {
+                yandex_raw: 0,
+                after_logical_selector: 0,
+                after_semantic: 0,
+              },
               fallbacks_triggered: [],
               mutation_type: 'TRAVEL_CHAT',
               mutation_applied: true,
@@ -765,7 +817,10 @@ ${JSON.stringify(points)}
 
       // If there's an existing route, try to interpret the request as a free-form route edit.
       // This handles cases like "сделай поспортивнее", "убери скучное", "поставь музей первым" etc.
-      if (existingRoutePlan && existingRoutePlan.days?.some((d) => d.points?.length > 0)) {
+      if (
+        existingRoutePlan &&
+        existingRoutePlan.days?.some((d) => d.points?.length > 0)
+      ) {
         const modifyResult = await this.travelChatService.modifyRoute(
           dto.user_query,
           existingRoutePlan,
@@ -799,8 +854,18 @@ ${JSON.stringify(points)}
             route_plan: modifiedPlan,
             meta: {
               parsed_intent: null,
-              steps_duration_ms: { orchestrator: 0, yandex_fetch: 0, semantic_filter: 0, scheduler: 0, total: 0 },
-              poi_counts: { yandex_raw: 0, after_logical_selector: 0, after_semantic: 0 },
+              steps_duration_ms: {
+                orchestrator: 0,
+                yandex_fetch: 0,
+                semantic_filter: 0,
+                scheduler: 0,
+                total: 0,
+              },
+              poi_counts: {
+                yandex_raw: 0,
+                after_logical_selector: 0,
+                after_semantic: 0,
+              },
               fallbacks_triggered: [],
               mutation_type: 'TRAVEL_CHAT',
               mutation_applied: true,
@@ -814,7 +879,10 @@ ${JSON.stringify(points)}
           { role: 'user' as const, content: dto.user_query },
           { role: 'assistant' as const, content: modifyResult.message },
         ];
-        await this.aiSessionsService.saveMessages(session.id, travelChatMessages);
+        await this.aiSessionsService.saveMessages(
+          session.id,
+          travelChatMessages,
+        );
         throw new UnprocessableEntityException({
           code: 'TRAVEL_CHAT',
           message: modifyResult.message,
@@ -864,11 +932,7 @@ ${JSON.stringify(points)}
       let fallbackMsg: string;
 
       // @ts-ignore - fallback_reason includes SEMANTIC_SPAM_BLOCKED but TS has type checking issues
-      const fbReason = intentRouterDecision.fallback_reason as
-        | 'LOW_CONFIDENCE'
-        | 'SPAM_BLOCKED'
-        | 'SEMANTIC_SPAM_BLOCKED'
-        | undefined;
+      const fbReason = intentRouterDecision.fallback_reason;
 
       if (fbReason === 'SEMANTIC_SPAM_BLOCKED') {
         fallbackMsg =
@@ -876,9 +940,7 @@ ${JSON.stringify(points)}
       } else if (fbReason === 'SPAM_BLOCKED') {
         fallbackMsg =
           'Твой запрос похож на спам. Напиши нормальный вопрос о путешествии или маршруте. 🙂';
-      } else if (
-        intentRouterDecision.action_type === 'SMALL_TALK'
-      ) {
+      } else if (intentRouterDecision.action_type === 'SMALL_TALK') {
         fallbackMsg =
           'Я помощник для планирования маршрутов и путешествий. Давай спланируем твоё путешествие! Например, спроси про маршрут на 3 дня в Казани или найди кафе в городе. 🙂';
       } else {
@@ -959,7 +1021,10 @@ ${JSON.stringify(points)}
           { role: 'assistant' as const, content: clarificationMsg },
         ];
 
-        await this.aiSessionsService.saveMessages(session.id, clarificationMessages);
+        await this.aiSessionsService.saveMessages(
+          session.id,
+          clarificationMessages,
+        );
 
         if (session.tripId) {
           this.eventsService.emitTripRefresh(session.tripId);
@@ -1056,7 +1121,12 @@ ${JSON.stringify(points)}
 
       // Progress: Stage 1 — searching all sources
       if (session.id) {
-        this.eventsService.emitAiThinking(session.tripId, session.id, 'collecting', user.id);
+        this.eventsService.emitAiThinking(
+          session.tripId,
+          session.id,
+          'collecting',
+          user.id,
+        );
       }
 
       const cityPromises = citiesToSearch.map(async (cityName) => {
@@ -1087,7 +1157,12 @@ ${JSON.stringify(points)}
 
         // Progress: Stage 1.5 — diving into local data
         if (session.id) {
-          this.eventsService.emitAiThinking(session.tripId, session.id, 'hidden_gems', user.id);
+          this.eventsService.emitAiThinking(
+            session.tripId,
+            session.id,
+            'hidden_gems',
+            user.id,
+          );
         }
 
         // 3. Logical Selection
@@ -1115,7 +1190,12 @@ ${JSON.stringify(points)}
 
         // Progress: Stage 2 — AI choosing top N
         if (session.id) {
-          this.eventsService.emitAiThinking(session.tripId, session.id, 'selecting', user.id);
+          this.eventsService.emitAiThinking(
+            session.tripId,
+            session.id,
+            'selecting',
+            user.id,
+          );
         }
 
         // 4. Semantic Selection
@@ -1127,7 +1207,12 @@ ${JSON.stringify(points)}
 
         // Progress: Stage 2.5 — validating coordinates
         if (session.id) {
-          this.eventsService.emitAiThinking(session.tripId, session.id, 'geocoding', user.id);
+          this.eventsService.emitAiThinking(
+            session.tripId,
+            session.id,
+            'geocoding',
+            user.id,
+          );
         }
 
         // 5. Geocoding
@@ -1237,7 +1322,12 @@ ${JSON.stringify(points)}
 
       // Progress: Stage 3 — enriching with YandexGPT scoring
       if (session.id) {
-        this.eventsService.emitAiThinking(session.tripId, session.id, 'enrichment', user.id);
+        this.eventsService.emitAiThinking(
+          session.tripId,
+          session.id,
+          'enrichment',
+          user.id,
+        );
       }
 
       try {
@@ -1266,13 +1356,13 @@ ${JSON.stringify(points)}
             // Protected points (cross-source confirmed or OSM heritage tag) survive
             // zero-coord filtering — they are proven landmarks, not hallucinations.
             // Coordinates will be resolved by geocoding fallback downstream.
-            if ((point as any).isProtected) {
+            if (point.isProtected) {
               this.logger.warn(
                 `Protected point "${point.name}" has zero coords — keeping (will re-geocode)`,
               );
               return true;
             }
-            if ((point as any)._geocodeConfirmed) {
+            if (point._geocodeConfirmed) {
               this.logger.warn(
                 `Geocode-confirmed point "${point.name}" has zero/invalid coords — keeping`,
               );
@@ -1320,11 +1410,14 @@ ${JSON.stringify(points)}
 
     const schedulerStart = Date.now();
 
-    const finalCities = intent.cities && intent.cities.length > 0
-      ? intent.cities
-      : intent.city_to && intent.city_from && intent.city_from !== intent.city_to
-        ? [intent.city_from, intent.city_to]
-        : [intent.city || 'unknown'];
+    const finalCities =
+      intent.cities && intent.cities.length > 0
+        ? intent.cities
+        : intent.city_to &&
+            intent.city_from &&
+            intent.city_from !== intent.city_to
+          ? [intent.city_from, intent.city_to]
+          : [intent.city || 'unknown'];
 
     const buildRoutePlanFromDays = (
       city: string,
@@ -1343,7 +1436,14 @@ ${JSON.stringify(points)}
     let routePlan: RoutePlan;
 
     // Check for explicit "new route" keywords even if route exists
-    const newRouteKeywords = ['новый маршрут', 'перестроить', 'заново', 'с нуля', 'весь маршрут', 'полностью переделай'];
+    const newRouteKeywords = [
+      'новый маршрут',
+      'перестроить',
+      'заново',
+      'с нуля',
+      'весь маршрут',
+      'полностью переделай',
+    ];
     const queryLowerForNewRoute = dto.user_query.toLowerCase();
     const hasNewRouteKeywords = newRouteKeywords.some((kw) =>
       queryLowerForNewRoute.includes(kw),
@@ -1361,13 +1461,24 @@ ${JSON.stringify(points)}
 
     if (isNewRouteRequested) {
       if (session.id) {
-        this.eventsService.emitAiThinking(session.tripId, session.id, 'scheduling', user.id);
+        this.eventsService.emitAiThinking(
+          session.tripId,
+          session.id,
+          'scheduling',
+          user.id,
+        );
       }
       routePlan = this.schedulerService.buildPlan(
         selectedForScheduler,
         intent,
         session.id
-          ? (day) => this.eventsService.emitAiDayReady(session.tripId, session.id, day, user.id)
+          ? (day) =>
+              this.eventsService.emitAiDayReady(
+                session.tripId,
+                session.id,
+                day,
+                user.id,
+              )
           : undefined,
       );
 
@@ -1423,16 +1534,25 @@ ${JSON.stringify(points)}
 
         switch (intentRouterDecision.action_type) {
           case 'ADD_POI': {
-            // Limit points to what user requested (default 1 if not specified)
+            // Build context string for mutation parser (helps LLM identify which points to remove)
+            const addTripContext = existingRoutePlan.days
+              .map(
+                (d) =>
+                  `День ${d.day_number}:\n${d.points.map((p) => `  - "${p.poi?.name ?? ''}" (id: ${p.poi_id})`).join('\n')}`,
+              )
+              .join('\n\n');
+
+            const addMutations = await this.mutationParser.parseMutations(
+              dto.user_query,
+              addTripContext,
+            );
             const addPoiLimit = intent.poi_count_requested ?? 1;
-            const poisToInject = selectedForScheduler.slice(0, addPoiLimit);
-            routePlan = this.schedulerService.injectPoints(
+
+            routePlan = await this.routeMutatorService.applyMutations(
               existingRoutePlan,
-              poisToInject,
-              {
-                ...intent,
-                days: Math.max(intent.days, existingRoutePlan.days.length),
-              },
+              addMutations,
+              intent,
+              selectedForScheduler.slice(0, addPoiLimit),
             );
             mutationMeta.mutation_applied = true;
             break;
@@ -1442,17 +1562,20 @@ ${JSON.stringify(points)}
             // ── Clear-all detection ──────────────────────────────────────────
             // IMPORTANT: regex must require "маршрут/точки/места" after "все/всё" —
             // otherwise "убери все кафе" matches as clear-all and deletes the entire route.
-            const clearAllKeywords = /удали\s+(весь\s+маршрут|все\s+(точки|места|маршрут)|всё)|убери\s+(весь\s+маршрут|все\s+(точки|места|маршрут)|всё)|очисти\s+(маршрут|всё)|сотри\s+(маршрут|всё)/i;
+            const clearAllKeywords =
+              /удали\s+(весь\s+маршрут|все\s+(точки|места|маршрут)|всё)|убери\s+(весь\s+маршрут|все\s+(точки|места|маршрут)|всё)|очисти\s+(маршрут|всё)|сотри\s+(маршрут|всё)/i;
             // Safety: "удали все кафе/рестораны/музеи" is NOT clear-all — it's category removal.
             // If query mentions a category after "все/всё", it's NOT a full route deletion.
-            const hasCategoryAfterAll = /все\s+(кафе|рестора|музе|памятник|парк|бар|театр|галере|церк|храм|собор|монумент|достопримечательн)/i.test(dto.user_query);
+            const hasCategoryAfterAll =
+              /все\s+(кафе|рестора|музе|памятник|парк|бар|театр|галере|церк|храм|собор|монумент|достопримечательн)/i.test(
+                dto.user_query,
+              );
             const isRemoveAll =
               !hasCategoryAfterAll &&
               (intentRouterDecision.target_poi_id === 'ALL' ||
-              clearAllKeywords.test(dto.user_query));
+                clearAllKeywords.test(dto.user_query));
 
             if (isRemoveAll) {
-              // Return an empty route plan (no days, no points)
               routePlan = {
                 ...existingRoutePlan,
                 days: [],
@@ -1463,138 +1586,24 @@ ${JSON.stringify(points)}
               break;
             }
 
-            const targetPoiId = intentRouterDecision.target_poi_id;
-            const targetExists =
-              !!targetPoiId &&
-              existingRoutePlan.days.some((day) =>
-                day.points.some((point) => point.poi_id === targetPoiId),
-              );
+            // Build context string for mutation parser
+            const removeTripContext = existingRoutePlan.days
+              .map(
+                (d) =>
+                  `День ${d.day_number}:\n${d.points.map((p) => `  - "${p.poi?.name ?? ''}" (id: ${p.poi_id})`).join('\n')}`,
+              )
+              .join('\n\n');
 
-            if (!targetPoiId || !targetExists) {
-              mutationMeta.mutation_fallback_reason = 'TARGET_NOT_FOUND';
-              fallbacks.push(
-                'TARGETED_MUTATION_REMOVE_FALLBACK:TARGET_NOT_FOUND',
-              );
+            const removeMutations = await this.mutationParser.parseMutations(
+              dto.user_query,
+              removeTripContext,
+            );
 
-              // Fallback: пробуем найти лучшее совпадение через нечёткий поиск
-              const allPoints = existingRoutePlan.days.flatMap(
-                (day) => day.points,
-              );
-              const userQuery = dto.user_query.toLowerCase();
-
-              // Находим точку с наибольшим совпадением по названию
-              let bestMatch: (typeof allPoints)[0] | null = null;
-              let bestScore = 0;
-
-              for (const point of allPoints) {
-                const poiName = (point.poi?.name ?? '').toLowerCase();
-                // Простой подсчёт совпадений символов
-                const matches = userQuery
-                  .split(' ')
-                  .filter((word) => poiName.includes(word)).length;
-                if (matches > bestScore) {
-                  bestScore = matches;
-                  bestMatch = point;
-                }
-              }
-
-              if (bestMatch && bestScore > 0 && existingRoutePlan) {
-                // Удаляем точку и пересчитываем времена остальных (без пересортировки)
-                const targetPoiId = bestMatch.poi_id;
-                const rebuiltDays = existingRoutePlan.days.map((day) => {
-                  const filteredPoints = day.points.filter(
-                    (point) => point.poi_id !== targetPoiId,
-                  );
-
-                  // Пересчитываем времена оставшихся точек чтобы не было дыр
-                  let currentTime = this.schedulerService.timeToMinutes(
-                    day.day_start_time,
-                  );
-                  const rescheduledPoints = filteredPoints.map((point) => {
-                    const durationMinutes =
-                      this.schedulerService.timeToMinutes(
-                        point.departure_time,
-                      ) -
-                      this.schedulerService.timeToMinutes(point.arrival_time);
-                    const arrival =
-                      this.schedulerService.minutesToTime(currentTime);
-                    const departure = this.schedulerService.minutesToTime(
-                      currentTime + durationMinutes,
-                    );
-                    currentTime += durationMinutes;
-
-                    return {
-                      ...point,
-                      arrival_time: arrival,
-                      departure_time: departure,
-                    };
-                  });
-
-                  return {
-                    ...day,
-                    points: rescheduledPoints,
-                    day_budget_estimated: rescheduledPoints.reduce(
-                      (sum, p) => sum + (p.estimated_cost ?? 0),
-                      0,
-                    ),
-                  };
-                });
-                routePlan = buildRoutePlanFromDays(
-                  existingRoutePlan.city,
-                  rebuiltDays,
-                );
-                mutationMeta.mutation_applied = true;
-                break;
-              }
-
-              // Если нечёткий поиск не помог, показываем ошибку
-              mutationMeta.mutation_fallback_reason =
-                'POINT_NOT_FOUND_IN_ROUTE';
-              routePlan = existingRoutePlan!;
-              break;
-            }
-
-            const rebuiltDays = existingRoutePlan.days.map((day) => {
-              // Удаляем точку и пересчитываем времена оставшихся (без пересортировки)
-              const filteredPoints = day.points.filter(
-                (point) => point.poi_id !== targetPoiId,
-              );
-
-              // Пересчитываем времена оставшихся точек чтобы не было дыр
-              let currentTime = this.schedulerService.timeToMinutes(
-                day.day_start_time,
-              );
-              const rescheduledPoints = filteredPoints.map((point) => {
-                const durationMinutes =
-                  this.schedulerService.timeToMinutes(point.departure_time) -
-                  this.schedulerService.timeToMinutes(point.arrival_time);
-                const arrival =
-                  this.schedulerService.minutesToTime(currentTime);
-                const departure = this.schedulerService.minutesToTime(
-                  currentTime + durationMinutes,
-                );
-                currentTime += durationMinutes;
-
-                return {
-                  ...point,
-                  arrival_time: arrival,
-                  departure_time: departure,
-                };
-              });
-
-              return {
-                ...day,
-                points: rescheduledPoints,
-                day_budget_estimated: rescheduledPoints.reduce(
-                  (sum, p) => sum + (p.estimated_cost ?? 0),
-                  0,
-                ),
-              };
-            });
-
-            routePlan = buildRoutePlanFromDays(
-              existingRoutePlan.city,
-              rebuiltDays,
+            routePlan = await this.routeMutatorService.applyMutations(
+              existingRoutePlan,
+              removeMutations,
+              intent,
+              [], // no add candidates for pure remove
             );
             mutationMeta.mutation_applied = true;
             break;
@@ -1607,9 +1616,10 @@ ${JSON.stringify(points)}
             // Если intent.days > existingDays — считаем разницу.
             const existingDaysCount = existingRoutePlan.days.length;
             const rawDays = Math.max(1, intent.days);
-            const daysToAdd = rawDays <= existingDaysCount
-              ? rawDays
-              : rawDays - existingDaysCount;
+            const daysToAdd =
+              rawDays <= existingDaysCount
+                ? rawDays
+                : rawDays - existingDaysCount;
             const usedPoiIds = new Set(
               existingRoutePlan.days.flatMap((day) =>
                 day.points.map((point) => point.poi_id),
@@ -1835,7 +1845,9 @@ ${JSON.stringify(points)}
             for (const point of paidPoints) {
               const currentPoi = point.poi as any;
               const currentTier = priceTier(currentPoi?.price_segment);
-              const currentCategory = currentPoi?.category as string | undefined;
+              const currentCategory = currentPoi?.category as
+                | string
+                | undefined;
 
               // 1st preference: same category, strictly cheaper tier
               // 2nd preference: any category, strictly cheaper tier
@@ -1847,8 +1859,7 @@ ${JSON.stringify(points)}
                     (!sameCategoryOnly || poi.category === currentCategory),
                 );
 
-              const candidate =
-                findCandidate(true) ?? findCandidate(false);
+              const candidate = findCandidate(true) ?? findCandidate(false);
 
               if (candidate) {
                 replacementMap.set(point.poi_id, candidate);
@@ -1900,7 +1911,7 @@ ${JSON.stringify(points)}
             const queryLower = dto.user_query.toLowerCase();
             const categoryKeywords: Record<string, string> = {
               музе: 'museum',
-              'музей': 'museum',
+              музей: 'museum',
               ресторан: 'restaurant',
               кафе: 'cafe',
               парк: 'park',
@@ -1921,7 +1932,9 @@ ${JSON.stringify(points)}
             };
 
             let targetCategory = 'museum'; // Default fallback
-            for (const [keyword, category] of Object.entries(categoryKeywords)) {
+            for (const [keyword, category] of Object.entries(
+              categoryKeywords,
+            )) {
               if (queryLower.includes(keyword)) {
                 targetCategory = category as any;
                 break;
@@ -1934,7 +1947,7 @@ ${JSON.stringify(points)}
               ),
             );
 
-            const namePattern = categoryNamePatterns[targetCategory as keyof typeof categoryNamePatterns];
+            const namePattern = categoryNamePatterns[targetCategory];
             const candidatesToAdd = selectedForScheduler
               .filter(
                 (poi) =>
@@ -1942,7 +1955,7 @@ ${JSON.stringify(points)}
                   poi.category === targetCategory &&
                   // Strict name/description validation: must match category keywords
                   (namePattern.test(poi.name) ||
-                   (poi.description && namePattern.test(poi.description))),
+                    (poi.description && namePattern.test(poi.description))),
               )
               .slice(0, 3); // Add up to 3 new POIs
 
@@ -2099,7 +2112,12 @@ ${JSON.stringify(points)}
       this.logger.log(
         `Mutation failed (${mutationMeta.mutation_fallback_reason}), falling back to TRAVEL_CHAT`,
       );
-      this.eventsService.emitAiThinking(session.tripId, session.id, 'chat', user.id);
+      this.eventsService.emitAiThinking(
+        session.tripId,
+        session.id,
+        'chat',
+        user.id,
+      );
       try {
         const modifyResult = await this.travelChatService.modifyRoute(
           dto.user_query,
@@ -2113,9 +2131,16 @@ ${JSON.stringify(points)}
           const fallbackMessages: SessionMessage[] = [
             ...history,
             { role: 'user' as const, content: dto.user_query },
-            { role: 'assistant' as const, content: modifyResult.message, route_plan: modifiedPlan },
+            {
+              role: 'assistant' as const,
+              content: modifyResult.message,
+              route_plan: modifiedPlan,
+            },
           ];
-          await this.aiSessionsService.saveMessages(session.id, fallbackMessages);
+          await this.aiSessionsService.saveMessages(
+            session.id,
+            fallbackMessages,
+          );
           if (session.tripId) {
             this.eventsService.emitTripRefresh(session.tripId);
             this.eventsService.emitAiUpdate(session.tripId, session.id);
@@ -2125,9 +2150,22 @@ ${JSON.stringify(points)}
             route_plan: modifiedPlan,
             meta: {
               parsed_intent: null,
-              steps_duration_ms: { orchestrator: 0, yandex_fetch: 0, semantic_filter: 0, scheduler: 0, total: 0 },
-              poi_counts: { yandex_raw: 0, after_logical_selector: 0, after_semantic: 0 },
-              fallbacks_triggered: [...fallbacks, `MUTATION_FALLBACK_TO_TRAVEL_CHAT:${mutationMeta.mutation_fallback_reason}`],
+              steps_duration_ms: {
+                orchestrator: 0,
+                yandex_fetch: 0,
+                semantic_filter: 0,
+                scheduler: 0,
+                total: 0,
+              },
+              poi_counts: {
+                yandex_raw: 0,
+                after_logical_selector: 0,
+                after_semantic: 0,
+              },
+              fallbacks_triggered: [
+                ...fallbacks,
+                `MUTATION_FALLBACK_TO_TRAVEL_CHAT:${mutationMeta.mutation_fallback_reason}`,
+              ],
               mutation_type: 'TRAVEL_CHAT',
               mutation_applied: true,
             },
@@ -2139,15 +2177,21 @@ ${JSON.stringify(points)}
           { role: 'user' as const, content: dto.user_query },
           { role: 'assistant' as const, content: modifyResult.message },
         ];
-        await this.aiSessionsService.saveMessages(session.id, chatFallbackMessages);
+        await this.aiSessionsService.saveMessages(
+          session.id,
+          chatFallbackMessages,
+        );
         throw new UnprocessableEntityException({
           code: 'TRAVEL_CHAT',
           message: modifyResult.message,
           session_id: session.id,
         });
       } catch (fallbackError) {
-        if (fallbackError instanceof UnprocessableEntityException) throw fallbackError;
-        this.logger.warn(`TRAVEL_CHAT fallback failed: ${String(fallbackError)}`);
+        if (fallbackError instanceof UnprocessableEntityException)
+          throw fallbackError;
+        this.logger.warn(
+          `TRAVEL_CHAT fallback failed: ${String(fallbackError)}`,
+        );
         // Продолжаем к стандартной обработке ошибки
       }
     }
@@ -2473,7 +2517,8 @@ ${JSON.stringify(points)}
     } else {
       points.forEach((point) => {
         // Извлекаем только дату (без времени) для группировки по дням
-        const rawDate = point.visitDate || new Date().toISOString().split('T')[0];
+        const rawDate =
+          point.visitDate || new Date().toISOString().split('T')[0];
         const date = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
         const bucket = dateMap.get(date) ?? [];
         const description =
@@ -2486,7 +2531,10 @@ ${JSON.stringify(points)}
           const timePart = point.visitDate.split('T')[1];
           if (timePart) {
             // Если строка содержит Z (UTC) — парсим через Date для получения локального времени
-            if (point.visitDate.includes('Z') || point.visitDate.includes('+')) {
+            if (
+              point.visitDate.includes('Z') ||
+              point.visitDate.includes('+')
+            ) {
               const d = new Date(point.visitDate);
               if (!isNaN(d.getTime())) {
                 arrivalTime = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -2528,7 +2576,9 @@ ${JSON.stringify(points)}
           .sort((a, b) => a.order - b.order)
           .map((point) => {
             // Вычисляем departure_time: arrival + 90 мин
-            const [ah, am] = (point.arrivalTime ?? '10:00').split(':').map(Number);
+            const [ah, am] = (point.arrivalTime ?? '10:00')
+              .split(':')
+              .map(Number);
             const depMin = (ah ?? 10) * 60 + (am ?? 0) + 90;
             const depTime = `${String(Math.floor(depMin / 60) % 24).padStart(2, '0')}:${String(depMin % 60).padStart(2, '0')}`;
             return {
@@ -2587,7 +2637,10 @@ ${JSON.stringify(points)}
     // TRI-104: синхронизируем сессию с конструктором ТОЛЬКО если маршрут реально изменился.
     // Если маршрут не менялся — не трогаем сессию, чтобы сохранить оригинальные AI-сгенерированные времена.
     if (routeChanged) {
-      await this.aiSessionsService.replaceMessagesWithRoutePlan(session.id, routePlan);
+      await this.aiSessionsService.replaceMessagesWithRoutePlan(
+        session.id,
+        routePlan,
+      );
     }
 
     this.eventsService.emitTripRefresh(tripId);
@@ -2900,6 +2953,78 @@ ${JSON.stringify(points)}
           })
           .filter((day) => day.points.length > 0);
 
+        // Добавляем новые точки
+        const addMutations = body.mutations.filter(
+          (m: any) => m.type === 'ADD',
+        );
+        if (addMutations.length > 0 && updatedDays.length > 0) {
+          let dayToInsert = updatedDays[0];
+          let insertIdx = dayToInsert.points.length;
+
+          for (const addMutation of addMutations) {
+            // Ищем после какой точки вставлять
+            if (addMutation.afterPointId) {
+              for (const day of updatedDays) {
+                const idx = day.points.findIndex(
+                  (p) => p.poi?.id === addMutation.afterPointId,
+                );
+                if (idx !== -1) {
+                  dayToInsert = day;
+                  insertIdx = idx + 1;
+                  break;
+                }
+              }
+            } else if (addMutation.timeContext === 'evening') {
+              // Просто эвристика, если надо
+              insertIdx = dayToInsert.points.length;
+            } else if (addMutation.timeContext === 'morning') {
+              insertIdx = 0;
+            }
+
+            const newPoiId = randomUUID();
+            const newPoint = {
+              poi_id: newPoiId,
+              order: 0,
+              estimated_cost: 0,
+              arrival_time: '10:00',
+              departure_time: '11:00',
+              visit_duration_min: 60,
+              poi: {
+                id: newPoiId,
+                name: addMutation.name,
+                address: '',
+                coordinates: { lat: 0, lon: 0 },
+                image_url: '',
+                score: 0,
+                category: addMutation.category || 'other',
+              },
+            };
+
+            dayToInsert.points.splice(insertIdx, 0, newPoint);
+            insertIdx++;
+          }
+
+          // Пересчитываем времена заново для измененных дней
+          for (const day of updatedDays) {
+            let currentTime = this.schedulerService.timeToMinutes(
+              day.day_start_time,
+            );
+            day.points = day.points.map((point) => {
+              const arrival = this.schedulerService.minutesToTime(currentTime);
+              const departure = this.schedulerService.minutesToTime(
+                currentTime + (point.visit_duration_min || 60),
+              );
+              currentTime += point.visit_duration_min || 60;
+
+              return {
+                ...point,
+                arrival_time: arrival,
+                departure_time: departure,
+              };
+            });
+          }
+        }
+
         const messageContent =
           updatedDays.length === 0 ||
           updatedDays.every((d) => d.points.length === 0)
@@ -2912,11 +3037,12 @@ ${JSON.stringify(points)}
         ) {
           // Маршрут очищен — удаляем контекст маршрута и отправляем только текст
           // Находим последнее сообщение с route_plan и удаляем его из истории
-          const messagesWithoutRoutePlan = (session?.messages ?? [])
-            .map((msg) => ({
+          const messagesWithoutRoutePlan = (session?.messages ?? []).map(
+            (msg) => ({
               ...msg,
               route_plan: undefined,
-            }));
+            }),
+          );
 
           await this.aiSessionsService.saveMessages(
             body.sessionId,

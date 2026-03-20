@@ -28,6 +28,8 @@ import { AiPipelineModule } from './pipeline/ai-pipeline.module';
 import { LocationResolverService } from './pipeline/location-resolver.service';
 import { PoiCacheWarmupService } from './pipeline/poi-cache-warmup.service';
 import { TravelChatService } from './pipeline/travel-chat.service';
+import { PoiResolverService } from './services/poi-resolver.service';
+import { RouteMutatorService } from './services/route-mutator.service';
 
 @Module({
   // TRI-104: AI контроллер теперь использует Trips/Points для сценариев
@@ -64,6 +66,8 @@ import { TravelChatService } from './pipeline/travel-chat.service';
     LocationResolverService,
     PoiCacheWarmupService,
     TravelChatService,
+    PoiResolverService,
+    RouteMutatorService,
   ],
   exports: [
     AiSessionsService,

@@ -241,6 +241,8 @@ describe('AiController plan contract fields', () => {
       {} as never, // explainer
       {} as never, // cacheWarmup
       {} as never, // travelChatService
+      {} as never, // poiResolverService
+      {} as never, // routeMutatorService
     );
 
     return {
@@ -688,6 +690,8 @@ describe('AiController targeted mutations (phase 3)', () => {
       {} as never, // explainer
       {} as never, // cacheWarmup
       {} as never, // travelChatService
+      {} as never, // poiResolverService
+      {} as never, // routeMutatorService
     );
 
     return {
