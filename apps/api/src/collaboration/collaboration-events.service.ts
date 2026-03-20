@@ -7,7 +7,8 @@ export type AiThinkingStage =
   | 'selecting'     // Stage 2: semantic AI filter — choosing top N from raw pool
   | 'geocoding'     // Stage 2.5: validating and resolving coordinates
   | 'enrichment'    // Stage 3: LLM batch refinement (YandexGPT scoring)
-  | 'scheduling';   // Stage 4: building day-by-day itinerary
+  | 'scheduling'    // Stage 4: building day-by-day itinerary
+  | 'chat';         // Conversational / free-form edit (TRAVEL_CHAT, no route-building steps)
 
 export interface CollaborationEvent {
   type: 'trip:refresh' | 'ai:update' | 'ai:thinking' | 'ai:day_ready';

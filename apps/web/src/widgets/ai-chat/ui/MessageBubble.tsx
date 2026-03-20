@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { X, Eye, RotateCcw } from 'lucide-react';
+import { X } from 'lucide-react';
 import type { ChatMessage } from '@/shared/types/ai-chat';
 
 interface MessageBubbleProps {
@@ -14,8 +14,6 @@ interface MessageBubbleProps {
   onOpenPlanner?: (tripId: string | null, messageId?: string) => void;
   onDeletePoint?: (pointName: string) => Promise<void>;
   isLatestRoutePlan?: boolean;
-  isPreviewActive?: boolean;
-  onTogglePreview?: (messageId: string) => void;
 }
 
 export function MessageBubble({
@@ -27,8 +25,6 @@ export function MessageBubble({
   onOpenPlanner,
   onDeletePoint,
   isLatestRoutePlan = false,
-  isPreviewActive = false,
-  onTogglePreview,
 }: MessageBubbleProps) {
   // TRI-104: bubble знает контекст связки chat<->trip и меняет CTA:
   // "Применить план" только для первого создания trip из чата.
@@ -117,7 +113,7 @@ export function MessageBubble({
           {formatTime(message.timestamp)}
         </p>
 
-        {message.routePlan && isAssistant && (
+        {message.routePlan && message.routePlan.days.length > 0 && isAssistant && (
           <div className="mt-3 flex flex-col gap-3">
             <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600">
               <p>
@@ -142,7 +138,11 @@ export function MessageBubble({
                 className="rounded-xl border border-slate-100 bg-slate-50 p-3"
               >
                 <p className="text-xs font-semibold text-slate-700">
-                  День {day.day_number} · {new Date(day.date).toLocaleDateString('ru-RU')}
+                  День {day.day_number} · {(() => {
+                    // Прямое форматирование строки даты без new Date() — избегаем UTC-сдвига
+                    const parts = (day.date ?? '').split('T')[0]?.split('-');
+                    return parts?.length === 3 ? `${parts[2]}.${parts[1]}.${parts[0]}` : day.date;
+                  })()}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
                   Бюджет дня: <span className="bg-brand-yellow/20 text-brand-yellow font-semibold px-1.5 py-0.5 rounded inline-block">
@@ -211,62 +211,7 @@ export function MessageBubble({
               </p>
             )}
 
-            {!!message.meta?.fallbacks_triggered?.length && (
-              <p className="rounded-xl border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
-                Деградация AI: {message.meta.fallbacks_triggered.join(', ')}
-              </p>
-            )}
 
-            {onTogglePreview && (
-              <button
-                type="button"
-                onClick={() => onTogglePreview(message.id)}
-                className={[
-                  'mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold',
-                  'transition-all duration-300 ease-in-out active:scale-[0.97]',
-                  isPreviewActive
-                    ? 'bg-brand-indigo/10 text-brand-indigo border border-brand-indigo/20 hover:bg-brand-indigo/15'
-                    : 'bg-linear-to-r from-brand-sky to-blue-600 text-white shadow-md shadow-brand-sky/25 hover:shadow-lg hover:shadow-brand-sky/35 hover:brightness-105',
-                ].join(' ')}
-              >
-                <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
-                  <Eye
-                    className={[
-                      'absolute h-3.5 w-3.5 transition-all duration-300',
-                      isPreviewActive ? 'opacity-0 scale-50' : 'opacity-100 scale-100',
-                    ].join(' ')}
-                  />
-                  <RotateCcw
-                    className={[
-                      'absolute h-3.5 w-3.5 transition-all duration-300',
-                      isPreviewActive ? 'opacity-100 scale-100' : 'opacity-0 scale-50',
-                    ].join(' ')}
-                  />
-                </span>
-                <span className="relative overflow-hidden h-4 flex items-center">
-                  <span
-                    className={[
-                      'block transition-all duration-300 whitespace-nowrap',
-                      isPreviewActive
-                        ? 'translate-y-full opacity-0 absolute'
-                        : 'translate-y-0 opacity-100',
-                    ].join(' ')}
-                  >
-                    Отобразить на карте
-                  </span>
-                  <span
-                    className={[
-                      'block transition-all duration-300 whitespace-nowrap',
-                      isPreviewActive
-                        ? 'translate-y-0 opacity-100'
-                        : '-translate-y-full opacity-0 absolute',
-                    ].join(' ')}
-                  >
-                    Вернуть реальный маршрут
-                  </span>
-                </span>
-              </button>
-            )}
           </div>
         )}
         </div>

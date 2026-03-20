@@ -31,16 +31,19 @@ interface PartialIntent {
   start_time?: unknown;
   end_time?: unknown;
   preferences_text?: unknown;
+  is_country?: unknown;
 }
 const SYSTEM_PROMPT = `You are a travel planning assistant. Parse the user's request into JSON.
 // RULES:
 // 1. If the user asks for a route in ONE location (city, village, street, or specific place), use route_type: "single_city" and set "city" to that location name.
 // 2. We support ANY location: cities, small villages, specific streets, or even POIs (e.g. "near Eiffel Tower").
 // 3. If the user asks for a route across multiple locations, ALWAYS provide an array of ALL locations in "cities" and set route_type: "single_city".
+// 4. IMPORTANT: If the user mentions a COUNTRY name (e.g. "Беларусь", "Россия", "France") but NOT a specific city, set is_country: true and put the country name in "city". Do NOT convert to capital automatically — the system will ask the user.
+// 5. If the user gives a vague city answer like "любой", "не важно", "где круто", "на твой выбор", "сам выбери" — look at the conversation history to find the country being discussed, then pick the most popular tourist city in that country and set is_country: false.
 Return ONLY valid JSON with this structure:
 {
   "route_type": "single_city",
-  "city": string, // This is your 'location_query'. Can be city, village, street, POI, or vague area.
+  "city": string, // city, village, street, POI, or country name (if is_country: true)
   "cities": string[], // If multiple locations are requested, put them all here.
   "city_from": string,
   "city_to": string,
@@ -55,7 +58,8 @@ Return ONLY valid JSON with this structure:
   "radius_km": number,
   "start_time": string,
   "end_time": string,
-  "preferences_text": string
+  "preferences_text": string,
+  "is_country": boolean // true if user mentioned a country name, not a specific city
 }`;
 
 const DEFAULT_CATEGORIES: PoiCategory[] = ['attraction', 'restaurant'];
@@ -116,6 +120,21 @@ export class OrchestratorService {
     const t0 = Date.now();
     const parsed = await this.callWithTimeout(messages, 30_000);
     const duration = Date.now() - t0;
+
+    // Если LLM определил, что запрос содержит название страны — уточняем конкретный город
+    if (parsed.is_country === true) {
+      const countryName = typeof parsed.city === 'string' ? parsed.city.trim() : '';
+      this.logger.warn(
+        `[IntentClarification] NEED_CITY_IN_COUNTRY: user mentioned country "${countryName}"`,
+      );
+      throw new UnprocessableEntityException({
+        code: 'NEED_CITY_IN_COUNTRY',
+        country: countryName,
+        message: countryName
+          ? `В каком городе ${countryName} хотите построить маршрут? Или напишите «любой» — выберу самый интересный сам.`
+          : 'Уточните, пожалуйста, город для маршрута.',
+      });
+    }
 
     const city = typeof parsed.city === 'string' ? parsed.city.trim() : '';
     const countryCode = city

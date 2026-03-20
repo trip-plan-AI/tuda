@@ -18,6 +18,17 @@ import { format } from 'date-fns';
 import { startOfMonth, startOfToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import type { RoutePoint } from '@/entities/route-point';
+
+/** Форматирует Date в строку LOCAL ISO без UTC-сдвига: "2026-03-20T10:00:00" */
+function toLocalIso(d: Date): string {
+  const yyyy = d.getFullYear();
+  const MM = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`;
+}
 import { env } from '@/shared/config/env';
 import { cn } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/button';
@@ -201,8 +212,8 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
         const minMs = minVisitDate.getTime();
         if (patchMs < minMs - 1000) {
           const snapDate = hasTime(patch.visitDate)
-            ? minVisitDate.toISOString()
-            : minVisitDate.toISOString().split('T')[0];
+            ? toLocalIso(minVisitDate)
+            : toLocalIso(minVisitDate).split('T')[0];
           onUpdate(id, { ...patch, visitDate: snapDate });
           return;
         }
@@ -402,7 +413,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                       const oldDate = _od && !isNaN(_od.getTime()) ? _od : null;
                       if (oldDate && hasTime(point.visitDate)) {
                         newDate.setHours(oldDate.getHours(), oldDate.getMinutes(), 0, 0);
-                        handlePointUpdateExtended(point.id, { visitDate: newDate.toISOString() });
+                        handlePointUpdateExtended(point.id, { visitDate: toLocalIso(newDate) });
                       } else {
                         handlePointUpdateExtended(point.id, {
                           visitDate: format(newDate, 'yyyy-MM-dd'),
@@ -445,7 +456,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                                 const newDate = new Date(point.visitDate!);
                                 newDate.setHours(h, m, 0, 0);
                                 handlePointUpdateExtended(point.id, {
-                                  visitDate: newDate.toISOString(),
+                                  visitDate: toLocalIso(newDate),
                                 });
                               }}
                               className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-700 outline-none text-sm focus:border-brand-indigo transition-colors"
@@ -472,7 +483,7 @@ export const PlannerPointRow = React.memo(function PlannerPointRow({
                             onClick={() => {
                               const d = new Date(point.visitDate!);
                               d.setHours(Math.max(10, minVisitDate.getHours() + 1), 0, 0, 0);
-                              handlePointUpdateExtended(point.id, { visitDate: d.toISOString() });
+                              handlePointUpdateExtended(point.id, { visitDate: toLocalIso(d) });
                             }}
                           >
                             Установить время

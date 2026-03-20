@@ -161,11 +161,12 @@ export class AiSessionsService {
     let globalOrder = 1;
     const pointsToInsert = routePlan.days.flatMap((day) =>
       day.points.map((point) => {
-        let visitDate = day.date || null;
-        if (visitDate && point.arrival_time) {
-          // Комбинируем дату (YYYY-MM-DD) и время (HH:mm)
-          visitDate = `${visitDate}T${point.arrival_time}:00`;
-        }
+        // visitDate хранится в TEXT-колонке → строка возвращается as-is без UTC-конверсии.
+        // new Date("2025-03-20T10:00:00") в браузере — LOCAL time (ECMAScript spec), нет сдвига +3ч.
+        const visitDate =
+          day.date && point.arrival_time
+            ? `${day.date}T${point.arrival_time}:00`
+            : day.date || null;
 
         return {
           tripId: trip.id,
