@@ -372,6 +372,19 @@ export class IntentRouterService {
     hasCurrentRoute: boolean,
     query: string,
   ): IntentRouterActionType {
+    // ── GUARDRAIL: duration phrases like "казань 2 дня" / "на 3 дня" should never
+    // trigger removal. LLM confuses "keep 2 days" with "keep_end/keep_start".
+    if (
+      (actionType === 'REMOVE_POSITIONAL' || actionType === 'REMOVE_POI') &&
+      /\d+\s*(дн[ейя]|day)/i.test(query) &&
+      !/удал[иь]|убер[иь]|исключ/i.test(query)
+    ) {
+      this.logger.warn(
+        `Guardrail: ${actionType} → ADD_DAYS (duration query without explicit removal: "${query}")`,
+      );
+      return 'ADD_DAYS';
+    }
+
     if (!hasCurrentRoute) {
       // No route exists — mutation-type actions degrade to NEW_ROUTE
       if (

@@ -1618,31 +1618,37 @@ ${JSON.stringify(points)}
 
             let keepIds: string[];
 
+            const requestedCount = intentRouterDecision.positional_count ?? 1;
+
             if (dir === 'exact') {
               // Ordinal removal: "удали 3-ю точку" → remove point at 1-based index
-              const targetIndex = (intentRouterDecision.positional_count ?? 1) - 1;
+              const targetIndex = requestedCount - 1;
               keepIds = allPoiIds.filter((_, idx) => idx !== targetIndex);
               this.logger.log(
                 `[REMOVE_POSITIONAL] EXACT: removing index ${targetIndex} of ${total}`,
               );
-            } else {
-              // Range removal: "удали последние 3", "оставь первые 5", etc.
-              const n = Math.min(
-                intentRouterDecision.positional_count ?? 1,
-                total - 1, // always keep at least 1
-              );
+            } else if (dir === 'end' || dir === 'start') {
+              // DELETE semantics: n = how many to remove; guard: always keep at least 1
+              const removeCount = Math.min(requestedCount, total - 1);
               if (dir === 'end') {
-                keepIds = allPoiIds.slice(0, total - n);
-              } else if (dir === 'start') {
-                keepIds = allPoiIds.slice(n);
-              } else if (dir === 'keep_start') {
-                keepIds = allPoiIds.slice(0, n);
+                keepIds = allPoiIds.slice(0, total - removeCount);
               } else {
-                // keep_end
-                keepIds = allPoiIds.slice(total - n);
+                keepIds = allPoiIds.slice(removeCount);
               }
               this.logger.log(
-                `[REMOVE_POSITIONAL] RANGE: dir=${dir} n=${n} total=${total} → kept ${keepIds.length}`,
+                `[REMOVE_POSITIONAL] REMOVE dir=${dir} removeCount=${removeCount} total=${total} → kept ${keepIds.length}`,
+              );
+            } else {
+              // KEEP semantics (keep_start / keep_end): n = how many to KEEP; clamp to [1, total]
+              const keepCount = Math.max(1, Math.min(requestedCount, total));
+              if (dir === 'keep_start') {
+                keepIds = allPoiIds.slice(0, keepCount);
+              } else {
+                // keep_end
+                keepIds = allPoiIds.slice(total - keepCount);
+              }
+              this.logger.log(
+                `[REMOVE_POSITIONAL] KEEP dir=${dir} keepCount=${keepCount} total=${total} → kept ${keepIds.length}`,
               );
             }
 
