@@ -56,8 +56,9 @@ Action type rules:
   - "убери N первых"    → direction="start", count=N
   - "оставь первые N"   → direction="keep_start", count=N (delete all others)
   - "оставь последние N"→ direction="keep_end", count=N (delete all others)
+  - "удали N точек/мест" (no position qualifier) → direction="end", count=N (delete N from the end by default)
   - "удали 3 точку", "убери второе место", "удали первую", "удали пятую точку" → direction="exact", count=N (1-based index: "3-ю" → 3, "вторую" → 2, "первую" → 1, "пятую" → 5)
-  HOW TO DISTINGUISH: "удали 3 точки" (количественное = DELETE 3 POINTS) vs "удали 3-ю точку" / "удали 3 точку" (порядковое = DELETE THE 3rd POINT). When the number is used as an ordinal (refers to a specific position), always use direction="exact".
+  HOW TO DISTINGUISH: "удали 3 точки" (количественное = DELETE 3 POINTS from the end) vs "удали 3-ю точку" / "удали 3 точку" (порядковое = DELETE THE 3rd POINT). When the number is used as an ordinal (refers to a specific position), always use direction="exact".
   ALWAYS use REMOVE_POSITIONAL for positional requests — never REMOVE_POI or TRAVEL_CHAT.
 - REMOVE_POI: user wants to delete a SINGLE specific named place from the CURRENT route ("удали X", "убери X", "исключи X") — set target_poi_id to the matching ID. OR all places at once ("удали весь маршрут", "очисти маршрут", "убери все точки", "сотри всё", "удали все места") — set target_poi_id to "ALL". IMPORTANT: "удали все кафе/рестораны/музеи/памятники" is NOT "ALL" — this is category-based removal → use TRAVEL_CHAT. target_poi_id="ALL" means DELETE THE ENTIRE ROUTE, not a category. For multi-point positional requests ("удали первые 3 точки", "оставь только последние 2", "убери 2 первых") use TRAVEL_CHAT instead — it can handle complex route edits.
 - ADD_POI: user wants to add a new place to the CURRENT route (e.g. "добавь кафе", "включи музей", "добавь X", "добавь 1 точку", "добавь ещё одно место", "добавь 2 места", "добавь точку"). ALWAYS use ADD_POI when user says "добавь [число] точку/точки/место/места" — even if category is unspecified. The new point is appended without changing existing points order.

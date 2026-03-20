@@ -375,6 +375,21 @@ export class TravelChatService {
       }
     }
 
+    // ── "удали/убери N точек/мест" (без указания позиции) → удалить N с конца ──
+    // "удали 3 точки", "убери 4 места" — нет "первые/последние", трактуем как "с конца"
+    if (!keepIds) {
+      const deleteN =
+        /(?:удали|убери|исключи)\s+(\d+)\s+(?:точ\w*|мест\w*|локаци\w*|остановк\w*)/i.exec(q);
+      if (deleteN) {
+        const n = parseInt(deleteN[1] ?? '0', 10);
+        const removeCount = Math.min(n, total - 1); // keep at least 1
+        if (removeCount > 0) {
+          keepIds = allPoiIds.slice(0, total - removeCount);
+          message = `Удалены последние ${removeCount} точек маршрута.`;
+        }
+      }
+    }
+
     if (!keepIds) return null;
 
     const keepSet = new Set(keepIds);
