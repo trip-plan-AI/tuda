@@ -55,6 +55,16 @@ Critical rules:
 - confidence must be a number between 0 and 1.
 - target_poi_id must be a string ID or null.
 
+CRITICAL STATE CONTRACT:
+The payload includes "hasExistingRoute" boolean — this is authoritative truth from the database.
+If hasExistingRoute is TRUE:
+  - NEVER return NEW_ROUTE for any message containing "добавь", "удали", "убери", "замени", "включи", "добавить", "add", "remove"
+  - These are ALWAYS mutations (ADD_POI / REMOVE_POI / REPLACE_POI)
+  - Only return NEW_ROUTE if user EXPLICITLY says "заново", "с нуля", "новый маршрут", "начни заново"
+If hasExistingRoute is FALSE:
+  - Return NEW_ROUTE when user describes a destination with enough specifics to build a route
+  - Return TRAVEL_CHAT for vague requests without clear destination
+
 PRIORITY RULE — mutations ALWAYS win over TRAVEL_CHAT:
 - If the message contains "добавь/добавить/включи" + any noun (кафе, музей, точку, место, парк, ресторан, or any count) → ALWAYS use ADD_POI or ADD_CATEGORY. NEVER TRAVEL_CHAT. TRAVEL_CHAT cannot add new points — only our pipeline can.
 - If the message contains "удали/убери/исключи" + a SPECIFIC place NAME from currentRoutePois → ALWAYS use REMOVE_POI. TRAVEL_CHAT is only for positional removal ("удали первые 3", "удали последнюю").
@@ -138,10 +148,12 @@ export class IntentRouterService {
       };
     }
 
+    const hasCurrentRoute = (currentRoutePois?.length ?? 0) > 0;
     const llmPayload = {
       message: query,
       history: history.slice(-10),
       currentRoutePois: currentRoutePois ?? [],
+      hasExistingRoute: hasCurrentRoute,
     };
 
     try {
@@ -171,14 +183,9 @@ export class IntentRouterService {
         parsed.action_type = 'OFF_TOPIC';
       }
 
-      const hasCurrentRoute = (currentRoutePois?.length ?? 0) > 0;
-
       // ── Deterministic override: fix LLM misclassification ──────────────────
       // ADD requests MUST use ADD_POI/ADD_CATEGORY — TRAVEL_CHAT cannot add new POIs.
-      if (
-        parsed.action_type === 'TRAVEL_CHAT' &&
-        hasCurrentRoute
-      ) {
+      if (parsed.action_type === 'TRAVEL_CHAT' && hasCurrentRoute) {
         parsed.action_type = this.overrideTravelChatIfActionable(
           query,
           parsed.action_type,
@@ -194,6 +201,7 @@ export class IntentRouterService {
       const normalizedActionType = this.normalizeActionTypeForSessionState(
         parsed.action_type,
         hasCurrentRoute,
+        query,
       );
 
       return this.applyDeterministicPostProcessing({
@@ -300,18 +308,53 @@ export class IntentRouterService {
   private normalizeActionTypeForSessionState(
     actionType: IntentRouterActionType,
     hasCurrentRoute: boolean,
+    query: string,
   ): IntentRouterActionType {
-    if (hasCurrentRoute) {
+    if (!hasCurrentRoute) {
+      // No route exists — mutation-type actions degrade to NEW_ROUTE
+      if (
+        actionType === 'REMOVE_POI' ||
+        actionType === 'REPLACE_POI' ||
+        actionType === 'ADD_DAYS' ||
+        actionType === 'APPLY_GLOBAL_FILTER'
+      ) {
+        return 'NEW_ROUTE';
+      }
       return actionType;
     }
 
-    if (
-      actionType === 'REMOVE_POI' ||
-      actionType === 'REPLACE_POI' ||
-      actionType === 'ADD_DAYS' ||
-      actionType === 'APPLY_GLOBAL_FILTER'
-    ) {
-      return 'NEW_ROUTE';
+    // ── GUARDRAIL: route exists but LLM returned NEW_ROUTE ──────────────────
+    // LLM does not know the system state — backend enforces the contract.
+    if (actionType === 'NEW_ROUTE') {
+      const q = query.toLowerCase();
+      // User explicitly wants to restart
+      if (/заново|с нуля|новый маршрут|начни заново|перестрой/.test(q)) {
+        return 'NEW_ROUTE';
+      }
+      // Clear mutation signals — override
+      if (/добав[ьи]|включи|добавить/.test(q)) {
+        this.logger.warn(
+          `Guardrail: NEW_ROUTE → ADD_POI (hasRoute=true, query="${query}")`,
+        );
+        return 'ADD_POI';
+      }
+      if (/удали|убери|исключи/.test(q)) {
+        this.logger.warn(
+          `Guardrail: NEW_ROUTE → REMOVE_POI (hasRoute=true, query="${query}")`,
+        );
+        return 'REMOVE_POI';
+      }
+      if (/замени|поменяй|вместо/.test(q)) {
+        this.logger.warn(
+          `Guardrail: NEW_ROUTE → REPLACE_POI (hasRoute=true, query="${query}")`,
+        );
+        return 'REPLACE_POI';
+      }
+      // Ambiguous — let TravelChat handle rather than destroying the route
+      this.logger.warn(
+        `Guardrail: NEW_ROUTE → TRAVEL_CHAT (hasRoute=true, ambiguous, query="${query}")`,
+      );
+      return 'TRAVEL_CHAT';
     }
 
     return actionType;
