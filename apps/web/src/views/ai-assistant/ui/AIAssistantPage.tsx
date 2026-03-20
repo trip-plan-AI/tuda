@@ -501,18 +501,35 @@ export function AIAssistantPage() {
     );
   }, [lastPlanMessage?.routePlan, currentTrip?.id]);
 
+  // Detect if the most recent routePlan message is a deletion (empty days)
+  const isLastPlanDeletion = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg?.routePlan) {
+        return msg.routePlan.days.length === 0;
+      }
+    }
+    return false;
+  }, [messages]);
+
   const displayPoints = useMemo(() => {
     // Новая/пустая сессия — карта чистая
     if (messages.length === 0) return [];
 
-    // Сессия привязана к маршруту — показываем актуальное состояние из сокет-стейта.
+    // AI удалил маршрут (days: []) — карта пустая
+    if (isLastPlanDeletion) return [];
+
+    // AI сгенерировал/изменил маршрут — показываем СРАЗУ на карте
+    // (до применения в конструкторе)
+    if (aiPoints.length > 0) return aiPoints;
+
+    // Нет нового AI-плана — показываем актуальное состояние из trip store
     if (activeSession?.tripId) {
       return currentTrip?.points || [];
     }
 
-    // Нет привязанного маршрута — показываем последний AI-черновик
-    return aiPoints;
-  }, [messages.length, activeSession?.tripId, currentTrip?.points, aiPoints]);
+    return [];
+  }, [messages.length, isLastPlanDeletion, activeSession?.tripId, currentTrip?.points, aiPoints]);
 
   const socketTripId = activeSession?.tripId || '';
   useCollaborationSocket(socketTripId);
