@@ -1274,7 +1274,8 @@ export const useAiQueryStore = create<AiQueryStore>()(
 
       const updatedRoutePlan = {
         ...msg.routePlan,
-        days: msg.routePlan.days.map((day) => ({ ...day, points: [] })),
+        days: [],
+        total_budget_estimated: 0,
       };
 
       const updatedMessages = session.messages.map((m, i) =>
