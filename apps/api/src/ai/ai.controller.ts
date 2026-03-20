@@ -1598,11 +1598,24 @@ ${JSON.stringify(points)}
             );
             const addPoiLimit = intent.poi_count_requested ?? 1;
 
+            // Filter pool by requested categories so "добавь 2 кафе" doesn't
+            // accidentally pull museums/stadiums from the shared cache-hit pool.
+            const addPoiPool =
+              intent.categories && intent.categories.length > 0
+                ? selectedForScheduler.filter((p) =>
+                    intent.categories.includes(p.category),
+                  )
+                : selectedForScheduler;
+            const addPoiCandidates =
+              addPoiPool.length > 0
+                ? addPoiPool.slice(0, addPoiLimit)
+                : selectedForScheduler.slice(0, addPoiLimit); // fallback: ignore category if nothing found
+
             routePlan = await this.routeMutatorService.applyMutations(
               existingRoutePlan,
               addMutations,
               intent,
-              selectedForScheduler.slice(0, addPoiLimit),
+              addPoiCandidates,
             );
             mutationMeta.mutation_applied = true;
             break;
