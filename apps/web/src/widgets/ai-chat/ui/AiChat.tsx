@@ -175,7 +175,7 @@ export function AiChat({
       </div>
 
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-4">
-        {messages.length === 0 ? (
+        {messages.length === 0 && !isLoading ? (
           <div className="flex h-full items-center justify-center text-center">
             <p className="max-w-sm text-sm text-slate-500">
               Напишите первый запрос, чтобы сгенерировать план поездки.
