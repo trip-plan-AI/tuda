@@ -130,6 +130,10 @@ export class TravelChatService {
     userMessage: string,
     existingPlan: RoutePlan,
   ): Promise<ModifyResult | ChatResult> {
+    // Pre-LLM: handle positional deletions deterministically (LLM miscounts)
+    const positional = this.handlePositionalDelete(userMessage, existingPlan);
+    if (positional) return positional;
+
     // Build a compact route description for the LLM
     const routeDescription = existingPlan.days
       .map((day) => {
@@ -297,6 +301,97 @@ export class TravelChatService {
         0,
       ),
     };
+  }
+
+  /**
+   * Deterministic positional delete — never delegates to LLM for counting.
+   *
+   * Handles:
+   *   "удали последние N точек/места/мест"
+   *   "удали N последних точек"
+   *   "убери последние N ..."
+   *   "удали первые N точек"
+   *   "удали N первых точек"
+   *   "оставь первые N точек"  → delete the rest
+   *   "оставь последние N точек" → delete the rest
+   */
+  private handlePositionalDelete(
+    query: string,
+    plan: RoutePlan,
+  ): ModifyResult | null {
+    const q = query.toLowerCase();
+    const allPoiIds = plan.days.flatMap((d) => d.points.map((p) => p.poi_id));
+    const total = allPoiIds.length;
+    if (total === 0) return null;
+
+    let keepIds: string[] | null = null;
+    let message = '';
+
+    // ── "удали/убери последние N" ──────────────────────────────────────────
+    const deleteLast =
+      /(?:удали|убери|исключи)\s+(?:последн\w*\s+(\d+)|(\d+)\s+последн)/i.exec(q);
+    if (deleteLast) {
+      const n = parseInt(deleteLast[1] ?? deleteLast[2] ?? '0', 10);
+      if (n > 0 && n < total) {
+        keepIds = allPoiIds.slice(0, total - n);
+        message = `Удалены последние ${n} точек маршрута.`;
+      }
+    }
+
+    // ── "удали/убери первые N" ─────────────────────────────────────────────
+    if (!keepIds) {
+      const deleteFirst =
+        /(?:удали|убери|исключи)\s+(?:перв\w*\s+(\d+)|(\d+)\s+перв)/i.exec(q);
+      if (deleteFirst) {
+        const n = parseInt(deleteFirst[1] ?? deleteFirst[2] ?? '0', 10);
+        if (n > 0 && n < total) {
+          keepIds = allPoiIds.slice(n);
+          message = `Удалены первые ${n} точек маршрута.`;
+        }
+      }
+    }
+
+    // ── "оставь только первые N" ───────────────────────────────────────────
+    if (!keepIds) {
+      const keepFirst = /оставь\s+(?:только\s+)?(?:перв\w*\s+(\d+)|(\d+)\s+перв)/i.exec(q);
+      if (keepFirst) {
+        const n = parseInt(keepFirst[1] ?? keepFirst[2] ?? '0', 10);
+        if (n > 0 && n <= total) {
+          keepIds = allPoiIds.slice(0, n);
+          message = `Оставлены первые ${n} точек маршрута.`;
+        }
+      }
+    }
+
+    // ── "оставь только последние N" ───────────────────────────────────────
+    if (!keepIds) {
+      const keepLast = /оставь\s+(?:только\s+)?(?:последн\w*\s+(\d+)|(\d+)\s+последн)/i.exec(q);
+      if (keepLast) {
+        const n = parseInt(keepLast[1] ?? keepLast[2] ?? '0', 10);
+        if (n > 0 && n <= total) {
+          keepIds = allPoiIds.slice(total - n);
+          message = `Оставлены последние ${n} точек маршрута.`;
+        }
+      }
+    }
+
+    if (!keepIds) return null;
+
+    const keepSet = new Set(keepIds);
+    const filteredDays = plan.days
+      .map((day) => ({
+        day_number: day.day_number,
+        poi_ids: day.points
+          .filter((p) => keepSet.has(p.poi_id))
+          .map((p) => p.poi_id),
+      }))
+      .filter((d) => d.poi_ids.length > 0);
+
+    this.logger.log(
+      `[positional-delete] "${query}" → keep ${keepIds.length}/${total} points`,
+    );
+
+    return { type: 'modify', message, days: filteredDays };
   }
 
   private timeToMinutes(value: string | undefined | null): number {
