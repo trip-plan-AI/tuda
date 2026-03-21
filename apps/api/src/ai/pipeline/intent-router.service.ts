@@ -1,4 +1,61 @@
 import { Injectable, Logger } from '@nestjs/common';
+
+const ORDINAL_DAY_MAP: Record<string, number> = {
+  перв: 1, втор: 2, трет: 3, четв: 4, пят: 5,
+  шест: 6, седьм: 7, восьм: 8, девят: 9, десят: 10,
+};
+
+/**
+ * Deterministically extracts the ORDINAL POSITION number from a query like
+ * "удали 3-ю точку" → 3, "убери 5-е место" → 5, "удали вторую" → 2.
+ * Returns null if no ordinal position is found.
+ * Used to override the LLM's positional_count when direction="exact".
+ */
+function extractOrdinalPosition(query: string): number | null {
+  const q = query.toLowerCase();
+
+  // Numeric ordinal with explicit hyphen: "3-ю", "5-е", "2-й", "1-я", "4-го" etc.
+  // Note: \b works for the leading digit (ASCII \w), but Cyrillic ordinal suffixes
+  // are \W in JS regex — so we skip trailing \b and require the hyphen to avoid
+  // false positives like "3 едой" matching "е".
+  const numericOrdinal = q.match(/\b(\d+)-(?:ю|е|й|я|го|му|х|ой|ей|ую)/);
+  if (numericOrdinal) {
+    const n = parseInt(numericOrdinal[1], 10);
+    if (n >= 1 && n <= 50) return n;
+  }
+
+  // Word ordinals: split on whitespace — Cyrillic chars are \W in JS regex, so
+  // \b doesn't create word boundaries around them. Splitting gives actual tokens.
+  const wordOrdinals: Record<string, number> = {
+    перв: 1, втор: 2, трет: 3, четвёрт: 4, четверт: 4,
+    пят: 5, шест: 6, седьм: 7, восьм: 8, девят: 9, десят: 10,
+    одиннадцат: 11, двенадцат: 12,
+  };
+  const tokens = q.split(/[\s,.!?]+/);
+  for (const [prefix, num] of Object.entries(wordOrdinals)) {
+    if (tokens.some((w) => w.startsWith(prefix))) return num;
+  }
+
+  return null;
+}
+
+function extractDayNumberFromQuery(query: string): number | null {
+  const q = query.toLowerCase();
+  // Numeric: "в 3 дне", "3-й день", "день 3"
+  const numericMatch = q.match(/\bв\s+(\d+)\s*[- ]?м?\s*дн[еи]|\b(\d+)[- ]?й\s+день|\bдень\s+(\d+)/i);
+  if (numericMatch) {
+    const n = parseInt(numericMatch[1] ?? numericMatch[2] ?? numericMatch[3], 10);
+    if (n >= 1 && n <= 30) return n;
+  }
+  // Ordinal words: "во втором дне", "в первый день", "третьем дне"
+  for (const [prefix, num] of Object.entries(ORDINAL_DAY_MAP)) {
+    if (new RegExp(`\\b${prefix}\\w*\\s+(день|дн[еи])`, 'i').test(q) ||
+        new RegExp(`(день|дн[еи])\\s+${prefix}\\w*`, 'i').test(q)) {
+      return num;
+    }
+  }
+  return null;
+}
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import type {
   IntentRouterActionType,
@@ -13,6 +70,7 @@ interface IntentRouterLlmResponse {
   target_poi_id: unknown;
   positional_count?: unknown;
   positional_direction?: unknown;
+  target_day_number?: unknown;
 }
 
 export interface IntentRouterContext {
@@ -42,32 +100,41 @@ const ALLOWED_ACTION_TYPES: IntentRouterActionType[] = [
 const SYSTEM_PROMPT = `You are an intent router for travel route edits.
 Analyze the user message with optional history and current route POIs.
 Return ONLY valid JSON with this exact structure:
-{ "action_type": "REMOVE_POI"|"REMOVE_POSITIONAL"|"REPLACE_POI"|"ADD_POI"|"ADD_DAYS"|"APPLY_GLOBAL_FILTER"|"REDUCE_BUDGET"|"ADD_CATEGORY"|"REMOVE_BORING"|"NEW_ROUTE"|"TRAVEL_CHAT"|"OFF_TOPIC"|"SMALL_TALK", "confidence": number, "target_poi_id": string|null }
+{ "action_type": "REMOVE_POI"|"REMOVE_POSITIONAL"|"REPLACE_POI"|"ADD_POI"|"ADD_DAYS"|"APPLY_GLOBAL_FILTER"|"REDUCE_BUDGET"|"ADD_CATEGORY"|"REMOVE_BORING"|"NEW_ROUTE"|"TRAVEL_CHAT"|"OFF_TOPIC"|"SMALL_TALK", "confidence": number, "target_poi_id": string|null, "positional_count": number|null, "positional_direction": "start"|"end"|"keep_start"|"keep_end"|"exact"|null, "target_day_number": number|null }
 
-For REMOVE_POSITIONAL only, also include:
-{ ..., "positional_count": number, "positional_direction": "start"|"end"|"keep_start"|"keep_end"|"exact" }
+All fields are always required. For non-REMOVE_POSITIONAL actions set positional_count=null, positional_direction=null, target_day_number=null.
 
 Action type rules:
 - NEW_ROUTE: use when (a) currentRoutePois is empty and user asks about a city/destination/trip with enough specifics to build a route, OR (b) user explicitly wants to start over / build a completely new route ("заново", "с нуля", "новый маршрут"). NEVER use NEW_ROUTE for deletion requests ("удали", "убери", "очисти", "сотри") even if currentRoutePois is empty.
-- REMOVE_POSITIONAL: user wants to delete points BY POSITION (not by name). Examples: "удали последние 3 точки", "убери первые 2 места", "удали 3 последних", "оставь только первые 5 точек", "оставь последние 2". Extract "positional_count" (the number) and "positional_direction":
-  - "удали последние N" → direction="end", count=N
-  - "удали первые N"    → direction="start", count=N
-  - "убери N последних" → direction="end", count=N
-  - "убери N первых"    → direction="start", count=N
-  - "оставь первые N"   → direction="keep_start", count=N (delete all others)
-  - "оставь последние N"→ direction="keep_end", count=N (delete all others)
-  - "удали N точек/мест" (no position qualifier) → direction="end", count=N (delete N from the end by default)
-  - "удали 3 точку", "убери второе место", "удали первую", "удали пятую точку" → direction="exact", count=N (1-based index: "3-ю" → 3, "вторую" → 2, "первую" → 1, "пятую" → 5)
-  HOW TO DISTINGUISH: "удали 3 точки" (количественное = DELETE 3 POINTS from the end) vs "удали 3-ю точку" / "удали 3 точку" (порядковое = DELETE THE 3rd POINT). When the number is used as an ordinal (refers to a specific position), always use direction="exact".
-  ALWAYS use REMOVE_POSITIONAL for positional requests — never REMOVE_POI or TRAVEL_CHAT.
-- REMOVE_POI: user wants to delete a SINGLE specific named place from the CURRENT route ("удали X", "убери X", "исключи X") — set target_poi_id to the matching ID. OR all places at once ("удали весь маршрут", "очисти маршрут", "убери все точки", "сотри всё", "удали все места") — set target_poi_id to "ALL". IMPORTANT: "удали все кафе/рестораны/музеи/памятники" is NOT "ALL" — this is category-based removal → use TRAVEL_CHAT. target_poi_id="ALL" means DELETE THE ENTIRE ROUTE, not a category. For multi-point positional requests ("удали первые 3 точки", "оставь только последние 2", "убери 2 первых") use TRAVEL_CHAT instead — it can handle complex route edits.
+- REMOVE_POSITIONAL: user wants to delete points BY POSITION (not by name). This includes ALL of the following — use REMOVE_POSITIONAL, never TRAVEL_CHAT, for these:
+  DIRECTION RULES (positional_direction + positional_count):
+  - "удали последние N" / "убери N последних" → direction="end", count=N
+  - "удали первые N" / "убери N первых"        → direction="start", count=N
+  - "удали N точек/мест" (no start/end qualifier) → direction="end", count=N
+  - "оставь только первые N" / "оставь первые N" → direction="keep_start", count=N. CRITICAL: count = the EXACT number N from the user's message, copy it verbatim. DO NOT compute (total - N). Example: "оставь только первые 5 точек" with 9 total → count=5 (not 4).
+  - "оставь только последние N" / "оставь последние N" → direction="keep_end", count=N. CRITICAL: count = N from message verbatim. Example: "оставь последние 2 места" → count=2 (not 7).
+  - "оставь N точек" / "оставь только N" / "оставь N мест" (no first/last qualifier) → direction="keep_start", count=N. Example: "оставь 3 точки" → {direction:"keep_start",count:3}.
+  - "сделай N точек" / "хочу N точек" / "нужно N точек" / "сделай маршрут на N точек" → direction="keep_start", count=N. Example: "сделай 3 точки" → {direction:"keep_start",count:3}. This means REDUCE to N points, NOT delete N points.
+  - "удали 3-ю точку" / "убери вторую" / "удали пятую" (ORDINAL = specific position) → direction="exact", count=POSITION_NUMBER
+    CRITICAL for exact: count = the ORDINAL POSITION, NOT the quantity. "вторую" → count=2, "3-ю" → count=3, "пятую" → count=5, "первую" → count=1. Do NOT set count=1 for ordinals.
+  HOW TO DISTINGUISH ordinal vs cardinal: "удали 3 точки" (delete 3 = cardinal → direction="end", count=3) vs "удали 3-ю точку" (delete THE 3rd = ordinal → direction="exact", count=3).
+  DAY TARGETING (target_day_number): if user specifies a day, ALWAYS set target_day_number to the integer day number:
+  - "первый день" / "в первый день" / "в 1 дне" / "1-й день" → target_day_number=1
+  - "второй день" / "во втором дне" / "во 2 дне" / "2-й день" → target_day_number=2
+  - "третий день" / "в 3 дне" / "3-й день" → target_day_number=3
+  - "четвёртый день" → target_day_number=4, "пятый" → 5, etc.
+  - No day mentioned → target_day_number=null
+  Examples: "удали первые 2 точки во втором дне" → {direction:"start",count:2,target_day_number:2}. "в 1 день удали последнюю" → {direction:"end",count:1,target_day_number:1}. "в 3 дне оставь только первые 2" → {direction:"keep_start",count:2,target_day_number:3}.
+  WARNING: "в 3 дне" / "в третьем дне" means "within day 3" (it's a scope, not a count of days) → target_day_number=3. NEVER use ADD_DAYS for these — ADD_DAYS is only for "добавь ещё 1 день", "хочу 3 дня", "extend the trip".
+  ALWAYS use REMOVE_POSITIONAL for ANY positional deletion/keep request.
+- REMOVE_POI: user wants to delete a SINGLE specific named place from the CURRENT route ("удали X", "убери X", "исключи X") — set target_poi_id to the matching ID. OR all places at once ("удали весь маршрут", "очисти маршрут", "убери все точки", "сотри всё", "удали все места") — set target_poi_id to "ALL". IMPORTANT: "удали все кафе/рестораны/музеи/памятники" is NOT "ALL" — this is category-based removal → use TRAVEL_CHAT. target_poi_id="ALL" means DELETE THE ENTIRE ROUTE, not a category. For positional requests ("удали первые 3 точки", "оставь только последние 2") use REMOVE_POSITIONAL, not TRAVEL_CHAT.
 - ADD_POI: user wants to add a new place to the CURRENT route (e.g. "добавь кафе", "включи музей", "добавь X", "добавь 1 точку", "добавь ещё одно место", "добавь 2 места", "добавь точку"). ALWAYS use ADD_POI when user says "добавь [число] точку/точки/место/места" — even if category is unspecified. The new point is appended without changing existing points order.
 - REPLACE_POI: user wants to swap/change a specific point in the CURRENT route (e.g. "замени X", "поменяй X на что-то другое", "вместо X поставь Y").
 - ADD_DAYS: user wants to extend the trip with more days.
 - REDUCE_BUDGET: user wants a cheaper route (e.g. "сделай дешевле", "снизь бюджет").
 - ADD_CATEGORY: user wants more items of a category added to the CURRENT route (e.g. "добавь больше музеев", "найди кино").
 - REMOVE_BORING: user wants to remove dull or low-rated POIs from the CURRENT route (e.g. "удали скучное", "убери неинтересное").
-- TRAVEL_CHAT: use for (a) conversational travel talk without a clear actionable request — vague preferences, general travel advice, comparing destinations; (b) when currentRoutePois is NOT empty and user asks general questions about the route; (c) multi-point positional edits like "удали первые 3 точки", "оставь только последние 2", "поменяй местами 1 и 3 точки" — complex operations that require understanding the route structure.
+- TRAVEL_CHAT: use for (a) conversational travel talk without a clear actionable request — vague preferences, general travel advice, comparing destinations; (b) when currentRoutePois is NOT empty and user asks general questions about the route; (c) complex reordering edits like "поменяй местами 1 и 3 точки" — NOT for simple positional deletions (those are REMOVE_POSITIONAL).
 - OFF_TOPIC: request is NOT related to travel, routes, places, food, or cities at all (e.g. math, coding, recipes unrelated to travel).
 - SMALL_TALK: user is just greeting or chatting without any travel intent ("привет", "как дела", "спасибо").
 
@@ -103,12 +170,11 @@ PRIORITY RULE — mutations ALWAYS win over TRAVEL_CHAT:
 
 Use TRAVEL_CHAT ONLY for these cases (when no clear add/remove/replace/budget action):
 - Subjective edits without specific action: "сделай маршрут покороче", "сделай поспортивнее"
-- Positional multi-point edits: "удали первые 3 точки", "оставь только последние 2", "убери 2 первых", "удали последнюю"
 - Reordering: "переставь местами", "поменяй местами 1 и 3 точки"
 - Category filtering across route: "оставь только музеи", "можно без ресторанов?"
 - Vague dissatisfaction: "мне не нравятся первые точки"
 - General travel questions about the existing route
-- Any request about multiple points by POSITION — not by specific POI name.`;
+IMPORTANT: "удали первые N точек", "оставь только последние N", "оставь N точек", "сделай N точек" — these are ALL REMOVE_POSITIONAL, NOT TRAVEL_CHAT. Never route positional count-based requests to TRAVEL_CHAT.`;
 
 @Injectable()
 export class IntentRouterService {
@@ -149,6 +215,13 @@ export class IntentRouterService {
       'тур',
       'день',
       'бюджет',
+      'оставь',
+      'точк',  // covers "точки", "точек", "точку"
+      'сделай',
+      'убери',
+      'исключи',
+      'место',
+      'места',
     ];
     return travelKeywords.some((kw) => text.toLowerCase().includes(kw));
   }
@@ -199,7 +272,7 @@ export class IntentRouterService {
         jsonMode: true,
       });
 
-      const parsed = this.parseAndValidateLlmResponse(content || '{}');
+      const parsed = this.parseAndValidateLlmResponse(content || '{}', query);
 
       // 2. Rule-based + LLM Combo for OFF_TOPIC
       const isTravelRelated = this.isTravelRelatedRuleBased(query);
@@ -253,10 +326,28 @@ export class IntentRouterService {
             : 'full_rebuild',
       };
 
-      // Pass through positional fields for REMOVE_POSITIONAL
-      if (normalizedActionType === 'REMOVE_POSITIONAL') {
+      // Deterministic ordinal-position override: handles "удали 3-ю точку",
+      // "убери вторую", "убери 5-е место" regardless of what the LLM classified.
+      // LLMs often return REMOVE_POI (thinking "delete 1 specific item") or
+      // REMOVE_POSITIONAL with count=1 for these queries.
+      // We detect the ordinal pattern and force REMOVE_POSITIONAL direction=exact.
+      const ordinalPos = extractOrdinalPosition(query);
+      if (
+        ordinalPos !== null &&
+        ordinalPos > 1 &&
+        (normalizedActionType === 'REMOVE_POI' ||
+          normalizedActionType === 'REMOVE_POSITIONAL')
+      ) {
+        baseDecision.action_type = 'REMOVE_POSITIONAL';
+        baseDecision.positional_direction = 'exact';
+        baseDecision.positional_count = ordinalPos;
+        baseDecision.target_poi_id = null;
+        baseDecision.route_mode = 'targeted_mutation';
+      } else if (normalizedActionType === 'REMOVE_POSITIONAL') {
+        // Pass through positional fields for non-ordinal REMOVE_POSITIONAL
         baseDecision.positional_count = parsed.positional_count;
         baseDecision.positional_direction = parsed.positional_direction;
+        baseDecision.target_day_number = parsed.target_day_number;
       }
 
       return this.applyDeterministicPostProcessing(baseDecision);
@@ -274,12 +365,13 @@ export class IntentRouterService {
     }
   }
 
-  private parseAndValidateLlmResponse(payload: string): {
+  private parseAndValidateLlmResponse(payload: string, query = ''): {
     action_type: IntentRouterActionType;
     confidence: number;
     target_poi_id: string | null;
     positional_count?: number;
     positional_direction?: 'start' | 'end' | 'keep_start' | 'keep_end' | 'exact';
+    target_day_number?: number;
   } {
     const parsed = JSON.parse(payload) as IntentRouterLlmResponse;
 
@@ -300,6 +392,7 @@ export class IntentRouterService {
 
     if (
       parsed.target_poi_id !== null &&
+      parsed.target_poi_id !== undefined &&
       typeof parsed.target_poi_id !== 'string'
     ) {
       throw new Error('Intent router returned invalid target_poi_id');
@@ -311,10 +404,11 @@ export class IntentRouterService {
       target_poi_id: string | null;
       positional_count?: number;
       positional_direction?: 'start' | 'end' | 'keep_start' | 'keep_end' | 'exact';
+      target_day_number?: number;
     } = {
       action_type: parsed.action_type as IntentRouterActionType,
       confidence: Math.max(0, Math.min(1, parsed.confidence)),
-      target_poi_id: parsed.target_poi_id,
+      target_poi_id: parsed.target_poi_id ?? null,
     };
 
     if (result.action_type === 'REMOVE_POSITIONAL') {
@@ -328,6 +422,24 @@ export class IntentRouterService {
       result.positional_direction = validDirections.includes(direction)
         ? (direction as 'start' | 'end' | 'keep_start' | 'keep_end' | 'exact')
         : 'end';
+
+      const rawDay = parsed.target_day_number;
+      const dayNum =
+        typeof rawDay === 'number'
+          ? rawDay
+          : typeof rawDay === 'string'
+            ? parseInt(rawDay, 10)
+            : NaN;
+      if (Number.isFinite(dayNum) && dayNum >= 1) {
+        result.target_day_number = Math.floor(dayNum);
+      } else {
+        // Fallback: extract day number from query deterministically
+        // Handles cases where LLM omits target_day_number (e.g. ordinal words)
+        const extracted = extractDayNumberFromQuery(query);
+        if (extracted !== null) {
+          result.target_day_number = extracted;
+        }
+      }
     }
 
     return result;
@@ -378,7 +490,7 @@ export class IntentRouterService {
     if (
       (actionType === 'REMOVE_POSITIONAL' || actionType === 'REMOVE_POI') &&
       /\d+\s*(дн[ейя]|day)/i.test(query) &&
-      !/удал[иь]|убер[иь]|исключ/i.test(query)
+      !/удал[иь]|убер[иь]|исключ|оставь|первы[еха]|последн[иеяхм]/i.test(query)
     ) {
       this.logger.warn(
         `Guardrail: ${actionType} → ADD_DAYS (duration query without explicit removal: "${query}")`,

@@ -55,10 +55,11 @@ describe('IntentRouterService', () => {
   });
 
   it('forces full_rebuild and LOW_CONFIDENCE for low-confidence non-NEW_ROUTE decisions', async () => {
+    // LOW_CONFIDENCE threshold is < 0.4 in the service
     const { service } = createService(
       JSON.stringify({
         action_type: 'REMOVE_POI',
-        confidence: 0.65,
+        confidence: 0.35,
         target_poi_id: null,
       }),
     );
@@ -71,7 +72,7 @@ describe('IntentRouterService', () => {
 
     expect(result).toMatchObject({
       action_type: 'REMOVE_POI',
-      confidence: 0.65,
+      confidence: 0.35,
       target_poi_id: null,
       route_mode: 'full_rebuild',
       fallback_reason: 'LOW_CONFIDENCE',

@@ -1,3 +1,11 @@
+// @turf/clusters-dbscan ships ESM .ts source — mock ClusteringService to avoid
+// Jest transform issues with that package.
+jest.mock('./clustering.service', () => ({
+  ClusteringService: jest.fn().mockImplementation(() => ({
+    clusterPois: jest.fn().mockReturnValue({ clusters: [], noise: [] }),
+  })),
+}));
+
 import { ProviderSearchService } from './provider-search.service';
 import type { ParsedIntent } from '../types/pipeline.types';
 import type { PoiItem } from '../types/poi.types';
@@ -57,9 +65,14 @@ describe('ProviderSearchService (Refactored)', () => {
   const mockCityAnalyzer = { analyze: jest.fn().mockReturnValue({ description: 'Test context' }) };
   const mockClustering = { clusterPois: jest.fn().mockReturnValue({ clusters: [], noise: [] }) };
 
+  const mockRedis = {
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue('OK'),
+  };
+
   function makeService() {
     return new ProviderSearchService(
-      {} as never,            // redis
+      mockRedis as any,       // redis
       mockKudago as any,
       mockOverpass as any,
       mockOsmFetch as any,
@@ -69,7 +82,8 @@ describe('ProviderSearchService (Refactored)', () => {
       mockFuzzyMatcher as any,
       mockCityAnalyzer as any,
       mockClustering as any,
-      {} as never,            // locationResolver
+      { resolve: jest.fn().mockResolvedValue({ lat: 55.75, lon: 37.62, name: 'Москва' }) } as any, // locationResolver
+      { fetchPoisForCity: jest.fn().mockResolvedValue([]) } as any, // wikidataEnrichment
     );
   }
 
@@ -96,8 +110,10 @@ describe('ProviderSearchService (Refactored)', () => {
 
     const service = makeService();
 
-    await expect(service.fetchAndFilter({ ...baseIntent })).rejects.toThrow(
-      'CITY_DATA_UNAVAILABLE',
-    );
+    // UnprocessableEntityException is thrown with { code: 'CITY_DATA_UNAVAILABLE', message: '...' }
+    // NestJS sets error.message to the 'message' field of the response object.
+    await expect(service.fetchAndFilter({ ...baseIntent })).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'CITY_DATA_UNAVAILABLE' }),
+    });
   });
 });

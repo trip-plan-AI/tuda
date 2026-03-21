@@ -537,7 +537,13 @@ export class SchedulerService {
               : 0;
             return distA - distB;
           })[0];
-          if (tryAddPoint(fallbackPoint, undefined, true)) {
+            const dailyFoodCountRebuild = dayRestaurantPoints + dayCafePoints;
+          const allFoodRemainingRebuild = candidates.every((c) =>
+            this.isFoodCategory(c.category),
+          );
+          if (allFoodRemainingRebuild && dailyFoodCountRebuild >= 2) {
+            // Daily food limit reached — don't force a 3rd food item
+          } else if (tryAddPoint(fallbackPoint, undefined, true)) {
             added = true;
             usedPoiIdsInDay.add(fallbackPoint.id);
           }
@@ -609,10 +615,12 @@ export class SchedulerService {
     const isSmallTown = cityComplexity < 60;
     const diversityPressure = cityComplexity > 20 ? 1.0 : 0.4;
     const availablePois = [...pois];
-    const totalPoisCount = availablePois.filter(
-      (p) => !this.isFoodCategory(p.category) || ((p as any).aiWeight || 0) > 0,
-    ).length;
+    // Count all scheduleable POIs (including food) for day capacity.
+    // Previously filtered out food POIs without aiWeight, causing food-focused requests
+    // (e.g. "где поесть") to get totalPoisCount=1 and schedule only 2 points total.
+    const totalPoisCount = availablePois.length;
 
+    // Starvation: only trigger if total POI count is critically low (< 2 per day).
     if (totalPoisCount > 0 && totalPoisCount < intent.days * 2) {
       this.logger.warn(
         `[Scheduler] Data Starvation detected for ${intent.city}. POIs: ${totalPoisCount}, Days: ${intent.days}`,
@@ -783,8 +791,9 @@ export class SchedulerService {
       const daysRemaining = totalDays - dayNumber + 1;
 
       // FATIGUE-AWARE BLENDING
+      // Cap at 8 points/day — realistic daily capacity.
       let pointsForThisDay =
-        Math.round((totalPoisCount - usedPoiIds.size) / daysRemaining) || 3;
+        Math.min(8, Math.round((totalPoisCount - usedPoiIds.size) / daysRemaining) || 3);
       if (isRelaxMode)
         pointsForThisDay = Math.max(2, Math.floor(pointsForThisDay * 0.7));
       if (isExploreMode) {
@@ -841,10 +850,11 @@ export class SchedulerService {
         const isHeavy =
           poi.category === 'museum' || ((poi as any).duration || 0) > 90;
 
-        // Жёсткие food-ограничения — применяются ВСЕГДА, независимо от relaxAll.
+        // Жёсткие food-ограничения. Consecutive ban relaxed when force=true (food-only scenarios).
         if (isFood) {
           // Нельзя ставить food-точку если предыдущая тоже food (нет промежуточного POI)
-          if (lastPoi && this.isFoodCategory(lastPoi.category)) return false;
+          // Exception: force=true (food-only route) — rely on gap check below instead.
+          if (!force && lastPoi && this.isFoodCategory(lastPoi.category)) return false;
           // Нельзя ставить food-точку если прошло меньше RESTAURANT_MIN_GAP_MIN с последнего приёма пищи
           if (lastFoodTime !== null && arrival - lastFoodTime < RESTAURANT_MIN_GAP_MIN)
             return false;
@@ -1283,8 +1293,27 @@ export class SchedulerService {
                 : 0;
               return distA - distB;
             })[0];
-            if (tryAddPoint(fallbackPoint, undefined, true)) {
+            // Force (skip consecutive-food ban) ONLY when all candidates are food —
+            // i.e. there are no non-food alternatives left (food-only route scenario).
+            const allFoodRemaining = candidates.every((c) =>
+              this.isFoodCategory(c.category),
+            );
+            const dailyFoodCount = dayRestaurantPoints + dayCafePoints;
+            if (allFoodRemaining && dailyFoodCount >= 2) {
+              // Already had 2 food items today (lunch + dinner).
+              // Don't force-add a 3rd just to hit MIN_POINTS_PER_DAY —
+              // this causes consecutive restaurants. Let outer break fire.
+            } else if (tryAddPoint(fallbackPoint, undefined, allFoodRemaining)) {
               added = true;
+            } else if (lastFoodTime !== null && allFoodRemaining && dailyFoodCount < 2) {
+              // Food-only deadlock: all remaining candidates are food but we're inside the
+              // post-meal gap window. Advance time to the next valid food window so the
+              // next iteration can place a food POI without violating the gap constraint.
+              const nextFoodWindow = lastFoodTime + RESTAURANT_MIN_GAP_MIN + 10;
+              if (nextFoodWindow < endMinutes) {
+                currentTime = nextFoodWindow;
+                added = true; // prevent break — retry in next iteration
+              }
             }
           }
         }
@@ -1436,6 +1465,17 @@ export class SchedulerService {
         }
       }
 
+      // 2-OPT ROUTE IMPROVEMENT
+      // Eliminates ping-pong routing (e.g., crossing a river back and forth).
+      // Greedy nearest-neighbor picks by straight-line (Haversine) and ignores
+      // geographic barriers. 2-opt post-processes the day's route and swaps pairs
+      // of edges whenever reversing a segment reduces total travel distance.
+      // O(n²) per pass, negligible for typical n=4..8 points/day.
+      if (points.length >= 3) {
+        const improved = this.twoOptImprove(points, startMinutes);
+        points.splice(0, points.length, ...improved);
+      }
+
       if (points.length > 0) {
         lastPoiFromPrevDay = points[points.length - 1].poi as FilteredPoi;
       }
@@ -1572,5 +1612,93 @@ export class SchedulerService {
       Math.sin(dLat / 2) ** 2 +
       Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
     return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  /**
+   * 2-opt improvement: tries all O(n²) edge reversals, accepts those that
+   * reduce total Haversine distance. Groups geographically close points together,
+   * eliminating ping-pong routing across rivers / district boundaries.
+   */
+  private twoOptImprove(points: PlanDayPoint[], startMins: number): PlanDayPoint[] {
+    const n = points.length;
+    const coords = points.map((p) => (p.poi as FilteredPoi).coordinates);
+
+    const segDist = (i: number, j: number) =>
+      this.haversineKm(coords[i].lat, coords[i].lon, coords[j].lat, coords[j].lon);
+
+    const routeTotalKm = (ord: number[]) => {
+      let d = 0;
+      for (let i = 0; i < ord.length - 1; i++) d += segDist(ord[i], ord[i + 1]);
+      return d;
+    };
+
+    let order = Array.from({ length: n }, (_, i) => i);
+    const before = routeTotalKm(order);
+    let improved = true;
+    let passes = 0;
+
+    while (improved && passes < 20) {
+      improved = false;
+      passes++;
+      for (let i = 0; i < n - 1; i++) {
+        for (let j = i + 2; j < n; j++) {
+          // Reverse segment [i+1 .. j] and check if route gets shorter
+          const candidate = [
+            ...order.slice(0, i + 1),
+            ...order.slice(i + 1, j + 1).reverse(),
+            ...order.slice(j + 1),
+          ];
+          if (routeTotalKm(candidate) < routeTotalKm(order) - 0.05) {
+            order = candidate;
+            improved = true;
+          }
+        }
+      }
+    }
+
+    const after = routeTotalKm(order);
+    if (after < before - 0.1) {
+      this.logger.log(
+        `[2-opt] Route improved: ${before.toFixed(2)} km → ${after.toFixed(2)} km (${passes} passes, ${n} points)`,
+      );
+    }
+
+    return this.recalculateDayTimes(order.map((i) => points[i]), startMins);
+  }
+
+  /**
+   * Recalculates arrival/departure/travel times after 2-opt reordering.
+   * Transit time uses same formula as the main loop: dist(km) / 5 km/h.
+   */
+  private recalculateDayTimes(points: PlanDayPoint[], startMins: number): PlanDayPoint[] {
+    // currentMins tracks the ARRIVAL time of the current point.
+    // It must cascade from the newly computed departure of the previous point,
+    // NOT from prev.departure_time (which holds stale pre-reorder times).
+    let currentMins = startMins;
+    return points.map((pt, i) => {
+      let transitMins = 0;
+      if (i > 0) {
+        const prev = points[i - 1];
+        const prevCoords = (prev.poi as FilteredPoi).coordinates;
+        const currCoords = (pt.poi as FilteredPoi).coordinates;
+        const dist = this.haversineKm(
+          prevCoords.lat, prevCoords.lon,
+          currCoords.lat, currCoords.lon,
+        );
+        transitMins = Math.max(5, Math.min(60, Math.round((dist / 5) * 60)));
+        // Advance by the PREVIOUS point's visit duration + transit.
+        // currentMins here holds the arrival of points[i-1] computed in the
+        // previous iteration — using prev.departure_time would read stale data.
+        currentMins = currentMins + prev.visit_duration_min + transitMins;
+      }
+      const departure = currentMins + pt.visit_duration_min;
+      return {
+        ...pt,
+        order: i + 1,
+        arrival_time: this.minutesToTime(currentMins),
+        departure_time: this.minutesToTime(departure),
+        travel_from_prev_min: i === 0 ? undefined : transitMins,
+      };
+    });
   }
 }
